@@ -10,6 +10,7 @@ import {
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
+import { newId } from "@/lib/client";
 import {
   ATHLETES,
   METCON,
@@ -177,7 +178,7 @@ export function WorkoutForm({
     if (problem) return;
 
     const record: Workout = {
-      id: crypto.randomUUID(),
+      id: newId(),
       kind: "workout",
       athlete: who,
       day,

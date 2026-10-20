@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { Tracker } from "@/components/tracker";
 import {
   DEFAULT_SETTINGS,
@@ -5,39 +6,42 @@ import {
   type RecordItem,
   type Settings,
 } from "@/lib/domain";
+import { signedIn } from "@/lib/auth";
 import { database, runtime } from "@/lib/server";
-import { chatGPTSignOutPath, requireChatGPTUser } from "./chatgpt-auth";
 
-// The journal is per-request: it depends on the injected identity headers.
+// The journal depends on the session cookie, so it is never statically rendered.
 export const dynamic = "force-dynamic";
 
 /** Hand the first screen straight to the device, with no client round-trip. */
-async function readJournal() {
-  const [entries, saved] = await Promise.all([
-    database()
+function readJournal() {
+  try {
+    const rows = database()
       .prepare("SELECT payload FROM records ORDER BY day DESC, created_at DESC")
-      .all<{ payload: string }>(),
-    database()
+      .all() as { payload: string }[];
+    const saved = database()
       .prepare("SELECT payload, revision FROM settings WHERE id = 'team'")
-      .first<{ payload: string; revision: number }>(),
-  ]);
-  return {
-    records: entries.results.map((row) => JSON.parse(row.payload) as RecordItem),
-    settings: saved ? (JSON.parse(saved.payload) as Settings) : DEFAULT_SETTINGS,
-    revision: saved?.revision ?? 0,
-  };
+      .get() as { payload: string; revision: number } | undefined;
+    return {
+      records: rows.map((row) => JSON.parse(row.payload) as RecordItem),
+      settings: saved
+        ? (JSON.parse(saved.payload) as Settings)
+        : DEFAULT_SETTINGS,
+      revision: saved?.revision ?? 0,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export default async function Home() {
-  await requireChatGPTUser("/");
+  if (!(await signedIn())) redirect("/login");
 
   const config = runtime();
-  const journal = await readJournal().catch(() => null);
+  const journal = readJournal();
 
   return (
     <Tracker
       today={localDay()}
-      signOutPath={chatGPTSignOutPath("/")}
       grokReady={Boolean(
         config.XAI_API_KEY ||
           (config.GROK_GATEWAY_URL && config.GROK_GATEWAY_TOKEN),
@@ -48,7 +52,7 @@ export default async function Home() {
       loadError={
         journal
           ? ""
-          : "Your journal could not be opened. If this site was just published, its database may still be setting up."
+          : "Your journal could not be opened. Check that the data volume is writable."
       }
     />
   );

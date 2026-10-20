@@ -37,7 +37,6 @@ const TABS = [
 
 export function Tracker({
   today,
-  signOutPath,
   grokReady,
   records: initialRecords,
   settings: initialSettings,
@@ -45,7 +44,6 @@ export function Tracker({
   loadError = "",
 }: {
   today: string;
-  signOutPath: string;
   grokReady: boolean;
   records: RecordItem[];
   settings: Settings;
@@ -196,7 +194,6 @@ export function Tracker({
             key={revision}
             settings={settings}
             grokReady={grokReady}
-            signOutPath={signOutPath}
             onSave={saveSettings}
           />
         )}

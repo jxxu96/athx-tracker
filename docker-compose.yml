@@ -1,0 +1,21 @@
+services:
+  athx-tracker:
+    build: ./athx-tracker
+    image: athx-tracker:latest
+    container_name: athx-tracker
+    restart: unless-stopped
+    environment:
+      # The shared passphrase both of you type to open the journal.
+      # Changing it signs every device out.
+      APP_PASSPHRASE: ${APP_PASSPHRASE:?set APP_PASSPHRASE in your stack environment}
+      # Optional: enables Grok macro estimates. Leave unset to enter macros by hand.
+      XAI_API_KEY: ${XAI_API_KEY:-}
+      XAI_MODEL: ${XAI_MODEL:-}
+    volumes:
+      # The journal is one SQLite file. Back this volume up and you have everything.
+      - athx-data:/data
+    ports:
+      - "${ATHX_PORT:-3000}:3000"
+
+volumes:
+  athx-data:

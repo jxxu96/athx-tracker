@@ -30,12 +30,10 @@ const toDraft = (macros: Macros): MacroDraft => ({
 export function SettingsForm({
   settings,
   grokReady,
-  signOutPath,
   onSave,
 }: {
   settings: Settings;
   grokReady: boolean;
-  signOutPath: string;
   onSave: (next: Settings) => Promise<void>;
 }) {
   const [eventName, setEventName] = useState(settings.eventName);
@@ -176,13 +174,14 @@ export function SettingsForm({
           Everything you log is shared between the two of you and stored with this
           site.
         </p>
-        <a
-          href={signOutPath}
-          target="_top"
-          className="inline-block font-medium text-foreground underline underline-offset-4"
-        >
-          Sign out
-        </a>
+        <form action="/logout" method="post">
+          <button
+            type="submit"
+            className="font-medium text-foreground underline underline-offset-4"
+          >
+            Sign out
+          </button>
+        </form>
       </section>
     </form>
   );

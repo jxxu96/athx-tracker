@@ -11,7 +11,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Field } from "@/components/workout-form";
 import { ATHLETES, type Athlete, type Macros, type Meal } from "@/lib/domain";
-import { api, message } from "@/lib/client";
+import { api, message, newId } from "@/lib/client";
 
 const MACRO_FIELDS = [
   { key: "calories", label: "Calories", unit: "kcal" },
@@ -125,7 +125,7 @@ export function MealForm({
     if (problem) return;
 
     const record: Meal = {
-      id: crypto.randomUUID(),
+      id: newId(),
       kind: "meal",
       athlete: who,
       day,
