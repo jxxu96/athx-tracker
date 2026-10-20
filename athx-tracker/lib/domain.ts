@@ -9,7 +9,7 @@ export type Workout = {
   title: string; category: "Strength" | "Endurance" | "MetCon" | "Other";
   seconds: number; notes: string; segments: Segment[]; fatigue: number;
   transition: number; goal: number | null; context: "solo" | "pairs";
-  lifts: { name: string; kg: number; reps: number }[];
+  lifts: { name: string; kg: number; sets: number; reps: number }[];
 };
 export type Meal = {
   id: string; kind: "meal"; athlete: Exclude<Athlete, "team">; day: string;

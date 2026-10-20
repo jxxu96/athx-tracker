@@ -110,6 +110,16 @@ export function History({
                               {record.context === "pairs" ? "Pairs" : "Solo"}
                             </p>
                           ) : null}
+                          {record.lifts.length > 0 ? (
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              {record.lifts
+                                .map(
+                                  (lift) =>
+                                    `${lift.name} ${lift.kg}kg ${lift.sets ?? 1}×${lift.reps}`,
+                                )
+                                .join(" · ")}
+                            </p>
+                          ) : null}
                         </>
                       ) : (
                         <>

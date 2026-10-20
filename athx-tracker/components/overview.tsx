@@ -76,6 +76,9 @@ function MacroRow({
   );
 }
 
+const daysLogged = (workouts: { athlete: string; day: string }[], who: string) =>
+  workouts.filter((w) => w.athlete === who).map((w) => w.day);
+
 export function Overview({
   records,
   settings,
@@ -127,7 +130,13 @@ export function Overview({
       <Panel title="This week" icon={<Dumbbell className="size-4 text-muted-foreground" />}>
         <div className="grid grid-cols-3 gap-3">
           {(["hippos", "gators", "team"] as const).map((key) => {
-            const count = weekWorkouts.filter((w) => w.athlete === key).length;
+            // "Together" is the days you both logged something, not a third athlete.
+            const count =
+              key === "team"
+                ? [...new Set(daysLogged(weekWorkouts, "hippos"))].filter((day) =>
+                    daysLogged(weekWorkouts, "gators").includes(day),
+                  ).length
+                : weekWorkouts.filter((w) => w.athlete === key).length;
             const pct = Math.min(
               100,
               Math.round((count / settings.weeklyTarget) * 100),

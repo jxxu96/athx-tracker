@@ -174,7 +174,7 @@ export function Tracker({
         ) : tab === "today" ? (
           <Overview records={records} settings={settings} today={today} />
         ) : tab === "session" ? (
-          <WorkoutForm athlete={who} today={today} onSave={save} />
+          <WorkoutForm today={today} onSave={save} />
         ) : tab === "meal" ? (
           <MealForm
             athlete={who}

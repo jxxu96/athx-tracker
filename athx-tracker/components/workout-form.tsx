@@ -17,42 +17,60 @@ import {
   formatTime,
   parseTime,
   projectWorkout,
-  type Athlete,
   type Segment,
   type Workout,
 } from "@/lib/domain";
 
-type SegmentDraft = {
+type Side = "hippos" | "gators";
+const SIDES = ["hippos", "gators"] as const;
+
+/** What the session is made of, shared by both athletes. */
+type Station = {
   name: string;
   unit: Segment["unit"];
-  completed: string;
   target: string;
-  time: string;
+  load?: string;
 };
 
-type LiftDraft = { name: string; kg: string; reps: string };
+/** What one athlete actually did at one station. */
+type Entry = { completed: string; time: string };
+
+type LiftRow = {
+  name: string;
+  hippos: { kg: string; sets: string; reps: string };
+  gators: { kg: string; sets: string; reps: string };
+};
 
 const CATEGORIES = ["MetCon", "Strength", "Endurance", "Other"] as const;
 const UNITS = ["reps", "m", "cal", "rounds"] as const;
 
-const emptySegment = (): SegmentDraft => ({
+const blankEntry = (): Entry => ({ completed: "", time: "" });
+const blankLiftSide = () => ({ kg: "", sets: "", reps: "" });
+const blankLift = (): LiftRow => ({
   name: "",
-  unit: "reps",
-  completed: "",
-  target: "",
-  time: "",
+  hippos: blankLiftSide(),
+  gators: blankLiftSide(),
 });
 
-const metconDrafts = (): SegmentDraft[] =>
-  METCON.map((station) => ({
-    name: station.name,
-    unit: station.unit,
-    completed: "",
-    target: String(station.target),
-    time: "",
+const metconStations = (): Station[] =>
+  METCON.map((s) => ({
+    name: s.name,
+    unit: s.unit,
+    target: String(s.target),
+    load: s.load,
   }));
 
-/** Blank means zero, so an untouched station reads as work not performed. */
+const runStation = (): Station[] => [{ name: "Run", unit: "m", target: "" }];
+
+const stationsFor = (category: Workout["category"]): Station[] =>
+  category === "MetCon"
+    ? metconStations()
+    : category === "Endurance"
+      ? runStation()
+      : [];
+
+const entriesFor = (stations: Station[]) => stations.map(() => blankEntry());
+
 const num = (value: string) => (value.trim() === "" ? 0 : Number(value));
 const seconds = (value: string) => (value.trim() === "" ? 0 : parseTime(value));
 
@@ -78,138 +96,284 @@ export function Field({
   );
 }
 
+/** A tinted column so it is always obvious whose numbers these are. */
+function Column({ side, children }: { side: Side; children: React.ReactNode }) {
+  return (
+    <div
+      className="min-w-0 space-y-2 rounded-lg border p-2.5"
+      style={{ borderColor: `${ATHLETES[side].color}44` }}
+    >
+      <p
+        className="flex items-center gap-1.5 text-[11px] font-semibold"
+        style={{ color: ATHLETES[side].color }}
+      >
+        <span
+          className="size-2 rounded-full"
+          style={{ background: ATHLETES[side].color }}
+        />
+        {ATHLETES[side].name}
+      </p>
+      {children}
+    </div>
+  );
+}
+
+function Panel({
+  title,
+  note,
+  action,
+  children,
+}: {
+  title: string;
+  note?: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold">{title}</h3>
+          {note ? (
+            <p className="text-[11px] text-muted-foreground">{note}</p>
+          ) : null}
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
 export function WorkoutForm({
-  athlete,
   today,
   onSave,
 }: {
-  athlete: Athlete;
   today: string;
   onSave: (record: Workout) => Promise<void>;
 }) {
-  const [who, setWho] = useState<Athlete>(athlete);
   const [day, setDay] = useState(today);
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState<Workout["category"]>("MetCon");
   const [context, setContext] = useState<Workout["context"]>("pairs");
-  const [elapsed, setElapsed] = useState("");
+  const [stations, setStations] = useState<Station[]>(() => metconStations());
+  const [entries, setEntries] = useState<Record<Side, Entry[]>>(() => ({
+    hippos: entriesFor(metconStations()),
+    gators: entriesFor(metconStations()),
+  }));
+  const [elapsed, setElapsed] = useState<Record<Side, string>>({
+    hippos: "",
+    gators: "",
+  });
+  const [lifts, setLifts] = useState<LiftRow[]>([blankLift()]);
   const [goal, setGoal] = useState("");
   const [fatigue, setFatigue] = useState(10);
   const [transition, setTransition] = useState("");
   const [notes, setNotes] = useState("");
-  const [segments, setSegments] = useState<SegmentDraft[]>([]);
-  const [lifts, setLifts] = useState<LiftDraft[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const parsedSegments = useMemo<Segment[]>(
-    () =>
-      segments
-        .filter((s) => s.name.trim() !== "")
-        .map((s) => ({
-          name: s.name.trim(),
-          unit: s.unit,
-          completed: num(s.completed),
-          target: num(s.target),
-          seconds: seconds(s.time),
-        })),
-    [segments],
-  );
+  const usesStations = category !== "Strength";
+  const usesLifts = category === "Strength" || category === "Other";
+  const isRun = category === "Endurance";
 
-  const elapsedSeconds = seconds(elapsed);
-  const projection = useMemo(
-    () =>
-      projectWorkout(
-        parsedSegments,
-        elapsedSeconds,
-        fatigue,
-        num(transition),
+  /** Changing the category reshapes the session, so rebuild its stations. */
+  function changeCategory(next: Workout["category"]) {
+    setCategory(next);
+    const fresh = stationsFor(next);
+    setStations(fresh);
+    setEntries({ hippos: entriesFor(fresh), gators: entriesFor(fresh) });
+  }
+
+  function setEntry(side: Side, index: number, patch: Partial<Entry>) {
+    setEntries((current) => ({
+      ...current,
+      [side]: current[side].map((entry, i) =>
+        i === index ? { ...entry, ...patch } : entry,
       ),
-    [parsedSegments, elapsedSeconds, fatigue, transition],
-  );
+    }));
+  }
 
-  const stationTotal = parsedSegments.reduce((total, s) => total + s.seconds, 0);
-  const overrun =
-    Number.isFinite(elapsedSeconds) &&
-    elapsedSeconds > 0 &&
-    stationTotal > elapsedSeconds + 1;
-
-  function updateSegment(index: number, patch: Partial<SegmentDraft>) {
-    setSegments((current) =>
-      current.map((segment, i) => (i === index ? { ...segment, ...patch } : segment)),
+  function setStation(index: number, patch: Partial<Station>) {
+    setStations((current) =>
+      current.map((station, i) => (i === index ? { ...station, ...patch } : station)),
     );
   }
 
-  function validate() {
-    if (!title.trim()) return "Give the session a title.";
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return "Pick a valid date.";
-    if (!Number.isFinite(elapsedSeconds) || elapsedSeconds <= 0)
-      return "Enter the elapsed time as mm:ss, for example 24:30.";
-    if (elapsedSeconds > 86400) return "That elapsed time is too long.";
-    for (const segment of parsedSegments) {
+  function addStation() {
+    setStations((current) => [...current, { name: "", unit: "reps", target: "" }]);
+    setEntries((current) => ({
+      hippos: [...current.hippos, blankEntry()],
+      gators: [...current.gators, blankEntry()],
+    }));
+  }
+
+  function removeStation(index: number) {
+    setStations((current) => current.filter((_, i) => i !== index));
+    setEntries((current) => ({
+      hippos: current.hippos.filter((_, i) => i !== index),
+      gators: current.gators.filter((_, i) => i !== index),
+    }));
+  }
+
+  function setLift(index: number, side: Side, patch: Partial<LiftRow["hippos"]>) {
+    setLifts((current) =>
+      current.map((lift, i) =>
+        i === index ? { ...lift, [side]: { ...lift[side], ...patch } } : lift,
+      ),
+    );
+  }
+
+  /** A column counts as used once anything at all is typed into it. */
+  function used(side: Side) {
+    if (elapsed[side].trim() !== "") return true;
+    if (entries[side].some((e) => e.completed.trim() !== "" || e.time.trim() !== ""))
+      return true;
+    return lifts.some(
+      (lift) =>
+        lift.name.trim() !== "" &&
+        (lift[side].kg.trim() !== "" ||
+          lift[side].sets.trim() !== "" ||
+          lift[side].reps.trim() !== ""),
+    );
+  }
+
+  function segmentsFor(side: Side): Segment[] {
+    if (!usesStations) return [];
+    return stations
+      .map((station, index) => {
+        const entry = entries[side][index];
+        const completed = num(entry.completed);
+        // A run is measured, not chased: what you covered is the target.
+        const target = isRun ? completed : num(station.target);
+        return {
+          name: station.name.trim(),
+          unit: station.unit,
+          completed,
+          target,
+          seconds: seconds(entry.time),
+        };
+      })
+      .filter((segment) => segment.name !== "");
+  }
+
+  function liftsFor(side: Side) {
+    return lifts
+      .filter((lift) => lift.name.trim() !== "" && lift[side].kg.trim() !== "")
+      .map((lift) => ({
+        name: lift.name.trim(),
+        kg: Number(lift[side].kg),
+        sets: Math.round(num(lift[side].sets) || 1),
+        reps: Math.round(num(lift[side].reps) || 1),
+      }));
+  }
+
+  const projections = useMemo(
+    () =>
+      Object.fromEntries(
+        SIDES.map((side) => [
+          side,
+          projectWorkout(
+            segmentsFor(side),
+            seconds(elapsed[side]),
+            fatigue,
+            num(transition),
+          ),
+        ]),
+      ) as Record<Side, ReturnType<typeof projectWorkout>>,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stations, entries, elapsed, fatigue, transition, category],
+  );
+
+  function validateSide(side: Side) {
+    const who = ATHLETES[side].name;
+    const total = seconds(elapsed[side]);
+    if (!Number.isFinite(total) || total <= 0)
+      return `${who}: enter the elapsed time as mm:ss.`;
+    if (total > 86400) return `${who}: that elapsed time is too long.`;
+
+    const segments = segmentsFor(side);
+    for (const segment of segments) {
+      const where = `${who} · ${segment.name}`;
       if (!Number.isFinite(segment.seconds))
-        return `Station "${segment.name}": write the split as mm:ss.`;
+        return `${where}: write the time as mm:ss.`;
       if (!(segment.target > 0))
-        return `Station "${segment.name}": set a target above zero.`;
+        return isRun
+          ? `${where}: add the distance covered.`
+          : `${where}: set a target above zero.`;
       if (segment.completed > segment.target)
-        return `Station "${segment.name}": completed work is above the target.`;
+        return `${where}: completed work is above the target.`;
       if (segment.completed === 0 && segment.seconds > 0)
-        return `Station "${segment.name}": a split needs completed work to go with it.`;
+        return `${where}: a time needs completed work with it.`;
       if (segment.completed > 0 && segment.seconds <= 0)
-        return `Station "${segment.name}": measured work needs a split time.`;
+        return `${where}: measured work needs a time.`;
     }
-    if (overrun) return "Station splits add up to more than the elapsed time.";
-    const goalSeconds = goal.trim() === "" ? null : parseTime(goal);
-    if (goalSeconds !== null && (!Number.isFinite(goalSeconds) || goalSeconds <= 0))
-      return "Write the goal time as mm:ss, or leave it empty.";
+    if (segments.reduce((n, s) => n + s.seconds, 0) > total + 1)
+      return `${who}: the station times add up to more than the elapsed time.`;
+
     for (const lift of lifts) {
-      if (!lift.name.trim()) continue;
-      if (!(Number(lift.kg) > 0)) return `Lift "${lift.name}": add the load in kg.`;
-      if (!Number.isInteger(Number(lift.reps)) || Number(lift.reps) < 1)
-        return `Lift "${lift.name}": add whole reps.`;
+      if (lift.name.trim() === "") continue;
+      const entry = lift[side];
+      if (entry.kg.trim() === "") continue;
+      if (!(Number(entry.kg) > 0))
+        return `${who} · ${lift.name}: add the load in kg.`;
+      if (entry.sets.trim() !== "" && !(num(entry.sets) >= 1))
+        return `${who} · ${lift.name}: sets must be at least 1.`;
+      if (entry.reps.trim() !== "" && !(num(entry.reps) >= 1))
+        return `${who} · ${lift.name}: reps must be at least 1.`;
     }
     return "";
   }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    const problem = validate();
-    setError(problem);
-    if (problem) return;
+    const active = SIDES.filter(used);
 
-    const record: Workout = {
+    if (!title.trim()) return setError("Give the session a title.");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return setError("Pick a valid date.");
+    if (active.length === 0)
+      return setError("Fill in at least one athlete before saving.");
+
+    const goalSeconds = goal.trim() === "" ? null : parseTime(goal);
+    if (goalSeconds !== null && (!Number.isFinite(goalSeconds) || goalSeconds <= 0))
+      return setError("Write the goal time as mm:ss, or leave it empty.");
+
+    for (const side of active) {
+      const problem = validateSide(side);
+      if (problem) return setError(problem);
+    }
+    setError("");
+
+    const records: Workout[] = active.map((side) => ({
       id: newId(),
       kind: "workout",
-      athlete: who,
+      athlete: side,
       day,
       title: title.trim(),
       category,
-      seconds: elapsedSeconds,
+      seconds: seconds(elapsed[side]),
       notes: notes.trim(),
-      segments: parsedSegments,
+      segments: segmentsFor(side),
       fatigue,
       transition: num(transition),
-      goal: goal.trim() === "" ? null : parseTime(goal),
+      goal: goalSeconds,
       context,
-      lifts: lifts
-        .filter((lift) => lift.name.trim() !== "")
-        .map((lift) => ({
-          name: lift.name.trim(),
-          kg: Number(lift.kg),
-          reps: Number(lift.reps),
-        })),
-    };
+      lifts: liftsFor(side),
+    }));
 
     setSaving(true);
     try {
-      await onSave(record);
+      // Sequential: the second save should not race the first through SQLite.
+      for (const record of records) await onSave(record);
+      const fresh = stationsFor(category);
       setTitle("");
-      setElapsed("");
+      setElapsed({ hippos: "", gators: "" });
+      setStations(fresh);
+      setEntries({ hippos: entriesFor(fresh), gators: entriesFor(fresh) });
+      setLifts([blankLift()]);
       setGoal("");
       setTransition("");
       setNotes("");
-      setSegments([]);
-      setLifts([]);
     } finally {
       setSaving(false);
     }
@@ -219,18 +383,6 @@ export function WorkoutForm({
     <form onSubmit={submit} className="space-y-4 pb-4">
       <section className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Athlete">
-            <NativeSelect
-              value={who}
-              onChange={(event) => setWho(event.target.value as Athlete)}
-            >
-              {(["hippos", "gators", "team"] as const).map((key) => (
-                <NativeSelectOption key={key} value={key}>
-                  {ATHLETES[key].name}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </Field>
           <Field label="Date">
             <Input
               type="date"
@@ -238,32 +390,6 @@ export function WorkoutForm({
               max={today}
               onChange={(event) => setDay(event.target.value)}
             />
-          </Field>
-        </div>
-
-        <Field label="Session">
-          <Input
-            value={title}
-            maxLength={120}
-            placeholder="Full ATHX Lite simulation"
-            onChange={(event) => setTitle(event.target.value)}
-          />
-        </Field>
-
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Category">
-            <NativeSelect
-              value={category}
-              onChange={(event) =>
-                setCategory(event.target.value as Workout["category"])
-              }
-            >
-              {CATEGORIES.map((value) => (
-                <NativeSelectOption key={value} value={value}>
-                  {value}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
           </Field>
           <Field label="Format">
             <NativeSelect
@@ -277,15 +403,28 @@ export function WorkoutForm({
             </NativeSelect>
           </Field>
         </div>
-
+        <Field label="Session">
+          <Input
+            value={title}
+            maxLength={120}
+            placeholder="Full ATHX Lite simulation"
+            onChange={(event) => setTitle(event.target.value)}
+          />
+        </Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Elapsed time" hint="mm:ss">
-            <Input
-              value={elapsed}
-              inputMode="numeric"
-              placeholder="24:30"
-              onChange={(event) => setElapsed(event.target.value)}
-            />
+          <Field label="Type">
+            <NativeSelect
+              value={category}
+              onChange={(event) =>
+                changeCategory(event.target.value as Workout["category"])
+              }
+            >
+              {CATEGORIES.map((value) => (
+                <NativeSelectOption key={value} value={value}>
+                  {value}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
           </Field>
           <Field label="Goal time" hint="Optional">
             <Input
@@ -298,260 +437,312 @@ export function WorkoutForm({
         </div>
       </section>
 
-      <section className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h3 className="text-sm font-semibold">Stations</h3>
-            <p className="text-[11px] text-muted-foreground">
-              Optional. Add splits to see a full-workout scenario.
-            </p>
-          </div>
-          <div className="flex gap-2">
-            {segments.length === 0 ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setSegments(metconDrafts())}
-              >
-                ATHX stations
+      <Panel
+        title="Elapsed time"
+        note="Fill one side or both. An empty side is not saved."
+      >
+        <div className="grid grid-cols-2 gap-2.5">
+          {SIDES.map((side) => (
+            <Column key={side} side={side}>
+              <Input
+                value={elapsed[side]}
+                inputMode="numeric"
+                placeholder="24:30"
+                aria-label={`${ATHLETES[side].name} elapsed time`}
+                onChange={(event) =>
+                  setElapsed((current) => ({
+                    ...current,
+                    [side]: event.target.value,
+                  }))
+                }
+              />
+            </Column>
+          ))}
+        </div>
+      </Panel>
+
+      {usesStations ? (
+        <Panel
+          title={isRun ? "Run" : "Stations"}
+          note={
+            isRun
+              ? "Distance covered and the time it took."
+              : "What each of you actually completed, station by station."
+          }
+          action={
+            category === "Other" ? (
+              <Button type="button" variant="outline" size="sm" onClick={addStation}>
+                <Plus /> Station
               </Button>
-            ) : null}
+            ) : null
+          }
+        >
+          {stations.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              No stations yet — add one to record what you did.
+            </p>
+          ) : (
+            <ul className="space-y-3">
+              {stations.map((station, index) => (
+                <li key={index} className="rounded-xl border bg-background p-3">
+                  {category === "MetCon" ? (
+                    <div className="mb-2.5">
+                      <p className="text-sm font-medium">
+                        {index + 1}. {station.name}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Target {station.target} {station.unit}
+                        {station.load ? ` · ${station.load}` : ""}
+                      </p>
+                    </div>
+                  ) : isRun ? (
+                    <p className="mb-2.5 text-sm font-medium">Distance and time</p>
+                  ) : (
+                    <div className="mb-2.5 flex items-end gap-2">
+                      <Field label="Station" className="flex-1">
+                        <Input
+                          value={station.name}
+                          maxLength={100}
+                          placeholder="Station name"
+                          className="h-8"
+                          onChange={(event) =>
+                            setStation(index, { name: event.target.value })
+                          }
+                        />
+                      </Field>
+                      <Field label="Target" className="w-20">
+                        <Input
+                          value={station.target}
+                          inputMode="decimal"
+                          className="h-8"
+                          onChange={(event) =>
+                            setStation(index, { target: event.target.value })
+                          }
+                        />
+                      </Field>
+                      <Field label="Unit" className="w-24">
+                        <NativeSelect
+                          size="sm"
+                          value={station.unit}
+                          onChange={(event) =>
+                            setStation(index, {
+                              unit: event.target.value as Segment["unit"],
+                            })
+                          }
+                        >
+                          {UNITS.map((unit) => (
+                            <NativeSelectOption key={unit} value={unit}>
+                              {unit}
+                            </NativeSelectOption>
+                          ))}
+                        </NativeSelect>
+                      </Field>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`Remove station ${index + 1}`}
+                        onClick={() => removeStation(index)}
+                      >
+                        <X />
+                      </Button>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {SIDES.map((side) => (
+                      <Column key={side} side={side}>
+                        <Field
+                          label={isRun ? "Distance (m)" : `Done (${station.unit})`}
+                        >
+                          <Input
+                            value={entries[side][index]?.completed ?? ""}
+                            inputMode="decimal"
+                            className="h-8"
+                            onChange={(event) =>
+                              setEntry(side, index, {
+                                completed: event.target.value,
+                              })
+                            }
+                          />
+                        </Field>
+                        <Field label="Time" hint="mm:ss">
+                          <Input
+                            value={entries[side][index]?.time ?? ""}
+                            inputMode="numeric"
+                            placeholder="3:20"
+                            className="h-8"
+                            onChange={(event) =>
+                              setEntry(side, index, { time: event.target.value })
+                            }
+                          />
+                        </Field>
+                      </Column>
+                    ))}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+      ) : null}
+
+      {usesLifts ? (
+        <Panel
+          title="Lifts"
+          note="Load, sets and reps for each of you."
+          action={
             <Button
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setSegments((current) => [...current, emptySegment()])}
+              onClick={() => setLifts((current) => [...current, blankLift()])}
             >
-              <Plus /> Station
+              <Plus /> Lift
             </Button>
-          </div>
-        </div>
-
-        {segments.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            No stations yet — the session saves with its elapsed time alone.
-          </p>
-        ) : (
+          }
+        >
           <ul className="space-y-3">
-            {segments.map((segment, index) => (
+            {lifts.map((lift, index) => (
               <li key={index} className="rounded-xl border bg-background p-3">
-                <div className="mb-2 flex items-center gap-2">
-                  <Input
-                    value={segment.name}
-                    maxLength={100}
-                    placeholder="Station name"
-                    className="h-8"
-                    onChange={(event) =>
-                      updateSegment(index, { name: event.target.value })
-                    }
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={`Remove station ${index + 1}`}
-                    onClick={() =>
-                      setSegments((current) => current.filter((_, i) => i !== index))
-                    }
-                  >
-                    <X />
-                  </Button>
-                </div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  <Field label="Done">
+                <div className="mb-2.5 flex items-end gap-2">
+                  <Field label="Lift" className="flex-1">
                     <Input
-                      value={segment.completed}
-                      inputMode="decimal"
+                      value={lift.name}
+                      maxLength={80}
+                      placeholder="Back squat"
                       className="h-8"
                       onChange={(event) =>
-                        updateSegment(index, { completed: event.target.value })
+                        setLifts((current) =>
+                          current.map((row, i) =>
+                            i === index ? { ...row, name: event.target.value } : row,
+                          ),
+                        )
                       }
                     />
                   </Field>
-                  <Field label="Target">
-                    <Input
-                      value={segment.target}
-                      inputMode="decimal"
-                      className="h-8"
-                      onChange={(event) =>
-                        updateSegment(index, { target: event.target.value })
-                      }
-                    />
-                  </Field>
-                  <Field label="Unit">
-                    <NativeSelect
-                      size="sm"
-                      value={segment.unit}
-                      onChange={(event) =>
-                        updateSegment(index, {
-                          unit: event.target.value as Segment["unit"],
-                        })
+                  {lifts.length > 1 ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={`Remove lift ${index + 1}`}
+                      onClick={() =>
+                        setLifts((current) => current.filter((_, i) => i !== index))
                       }
                     >
-                      {UNITS.map((unit) => (
-                        <NativeSelectOption key={unit} value={unit}>
-                          {unit}
-                        </NativeSelectOption>
-                      ))}
-                    </NativeSelect>
-                  </Field>
-                  <Field label="Split">
-                    <Input
-                      value={segment.time}
-                      inputMode="numeric"
-                      placeholder="3:20"
-                      className="h-8"
-                      onChange={(event) =>
-                        updateSegment(index, { time: event.target.value })
-                      }
-                    />
-                  </Field>
+                      <X />
+                    </Button>
+                  ) : null}
+                </div>
+                <div className="grid grid-cols-2 gap-2.5">
+                  {SIDES.map((side) => (
+                    <Column key={side} side={side}>
+                      <Field label="kg">
+                        <Input
+                          value={lift[side].kg}
+                          inputMode="decimal"
+                          className="h-8"
+                          onChange={(event) =>
+                            setLift(index, side, { kg: event.target.value })
+                          }
+                        />
+                      </Field>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Field label="Sets">
+                          <Input
+                            value={lift[side].sets}
+                            inputMode="numeric"
+                            placeholder="3"
+                            className="h-8"
+                            onChange={(event) =>
+                              setLift(index, side, { sets: event.target.value })
+                            }
+                          />
+                        </Field>
+                        <Field label="Reps">
+                          <Input
+                            value={lift[side].reps}
+                            inputMode="numeric"
+                            placeholder="5"
+                            className="h-8"
+                            onChange={(event) =>
+                              setLift(index, side, { reps: event.target.value })
+                            }
+                          />
+                        </Field>
+                      </div>
+                    </Column>
+                  ))}
                 </div>
               </li>
             ))}
           </ul>
-        )}
-      </section>
+        </Panel>
+      ) : null}
 
-      <section className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
-        <div>
-          <div className="mb-1.5 flex items-baseline justify-between">
-            <Label className="text-xs font-medium text-muted-foreground">
-              Fatigue allowance on unperformed work
-            </Label>
-            <span className="text-xs font-medium tabular-nums">{fatigue}%</span>
+      {usesStations && !isRun ? (
+        <Panel title="Full-workout scenario">
+          <div>
+            <div className="mb-1.5 flex items-baseline justify-between">
+              <Label className="text-xs font-medium text-muted-foreground">
+                Fatigue allowance on unperformed work
+              </Label>
+              <span className="text-xs font-medium tabular-nums">{fatigue}%</span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={50}
+              step={1}
+              value={fatigue}
+              onChange={(event) => setFatigue(Number(event.target.value))}
+              className="h-6 w-full accent-foreground"
+              aria-label="Fatigue allowance percent"
+            />
           </div>
-          <input
-            type="range"
-            min={0}
-            max={50}
-            step={1}
-            value={fatigue}
-            onChange={(event) => setFatigue(Number(event.target.value))}
-            className="h-6 w-full accent-foreground"
-            aria-label="Fatigue allowance percent"
-          />
-        </div>
-        <Field label="Rest still to come" hint="Seconds of transition left in the workout">
-          <Input
-            value={transition}
-            inputMode="numeric"
-            placeholder="0"
-            onChange={(event) => setTransition(event.target.value)}
-          />
-        </Field>
-
-        {projection ? (
-          <div className="rounded-xl bg-muted/60 p-3 text-xs">
-            <p className="font-medium">
-              {projection.partial ? "Full-workout scenario" : "Workout time"}{" "}
-              {formatTime(projection.estimate)}
-              {projection.partial ? (
-                <span className="font-normal text-muted-foreground">
-                  {" "}
-                  (range {formatTime(projection.linear)}–
-                  {formatTime(projection.upper)})
-                </span>
-              ) : null}
-            </p>
-            <p className="mt-1 text-muted-foreground">
-              {projection.coverage}% of the target work was performed.
-              {projection.partial
-                ? " Unperformed work is carried at your own station pace plus the allowance above — a scenario, not a prediction."
-                : " Every station was completed, so this is the measured time."}
-            </p>
+          <Field label="Rest still to come" hint="Seconds of transition left">
+            <Input
+              value={transition}
+              inputMode="numeric"
+              placeholder="0"
+              onChange={(event) => setTransition(event.target.value)}
+            />
+          </Field>
+          <div className="grid grid-cols-2 gap-2.5">
+            {SIDES.map((side) => {
+              const projection = projections[side];
+              return (
+                <Column key={side} side={side}>
+                  {projection ? (
+                    <div className="text-xs">
+                      <p className="font-medium">
+                        {projection.partial ? "Scenario " : "Time "}
+                        {formatTime(projection.estimate)}
+                      </p>
+                      {projection.partial ? (
+                        <p className="text-muted-foreground">
+                          {formatTime(projection.linear)}–
+                          {formatTime(projection.upper)} · {projection.coverage}%
+                          performed
+                        </p>
+                      ) : (
+                        <p className="text-muted-foreground">
+                          Every station completed.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Appears once every station has completed work with a time.
+                    </p>
+                  )}
+                </Column>
+              );
+            })}
           </div>
-        ) : parsedSegments.length > 0 ? (
-          <p className="text-xs text-muted-foreground">
-            A scenario appears once every station has some completed work with a
-            split time, and the splits fit inside the elapsed time. An unperformed
-            station cannot borrow another movement&apos;s pace.
-          </p>
-        ) : null}
-      </section>
-
-      <section className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold">Lifts</h3>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() =>
-              setLifts((current) => [...current, { name: "", kg: "", reps: "" }])
-            }
-          >
-            <Plus /> Lift
-          </Button>
-        </div>
-        {lifts.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            Add working sets if this was a strength day.
-          </p>
-        ) : (
-          <ul className="space-y-2">
-            {lifts.map((lift, index) => (
-              <li key={index} className="flex items-end gap-2">
-                <Field label="Lift" className="flex-1">
-                  <Input
-                    value={lift.name}
-                    maxLength={80}
-                    placeholder="Back squat"
-                    className="h-8"
-                    onChange={(event) =>
-                      setLifts((current) =>
-                        current.map((item, i) =>
-                          i === index ? { ...item, name: event.target.value } : item,
-                        ),
-                      )
-                    }
-                  />
-                </Field>
-                <Field label="kg" className="w-20">
-                  <Input
-                    value={lift.kg}
-                    inputMode="decimal"
-                    className="h-8"
-                    onChange={(event) =>
-                      setLifts((current) =>
-                        current.map((item, i) =>
-                          i === index ? { ...item, kg: event.target.value } : item,
-                        ),
-                      )
-                    }
-                  />
-                </Field>
-                <Field label="Reps" className="w-16">
-                  <Input
-                    value={lift.reps}
-                    inputMode="numeric"
-                    className="h-8"
-                    onChange={(event) =>
-                      setLifts((current) =>
-                        current.map((item, i) =>
-                          i === index ? { ...item, reps: event.target.value } : item,
-                        ),
-                      )
-                    }
-                  />
-                </Field>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`Remove lift ${index + 1}`}
-                  onClick={() =>
-                    setLifts((current) => current.filter((_, i) => i !== index))
-                  }
-                >
-                  <X />
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+        </Panel>
+      ) : null}
 
       <section className="rounded-2xl border bg-card p-4 sm:p-5">
         <Field label="Notes">

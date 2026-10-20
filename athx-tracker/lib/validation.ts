@@ -20,7 +20,7 @@ export const workoutSchema = z.object({
     .refine(s => s.completed === 0 ? s.seconds === 0 : s.seconds > 0, "Measured work needs a time")).max(30),
   fatigue: finite.max(50), transition: finite.max(3600), goal: finite.positive().max(86400).nullable(),
   context: z.enum(["solo", "pairs"]),
-  lifts: z.array(z.object({ name: z.string().min(1).max(80), kg: finite.positive().max(1000), reps: z.number().int().min(1).max(100) }).strict()).max(30),
+  lifts: z.array(z.object({ name: z.string().min(1).max(80), kg: finite.positive().max(1000), sets: z.number().int().min(1).max(50), reps: z.number().int().min(1).max(100) }).strict()).max(30),
 }).strict().refine(w => w.segments.reduce((n,s) => n+s.seconds,0) <= w.seconds + 1, "Station times exceed elapsed workout time");
 export const mealSchema = z.object({
   ...base, kind: z.literal("meal"), athlete: z.enum(["hippos", "gators"]),
