@@ -15,7 +15,10 @@ services:
       # The journal is one SQLite file. Back this volume up and you have everything.
       - athx-data:/data
     ports:
-      - "${ATHX_PORT:-3000}:3000"
+      # Bound to loopback, so the only way in is `tailscale serve` on the host:
+      # not the LAN, not the internet. Set ATHX_BIND=0.0.0.0 if Tailscale runs
+      # in a container rather than on the host, or to reach it from the LAN.
+      - "${ATHX_BIND:-127.0.0.1}:${ATHX_PORT:-3000}:3000"
 
 volumes:
   athx-data:
