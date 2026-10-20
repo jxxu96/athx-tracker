@@ -80,6 +80,7 @@ const GLOBAL_MAX_FAILURES = 20;
 const WINDOW_MS = 15 * 60 * 1000;
 const LOCK_MS = 15 * 60 * 1000;
 const GLOBAL_KEY = "__site__";
+const UNKNOWN_KEY = "unknown";
 
 /**
  * Identify the caller as precisely as the proxy in front allows. With no proxy
@@ -92,7 +93,7 @@ export async function clientKey() {
     requestHeaders.get("x-real-ip") ??
     requestHeaders.get("x-forwarded-for")?.split(",")[0] ??
     "";
-  return candidate.trim() || "unknown";
+  return candidate.trim() || UNKNOWN_KEY;
 }
 
 function lockRemaining(id: string) {
@@ -129,8 +130,14 @@ export function recordFailure(client: string) {
       return lockedUntil;
     };
 
+    // When no proxy header identifies the caller, everyone shares one bucket.
+    // Applying the strict per-caller limit there would let a single bot lock the
+    // owners out, so the shared bucket gets the looser global threshold instead.
     const locked = Math.max(
-      bump(client, CLIENT_MAX_FAILURES),
+      bump(
+        client,
+        client === UNKNOWN_KEY ? GLOBAL_MAX_FAILURES : CLIENT_MAX_FAILURES,
+      ),
       bump(GLOBAL_KEY, GLOBAL_MAX_FAILURES),
     );
     return locked ? Math.ceil((locked - now) / 1000) : 0;

@@ -76,8 +76,13 @@ keeps working throughout a lockout, so neither tier can shut you out of your own
 journal. A correct passphrase clears both counters, and both expire on their own.
 
 Callers are identified by `cf-connecting-ip`, `x-real-ip` or `x-forwarded-for`,
-in that order. With no proxy setting those headers every caller shares one bucket,
-which is the other reason the global tier is not set to five.
+in that order. When none of those headers is present every caller shares a single
+bucket, and that shared bucket is held to the looser global threshold rather than
+five, so one bot cannot lock the owners out through it.
+
+Worth checking once a new proxy is in front: if sign-ins from different devices
+share a lockout, the proxy is not passing a client IP. Tailscale Funnel in
+particular does not document whether it forwards one.
 
 **Serve it over HTTPS.** The passphrase is posted in a form, and over plain HTTP on
 an untrusted network it travels in the clear. On a tailnet, `tailscale serve` puts a
