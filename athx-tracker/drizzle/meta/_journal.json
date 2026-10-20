@@ -8,6 +8,13 @@
       "when": 1792503295778,
       "tag": "0000_short_lilandra",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1792531047337,
+      "tag": "0001_dry_blink",
+      "breakpoints": true
     }
   ]
 }

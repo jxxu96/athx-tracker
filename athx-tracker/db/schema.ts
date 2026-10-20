@@ -17,3 +17,11 @@ export const limits = sqliteTable("estimate_limits", {
   id: text("id").primaryKey(),
   count: integer("count").notNull().default(0),
 });
+
+/** Failed sign-in attempts per client, so a public deployment cannot be brute forced. */
+export const loginAttempts = sqliteTable("login_attempts", {
+  id: text("id").primaryKey(),
+  count: integer("count").notNull().default(0),
+  windowStart: integer("window_start").notNull().default(0),
+  lockedUntil: integer("locked_until").notNull().default(0),
+});

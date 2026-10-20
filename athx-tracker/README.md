@@ -59,6 +59,26 @@ whether a visitor is one of the two of you. One shared passphrase answers it.
 - The cookie is marked `Secure` only when the request arrived over HTTPS, so the
   app still works over plain HTTP on a private network.
 
+### Lockout
+
+Failed sign-ins are counted in the database, in two tiers:
+
+- **Five failures from one caller** in 15 minutes locks that caller out for 15 minutes.
+- **Twenty failures across all callers** in the same window locks new sign-ins
+  site-wide for 15 minutes.
+
+The global tier is deliberately looser than the per-caller one. A hard site-wide
+lock at five failures would let any passing bot lock the owners out by typing five
+wrong passwords, which on a public URL would happen constantly.
+
+Both tiers gate only *new* sign-ins. A phone that already holds a session cookie
+keeps working throughout a lockout, so neither tier can shut you out of your own
+journal. A correct passphrase clears both counters, and both expire on their own.
+
+Callers are identified by `cf-connecting-ip`, `x-real-ip` or `x-forwarded-for`,
+in that order. With no proxy setting those headers every caller shares one bucket,
+which is the other reason the global tier is not set to five.
+
 **Serve it over HTTPS.** The passphrase is posted in a form, and over plain HTTP on
 an untrusted network it travels in the clear. On a tailnet, `tailscale serve` puts a
 real certificate in front of the container for free — see `tailscale serve --help`
