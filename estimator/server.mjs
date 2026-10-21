@@ -11,21 +11,78 @@
  */
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
+
+const here = dirname(fileURLToPath(import.meta.url));
+
+/** A .env beside this file, so autostart does not need a wall of variables. */
+function loadEnvFile() {
+  const path = join(here, ".env");
+  if (!existsSync(path)) return false;
+  for (const line of readFileSync(path, "utf8").split(/\r?\n/)) {
+    const match = /^\s*([A-Za-z0-9_]+)\s*=\s*(.*)$/.exec(line);
+    if (!match || line.trim().startsWith("#")) continue;
+    const [, key, raw] = match;
+    // A real environment variable always wins over the file.
+    if (process.env[key] !== undefined) continue;
+    let value = raw.trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    )
+      value = value.slice(1, -1);
+    process.env[key] = value;
+  }
+  return true;
+}
+const usedEnvFile = loadEnvFile();
+
+/** Look where each CLI installs itself before giving up. */
+function findBinary(explicit, candidates) {
+  if (explicit) return explicit;
+  for (const candidate of candidates) if (existsSync(candidate)) return candidate;
+  return "";
+}
+
+const home = homedir();
+const GROK_BIN = findBinary(process.env.GROK_BIN, [
+  join(home, ".grok", "bin", "grok.exe"),
+  join(home, ".grok", "bin", "grok"),
+  join(home, ".local", "bin", "grok"),
+]);
+const CLAUDE_BIN = findBinary(process.env.CLAUDE_BIN, [
+  join(home, ".local", "bin", "claude.exe"),
+  join(home, ".local", "bin", "claude"),
+  join(home, ".claude", "local", "claude"),
+]);
 
 const PORT = Number(process.env.ESTIMATOR_PORT ?? 8787);
 const HOST = process.env.ESTIMATOR_HOST ?? "127.0.0.1";
 const TOKEN = process.env.ESTIMATOR_TOKEN ?? "";
-const ORDER = (process.env.ESTIMATOR_ORDER ?? "grok,claude")
+const CLAUDE_MODEL = process.env.CLAUDE_MODEL ?? "claude-haiku-5-5";
+
+// The app aborts its request after 45s. Finish inside that, or the caller gives
+// up while a provider is still thinking and nobody learns anything.
+const BUDGET_MS = Number(process.env.ESTIMATOR_BUDGET_MS ?? 40000);
+const PER_PROVIDER_MS = Number(process.env.ESTIMATOR_TIMEOUT_MS ?? 35000);
+// Time held back so a fallback still gets a turn after a slow first provider.
+const RESERVE_MS = Number(process.env.ESTIMATOR_RESERVE_MS ?? 9000);
+
+// Claude on Haiku answers in about 7s against Grok at about 32s, so it leads:
+// it is lighter on your plan, faster, and leaves the fallback room inside the
+// budget. ESTIMATOR_ORDER=grok,claude puts it back the other way.
+const ORDER = (process.env.ESTIMATOR_ORDER ?? "claude,grok")
   .split(",")
   .map((name) => name.trim().toLowerCase())
   .filter(Boolean);
-const GROK_BIN = process.env.GROK_BIN ?? "";
-const CLAUDE_BIN = process.env.CLAUDE_BIN ?? "";
-const CLAUDE_MODEL = process.env.CLAUDE_MODEL ?? "claude-haiku-5-5";
-const TIMEOUT_MS = Number(process.env.ESTIMATOR_TIMEOUT_MS ?? 90000);
 
 if (!TOKEN || TOKEN.length < 16) {
-  console.error("ESTIMATOR_TOKEN must be set to at least 16 characters.");
+  console.error(
+    "ESTIMATOR_TOKEN must be set to at least 16 characters (environment or estimator/.env).",
+  );
   process.exit(1);
 }
 
@@ -61,7 +118,7 @@ function childEnv() {
   return env;
 }
 
-function run(bin, args) {
+function run(bin, args, timeoutMs) {
   return new Promise((resolve) => {
     // stdin ignored: the CLIs otherwise wait three seconds for piped input.
     const child = spawn(bin, args, {
@@ -71,7 +128,11 @@ function run(bin, args) {
     });
     let out = "";
     let err = "";
-    const timer = setTimeout(() => child.kill(), TIMEOUT_MS);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+    }, timeoutMs);
     child.stdout.on("data", (chunk) => {
       out += chunk;
     });
@@ -80,11 +141,11 @@ function run(bin, args) {
     });
     child.on("error", (error) => {
       clearTimeout(timer);
-      resolve({ code: -1, out: "", err: String(error) });
+      resolve({ code: -1, out: "", err: String(error), timedOut });
     });
     child.on("close", (code) => {
       clearTimeout(timer);
-      resolve({ code, out, err });
+      resolve({ code, out, err, timedOut });
     });
   });
 }
@@ -133,7 +194,7 @@ const PROVIDERS = {
     bin: () => GROK_BIN,
     args: (description) => [
       "--cwd",
-      process.cwd(),
+      here,
       "--tools",
       "",
       "--disable-web-search",
@@ -173,25 +234,45 @@ const PROVIDERS = {
   },
 };
 
+const configured = () => ORDER.filter((name) => PROVIDERS[name]?.bin());
+
 async function estimate(description) {
+  const deadline = Date.now() + BUDGET_MS;
   const tried = [];
-  for (const name of ORDER) {
+
+  for (const [index, name] of ORDER.entries()) {
     const provider = PROVIDERS[name];
     if (!provider) continue;
     const bin = provider.bin();
     if (!bin) {
-      tried.push(`${name}: no binary configured`);
+      tried.push(`${name}: no binary found`);
       continue;
     }
+
+    // Hold time back for whoever is next, so a slow leader cannot eat the lot.
+    const remaining = deadline - Date.now();
+    const isLast = index === ORDER.length - 1;
+    const slice = Math.min(
+      PER_PROVIDER_MS,
+      isLast ? remaining : remaining - RESERVE_MS,
+    );
+    if (slice < 4000) {
+      tried.push(`${name}: skipped, out of time`);
+      continue;
+    }
+
     const started = Date.now();
-    const { code, out, err } = await run(bin, provider.args(description));
+    const { code, out, err, timedOut } = await run(bin, provider.args(description), slice);
     const value = clean(structured(out));
     if (value) {
       console.log(`[estimator] ${name} answered in ${Date.now() - started}ms`);
       return { estimate: value, provider: name };
     }
-    tried.push(`${name}: exit ${code} ${(err || out).slice(0, 160).trim()}`);
-    console.warn(`[estimator] ${name} failed, trying the next one`);
+    const why = timedOut
+      ? `timed out after ${slice}ms`
+      : `exit ${code} ${(err || out).slice(0, 160).trim()}`;
+    tried.push(`${name}: ${why}`);
+    console.warn(`[estimator] ${name} failed (${why}), trying the next one`);
   }
   return { error: tried.join(" | ") || "no providers configured" };
 }
@@ -206,15 +287,23 @@ function send(response, status, body) {
   response.end(payload);
 }
 
+const authorised = (request) =>
+  (request.headers.authorization ?? "") === `Bearer ${TOKEN}`;
+
 const server = createServer((request, response) => {
-  if (request.method === "GET" && request.url === "/health")
-    return send(response, 200, { ok: true, order: ORDER });
+  const path = (request.url ?? "/").split("?")[0];
+
+  if (!authorised(request)) return send(response, 401, { error: "Unauthorized" });
+
+  if (request.method === "GET" && path === "/health")
+    return send(response, 200, {
+      ok: true,
+      order: configured(),
+      model: CLAUDE_MODEL,
+      budgetMs: BUDGET_MS,
+    });
 
   if (request.method !== "POST") return send(response, 405, { error: "POST only" });
-
-  const header = request.headers.authorization ?? "";
-  if (header !== `Bearer ${TOKEN}`)
-    return send(response, 401, { error: "Unauthorized" });
 
   let body = "";
   request.on("data", (chunk) => {
@@ -242,9 +331,13 @@ const server = createServer((request, response) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`[estimator] listening on http://${HOST}:${PORT}`);
+  if (usedEnvFile) console.log("[estimator] config: estimator/.env");
   console.log(`[estimator] provider order: ${ORDER.join(" then ")}`);
-  console.log(`[estimator] grok: ${GROK_BIN || "not configured"}`);
-  console.log(`[estimator] claude: ${CLAUDE_BIN || "not configured"} (${CLAUDE_MODEL})`);
+  console.log(`[estimator] grok: ${GROK_BIN || "not found"}`);
+  console.log(`[estimator] claude: ${CLAUDE_BIN || "not found"} (${CLAUDE_MODEL})`);
+  console.log(
+    `[estimator] budget ${BUDGET_MS}ms total, ${PER_PROVIDER_MS}ms per provider, ${RESERVE_MS}ms held for the fallback`,
+  );
 
   const keys = Object.keys(process.env).filter((key) => API_KEY_VARS.test(key));
   console.log(
@@ -255,4 +348,6 @@ server.listen(PORT, HOST, () => {
   console.log(
     "[estimator] any cost a CLI reports is a list-price equivalent, not a charge on a subscription",
   );
+  if (!configured().length)
+    console.error("[estimator] WARNING: no CLI found. Set GROK_BIN or CLAUDE_BIN.");
 });

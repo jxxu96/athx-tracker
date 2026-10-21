@@ -34,3 +34,10 @@ and tailnet-only access; see `tailscale serve --help` for your version. Set
 `ATHX_BIND=0.0.0.0` if Tailscale runs in a container instead of on the host.
 
 A Next.js app on Node, with SQLite for storage and one shared passphrase for access.
+
+## Meal estimates
+
+[`estimator/`](estimator/) is an optional service that runs on your own machine
+and estimates meal macros using the Grok and Claude CLIs you are already
+subscribed to, rather than a metered API key. The app works without it; macros
+are just typed in by hand. See its [README](estimator/README.md).

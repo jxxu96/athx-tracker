@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/workout-form";
+import { api, message } from "@/lib/client";
 import {
   ATHLETES,
   type Macros,
@@ -45,6 +46,20 @@ export function SettingsForm({
   });
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [probe, setProbe] = useState<{ status: string; detail: string } | null>(null);
+
+  async function testConnection() {
+    setTesting(true);
+    setProbe(null);
+    try {
+      setProbe(await api<{ status: string; detail: string }>("/api/estimate"));
+    } catch (problem) {
+      setProbe({ status: "error", detail: message(problem) });
+    } finally {
+      setTesting(false);
+    }
+  }
 
   function validate() {
     if (!eventName.trim()) return "Name the event.";
@@ -163,13 +178,33 @@ export function SettingsForm({
       </Button>
 
       <section className="space-y-3 rounded-2xl border bg-card p-4 text-xs text-muted-foreground sm:p-5">
-        <p>
-          Meal estimates:{" "}
-          <span className="font-medium text-foreground">
-            {grokReady ? "Grok connected" : "not connected"}
-          </span>
-          . {grokReady ? "" : "Macros can still be entered by hand."}
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p>
+            Meal estimates:{" "}
+            <span className="font-medium text-foreground">
+              {grokReady ? "configured" : "not configured"}
+            </span>
+            {grokReady ? "" : ". Macros are entered by hand."}
+          </p>
+          {grokReady ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              disabled={testing}
+              onClick={testConnection}
+            >
+              {testing ? "Testing…" : "Test"}
+            </Button>
+          ) : null}
+        </div>
+        {probe ? (
+          <p
+            className={probe.status === "ready" ? "text-foreground" : "text-destructive"}
+          >
+            {probe.detail}
+          </p>
+        ) : null}
         <p>
           Everything you log is shared between the two of you and stored with this
           site.
