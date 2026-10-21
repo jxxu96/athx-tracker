@@ -8,7 +8,15 @@ services:
       # The shared passphrase both of you type to open the journal.
       # Changing it signs every device out.
       APP_PASSPHRASE: ${APP_PASSPHRASE:?set APP_PASSPHRASE in your stack environment}
-      # Optional: enables Grok macro estimates. Leave unset to enter macros by hand.
+      # Optional: enables macro estimates. Leave all four unset to enter macros
+      # by hand. A variable set on the stack but absent here never reaches the
+      # container, so every one the app reads has to be listed.
+      #
+      # The estimator sidecar on your own machine, which uses your subscription
+      # CLIs rather than a metered API key.
+      GROK_GATEWAY_URL: ${GROK_GATEWAY_URL:-}
+      GROK_GATEWAY_TOKEN: ${GROK_GATEWAY_TOKEN:-}
+      # Or the x.ai API directly, which is billed per token.
       XAI_API_KEY: ${XAI_API_KEY:-}
       XAI_MODEL: ${XAI_MODEL:-}
     volumes:
