@@ -11,6 +11,34 @@ const estimateSchema = macroSchema.extend({
   confidence: z.enum(["low", "medium", "high"]),
 });
 
+/**
+ * A gateway must be HTTPS on the open internet, but plain HTTP is fine when the
+ * host is on a private network or a tailnet, where the transport is already
+ * encrypted and the estimator is not publicly reachable.
+ */
+function gatewayAllowed(raw: string) {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (url.protocol === "https:") return true;
+  if (url.protocol !== "http:") return false;
+  const host = url.hostname;
+  return (
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "::1" ||
+    /^10\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+    // Tailscale hands out 100.64.0.0/10.
+    /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(host) ||
+    host.endsWith(".ts.net")
+  );
+}
+
 /** Counts in the database, not in memory, so a restart cannot reset the budget. */
 function claimEstimate(bucket: string) {
   const sqlite = database();
@@ -53,8 +81,11 @@ export async function POST(request: Request) {
       );
 
     const gateway = Boolean(config.GROK_GATEWAY_URL && config.GROK_GATEWAY_TOKEN);
-    if (gateway && !config.GROK_GATEWAY_URL?.startsWith("https://"))
-      return json({ error: "The food connection needs HTTPS." }, 503);
+    if (gateway && !gatewayAllowed(config.GROK_GATEWAY_URL!))
+      return json(
+        { error: "The food connection must be HTTPS, or on your private network." },
+        503,
+      );
 
     const response = await fetch(
       gateway ? config.GROK_GATEWAY_URL! : "https://api.x.ai/v1/responses",
