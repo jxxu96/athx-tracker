@@ -20,10 +20,13 @@ RUN npm run build
 
 FROM node:22-slim AS runtime
 WORKDIR /app
+# Passed by CI so /api/version can report which commit is running.
+ARG BUILD_SHA=unknown
 ENV NODE_ENV=production \
   NEXT_TELEMETRY_DISABLED=1 \
   PORT=3000 \
-  DATABASE_FILE=/data/athx.db
+  DATABASE_FILE=/data/athx.db \
+  BUILD_SHA=${BUILD_SHA}
 
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/.next ./.next
