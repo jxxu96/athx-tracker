@@ -1,7 +1,9 @@
 services:
   athx-tracker:
-    build: ./athx-tracker
-    image: athx-tracker:latest
+    # Built and published by .github/workflows/build.yml. Not built here: this
+    # host took 10-20 minutes to build it, and Portainer cannot pull an image
+    # that only ever existed locally, which made every redeploy fail.
+    image: ghcr.io/jxxu96/athx-tracker:latest
     container_name: athx-tracker
     restart: unless-stopped
     environment:

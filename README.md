@@ -20,6 +20,18 @@ defaults are correct: compose path `docker-compose.yml`, reference
 `refs/heads/main`. A private repository needs a GitHub username and a personal
 access token with `repo` scope, not an account password.
 
+The image is **not built on the server**. GitHub Actions builds it on every push
+and publishes `ghcr.io/jxxu96/athx-tracker:latest`, and the server pulls it. The
+host built it in 10-20 minutes on a saturated disk, and Portainer cannot pull a
+locally built image at all, so redeploys failed with `pull access denied`.
+
+Because the repository is private, its package is private too, so Portainer needs
+registry credentials once: **Registries → Add registry → Custom**, URL
+`ghcr.io`, username your GitHub name, password a personal access token with
+`read:packages`. Select that registry on the stack.
+
+With **GitOps updates** on and Polling set, every push then deploys itself.
+
 Set `APP_PASSPHRASE` in the stack environment before deploying — without it nobody can
 sign in, and the login page will say so.
 
