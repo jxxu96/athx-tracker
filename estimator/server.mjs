@@ -47,16 +47,17 @@ const SCHEMA = {
   required: ["name", "calories", "protein", "carbs", "fat", "assumptions", "confidence"],
 };
 
-/** Subscription auth only: an API key in the environment would bill per token. */
+const API_KEY_VARS =
+  /^(ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|XAI_API_KEY|GROK_API_KEY|OPENAI_API_KEY)$/;
+
+/**
+ * Subscription auth only. Every API key is removed before a CLI runs, so this
+ * cannot quietly switch to metered per-token billing: with no key to fall back
+ * on, a CLI that is not logged in fails loudly instead of charging you.
+ */
 function childEnv() {
   const env = { ...process.env };
-  for (const key of Object.keys(env))
-    if (
-      /^(ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|XAI_API_KEY|GROK_API_KEY|OPENAI_API_KEY)$/.test(
-        key,
-      )
-    )
-      delete env[key];
+  for (const key of Object.keys(env)) if (API_KEY_VARS.test(key)) delete env[key];
   return env;
 }
 
@@ -244,4 +245,14 @@ server.listen(PORT, HOST, () => {
   console.log(`[estimator] provider order: ${ORDER.join(" then ")}`);
   console.log(`[estimator] grok: ${GROK_BIN || "not configured"}`);
   console.log(`[estimator] claude: ${CLAUDE_BIN || "not configured"} (${CLAUDE_MODEL})`);
+
+  const keys = Object.keys(process.env).filter((key) => API_KEY_VARS.test(key));
+  console.log(
+    keys.length
+      ? `[estimator] auth: subscription login only; stripping ${keys.join(", ")} before each call`
+      : "[estimator] auth: subscription login only; no API key present to strip",
+  );
+  console.log(
+    "[estimator] any cost a CLI reports is a list-price equivalent, not a charge on a subscription",
+  );
 });

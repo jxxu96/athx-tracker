@@ -48,27 +48,36 @@ GROK_GATEWAY_TOKEN=<the same token>
 Plain HTTP is accepted for private and tailnet addresses, because the tailnet
 already encrypts the hop. Public hosts still have to be HTTPS.
 
+## You are not paying per token
+
+Both CLIs run on your subscription login, not an API key. Every API key variable
+is deleted from the environment before a CLI starts, so there is no path by
+which this falls back to metered billing: a CLI that is not logged in fails, it
+does not charge you. The startup log states which mode it is in.
+
+The CLIs still print a `total_cost_usd` on every call. On a subscription that is
+a **list-price equivalent**, not a charge — Claude labels it `costBasis: list`.
+Read it as how much of your monthly allowance a call consumes, not as money.
+
 ## Which provider to put first
 
 Measured on this machine, one estimate each:
 
-| Provider | Model | Time | Reported cost |
+| Provider | Model | Time | Allowance used (list-price equivalent) |
 | --- | --- | --- | --- |
 | Claude | `claude-haiku-5-5` | ~7 s | ~$0.0026 |
 | Grok | `grok-4.7-build` | ~32 s | ~$0.0113 |
 | Claude | `claude-opus-5-5` | ~8 s | ~$0.302 |
 
 The default order is `grok,claude`. On these numbers Claude on Haiku is about
-four times cheaper and four times faster for the same answer, so
-`ESTIMATOR_ORDER=claude,grok` is probably the better default. Both gave
-sensible macros with their assumptions spelled out.
+four times lighter and four times faster for the same answer, so
+`ESTIMATOR_ORDER=claude,grok` is probably the better default. Both gave sensible
+macros with their assumptions spelled out.
 
-**Do not run Claude on Opus for this.** It costs over a hundred times more than
-Haiku and gives the same answer; the difference is almost entirely the agent
-scaffolding sent on every call.
-
-Those figures are what the CLIs report. Whether they are billed or merely
-notional depends on your plan.
+**Do not run Claude on Opus for this.** It is over a hundred times heavier than
+Haiku for the same answer, and almost all of that is agent scaffolding sent on
+every call. No money changes hands either way, but it will eat your plan limits
+far faster, and hitting those is what actually stops you logging a meal.
 
 ## What happens when it is not running
 
