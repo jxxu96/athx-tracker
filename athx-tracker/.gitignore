@@ -57,3 +57,6 @@ next-env.d.ts
 
 # local sqlite data
 /data
+
+# typescript build cache
+tsconfig.tsbuildinfo
