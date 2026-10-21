@@ -59,6 +59,7 @@ export function Tracker({
   const [settings, setSettings] = useState(initialSettings);
   const [revision, setRevision] = useState(initialRevision);
   const [problem, setProblem] = useState(loadError);
+  const [editing, setEditing] = useState<RecordItem | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -88,14 +89,21 @@ export function Tracker({
       setRecords((current) =>
         sortRecords([record, ...current.filter((item) => item.id !== record.id)]),
       );
-      toast.success(record.kind === "workout" ? "Session saved" : "Meal saved");
+      toast.success(
+        editing
+          ? "Entry updated"
+          : record.kind === "workout"
+            ? "Session saved"
+            : "Meal saved",
+      );
+      setEditing(null);
       setTab("today");
       window.scrollTo(0, 0);
     } catch (error) {
       toast.error(message(error));
       throw error;
     }
-  }, []);
+  }, [editing]);
 
   const remove = useCallback(async (id: string) => {
     try {
@@ -182,17 +190,29 @@ export function Tracker({
           <Overview records={records} settings={settings} today={today} />
         ) : tab === "session" ? (
           <WorkoutForm
+            key={editing?.id ?? "new-session"}
             today={today}
             sides={sides}
             weightUnit={settings.weightUnit ?? "lb"}
+            editing={editing?.kind === "workout" ? editing : null}
+            onCancelEdit={() => setEditing(null)}
             onSave={save}
           />
         ) : tab === "meal" ? (
           <MealForm
-            athlete={who === "both" ? "hippos" : who}
+            key={editing?.id ?? "new-meal"}
+            athlete={
+              editing?.kind === "meal"
+                ? editing.athlete
+                : who === "both"
+                  ? "hippos"
+                  : who
+            }
             today={today}
             grokReady={grokReady}
+            editing={editing?.kind === "meal" ? editing : null}
             onAthlete={setWho}
+            onCancelEdit={() => setEditing(null)}
             onSave={save}
           />
         ) : tab === "log" ? (
@@ -201,6 +221,11 @@ export function Tracker({
             today={today}
             athlete="all"
             weightUnit={settings.weightUnit ?? "lb"}
+            onEdit={(record) => {
+              setEditing(record);
+              setTab(record.kind === "workout" ? "session" : "meal");
+              window.scrollTo(0, 0);
+            }}
             onDelete={remove}
           />
         ) : (

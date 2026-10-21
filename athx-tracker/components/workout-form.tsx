@@ -18,6 +18,7 @@ import {
   formatTime,
   parseTime,
   projectWorkout,
+  fromKilograms,
   toKilograms,
   type Segment,
   type WeightUnit,
@@ -134,6 +135,16 @@ const EXERCISES: { group: string; items: string[] }[] = [
 /** The typed name only counts when Other is the choice. */
 const exerciseName = (choice: string, custom: string) =>
   (choice === OTHER ? custom : choice).trim();
+
+const LISTED = new Set(EXERCISES.flatMap((group) => group.items));
+
+/** Reverse of exerciseName: put a saved name back into the picker. */
+const toChoice = (name: string) =>
+  LISTED.has(name) ? { name, custom: "" } : { name: OTHER, custom: name };
+
+/** Legacy records can be on the team athlete, which has no column of its own. */
+const sideOf = (athlete: Workout["athlete"]): Side =>
+  athlete === "gators" ? "gators" : "hippos";
 
 function ExercisePicker({
   label,
@@ -303,31 +314,78 @@ export function WorkoutForm({
   today,
   sides,
   weightUnit,
+  editing,
+  onCancelEdit,
   onSave,
 }: {
   today: string;
   sides: readonly Side[];
   weightUnit: WeightUnit;
+  editing?: Workout | null;
+  onCancelEdit?: () => void;
   onSave: (record: Workout) => Promise<void>;
 }) {
-  const [day, setDay] = useState(today);
-  const [title, setTitle] = useState("");
-  const [category, setCategory] = useState<Workout["category"]>("MetCon");
-  const [context, setContext] = useState<Workout["context"]>("pairs");
-  const [stations, setStations] = useState<Station[]>(() => metconStations());
-  const [entries, setEntries] = useState<Record<Side, Entry[]>>(() => ({
-    hippos: entriesFor(metconStations()),
-    gators: entriesFor(metconStations()),
-  }));
-  const [elapsed, setElapsed] = useState<Record<Side, string>>({
-    hippos: "",
-    gators: "",
+  // Editing is one athlete's record, so it fills that athlete's column alone.
+  // The parent remounts on a change of target, so these initialisers are enough.
+  const editSide = editing ? sideOf(editing.athlete) : null;
+  const columns = editSide ? ([editSide] as const) : sides;
+
+  const [day, setDay] = useState(editing?.day ?? today);
+  const [title, setTitle] = useState(editing?.title ?? "");
+  const [category, setCategory] = useState<Workout["category"]>(
+    editing?.category ?? "MetCon",
+  );
+  const [context, setContext] = useState<Workout["context"]>(
+    editing?.context ?? "pairs",
+  );
+  const [stations, setStations] = useState<Station[]>(() =>
+    editing
+      ? editing.segments.map((segment) => ({
+          ...toChoice(segment.name),
+          unit: segment.unit,
+          target: String(segment.target),
+          load: METCON.find((station) => station.name === segment.name)?.load,
+        }))
+      : metconStations(),
+  );
+  const [entries, setEntries] = useState<Record<Side, Entry[]>>(() => {
+    if (!editing || !editSide)
+      return {
+        hippos: entriesFor(metconStations()),
+        gators: entriesFor(metconStations()),
+      };
+    const mine = editing.segments.map((segment) => ({
+      completed: segment.completed ? String(segment.completed) : "",
+      time: segment.seconds ? formatTime(segment.seconds) : "",
+    }));
+    const empty = editing.segments.map(() => blankEntry());
+    return editSide === "gators"
+      ? { hippos: empty, gators: mine }
+      : { hippos: mine, gators: empty };
   });
-  const [lifts, setLifts] = useState<LiftRow[]>([blankLift()]);
-  const [goal, setGoal] = useState("");
-  const [fatigue, setFatigue] = useState(10);
-  const [transition, setTransition] = useState("");
-  const [notes, setNotes] = useState("");
+  const [elapsed, setElapsed] = useState<Record<Side, string>>(() =>
+    editing && editSide
+      ? { hippos: "", gators: "", [editSide]: formatTime(editing.seconds) }
+      : { hippos: "", gators: "" },
+  );
+  const [lifts, setLifts] = useState<LiftRow[]>(() => {
+    if (!editing || !editSide || editing.lifts.length === 0) return [blankLift()];
+    return editing.lifts.map((lift) => ({
+      ...blankLift(),
+      ...toChoice(lift.name),
+      [editSide]: {
+        kg: String(Math.round(fromKilograms(lift.kg, weightUnit) * 10) / 10),
+        sets: String(lift.sets ?? 1),
+        reps: String(lift.reps),
+      },
+    }));
+  });
+  const [goal, setGoal] = useState(editing?.goal ? formatTime(editing.goal) : "");
+  const [fatigue, setFatigue] = useState(editing?.fatigue ?? 10);
+  const [transition, setTransition] = useState(
+    editing ? String(editing.transition) : "",
+  );
+  const [notes, setNotes] = useState(editing?.notes ?? "");
   const [error, setError] = useState("");
   const [invalidSide, setInvalidSide] = useState<Side | null>(null);
   const [saving, setSaving] = useState(false);
@@ -453,7 +511,7 @@ export function WorkoutForm({
   const projections = useMemo(
     () =>
       Object.fromEntries(
-        sides.map((side) => [
+        columns.map((side) => [
           side,
           projectWorkout(
             segmentsFor(side),
@@ -526,7 +584,7 @@ export function WorkoutForm({
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setInvalidSide(null);
-    const active = sides.filter(used);
+    const active = columns.filter(used);
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return setError("Pick a valid date.");
     if (active.length === 0)
@@ -543,9 +601,9 @@ export function WorkoutForm({
     setError("");
 
     const records: Workout[] = active.map((side) => ({
-      id: newId(),
+      id: editing ? editing.id : newId(),
       kind: "workout",
-      athlete: side,
+      athlete: editing ? editing.athlete : side,
       day,
       title: title.trim() || dateTitle(day),
       category,
@@ -579,6 +637,19 @@ export function WorkoutForm({
 
   return (
     <form onSubmit={submit} className="space-y-4 pb-4">
+      {editing ? (
+        <div className="flex items-center justify-between gap-3 rounded-2xl border bg-muted/50 p-3">
+          <p className="text-xs">
+            Editing{" "}
+            <span className="font-medium">{ATHLETES[editing.athlete].name}</span>
+            {" · "}
+            {editing.day}
+          </p>
+          <Button type="button" variant="ghost" size="xs" onClick={onCancelEdit}>
+            Cancel
+          </Button>
+        </div>
+      ) : null}
       <section className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Date">
@@ -639,8 +710,8 @@ export function WorkoutForm({
         title="Elapsed time"
         note="Optional. Left blank, the station times are added up instead."
       >
-        <div className={`grid gap-2.5 ${sides.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
-          {sides.map((side) => (
+        <div className={`grid gap-2.5 ${columns.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+          {columns.map((side) => (
             <Column key={side} side={side}>
               <Input
                 ref={(element) => {
@@ -749,8 +820,8 @@ export function WorkoutForm({
                     </div>
                   )}
 
-                  <div className={`grid gap-2.5 ${sides.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
-                    {sides.map((side) => (
+                  <div className={`grid gap-2.5 ${columns.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+                    {columns.map((side) => (
                       <Column key={side} side={side}>
                         <Field
                           label={isRun ? "Distance (m)" : `Done (${station.unit})`}
@@ -841,8 +912,8 @@ export function WorkoutForm({
                     </Button>
                   ) : null}
                 </div>
-                <div className={`grid gap-2.5 ${sides.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
-                  {sides.map((side) => (
+                <div className={`grid gap-2.5 ${columns.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+                  {columns.map((side) => (
                     <Column key={side} side={side}>
                       <Field label={weightUnit}>
                         <Input
@@ -915,8 +986,8 @@ export function WorkoutForm({
               onChange={(event) => setTransition(event.target.value)}
             />
           </Field>
-          <div className={`grid gap-2.5 ${sides.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
-            {sides.map((side) => {
+          <div className={`grid gap-2.5 ${columns.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+            {columns.map((side) => {
               const projection = projections[side];
               return (
                 <Column key={side} side={side}>
@@ -969,7 +1040,7 @@ export function WorkoutForm({
       ) : null}
 
       <Button type="submit" size="lg" className="w-full" disabled={saving}>
-        {saving ? "Saving…" : "Save session"}
+        {saving ? "Saving…" : editing ? "Update session" : "Save session"}
       </Button>
     </form>
   );

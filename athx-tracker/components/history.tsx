@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   NativeSelect,
@@ -22,12 +22,14 @@ export function History({
   today,
   athlete,
   weightUnit,
+  onEdit,
   onDelete,
 }: {
   records: RecordItem[];
   today: string;
   athlete: Athlete | "all";
   weightUnit: WeightUnit;
+  onEdit: (record: RecordItem) => void;
   onDelete: (id: string) => Promise<void>;
 }) {
   const [kind, setKind] = useState<"all" | "workout" | "meal">("all");
@@ -162,15 +164,26 @@ export function History({
                         </Button>
                       </div>
                     ) : (
-                      <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        className="shrink-0 text-muted-foreground"
-                        aria-label="Delete entry"
-                        onClick={() => setPending(record.id)}
-                      >
-                        <Trash2 />
-                      </Button>
+                      <div className="flex shrink-0">
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          className="text-muted-foreground"
+                          aria-label="Edit entry"
+                          onClick={() => onEdit(record)}
+                        >
+                          <Pencil />
+                        </Button>
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          className="text-muted-foreground"
+                          aria-label="Delete entry"
+                          onClick={() => setPending(record.id)}
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
                     )}
                   </li>
                 ))}

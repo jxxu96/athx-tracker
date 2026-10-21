@@ -36,26 +36,39 @@ export function MealForm({
   athlete,
   today,
   grokReady,
+  editing,
   onAthlete,
+  onCancelEdit,
   onSave,
 }: {
   athlete: Meal["athlete"];
   today: string;
   grokReady: boolean;
+  editing?: Meal | null;
   onAthlete: (next: Meal["athlete"]) => void;
+  onCancelEdit?: () => void;
   onSave: (record: Meal) => Promise<void>;
 }) {
   // Controlled by the switch in the header, so the two never disagree.
   const who = athlete;
   const setWho = onAthlete;
-  const [day, setDay] = useState(today);
-  const [slot, setSlot] = useState<Meal["meal"]>("Lunch");
+  const [day, setDay] = useState(editing?.day ?? today);
+  const [slot, setSlot] = useState<Meal["meal"]>(editing?.meal ?? "Lunch");
   const [description, setDescription] = useState("");
-  const [name, setName] = useState("");
-  const [macros, setMacros] = useState<MacroDraft>(emptyMacros);
-  const [assumptions, setAssumptions] = useState("");
+  const [name, setName] = useState(editing?.name ?? "");
+  const [macros, setMacros] = useState<MacroDraft>(() =>
+    editing
+      ? {
+          calories: String(editing.macros.calories),
+          protein: String(editing.macros.protein),
+          carbs: String(editing.macros.carbs),
+          fat: String(editing.macros.fat),
+        }
+      : emptyMacros,
+  );
+  const [assumptions, setAssumptions] = useState(editing?.assumptions ?? "");
   const [confidence, setConfidence] = useState<Estimate["confidence"] | null>(null);
-  const [source, setSource] = useState<Meal["source"]>("manual");
+  const [source, setSource] = useState<Meal["source"]>(editing?.source ?? "manual");
   const [adjusted, setAdjusted] = useState(false);
   const [estimating, setEstimating] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -127,7 +140,7 @@ export function MealForm({
     if (problem) return;
 
     const record: Meal = {
-      id: newId(),
+      id: editing ? editing.id : newId(),
       kind: "meal",
       athlete: who,
       day,
@@ -152,6 +165,16 @@ export function MealForm({
 
   return (
     <form onSubmit={submit} className="space-y-4 pb-4">
+      {editing ? (
+        <div className="flex items-center justify-between gap-3 rounded-2xl border bg-muted/50 p-3">
+          <p className="text-xs">
+            Editing <span className="font-medium">{editing.name}</span>
+          </p>
+          <Button type="button" variant="ghost" size="xs" onClick={onCancelEdit}>
+            Cancel
+          </Button>
+        </div>
+      ) : null}
       <section className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Athlete">
@@ -267,7 +290,7 @@ export function MealForm({
       ) : null}
 
       <Button type="submit" size="lg" className="w-full" disabled={saving}>
-        {saving ? "Saving…" : "Save meal"}
+        {saving ? "Saving…" : editing ? "Update meal" : "Save meal"}
       </Button>
     </form>
   );
