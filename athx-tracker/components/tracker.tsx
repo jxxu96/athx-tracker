@@ -208,6 +208,7 @@ export function Tracker({
             key={revision}
             settings={settings}
             grokReady={grokReady}
+            onRefresh={refresh}
             onSave={saveSettings}
           />
         )}

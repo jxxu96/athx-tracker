@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { Download, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,10 +34,12 @@ const toDraft = (macros: Macros): MacroDraft => ({
 export function SettingsForm({
   settings,
   grokReady,
+  onRefresh,
   onSave,
 }: {
   settings: Settings;
   grokReady: boolean;
+  onRefresh: () => Promise<void>;
   onSave: (next: Settings) => Promise<void>;
 }) {
   const [eventName, setEventName] = useState(settings.eventName);
@@ -53,6 +56,81 @@ export function SettingsForm({
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [probe, setProbe] = useState<{ status: string; detail: string } | null>(null);
+
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState("");
+  const [note, setNote] = useState("");
+
+  /** The journal is one file on someone else's machine. Take a copy. */
+  async function exportJournal() {
+    setBusy("export");
+    setNote("");
+    try {
+      const [entries, config] = await Promise.all([
+        api<{ records: unknown[] }>("/api/records"),
+        api<{ settings: Settings }>("/api/settings"),
+      ]);
+      const payload = JSON.stringify(
+        {
+          app: "athx-tracker",
+          version: 1,
+          exportedAt: new Date().toISOString(),
+          settings: config.settings,
+          records: entries.records,
+        },
+        null,
+        2,
+      );
+      const url = URL.createObjectURL(
+        new Blob([payload], { type: "application/json" }),
+      );
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `athx-journal-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setNote(`${entries.records.length} entries downloaded.`);
+    } catch (problem) {
+      setNote(message(problem));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  /** Records upsert by id, so restoring the same file twice is harmless. */
+  async function importJournal(file: File) {
+    setBusy("import");
+    setNote("");
+    try {
+      const parsed = JSON.parse(await file.text()) as { records?: unknown };
+      const records = Array.isArray(parsed.records) ? parsed.records : [];
+      if (records.length === 0) {
+        setNote("No entries found in that file.");
+        return;
+      }
+      let restored = 0;
+      let rejected = 0;
+      for (const record of records) {
+        try {
+          await api("/api/records", {
+            method: "POST",
+            body: JSON.stringify(record),
+          });
+          restored += 1;
+        } catch {
+          rejected += 1;
+        }
+      }
+      setNote(
+        `${restored} restored${rejected ? `, ${rejected} rejected as invalid` : ""}.`,
+      );
+      await onRefresh();
+    } catch {
+      setNote("That file could not be read as a journal export.");
+    } finally {
+      setBusy("");
+    }
+  }
 
   async function testConnection() {
     setTesting(true);
@@ -204,6 +282,50 @@ export function SettingsForm({
       <Button type="submit" size="lg" className="w-full" disabled={saving}>
         {saving ? "Saving…" : "Save settings"}
       </Button>
+
+      <section className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
+        <div>
+          <h3 className="text-sm font-semibold">Your data</h3>
+          <p className="text-[11px] text-muted-foreground">
+            The journal is a single file on the server. Keep a copy somewhere you
+            control — restoring the same file twice is harmless.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={busy !== ""}
+            onClick={exportJournal}
+          >
+            <Download />
+            {busy === "export" ? "Preparing…" : "Download journal"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={busy !== ""}
+            onClick={() => fileRef.current?.click()}
+          >
+            <Upload />
+            {busy === "import" ? "Restoring…" : "Restore"}
+          </Button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) void importJournal(file);
+            }}
+          />
+        </div>
+        {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}
+      </section>
 
       <section className="space-y-3 rounded-2xl border bg-card p-4 text-xs text-muted-foreground sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
