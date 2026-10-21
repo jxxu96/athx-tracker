@@ -10,8 +10,10 @@ import {
 import {
   ATHLETES,
   formatTime,
+  formatWeight,
   type Athlete,
   type RecordItem,
+  type WeightUnit,
 } from "@/lib/domain";
 import { formatDay, isWorkout } from "@/lib/client";
 
@@ -19,11 +21,13 @@ export function History({
   records,
   today,
   athlete,
+  weightUnit,
   onDelete,
 }: {
   records: RecordItem[];
   today: string;
   athlete: Athlete | "all";
+  weightUnit: WeightUnit;
   onDelete: (id: string) => Promise<void>;
 }) {
   const [kind, setKind] = useState<"all" | "workout" | "meal">("all");
@@ -115,7 +119,7 @@ export function History({
                               {record.lifts
                                 .map(
                                   (lift) =>
-                                    `${lift.name} ${lift.kg}kg ${lift.sets ?? 1}×${lift.reps}`,
+                                    `${lift.name} ${formatWeight(lift.kg, weightUnit)} ${lift.sets ?? 1}×${lift.reps}`,
                                 )
                                 .join(" · ")}
                             </p>

@@ -18,12 +18,13 @@ import {
   formatTime,
   parseTime,
   projectWorkout,
+  toKilograms,
   type Segment,
+  type WeightUnit,
   type Workout,
 } from "@/lib/domain";
 
 type Side = "hippos" | "gators";
-const SIDES = ["hippos", "gators"] as const;
 
 /** What the session is made of, shared by both athletes. */
 type Station = {
@@ -52,6 +53,12 @@ const OTHER = "Other";
 /** Picking beats typing on a phone, with a way out for anything not listed. */
 const EXERCISES: { group: string; items: string[] }[] = [
   {
+    // The loaded movements from the ATHX Lite MetCon, named exactly as the
+    // stations name them, so a lift and a station read the same in the log.
+    group: "ATHX",
+    items: ["DB ground to overhead", "DB bench press", "Sandbag squats"],
+  },
+  {
     group: "Lower body",
     items: [
       "Back squat",
@@ -70,7 +77,6 @@ const EXERCISES: { group: string; items: string[] }[] = [
     items: [
       "Bench press",
       "Incline bench press",
-      "Dumbbell bench press",
       "Overhead press",
       "Push press",
       "Dip",
@@ -95,7 +101,6 @@ const EXERCISES: { group: string; items: string[] }[] = [
       "Clean and jerk",
       "Snatch",
       "Thruster",
-      "Dumbbell ground to overhead",
       "Dumbbell snatch",
       "Kettlebell swing",
     ],
@@ -105,7 +110,6 @@ const EXERCISES: { group: string; items: string[] }[] = [
     items: [
       "Farmer carry",
       "Sandbag carry",
-      "Sandbag squat",
       "Sandbag clean",
       "Sled push",
       "Sled pull",
@@ -297,9 +301,13 @@ function Panel({
 
 export function WorkoutForm({
   today,
+  sides,
+  weightUnit,
   onSave,
 }: {
   today: string;
+  sides: readonly Side[];
+  weightUnit: WeightUnit;
   onSave: (record: Workout) => Promise<void>;
 }) {
   const [day, setDay] = useState(today);
@@ -382,6 +390,16 @@ export function WorkoutForm({
     );
   }
 
+  /**
+   * Elapsed time is optional: a part-finished MetCon has a total anyway, which
+   * is the time spent at the stations. Typing one still wins, because only you
+   * know about the rest between them.
+   */
+  function totalFor(side: Side) {
+    if (elapsed[side].trim() !== "") return seconds(elapsed[side]);
+    return segmentsFor(side).reduce((sum, segment) => sum + segment.seconds, 0);
+  }
+
   /** A column counts as used once anything at all is typed into it. */
   function used(side: Side) {
     if (elapsed[side].trim() !== "") return true;
@@ -424,7 +442,9 @@ export function WorkoutForm({
       )
       .map((lift) => ({
         name: exerciseName(lift.name, lift.custom),
-        kg: Number(lift[side].kg),
+        // Entered in your unit, stored in kilograms.
+        kg:
+          Math.round(toKilograms(Number(lift[side].kg), weightUnit) * 100) / 100,
         sets: Math.round(num(lift[side].sets) || 1),
         reps: Math.round(num(lift[side].reps) || 1),
       }));
@@ -433,11 +453,11 @@ export function WorkoutForm({
   const projections = useMemo(
     () =>
       Object.fromEntries(
-        SIDES.map((side) => [
+        sides.map((side) => [
           side,
           projectWorkout(
             segmentsFor(side),
-            seconds(elapsed[side]),
+            totalFor(side),
             fatigue,
             num(transition),
           ),
@@ -449,17 +469,27 @@ export function WorkoutForm({
 
   function validateSide(side: Side) {
     const who = ATHLETES[side].name;
-    const total = seconds(elapsed[side]);
-    if (!Number.isFinite(total) || total <= 0) {
+    const typed = elapsed[side].trim() !== "";
+    const total = totalFor(side);
+    const segments = segmentsFor(side);
+
+    if (typed && (!Number.isFinite(total) || total <= 0)) {
       // Say which box, and put the cursor in it: the message alone is not enough.
       setInvalidSide(side);
       elapsedRefs.current[side]?.focus();
       elapsedRefs.current[side]?.scrollIntoView({ block: "center" });
-      return `${who}: the elapsed time box is empty. Enter it as mm:ss.`;
+      return `${who}: write the elapsed time as mm:ss, or leave it empty.`;
+    }
+    if (!typed && !(total > 0)) {
+      setInvalidSide(side);
+      elapsedRefs.current[side]?.focus();
+      elapsedRefs.current[side]?.scrollIntoView({ block: "center" });
+      return usesStations
+        ? `${who}: add an elapsed time, or a time against at least one station.`
+        : `${who}: add the elapsed time as mm:ss.`;
     }
     if (total > 86400) return `${who}: that elapsed time is too long.`;
 
-    const segments = segmentsFor(side);
     for (const segment of segments) {
       const where = `${who} · ${segment.name}`;
       if (!Number.isFinite(segment.seconds))
@@ -484,7 +514,7 @@ export function WorkoutForm({
       const liftName = exerciseName(lift.name, lift.custom);
       if (liftName === "") return `${who}: choose or name the exercise.`;
       if (!(Number(entry.kg) > 0))
-        return `${who} · ${liftName}: add the load in kg.`;
+        return `${who} · ${liftName}: add the load in ${weightUnit}.`;
       if (entry.sets.trim() !== "" && !(num(entry.sets) >= 1))
         return `${who} · ${liftName}: sets must be at least 1.`;
       if (entry.reps.trim() !== "" && !(num(entry.reps) >= 1))
@@ -496,7 +526,7 @@ export function WorkoutForm({
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setInvalidSide(null);
-    const active = SIDES.filter(used);
+    const active = sides.filter(used);
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return setError("Pick a valid date.");
     if (active.length === 0)
@@ -519,7 +549,7 @@ export function WorkoutForm({
       day,
       title: title.trim() || dateTitle(day),
       category,
-      seconds: seconds(elapsed[side]),
+      seconds: totalFor(side),
       notes: notes.trim(),
       segments: segmentsFor(side),
       fatigue,
@@ -607,10 +637,10 @@ export function WorkoutForm({
 
       <Panel
         title="Elapsed time"
-        note="Fill one side or both. An empty side is not saved."
+        note="Optional. Left blank, the station times are added up instead."
       >
-        <div className="grid grid-cols-2 gap-2.5">
-          {SIDES.map((side) => (
+        <div className={`grid gap-2.5 ${sides.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+          {sides.map((side) => (
             <Column key={side} side={side}>
               <Input
                 ref={(element) => {
@@ -719,8 +749,8 @@ export function WorkoutForm({
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-2.5">
-                    {SIDES.map((side) => (
+                  <div className={`grid gap-2.5 ${sides.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+                    {sides.map((side) => (
                       <Column key={side} side={side}>
                         <Field
                           label={isRun ? "Distance (m)" : `Done (${station.unit})`}
@@ -811,10 +841,10 @@ export function WorkoutForm({
                     </Button>
                   ) : null}
                 </div>
-                <div className="grid grid-cols-2 gap-2.5">
-                  {SIDES.map((side) => (
+                <div className={`grid gap-2.5 ${sides.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+                  {sides.map((side) => (
                     <Column key={side} side={side}>
-                      <Field label="kg">
+                      <Field label={weightUnit}>
                         <Input
                           value={lift[side].kg}
                           inputMode="decimal"
@@ -885,8 +915,8 @@ export function WorkoutForm({
               onChange={(event) => setTransition(event.target.value)}
             />
           </Field>
-          <div className="grid grid-cols-2 gap-2.5">
-            {SIDES.map((side) => {
+          <div className={`grid gap-2.5 ${sides.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+            {sides.map((side) => {
               const projection = projections[side];
               return (
                 <Column key={side} side={side}>

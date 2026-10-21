@@ -1,4 +1,5 @@
 export type Athlete = "hippos" | "gators" | "team";
+export type WeightUnit = "kg" | "lb";
 export type Macros = { calories: number; protein: number; carbs: number; fat: number };
 export type Segment = {
   name: string; unit: "reps" | "m" | "cal" | "rounds";
@@ -18,11 +19,11 @@ export type Meal = {
 };
 export type RecordItem = Workout | Meal;
 export type Settings = {
-  eventDate: string; eventName: string; weeklyTarget: number;
+  eventDate: string; eventName: string; weeklyTarget: number; weightUnit: WeightUnit;
   targets: { hippos: Macros; gators: Macros };
 };
 export const DEFAULT_SETTINGS: Settings = {
-  eventDate: "2027-08-28", eventName: "ATHX New York", weeklyTarget: 4,
+  eventDate: "2027-08-28", eventName: "ATHX New York", weeklyTarget: 4, weightUnit: "lb",
   targets: {
     hippos: { calories: 0, protein: 0, carbs: 0, fat: 0 },
     gators: { calories: 0, protein: 0, carbs: 0, fat: 0 },
@@ -87,4 +88,19 @@ export function sumMacros(meals: Meal[]): Macros {
     for (const k of ["calories", "protein", "carbs", "fat"] as const) out[k] += m.macros[k];
     return out;
   }, { calories: 0, protein: 0, carbs: 0, fat: 0 });
+}
+
+/**
+ * Loads are stored in kilograms whatever the display unit, so changing the unit
+ * never rewrites a record and old entries stay valid.
+ */
+export const LB_PER_KG = 2.20462262;
+export function toKilograms(value: number, unit: WeightUnit) {
+  return unit === "lb" ? value / LB_PER_KG : value;
+}
+export function fromKilograms(value: number, unit: WeightUnit) {
+  return unit === "lb" ? value * LB_PER_KG : value;
+}
+export function formatWeight(kg: number, unit: WeightUnit) {
+  return `${Math.round(fromKilograms(kg, unit) * 10) / 10} ${unit}`;
 }

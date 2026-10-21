@@ -51,7 +51,10 @@ export function Tracker({
   loadError?: string;
 }) {
   const [tab, setTab] = useState<Tab>("today");
-  const [who, setWho] = useState<"hippos" | "gators">("hippos");
+  // One switch drives both forms: which columns the session shows, and whose
+  // meal you are logging. "both" is the two-column session you asked for.
+  const [who, setWho] = useState<"hippos" | "gators" | "both">("both");
+  const sides = who === "both" ? (["hippos", "gators"] as const) : ([who] as const);
   const [records, setRecords] = useState(() => sortRecords(initialRecords));
   const [settings, setSettings] = useState(initialSettings);
   const [revision, setRevision] = useState(initialRevision);
@@ -139,19 +142,23 @@ export function Tracker({
           </h1>
           <div
             role="group"
-            aria-label="Logging as"
+            aria-label="Logging for"
             className="flex rounded-full bg-muted p-0.5"
           >
-            {(["hippos", "gators"] as const).map((key) => (
+            {(["hippos", "gators", "both"] as const).map((key) => (
               <button
                 key={key}
                 type="button"
                 onClick={() => setWho(key)}
                 aria-pressed={who === key}
                 className="rounded-full px-3 py-1 text-xs font-medium transition-colors aria-pressed:bg-background aria-pressed:shadow-sm"
-                style={who === key ? { color: ATHLETES[key].color } : undefined}
+                style={
+                  who === key && key !== "both"
+                    ? { color: ATHLETES[key].color }
+                    : undefined
+                }
               >
-                {ATHLETES[key].name}
+                {key === "both" ? "Both" : ATHLETES[key].name}
               </button>
             ))}
           </div>
@@ -174,12 +181,18 @@ export function Tracker({
         ) : tab === "today" ? (
           <Overview records={records} settings={settings} today={today} />
         ) : tab === "session" ? (
-          <WorkoutForm today={today} onSave={save} />
+          <WorkoutForm
+            today={today}
+            sides={sides}
+            weightUnit={settings.weightUnit ?? "lb"}
+            onSave={save}
+          />
         ) : tab === "meal" ? (
           <MealForm
-            athlete={who}
+            athlete={who === "both" ? "hippos" : who}
             today={today}
             grokReady={grokReady}
+            onAthlete={setWho}
             onSave={save}
           />
         ) : tab === "log" ? (
@@ -187,6 +200,7 @@ export function Tracker({
             records={records}
             today={today}
             athlete="all"
+            weightUnit={settings.weightUnit ?? "lb"}
             onDelete={remove}
           />
         ) : (

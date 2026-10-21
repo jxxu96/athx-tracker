@@ -3,12 +3,14 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Field } from "@/components/workout-form";
 import { api, message } from "@/lib/client";
 import {
   ATHLETES,
   type Macros,
   type Settings,
+  type WeightUnit,
 } from "@/lib/domain";
 
 const MACRO_FIELDS = [
@@ -40,6 +42,9 @@ export function SettingsForm({
   const [eventName, setEventName] = useState(settings.eventName);
   const [eventDate, setEventDate] = useState(settings.eventDate);
   const [weeklyTarget, setWeeklyTarget] = useState(String(settings.weeklyTarget));
+  const [weightUnit, setWeightUnit] = useState<WeightUnit>(
+    settings.weightUnit ?? "lb",
+  );
   const [targets, setTargets] = useState<Record<"hippos" | "gators", MacroDraft>>({
     hippos: toDraft(settings.targets.hippos),
     gators: toDraft(settings.targets.gators),
@@ -97,6 +102,7 @@ export function SettingsForm({
         eventName: eventName.trim(),
         eventDate,
         weeklyTarget: Number(weeklyTarget),
+        weightUnit,
         targets: { hippos: macrosFor("hippos"), gators: macrosFor("gators") },
       });
     } finally {
@@ -130,6 +136,28 @@ export function SettingsForm({
               onChange={(event) => setWeeklyTarget(event.target.value)}
             />
           </Field>
+        </div>
+        <div>
+          <Label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+            Weights in
+          </Label>
+          <div role="group" className="flex w-fit rounded-full bg-muted p-0.5">
+            {(["lb", "kg"] as const).map((unit) => (
+              <button
+                key={unit}
+                type="button"
+                onClick={() => setWeightUnit(unit)}
+                aria-pressed={weightUnit === unit}
+                className="rounded-full px-4 py-1 text-xs font-medium transition-colors aria-pressed:bg-background aria-pressed:shadow-sm"
+              >
+                {unit}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Loads are always stored in kilograms, so switching never changes a
+            recorded lift.
+          </p>
         </div>
       </section>
 

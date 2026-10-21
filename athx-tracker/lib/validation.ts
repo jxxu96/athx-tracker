@@ -30,6 +30,6 @@ export const mealSchema = z.object({
 export const recordSchema = z.union([workoutSchema, mealSchema]);
 export const settingsSchema = z.object({
   eventDate: day, eventName: z.string().trim().min(1).max(100),
-  weeklyTarget: z.number().int().min(1).max(21),
+  weeklyTarget: z.number().int().min(1).max(21), weightUnit: z.enum(["kg","lb"]).default("lb"),
   targets: z.object({ hippos: macroSchema, gators: macroSchema }).strict(),
 }).strict();

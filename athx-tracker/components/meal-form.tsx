@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { Field } from "@/components/workout-form";
-import { ATHLETES, type Athlete, type Macros, type Meal } from "@/lib/domain";
+import { ATHLETES, type Macros, type Meal } from "@/lib/domain";
 import { api, message, newId } from "@/lib/client";
 
 const MACRO_FIELDS = [
@@ -36,16 +36,18 @@ export function MealForm({
   athlete,
   today,
   grokReady,
+  onAthlete,
   onSave,
 }: {
-  athlete: Athlete;
+  athlete: Meal["athlete"];
   today: string;
   grokReady: boolean;
+  onAthlete: (next: Meal["athlete"]) => void;
   onSave: (record: Meal) => Promise<void>;
 }) {
-  const [who, setWho] = useState<Meal["athlete"]>(
-    athlete === "team" ? "hippos" : athlete,
-  );
+  // Controlled by the switch in the header, so the two never disagree.
+  const who = athlete;
+  const setWho = onAthlete;
   const [day, setDay] = useState(today);
   const [slot, setSlot] = useState<Meal["meal"]>("Lunch");
   const [description, setDescription] = useState("");
