@@ -1,16 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   NativeSelect,
+  NativeSelectOptGroup,
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
-import { newId } from "@/lib/client";
+import { dayToDate, newId } from "@/lib/client";
 import {
   ATHLETES,
   METCON,
@@ -27,6 +28,7 @@ const SIDES = ["hippos", "gators"] as const;
 /** What the session is made of, shared by both athletes. */
 type Station = {
   name: string;
+  custom: string;
   unit: Segment["unit"];
   target: string;
   load?: string;
@@ -37,6 +39,7 @@ type Entry = { completed: string; time: string };
 
 type LiftRow = {
   name: string;
+  custom: string;
   hippos: { kg: string; sets: string; reps: string };
   gators: { kg: string; sets: string; reps: string };
 };
@@ -44,10 +47,144 @@ type LiftRow = {
 const CATEGORIES = ["MetCon", "Strength", "Endurance", "Other"] as const;
 const UNITS = ["reps", "m", "cal", "rounds"] as const;
 
+const OTHER = "Other";
+
+/** Picking beats typing on a phone, with a way out for anything not listed. */
+const EXERCISES: { group: string; items: string[] }[] = [
+  {
+    group: "Lower body",
+    items: [
+      "Back squat",
+      "Front squat",
+      "Goblet squat",
+      "Deadlift",
+      "Romanian deadlift",
+      "Hip thrust",
+      "Walking lunge",
+      "Bulgarian split squat",
+      "Step-up",
+    ],
+  },
+  {
+    group: "Upper push",
+    items: [
+      "Bench press",
+      "Incline bench press",
+      "Dumbbell bench press",
+      "Overhead press",
+      "Push press",
+      "Dip",
+      "Push-up",
+    ],
+  },
+  {
+    group: "Upper pull",
+    items: [
+      "Pull-up",
+      "Chin-up",
+      "Barbell row",
+      "Dumbbell row",
+      "Lat pulldown",
+      "Face pull",
+    ],
+  },
+  {
+    group: "Power",
+    items: [
+      "Power clean",
+      "Clean and jerk",
+      "Snatch",
+      "Thruster",
+      "Dumbbell ground to overhead",
+      "Dumbbell snatch",
+      "Kettlebell swing",
+    ],
+  },
+  {
+    group: "Carries and strongman",
+    items: [
+      "Farmer carry",
+      "Sandbag carry",
+      "Sandbag squat",
+      "Sandbag clean",
+      "Sled push",
+      "Sled pull",
+    ],
+  },
+  {
+    group: "Conditioning",
+    items: [
+      "Row",
+      "Bike erg",
+      "Ski erg",
+      "Run",
+      "Burpee",
+      "Burpees over bench",
+      "Wall ball",
+      "Box jump",
+      "Double under",
+    ],
+  },
+];
+
+/** The typed name only counts when Other is the choice. */
+const exerciseName = (choice: string, custom: string) =>
+  (choice === OTHER ? custom : choice).trim();
+
+function ExercisePicker({
+  label,
+  choice,
+  custom,
+  onChoice,
+  onCustom,
+}: {
+  label: string;
+  choice: string;
+  custom: string;
+  onChoice: (value: string) => void;
+  onCustom: (value: string) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <Field label={label}>
+        <NativeSelect
+          size="sm"
+          value={choice}
+          onChange={(event) => onChoice(event.target.value)}
+        >
+          <NativeSelectOption value="">Choose…</NativeSelectOption>
+          {EXERCISES.map((group) => (
+            <NativeSelectOptGroup key={group.group} label={group.group}>
+              {group.items.map((item) => (
+                <NativeSelectOption key={item} value={item}>
+                  {item}
+                </NativeSelectOption>
+              ))}
+            </NativeSelectOptGroup>
+          ))}
+          <NativeSelectOption value={OTHER}>Other…</NativeSelectOption>
+        </NativeSelect>
+      </Field>
+      {choice === OTHER ? (
+        <Field label="Name it">
+          <Input
+            value={custom}
+            maxLength={80}
+            placeholder="Exercise name"
+            className="h-8"
+            onChange={(event) => onCustom(event.target.value)}
+          />
+        </Field>
+      ) : null}
+    </div>
+  );
+}
+
 const blankEntry = (): Entry => ({ completed: "", time: "" });
 const blankLiftSide = () => ({ kg: "", sets: "", reps: "" });
 const blankLift = (): LiftRow => ({
   name: "",
+  custom: "",
   hippos: blankLiftSide(),
   gators: blankLiftSide(),
 });
@@ -55,12 +192,15 @@ const blankLift = (): LiftRow => ({
 const metconStations = (): Station[] =>
   METCON.map((s) => ({
     name: s.name,
+    custom: "",
     unit: s.unit,
     target: String(s.target),
     load: s.load,
   }));
 
-const runStation = (): Station[] => [{ name: "Run", unit: "m", target: "" }];
+const runStation = (): Station[] => [
+  { name: "Run", custom: "", unit: "m", target: "" },
+];
 
 const stationsFor = (category: Workout["category"]): Station[] =>
   category === "MetCon"
@@ -73,6 +213,16 @@ const entriesFor = (stations: Station[]) => stations.map(() => blankEntry());
 
 const num = (value: string) => (value.trim() === "" ? 0 : Number(value));
 const seconds = (value: string) => (value.trim() === "" ? 0 : parseTime(value));
+
+/** An untitled session is named after its date, which never goes stale. */
+const dateTitle = (day: string) =>
+  new Intl.DateTimeFormat("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(dayToDate(day));
 
 export function Field({
   label,
@@ -171,7 +321,12 @@ export function WorkoutForm({
   const [transition, setTransition] = useState("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
+  const [invalidSide, setInvalidSide] = useState<Side | null>(null);
   const [saving, setSaving] = useState(false);
+  const elapsedRefs = useRef<Record<Side, HTMLInputElement | null>>({
+    hippos: null,
+    gators: null,
+  });
 
   const usesStations = category !== "Strength";
   const usesLifts = category === "Strength" || category === "Other";
@@ -201,7 +356,10 @@ export function WorkoutForm({
   }
 
   function addStation() {
-    setStations((current) => [...current, { name: "", unit: "reps", target: "" }]);
+    setStations((current) => [
+      ...current,
+      { name: "", custom: "", unit: "reps", target: "" },
+    ]);
     setEntries((current) => ({
       hippos: [...current.hippos, blankEntry()],
       gators: [...current.gators, blankEntry()],
@@ -231,7 +389,7 @@ export function WorkoutForm({
       return true;
     return lifts.some(
       (lift) =>
-        lift.name.trim() !== "" &&
+        exerciseName(lift.name, lift.custom) !== "" &&
         (lift[side].kg.trim() !== "" ||
           lift[side].sets.trim() !== "" ||
           lift[side].reps.trim() !== ""),
@@ -247,7 +405,7 @@ export function WorkoutForm({
         // A run is measured, not chased: what you covered is the target.
         const target = isRun ? completed : num(station.target);
         return {
-          name: station.name.trim(),
+          name: exerciseName(station.name, station.custom),
           unit: station.unit,
           completed,
           target,
@@ -259,9 +417,13 @@ export function WorkoutForm({
 
   function liftsFor(side: Side) {
     return lifts
-      .filter((lift) => lift.name.trim() !== "" && lift[side].kg.trim() !== "")
+      .filter(
+        (lift) =>
+          exerciseName(lift.name, lift.custom) !== "" &&
+          lift[side].kg.trim() !== "",
+      )
       .map((lift) => ({
-        name: lift.name.trim(),
+        name: exerciseName(lift.name, lift.custom),
         kg: Number(lift[side].kg),
         sets: Math.round(num(lift[side].sets) || 1),
         reps: Math.round(num(lift[side].reps) || 1),
@@ -288,8 +450,13 @@ export function WorkoutForm({
   function validateSide(side: Side) {
     const who = ATHLETES[side].name;
     const total = seconds(elapsed[side]);
-    if (!Number.isFinite(total) || total <= 0)
-      return `${who}: enter the elapsed time as mm:ss.`;
+    if (!Number.isFinite(total) || total <= 0) {
+      // Say which box, and put the cursor in it: the message alone is not enough.
+      setInvalidSide(side);
+      elapsedRefs.current[side]?.focus();
+      elapsedRefs.current[side]?.scrollIntoView({ block: "center" });
+      return `${who}: the elapsed time box is empty. Enter it as mm:ss.`;
+    }
     if (total > 86400) return `${who}: that elapsed time is too long.`;
 
     const segments = segmentsFor(side);
@@ -312,24 +479,25 @@ export function WorkoutForm({
       return `${who}: the station times add up to more than the elapsed time.`;
 
     for (const lift of lifts) {
-      if (lift.name.trim() === "") continue;
       const entry = lift[side];
       if (entry.kg.trim() === "") continue;
+      const liftName = exerciseName(lift.name, lift.custom);
+      if (liftName === "") return `${who}: choose or name the exercise.`;
       if (!(Number(entry.kg) > 0))
-        return `${who} · ${lift.name}: add the load in kg.`;
+        return `${who} · ${liftName}: add the load in kg.`;
       if (entry.sets.trim() !== "" && !(num(entry.sets) >= 1))
-        return `${who} · ${lift.name}: sets must be at least 1.`;
+        return `${who} · ${liftName}: sets must be at least 1.`;
       if (entry.reps.trim() !== "" && !(num(entry.reps) >= 1))
-        return `${who} · ${lift.name}: reps must be at least 1.`;
+        return `${who} · ${liftName}: reps must be at least 1.`;
     }
     return "";
   }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    setInvalidSide(null);
     const active = SIDES.filter(used);
 
-    if (!title.trim()) return setError("Give the session a title.");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return setError("Pick a valid date.");
     if (active.length === 0)
       return setError("Fill in at least one athlete before saving.");
@@ -349,7 +517,7 @@ export function WorkoutForm({
       kind: "workout",
       athlete: side,
       day,
-      title: title.trim(),
+      title: title.trim() || dateTitle(day),
       category,
       seconds: seconds(elapsed[side]),
       notes: notes.trim(),
@@ -403,11 +571,11 @@ export function WorkoutForm({
             </NativeSelect>
           </Field>
         </div>
-        <Field label="Session">
+        <Field label="Session" hint="Optional — the date is used if left blank">
           <Input
             value={title}
             maxLength={120}
-            placeholder="Full ATHX Lite simulation"
+            placeholder={dateTitle(day)}
             onChange={(event) => setTitle(event.target.value)}
           />
         </Field>
@@ -430,7 +598,7 @@ export function WorkoutForm({
             <Input
               value={goal}
               inputMode="numeric"
-              placeholder="22:00"
+              placeholder="mm:ss"
               onChange={(event) => setGoal(event.target.value)}
             />
           </Field>
@@ -445,9 +613,13 @@ export function WorkoutForm({
           {SIDES.map((side) => (
             <Column key={side} side={side}>
               <Input
+                ref={(element) => {
+                  elapsedRefs.current[side] = element;
+                }}
                 value={elapsed[side]}
                 inputMode="numeric"
-                placeholder="24:30"
+                placeholder="mm:ss"
+                aria-invalid={invalidSide === side}
                 aria-label={`${ATHLETES[side].name} elapsed time`}
                 onChange={(event) =>
                   setElapsed((current) => ({
@@ -498,54 +670,52 @@ export function WorkoutForm({
                   ) : isRun ? (
                     <p className="mb-2.5 text-sm font-medium">Distance and time</p>
                   ) : (
-                    <div className="mb-2.5 flex items-end gap-2">
-                      <Field label="Station" className="flex-1">
-                        <Input
-                          value={station.name}
-                          maxLength={100}
-                          placeholder="Station name"
-                          className="h-8"
-                          onChange={(event) =>
-                            setStation(index, { name: event.target.value })
-                          }
-                        />
-                      </Field>
-                      <Field label="Target" className="w-20">
-                        <Input
-                          value={station.target}
-                          inputMode="decimal"
-                          className="h-8"
-                          onChange={(event) =>
-                            setStation(index, { target: event.target.value })
-                          }
-                        />
-                      </Field>
-                      <Field label="Unit" className="w-24">
-                        <NativeSelect
-                          size="sm"
-                          value={station.unit}
-                          onChange={(event) =>
-                            setStation(index, {
-                              unit: event.target.value as Segment["unit"],
-                            })
-                          }
+                    <div className="mb-2.5 space-y-2">
+                      <ExercisePicker
+                        label="Station"
+                        choice={station.name}
+                        custom={station.custom}
+                        onChoice={(value) => setStation(index, { name: value })}
+                        onCustom={(value) => setStation(index, { custom: value })}
+                      />
+                      <div className="flex items-end gap-2">
+                        <Field label="Target" className="w-20">
+                          <Input
+                            value={station.target}
+                            inputMode="decimal"
+                            className="h-8"
+                            onChange={(event) =>
+                              setStation(index, { target: event.target.value })
+                            }
+                          />
+                        </Field>
+                        <Field label="Unit" className="flex-1">
+                          <NativeSelect
+                            size="sm"
+                            value={station.unit}
+                            onChange={(event) =>
+                              setStation(index, {
+                                unit: event.target.value as Segment["unit"],
+                              })
+                            }
+                          >
+                            {UNITS.map((unit) => (
+                              <NativeSelectOption key={unit} value={unit}>
+                                {unit}
+                              </NativeSelectOption>
+                            ))}
+                          </NativeSelect>
+                        </Field>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Remove station ${index + 1}`}
+                          onClick={() => removeStation(index)}
                         >
-                          {UNITS.map((unit) => (
-                            <NativeSelectOption key={unit} value={unit}>
-                              {unit}
-                            </NativeSelectOption>
-                          ))}
-                        </NativeSelect>
-                      </Field>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label={`Remove station ${index + 1}`}
-                        onClick={() => removeStation(index)}
-                      >
-                        <X />
-                      </Button>
+                          <X />
+                        </Button>
+                      </div>
                     </div>
                   )}
 
@@ -570,7 +740,7 @@ export function WorkoutForm({
                           <Input
                             value={entries[side][index]?.time ?? ""}
                             inputMode="numeric"
-                            placeholder="3:20"
+                            placeholder="mm:ss"
                             className="h-8"
                             onChange={(event) =>
                               setEntry(side, index, { time: event.target.value })
@@ -606,21 +776,27 @@ export function WorkoutForm({
             {lifts.map((lift, index) => (
               <li key={index} className="rounded-xl border bg-background p-3">
                 <div className="mb-2.5 flex items-end gap-2">
-                  <Field label="Lift" className="flex-1">
-                    <Input
-                      value={lift.name}
-                      maxLength={80}
-                      placeholder="Back squat"
-                      className="h-8"
-                      onChange={(event) =>
+                  <div className="flex-1">
+                    <ExercisePicker
+                      label="Lift"
+                      choice={lift.name}
+                      custom={lift.custom}
+                      onChoice={(value) =>
                         setLifts((current) =>
                           current.map((row, i) =>
-                            i === index ? { ...row, name: event.target.value } : row,
+                            i === index ? { ...row, name: value } : row,
+                          ),
+                        )
+                      }
+                      onCustom={(value) =>
+                        setLifts((current) =>
+                          current.map((row, i) =>
+                            i === index ? { ...row, custom: value } : row,
                           ),
                         )
                       }
                     />
-                  </Field>
+                  </div>
                   {lifts.length > 1 ? (
                     <Button
                       type="button"
