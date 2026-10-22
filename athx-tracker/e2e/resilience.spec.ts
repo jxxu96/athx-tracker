@@ -57,3 +57,24 @@ test("a save that half fails does not duplicate on the retry", async ({ page }) 
   await page.waitForTimeout(500);
   expect(await count(page)).toBe(2);
 });
+
+// The day an entry belongs to is the day the person is having, not the day in
+// New York. These run the browser in zones far from the server's.
+for (const timezoneId of ["Pacific/Kiritimati", "Pacific/Niue"]) {
+  test.describe(`in ${timezoneId}`, () => {
+    test.use({ timezoneId });
+
+    test("the session date is the device's day", async ({ page }) => {
+      await signIn(page);
+      const onDevice = await page.evaluate(() =>
+        new Intl.DateTimeFormat("en-CA", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(new Date()),
+      );
+      await page.getByRole("button", { name: "Session", exact: true }).click();
+      await expect(page.getByLabel("Date")).toHaveValue(onDevice);
+    });
+  });
+}

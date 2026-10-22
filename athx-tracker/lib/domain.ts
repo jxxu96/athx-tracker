@@ -69,9 +69,21 @@ export const METCON = [
  */
 export const RECENT_LIMIT = 400;
 
+/**
+ * Today, in whichever zone the runtime is in. This was pinned to New York
+ * because the event is there, which is not where someone training for it
+ * necessarily is: from a later timezone an evening meal filed itself under
+ * tomorrow, silently. The server renders first and cannot know where the phone
+ * is, so its answer is only a starting value; the device corrects it.
+ */
 export function localDay(date = new Date()) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+  return new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
 }
+
 /** Zero means the time was not recorded, which is not the same as no time. */
 export function formatTimeOrDash(seconds: number) {
   return seconds > 0 ? formatTime(seconds) : "—";

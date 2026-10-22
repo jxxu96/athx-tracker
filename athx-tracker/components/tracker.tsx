@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, useSyncExternalStore } from "react";
 import {
   CalendarDays,
   Dumbbell,
@@ -19,6 +19,7 @@ import { SettingsForm } from "@/components/settings-form";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   ATHLETES,
+  localDay,
   RECENT_LIMIT,
   type Meal,
   type RecordItem,
@@ -37,8 +38,11 @@ const TABS = [
   { id: "settings", label: "Setup", icon: SettingsIcon },
 ] as const satisfies readonly { id: Tab; label: string; icon: typeof Dumbbell }[];
 
+/** Nothing to subscribe to: the device's day is read once, after hydration. */
+const noSubscription = () => () => {};
+
 export function Tracker({
-  today,
+  today: serverToday,
   grokReady,
   records: initialRecords,
   total: initialTotal,
@@ -54,6 +58,14 @@ export function Tracker({
   revision: number;
   loadError?: string;
 }) {
+  // The server rendered with its own clock. Once this is running on the phone,
+  // the phone's day is the one that counts.
+  const today = useSyncExternalStore(
+    noSubscription,
+    () => localDay(),
+    () => serverToday,
+  );
+
   const [tab, setTab] = useState<Tab>("today");
   // One switch drives both forms: which columns the session shows, and whose
   // meal you are logging. "both" is the two-column session you asked for.
