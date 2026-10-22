@@ -99,12 +99,31 @@
  * these before anything paints, so a stored choice never flashes the other theme
  * on load. color-scheme keeps form controls and scrollbars in step.
  */
+:root {
+  /*
+   * The athlete colours identify a person; these are the readable versions of
+   * them for text. The identity colour stays for dots and bars, where it is
+   * decoration, but as 12px text it failed contrast in both themes: the pink
+   * at 4.3 on light and 3.2 on dark, the green at 2.7 on dark. Same hue, moved
+   * only as far as it had to be.
+   */
+  --athlete-hippos: #bb4e79;
+  --athlete-gators: #287653;
+  --athlete-team: #235a43;
+  --athlete-hippos-ink: #b54c75;
+  --athlete-gators-ink: #287653;
+  --athlete-team-ink: #235a43;
+}
+
 :root[data-theme="light"] {
   color-scheme: light;
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
+  --athlete-hippos-ink: #c97194;
+  --athlete-gators-ink: #5d987d;
+  --athlete-team-ink: #709485;
   --background: #0a0a0a;
   --foreground: #ededed;
   --card: #171717;

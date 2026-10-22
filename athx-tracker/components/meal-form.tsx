@@ -262,7 +262,7 @@ export function MealForm({
           options={(["hippos", "gators"] as const).map((key) => ({
             value: key,
             label: ATHLETES[key].name,
-            color: ATHLETES[key].color,
+            color: ATHLETES[key].ink,
           }))}
         />
         <Choice

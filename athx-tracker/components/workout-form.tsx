@@ -287,7 +287,7 @@ function Column({ side, children }: { side: Side; children: React.ReactNode }) {
     >
       <p
         className="flex items-center gap-1.5 text-[11px] font-semibold"
-        style={{ color: ATHLETES[side].color }}
+        style={{ color: ATHLETES[side].ink }}
       >
         <span
           className="size-2 rounded-full"

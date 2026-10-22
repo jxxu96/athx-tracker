@@ -34,10 +34,23 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   bodyweight: { hippos: 0, gators: 0 },
 };
+/**
+ * color identifies the athlete on dots and bars. ink is the same colour made
+ * readable against whichever theme is on, for anywhere it becomes text.
+ */
 export const ATHLETES = {
-  hippos: { name: "Hippos", label: "Female", color: "#bb4e79" },
-  gators: { name: "Gators", label: "Male", color: "#287653" },
-  team: { name: "Together", label: "Mixed doubles", color: "#235a43" },
+  hippos: {
+    name: "Hippos", label: "Female",
+    color: "#bb4e79", ink: "var(--athlete-hippos-ink)",
+  },
+  gators: {
+    name: "Gators", label: "Male",
+    color: "#287653", ink: "var(--athlete-gators-ink)",
+  },
+  team: {
+    name: "Together", label: "Mixed doubles",
+    color: "#235a43", ink: "var(--athlete-team-ink)",
+  },
 };
 export const METCON = [
   { name: "Opening row", target: 40, unit: "cal" as const, load: "Shared calories" },

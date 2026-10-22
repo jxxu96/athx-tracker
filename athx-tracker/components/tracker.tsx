@@ -184,7 +184,7 @@ export function Tracker({
                 className="rounded-full px-2.5 py-1 text-xs font-medium transition-colors aria-pressed:bg-background aria-pressed:shadow-sm"
                 style={
                   who === key && key !== "both"
-                    ? { color: ATHLETES[key].color }
+                    ? { color: ATHLETES[key].ink }
                     : undefined
                 }
               >
