@@ -143,3 +143,28 @@ per call.
 - Each provider gets one turn with tools and web search disabled.
 - A reply that would not validate counts as a failure and moves to the next
   provider, rather than reaching the app as a bad estimate.
+
+## Running it on the server instead
+
+The estimator can run beside the app rather than on your machine, which is the
+only way estimates work when your machine is asleep. `estimator/Dockerfile`
+builds an image with both CLIs inside, and the compose stack runs it as a second
+service. The app reaches it at `http://estimator:8787` over the compose network,
+so there is no tailnet hop, no published port, and no firewall rule.
+
+Sign each CLI in once; the logins persist in the `estimator-config` volume:
+
+```sh
+docker exec -it athx-estimator grok
+docker exec -it athx-estimator claude
+```
+
+Each prints a URL to open in your own browser. The credentials are created in
+the container rather than copied from anywhere.
+
+Worth knowing before you do this: a CLI login grants full access to that account,
+not something scoped to meal estimates, and whoever administers that host can
+read the volume. That is a judgement about who you trust, not a technical one.
+
+Backups are the exception and should stay on your own machine. A copy that lives
+on the server it is backing up is not a backup.

@@ -14,10 +14,10 @@ services:
       # by hand. A variable set on the stack but absent here never reaches the
       # container, so every one the app reads has to be listed.
       #
-      # The estimator sidecar on your own machine, which uses your subscription
-      # CLIs rather than a metered API key.
-      GROK_GATEWAY_URL: ${GROK_GATEWAY_URL:-}
-      GROK_GATEWAY_TOKEN: ${GROK_GATEWAY_TOKEN:-}
+      # The estimator below, reached over the compose network. Override
+      # GROK_GATEWAY_URL to point at an estimator on your own machine instead.
+      GROK_GATEWAY_URL: ${GROK_GATEWAY_URL:-http://estimator:8787}
+      GROK_GATEWAY_TOKEN: ${GROK_GATEWAY_TOKEN:?set GROK_GATEWAY_TOKEN, matching the estimator}
       # Or the x.ai API directly, which is billed per token.
       XAI_API_KEY: ${XAI_API_KEY:-}
       XAI_MODEL: ${XAI_MODEL:-}
@@ -30,5 +30,21 @@ services:
       # in a container rather than on the host, or to reach it from the LAN.
       - "${ATHX_BIND:-127.0.0.1}:${ATHX_PORT:-3000}:3000"
 
+  estimator:
+    image: ghcr.io/jxxu96/athx-estimator:latest
+    container_name: athx-estimator
+    restart: unless-stopped
+    environment:
+      # Must match GROK_GATEWAY_TOKEN above.
+      ESTIMATOR_TOKEN: ${GROK_GATEWAY_TOKEN:?set GROK_GATEWAY_TOKEN, matching the app}
+      ESTIMATOR_ORDER: ${ESTIMATOR_ORDER:-grok,claude}
+    volumes:
+      # Holds the CLI logins. Sign in once with docker exec; this keeps it.
+      - estimator-config:/config
+    # Deliberately not published: only the app, on this network, can reach it.
+    expose:
+      - "8787"
+
 volumes:
   athx-data:
+  estimator-config:

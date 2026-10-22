@@ -9,6 +9,7 @@ on:
     branches: [main]
     paths:
       - "athx-tracker/**"
+      - "estimator/**"
       - ".github/workflows/build.yml"
   workflow_dispatch:
 
@@ -46,10 +47,19 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Polling watches git, but the image is not ready until this job finishes,
-      # so a poll triggered by the commit pulls the previous image and never
-      # looks again. Telling Portainer once the image exists removes the race.
-      # No-ops until PORTAINER_WEBHOOK is set, so it is safe to leave here.
+      - name: Build and publish the estimator
+        uses: docker/build-push-action@v6
+        with:
+          context: ./estimator
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/jxxu96/athx-estimator:latest
+          cache-from: type=gha,scope=estimator
+          cache-to: type=gha,mode=max,scope=estimator
+
+      # Kept for a reachable Portainer. GitHub runners cannot route to a tailnet
+      # address, so with Portainer on one this no-ops and the estimator on your
+      # own machine watches the registry and triggers the redeploy instead.
       - name: Tell Portainer the image is ready
         env:
           HOOK: ${{ secrets.PORTAINER_WEBHOOK }}
