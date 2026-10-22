@@ -1,0 +1,59 @@
+import { expect, test, type Page } from "@playwright/test";
+import { PASSPHRASE } from "../playwright.config.ts";
+
+// A phone in a gym loses signal mid-save. What must not happen is losing the
+// entry, or quietly writing it twice when you try again.
+
+async function signIn(page: Page) {
+  await page.goto("/login");
+  await page.getByLabel("Passphrase").fill(PASSPHRASE);
+  await page.getByRole("button", { name: "Open journal" }).click();
+  await expect(page.getByRole("button", { name: "Session", exact: true })).toBeVisible();
+  await page.evaluate(async () => {
+    const data = await fetch("/api/records").then((r) => r.json());
+    for (const record of data.records as { id: string }[]) {
+      await fetch("/api/records", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: record.id }),
+      });
+    }
+  });
+  await page.reload();
+}
+
+const count = (page: Page) =>
+  page.evaluate(async () => {
+    const data = await fetch("/api/records").then((r) => r.json());
+    return data.total as number;
+  });
+
+test("a save that half fails does not duplicate on the retry", async ({ page }) => {
+  await signIn(page);
+  await page.getByRole("group", { name: "Logging for" })
+    .getByRole("button", { name: "Both" }).click();
+  await page.getByRole("button", { name: "Session", exact: true }).click();
+  await page.getByRole("button", { name: "Tennis 60m" }).click();
+
+  // The second athlete's save fails, the first having already landed.
+  let posts = 0;
+  await page.route("**/api/records", async (route) => {
+    if (route.request().method() === "POST") {
+      posts += 1;
+      if (posts === 2) return route.abort("internetdisconnected");
+    }
+    await route.continue();
+  });
+  await page.getByRole("button", { name: "Save session" }).click();
+  await expect.poll(() => count(page)).toBe(1);
+
+  // Signal returns and you press save again, with the form still filled in.
+  await page.unroute("**/api/records");
+  await page.getByRole("button", { name: "Save session" }).click();
+  // Wait for the submit to finish before counting. Polling for a number the
+  // total passes through on its way somewhere worse proves nothing: a retry
+  // that duplicates reads 2 for a moment before it reads 3.
+  await expect(page.getByText("Sessions saved")).toBeVisible();
+  await page.waitForTimeout(500);
+  expect(await count(page)).toBe(2);
+});

@@ -340,7 +340,7 @@ export function WorkoutForm({
   weightUnit: WeightUnit;
   editing?: Workout | null;
   onCancelEdit?: () => void;
-  onSave: (record: Workout) => Promise<void>;
+  onSave: (batch: Workout[]) => Promise<void>;
 }) {
   // Editing is one athlete's record, so it fills that athlete's column alone.
   // The parent remounts on a change of target, so these initialisers are enough.
@@ -416,6 +416,13 @@ export function WorkoutForm({
   const [notes, setNotes] = useState(editing?.notes ?? "");
   const [error, setError] = useState("");
   const [invalidSide, setInvalidSide] = useState<Side | null>(null);
+  // Stable across attempts. The endpoint upserts on id, so a retry after a
+  // half-failed save corrects the entry that landed rather than adding a
+  // second one beside it. New ids only once the whole submit is through.
+  const [draftIds, setDraftIds] = useState(() => ({
+    hippos: newId(),
+    gators: newId(),
+  }));
   const [saving, setSaving] = useState(false);
   const elapsedRefs = useRef<Record<Side, HTMLInputElement | null>>({
     hippos: null,
@@ -614,7 +621,7 @@ export function WorkoutForm({
     setError("");
 
     const records: Workout[] = active.map((side) => ({
-      id: editing ? editing.id : newId(),
+      id: editing ? editing.id : draftIds[side],
       kind: "workout",
       athlete: editing ? editing.athlete : side,
       day,
@@ -633,8 +640,8 @@ export function WorkoutForm({
 
     setSaving(true);
     try {
-      // Sequential: the second save should not race the first through SQLite.
-      for (const record of records) await onSave(record);
+      await onSave(records);
+      setDraftIds({ hippos: newId(), gators: newId() });
       const fresh = stationsFor(category);
       setTitle("");
       setElapsed({ hippos: "", gators: "" });

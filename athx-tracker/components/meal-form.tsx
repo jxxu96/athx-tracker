@@ -94,7 +94,7 @@ export function MealForm({
   editing?: Meal | null;
   onAthlete: (next: Meal["athlete"]) => void;
   onCancelEdit?: () => void;
-  onSave: (record: Meal) => Promise<void>;
+  onSave: (batch: Meal[]) => Promise<void>;
 }) {
   // Controlled by the switch in the header, so the two never disagree.
   const who = athlete;
@@ -179,7 +179,7 @@ export function MealForm({
     }
     setSaving(true);
     try {
-      await onSave({
+      await onSave([{
         id: editing ? editing.id : newId(),
         kind: "meal",
         athlete: who,
@@ -189,7 +189,7 @@ export function MealForm({
         macros: { calories: 0, protein: 0, carbs: 0, fat: 0 },
         source: "queued",
         assumptions: text.slice(0, 3000),
-      });
+      }]);
       reset();
       setOffline(false);
     } finally {
@@ -235,7 +235,7 @@ export function MealForm({
 
     setSaving(true);
     try {
-      await onSave(record);
+      await onSave([record]);
       reset();
     } finally {
       setSaving(false);

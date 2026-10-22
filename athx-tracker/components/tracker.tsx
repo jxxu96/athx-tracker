@@ -98,30 +98,55 @@ export function Tracker({
   const refresh = useCallback(() => reload(scope), [reload, scope]);
   const loadAll = useCallback(() => reload("all"), [reload]);
 
-  const save = useCallback(async (record: Workout | Meal) => {
-    try {
-      await api<{ record: RecordItem }>("/api/records", {
-        method: "POST",
-        body: JSON.stringify(record),
-      });
-      setRecords((current) =>
-        sortRecords([record, ...current.filter((item) => item.id !== record.id)]),
-      );
+  /**
+   * A submit, not a record. Logging for both used to save one athlete, succeed,
+   * and navigate away mid-flight, unmounting the form and taking the other
+   * athlete's unsaved session with it. Nothing moves until all of them are in.
+   */
+  const keep = useCallback((batch: RecordItem[]) => {
+    setRecords((current) =>
+      sortRecords([
+        ...batch,
+        ...current.filter((item) => !batch.some((r) => r.id === item.id)),
+      ]),
+    );
+  }, []);
+
+  const save = useCallback(
+    async (batch: (Workout | Meal)[]) => {
+      const stored: RecordItem[] = [];
+      try {
+        // Sequential: the second must not race the first through SQLite.
+        for (const record of batch) {
+          await api<{ record: RecordItem }>("/api/records", {
+            method: "POST",
+            body: JSON.stringify(record),
+          });
+          stored.push(record);
+        }
+      } catch (error) {
+        // Whatever did land is kept on screen, so a retry shows what is left.
+        if (stored.length) keep(stored);
+        toast.error(message(error));
+        throw error;
+      }
+
+      keep(stored);
       toast.success(
         editing
           ? "Entry updated"
-          : record.kind === "workout"
-            ? "Session saved"
+          : batch[0]?.kind === "workout"
+            ? batch.length > 1
+              ? "Sessions saved"
+              : "Session saved"
             : "Meal saved",
       );
       setEditing(null);
       setTab("today");
       window.scrollTo(0, 0);
-    } catch (error) {
-      toast.error(message(error));
-      throw error;
-    }
-  }, [editing]);
+    },
+    [editing, keep],
+  );
 
   const remove = useCallback(async (id: string) => {
     try {
