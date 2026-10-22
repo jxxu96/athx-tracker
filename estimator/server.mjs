@@ -439,9 +439,11 @@ async function checkForNewImage() {
     return;
   }
   if (digest === lastDigest) return;
-  lastDigest = digest;
   console.log(`[deploy] new image ${digest.slice(0, 19)}, telling Portainer`);
   const status = await postWebhook(DEPLOY_WEBHOOK);
+  // Recorded only once Portainer has accepted it. Recording it first loses the
+  // deploy for good when the call fails, instead of retrying on the next tick.
+  lastDigest = digest;
   console.log(`[deploy] Portainer accepted the redeploy (${status})`);
 }
 

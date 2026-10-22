@@ -43,6 +43,20 @@ services:
       # Must match GROK_GATEWAY_TOKEN above.
       ESTIMATOR_TOKEN: ${GROK_GATEWAY_TOKEN:?set GROK_GATEWAY_TOKEN, matching the app}
       ESTIMATOR_ORDER: ${ESTIMATOR_ORDER:-grok,claude}
+      # Auto-redeploy. GitHub Actions cannot reach a tailnet address, so CI
+      # cannot call Portainer. This container can: it watches ghcr.io for a new
+      # image and calls the webhook below. It runs beside Portainer and is
+      # always up, which an estimator on a laptop is not. Unset means redeploys
+      # stay manual. Get the URL from the stack's GitOps updates panel, and use
+      # host.docker.internal as its host: inside here, localhost is this
+      # container, not the server.
+      DEPLOY_WEBHOOK: ${DEPLOY_WEBHOOK:-}
+      DEPLOY_IMAGE: ${DEPLOY_IMAGE:-jxxu96/athx-tracker}
+      DEPLOY_EVERY_MINUTES: ${DEPLOY_EVERY_MINUTES:-5}
+    # Lets DEPLOY_WEBHOOK reach Portainer on the host without depending on the
+    # tailnet routing, or a firewall rule, from inside the container.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       # Holds the CLI logins. Sign in once with docker exec; this keeps it.
       - estimator-config:/config
