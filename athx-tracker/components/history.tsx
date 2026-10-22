@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/native-select";
 import {
   ATHLETES,
+  categoryName,
   estimateBurn,
   formatTimeOrDash,
   formatWeight,
@@ -138,7 +139,7 @@ export function History({
                             {record.title}
                           </p>
                           <p className="mt-0.5 text-xs text-muted-foreground">
-                            {ATHLETES[record.athlete].name} · {record.category} ·{" "}
+                            {ATHLETES[record.athlete].name} · {categoryName(record)} ·{" "}
                             {formatTimeOrDash(record.seconds)}
                             {record.goal
                               ? ` · goal ${formatTimeOrDash(record.goal)}`

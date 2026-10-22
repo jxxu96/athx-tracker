@@ -4,10 +4,9 @@ import { Dumbbell, Flame, Target } from "lucide-react";
 import {
   ATHLETES,
   METCON,
+  categoryName,
   estimateBurn,
-  formatTime,
   formatTimeOrDash,
-  projectWorkout,
   sumMacros,
   type Macros,
   type RecordItem,
@@ -95,14 +94,6 @@ export function Overview({
   const workouts = records.filter(isWorkout);
   const weekWorkouts = workouts.filter((w) => weekStart(w.day) === thisWeek);
   const lastSession = workouts.find((w) => w.day <= today) ?? workouts[0];
-  const projection = lastSession
-    ? projectWorkout(
-        lastSession.segments,
-        lastSession.seconds,
-        lastSession.fatigue,
-        lastSession.transition,
-      )
-    : null;
 
   return (
     <div className="space-y-4">
@@ -241,24 +232,9 @@ export function Overview({
             </p>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            {ATHLETES[lastSession.athlete].name} · {lastSession.category} ·{" "}
+            {ATHLETES[lastSession.athlete].name} · {categoryName(lastSession)} ·{" "}
             {lastSession.context === "pairs" ? "Pairs" : "Solo"} · {lastSession.day}
           </p>
-          {projection?.partial ? (
-            <div className="mt-3 rounded-xl bg-muted/60 p-3 text-xs">
-              <p className="font-medium">
-                Full-workout scenario {formatTime(projection.estimate)}
-                <span className="font-normal text-muted-foreground">
-                  {" "}
-                  (range {formatTime(projection.linear)}–{formatTime(projection.upper)})
-                </span>
-              </p>
-              <p className="mt-1 text-muted-foreground">
-                {projection.coverage}% of the work was actually performed. A scenario
-                built from your own station paces, not a prediction.
-              </p>
-            </div>
-          ) : null}
           {lastSession.notes ? (
             <p className="mt-3 whitespace-pre-wrap text-xs text-muted-foreground">
               {lastSession.notes}

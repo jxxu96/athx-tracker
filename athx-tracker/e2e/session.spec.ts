@@ -29,6 +29,12 @@ const elapsed = (page: Page) => page.getByLabel(/elapsed time$/);
 // The title field is labelled "Session" and the lift load by its unit.
 const title = (page: Page) => page.getByLabel("Session", { exact: true });
 
+const formatSelect = (page: Page) =>
+  page.locator("select").filter({ has: page.locator('option[value="pairs"]') });
+
+const athlete = (page: Page, name: string) =>
+  page.getByRole("group", { name: "Logging for" }).getByRole("button", { name });
+
 test.beforeEach(async ({ page }) => {
   await signIn(page);
 });
@@ -118,4 +124,75 @@ test("a theme chosen in one tab follows into the other", async ({ page, context 
     "rgb(10, 10, 10)",
   );
   await second.close();
+});
+
+test("the format follows the switch at the top", async ({ page }) => {
+  // It sat at Pairs whatever the switch said, so a solo session claimed
+  // otherwise unless you noticed the dropdown.
+  await athlete(page, "Both").click();
+  await openSession(page);
+  await expect(formatSelect(page)).toHaveValue("pairs");
+
+  await athlete(page, "Gators").click();
+  await expect(formatSelect(page)).toHaveValue("solo");
+
+  await athlete(page, "Both").click();
+  await expect(formatSelect(page)).toHaveValue("pairs");
+});
+
+test("choosing the format yourself pins it against the switch", async ({ page }) => {
+  await athlete(page, "Both").click();
+  await openSession(page);
+  await formatSelect(page).selectOption("solo");
+  await athlete(page, "Gators").click();
+  await expect(formatSelect(page)).toHaveValue("solo");
+});
+
+test("an Other session is logged under the name you give it", async ({ page }) => {
+  await athlete(page, "Gators").click();
+  await openSession(page);
+  await typeSelect(page).selectOption("Other");
+  await page.getByLabel("What was it?").fill("Hiking");
+  await elapsed(page).first().fill("90:00");
+  await page.getByRole("button", { name: "Save session" }).click();
+
+  await page.getByRole("button", { name: "Log", exact: true }).click();
+  await expect(page.getByText(/· Hiking ·/)).toBeVisible();
+  await expect(page.getByText(/· Other ·/)).toHaveCount(0);
+});
+
+test("the name field belongs to Other alone", async ({ page }) => {
+  await athlete(page, "Gators").click();
+  await openSession(page);
+  await typeSelect(page).selectOption("Other");
+  await expect(page.getByLabel("What was it?")).toBeVisible();
+  await page.getByLabel("What was it?").fill("Hiking");
+
+  await typeSelect(page).selectOption("Tennis");
+  await expect(page.getByLabel("What was it?")).toHaveCount(0);
+
+  // And it is not quietly carried along either: a name typed and then
+  // abandoned must not ride into the record of a session it does not describe.
+  await elapsed(page).first().fill("60:00");
+  await page.getByRole("button", { name: "Save session" }).click();
+  await expect
+    .poll(async () =>
+      page.evaluate(async () => {
+        const data = await fetch("/api/records").then((r) => r.json());
+        return data.records.map(
+          (r: { category: string; customCategory: string }) =>
+            `${r.category}:${r.customCategory}`,
+        );
+      }),
+    )
+    .toContain("Tennis:");
+});
+
+test("the full-workout scenario is no longer in the form", async ({ page }) => {
+  await openSession(page);
+  for (const category of CATEGORIES) {
+    await typeSelect(page).selectOption(category);
+    await expect(page.getByText("Full-workout scenario")).toHaveCount(0);
+    await expect(page.getByText("Fatigue allowance on unperformed work")).toHaveCount(0);
+  }
 });

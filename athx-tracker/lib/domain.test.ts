@@ -2,7 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   MET_BY_CATEGORY,
+  categoryName,
   categoryShape,
+  defaultContext,
   sessionSeconds,
   presetElapsed,
   presetTitle,
@@ -21,7 +23,7 @@ import {
 
 const workout = (over: Partial<Workout> = {}): Workout => ({
   id: "x", kind: "workout", athlete: "gators", day: "2026-10-22",
-  title: "t", category: "MetCon", seconds: 1800, notes: "",
+  title: "t", category: "MetCon", customCategory: "", seconds: 1800, notes: "",
   segments: [], fatigue: 10, transition: 0, goal: null,
   context: "solo", lifts: [], ...over,
 });
@@ -105,6 +107,23 @@ test("every preset names a real category and a usable time", () => {
 
 // Every category there is, taken from the table that must list them all.
 const CATEGORIES = Object.keys(MET_BY_CATEGORY) as Workout["category"][];
+
+test("the format follows who you are logging for", () => {
+  assert.equal(defaultContext(2), "pairs", "both of you is a pairs session");
+  assert.equal(defaultContext(1), "solo", "one of you is not");
+});
+
+test("a named Other session is called what you named it", () => {
+  const as = (category: Workout["category"], customCategory: string) =>
+    categoryName({ category, customCategory });
+  assert.equal(as("Other", "Hiking"), "Hiking");
+  assert.equal(as("Other", "  Climbing  "), "Climbing");
+  assert.equal(as("Other", ""), "Other", "unnamed stays Other");
+  assert.equal(as("Other", "   "), "Other", "a space is not a name");
+  // A name left behind by switching away from Other must not rename a real one.
+  assert.equal(as("Tennis", "Hiking"), "Tennis");
+  assert.equal(as("MetCon", ""), "MetCon");
+});
 
 test("a session with nothing timed lasts zero, and saves", () => {
   // The case that could not be saved at all: a strength session, no stations

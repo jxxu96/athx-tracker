@@ -4,7 +4,6 @@ import {
   cloneElement,
   isValidElement,
   useId,
-  useMemo,
   useRef,
   useState,
   type ReactElement,
@@ -25,12 +24,12 @@ import {
   METCON,
   PRESETS,
   categoryShape,
+  defaultContext,
   presetElapsed,
   presetTitle,
   sessionSeconds,
   formatTime,
   parseTime,
-  projectWorkout,
   fromKilograms,
   toKilograms,
   type Segment,
@@ -353,9 +352,17 @@ export function WorkoutForm({
   const [category, setCategory] = useState<Workout["category"]>(
     editing?.category ?? "MetCon",
   );
-  const [context, setContext] = useState<Workout["context"]>(
-    editing?.context ?? "pairs",
+  // Follows the switch at the top rather than sitting at Pairs regardless:
+  // logging for both is a pairs session, logging for one is not. Choosing it
+  // yourself pins it, and editing keeps whatever was saved.
+  const [customCategory, setCustomCategory] = useState(
+    editing?.customCategory ?? "",
   );
+  const [chosenContext, setChosenContext] = useState<Workout["context"] | null>(
+    editing?.context ?? null,
+  );
+  const context: Workout["context"] =
+    chosenContext ?? defaultContext(sides.length);
   const [stations, setStations] = useState<Station[]>(() =>
     editing
       ? editing.segments.map((segment) => ({
@@ -404,10 +411,8 @@ export function WorkoutForm({
     }));
   });
   const [goal, setGoal] = useState(editing?.goal ? formatTime(editing.goal) : "");
-  const [fatigue, setFatigue] = useState(editing?.fatigue ?? 10);
-  const [transition, setTransition] = useState(
-    editing ? String(editing.transition) : "",
-  );
+  const fatigue = editing?.fatigue ?? 10;
+  const transition = editing ? String(editing.transition) : "";
   const [notes, setNotes] = useState(editing?.notes ?? "");
   const [error, setError] = useState("");
   const [invalidSide, setInvalidSide] = useState<Side | null>(null);
@@ -540,22 +545,6 @@ export function WorkoutForm({
       }));
   }
 
-  const projections = useMemo(
-    () =>
-      Object.fromEntries(
-        columns.map((side) => [
-          side,
-          projectWorkout(
-            segmentsFor(side),
-            totalFor(side),
-            fatigue,
-            num(transition),
-          ),
-        ]),
-      ) as Record<Side, ReturnType<typeof projectWorkout>>,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stations, entries, elapsed, fatigue, transition, category],
-  );
 
   function validateSide(side: Side) {
     const who = ATHLETES[side].name;
@@ -631,6 +620,7 @@ export function WorkoutForm({
       day,
       title: title.trim() || dateTitle(day),
       category,
+      customCategory: category === "Other" ? customCategory.trim() : "",
       seconds: totalFor(side),
       notes: notes.trim(),
       segments: segmentsFor(side),
@@ -652,7 +642,6 @@ export function WorkoutForm({
       setEntries({ hippos: entriesFor(fresh), gators: entriesFor(fresh) });
       setLifts([blankLift()]);
       setGoal("");
-      setTransition("");
       setNotes("");
     } finally {
       setSaving(false);
@@ -688,7 +677,7 @@ export function WorkoutForm({
             <NativeSelect
               value={context}
               onChange={(event) =>
-                setContext(event.target.value as Workout["context"])
+                setChosenContext(event.target.value as Workout["context"])
               }
             >
               <NativeSelectOption value="pairs">Pairs</NativeSelectOption>
@@ -754,6 +743,16 @@ export function WorkoutForm({
             />
           </Field>
         </div>
+        {category === "Other" ? (
+          <Field label="What was it?" hint="Shown instead of “Other” in the log">
+            <Input
+              value={customCategory}
+              maxLength={60}
+              placeholder="Hiking, yoga, climbing…"
+              onChange={(event) => setCustomCategory(event.target.value)}
+            />
+          </Field>
+        ) : null}
       </section>
 
       <Panel
@@ -1008,68 +1007,6 @@ export function WorkoutForm({
         </Panel>
       ) : null}
 
-      {usesStations && !isRun ? (
-        <Panel title="Full-workout scenario">
-          <div>
-            <div className="mb-1.5 flex items-baseline justify-between">
-              <Label className="text-xs font-medium text-muted-foreground">
-                Fatigue allowance on unperformed work
-              </Label>
-              <span className="text-xs font-medium tabular-nums">{fatigue}%</span>
-            </div>
-            <input
-              type="range"
-              min={0}
-              max={50}
-              step={1}
-              value={fatigue}
-              onChange={(event) => setFatigue(Number(event.target.value))}
-              className="h-6 w-full accent-foreground"
-              aria-label="Fatigue allowance percent"
-            />
-          </div>
-          <Field label="Rest still to come" hint="Seconds of transition left">
-            <Input
-              value={transition}
-              inputMode="numeric"
-              placeholder="0"
-              onChange={(event) => setTransition(event.target.value)}
-            />
-          </Field>
-          <div className={`grid gap-2.5 ${columns.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
-            {columns.map((side) => {
-              const projection = projections[side];
-              return (
-                <Column key={side} side={side}>
-                  {projection ? (
-                    <div className="text-xs">
-                      <p className="font-medium">
-                        {projection.partial ? "Scenario " : "Time "}
-                        {formatTime(projection.estimate)}
-                      </p>
-                      {projection.partial ? (
-                        <p className="text-muted-foreground">
-                          {formatTime(projection.linear)}–
-                          {formatTime(projection.upper)} · {projection.coverage}%
-                          performed
-                        </p>
-                      ) : (
-                        <p className="text-muted-foreground">
-                          Every station completed.
-                        </p>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      Appears once every station has completed work with a time.
-                    </p>
-                  )}
-                </Column>
-              );
-            })}
-          </div>
-        </Panel>
-      ) : null}
 
       <section className="rounded-2xl border bg-card p-4 sm:p-5">
         <Field label="Notes">

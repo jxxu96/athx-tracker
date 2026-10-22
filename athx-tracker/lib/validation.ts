@@ -12,6 +12,8 @@ export const workoutSchema = z.object({
   ...base, kind: z.literal("workout"), athlete: z.enum(["hippos", "gators", "team"]),
   title: z.string().trim().min(1).max(120),
   category: z.enum(["Strength", "Endurance", "MetCon", "Solidcore", "Tennis", "Other"]),
+  // Defaulted, so sessions written before Other could be named still parse.
+  customCategory: z.string().trim().max(60).default(""),
   seconds: finite.max(86400), notes: z.string().max(2000),
   segments: z.array(z.object({
     name: z.string().trim().min(1).max(100), unit: z.enum(["reps", "m", "cal", "rounds"]),

@@ -8,6 +8,8 @@ export type Segment = {
 export type Workout = {
   id: string; kind: "workout"; athlete: Athlete; day: string;
   title: string; category: "Strength" | "Endurance" | "MetCon" | "Solidcore" | "Tennis" | "Other";
+  /** What "Other" actually was. Empty for every other category. */
+  customCategory: string;
   seconds: number; notes: string; segments: Segment[]; fatigue: number;
   transition: number; goal: number | null; context: "solo" | "pairs";
   lifts: { name: string; kg: number; sets: number; reps: number }[];
@@ -161,6 +163,26 @@ export const PRESETS = [
   category: Workout["category"];
   minutes: number;
 }[];
+
+/**
+ * Pairs or solo, taken from who you are logging for. It sat at Pairs whatever
+ * the switch at the top said, which made every solo session claim otherwise
+ * unless you noticed the dropdown.
+ */
+export function defaultContext(sideCount: number): Workout["context"] {
+  return sideCount > 1 ? "pairs" : "solo";
+}
+
+/**
+ * What to call the session's type. "Other" says nothing in a log, so when you
+ * have named it, the name is what shows.
+ */
+export function categoryName(
+  workout: Pick<Workout, "category" | "customCategory">,
+) {
+  const named = (workout.customCategory ?? "").trim();
+  return workout.category === "Other" && named ? named : workout.category;
+}
 
 /**
  * How long a session lasted, from what was filled in. A typed time wins,
