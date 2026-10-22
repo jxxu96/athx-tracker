@@ -146,6 +146,22 @@ export function estimateBurn(workout: Workout, bodyweightKg: number) {
   return Math.round(kcal / 10) * 10;
 }
 
+/**
+ * One tap for the sessions that are always the same shape. The minutes are a
+ * starting point rather than a fact: they land in the elapsed box, which stays
+ * editable. Kept here rather than in the form so the categories and times can
+ * be checked by a test, which is where a preset naming a category that no
+ * longer exists would otherwise go unnoticed.
+ */
+export const PRESETS = [
+  { label: "Solidcore", category: "Solidcore", minutes: 50 },
+  { label: "Tennis", category: "Tennis", minutes: 60 },
+] as const satisfies readonly {
+  label: string;
+  category: Workout["category"];
+  minutes: number;
+}[];
+
 export function formatWeight(kg: number, unit: WeightUnit) {
   return `${Math.round(fromKilograms(kg, unit) * 10) / 10} ${unit}`;
 }

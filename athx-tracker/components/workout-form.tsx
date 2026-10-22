@@ -15,6 +15,7 @@ import { dayToDate, newId } from "@/lib/client";
 import {
   ATHLETES,
   METCON,
+  PRESETS,
   formatTime,
   parseTime,
   projectWorkout,
@@ -50,19 +51,6 @@ const CATEGORIES = [
   "MetCon", "Strength", "Endurance", "Solidcore", "Tennis", "Other",
 ] as const;
 
-/**
- * One tap for the sessions that are always the same shape. The minutes are a
- * starting point rather than a fact: they land in the elapsed box, which stays
- * editable. Extend this list as the routine does.
- */
-const PRESETS = [
-  { label: "Solidcore", category: "Solidcore", minutes: 50 },
-  { label: "Tennis", category: "Tennis", minutes: 60 },
-] as const satisfies readonly {
-  label: string;
-  category: Workout["category"];
-  minutes: number;
-}[];
 const UNITS = ["reps", "m", "cal", "rounds"] as const;
 
 const OTHER = "Other";

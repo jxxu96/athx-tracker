@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  MET_BY_CATEGORY,
+  PRESETS,
   estimateBurn,
   formatTime,
   formatTimeOrDash,
@@ -77,6 +79,24 @@ test("burn scales with weight and duration", () => {
   const base = estimateBurn(workout({ seconds: 1800 }), 80)!;
   assert.ok(estimateBurn(workout({ seconds: 3600 }), 80)! > base);
   assert.ok(estimateBurn(workout({ seconds: 1800 }), 100)! > base);
+});
+
+test("every preset names a real category and a usable time", () => {
+  assert.ok(PRESETS.length > 0);
+  for (const preset of PRESETS) {
+    // A preset pointing at a category that no longer exists would fall back to
+    // Other's MET and report a plausible, wrong burn.
+    assert.ok(
+      MET_BY_CATEGORY[preset.category] > 0,
+      `${preset.label} names a category with no MET`,
+    );
+    assert.ok(preset.minutes > 0 && preset.minutes < 1440, preset.label);
+    // The minutes become text in the elapsed box, which has to parse back.
+    const text = formatTime(preset.minutes * 60);
+    assert.equal(parseTime(text), preset.minutes * 60, `${preset.label} -> ${text}`);
+  }
+  const labels = PRESETS.map((p) => p.label);
+  assert.equal(new Set(labels).size, labels.length, "labels are used as keys");
 });
 
 test("a projection is withheld rather than guessed", () => {
