@@ -60,3 +60,8 @@ next-env.d.ts
 
 # typescript build cache
 tsconfig.tsbuildinfo
+
+# browser tests
+.playwright
+test-results
+playwright-report

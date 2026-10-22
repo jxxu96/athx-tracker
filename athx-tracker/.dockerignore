@@ -11,3 +11,8 @@ Dockerfile
 .env
 .env.*
 *.test.ts
+e2e
+.playwright
+test-results
+playwright-report
+playwright.config.ts

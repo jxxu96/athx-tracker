@@ -1,6 +1,14 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import {
+  cloneElement,
+  isValidElement,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+} from "react";
 import { Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -245,12 +253,27 @@ export function Field({
   children: React.ReactNode;
   className?: string;
 }) {
+  // The label sat beside the control rather than attached to it, so nothing
+  // announced what any field was, and nothing could find one by its name.
+  const generated = useId();
+  const control = isValidElement(children)
+    ? cloneElement(children as ReactElement<{ id?: string }>, {
+        id: (children as ReactElement<{ id?: string }>).props.id ?? generated,
+      })
+    : children;
+  const htmlFor = isValidElement(children)
+    ? ((children as ReactElement<{ id?: string }>).props.id ?? generated)
+    : undefined;
+
   return (
     <div className={className}>
-      <Label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+      <Label
+        htmlFor={htmlFor}
+        className="mb-1.5 block text-xs font-medium text-muted-foreground"
+      >
         {label}
       </Label>
-      <div className="[&>div]:w-full">{children}</div>
+      <div className="[&>div]:w-full">{control}</div>
       {hint ? <p className="mt-1 text-[11px] text-muted-foreground">{hint}</p> : null}
     </div>
   );
@@ -699,8 +722,8 @@ export function WorkoutForm({
                 aria-pressed={category === preset.category}
                 className="rounded-lg border px-2 py-2.5 text-xs font-medium transition-colors aria-pressed:bg-accent aria-pressed:font-semibold"
               >
-                {preset.label}
-                <span className="ml-1 font-normal text-muted-foreground">
+                {preset.label}{" "}
+                <span className="font-normal text-muted-foreground">
                   {preset.minutes}m
                 </span>
               </button>

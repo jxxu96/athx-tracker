@@ -36,6 +36,12 @@ jobs:
         working-directory: athx-tracker
       - run: npm test
         working-directory: athx-tracker
+      # Every bug that reached a phone in this app was wiring or rendering,
+      # which the unit tests cannot see. These drive a real browser.
+      - run: npx playwright install --with-deps chromium
+        working-directory: athx-tracker
+      - run: npm run test:e2e
+        working-directory: athx-tracker
 
   image:
     needs: checks
