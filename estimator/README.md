@@ -166,5 +166,10 @@ Worth knowing before you do this: a CLI login grants full access to that account
 not something scoped to meal estimates, and whoever administers that host can
 read the volume. That is a judgement about who you trust, not a technical one.
 
-Backups are the exception and should stay on your own machine. A copy that lives
-on the server it is backing up is not a backup.
+Backups are worth running in both places, because they answer different
+questions. The estimator in the stack writes to a volume of its own every twelve
+hours, which covers a bad delete, a bad deploy or a corrupt database, and runs
+whether or not any laptop is awake. It does not cover losing the machine: a copy
+on the server it is backing up cannot survive that server. The estimator on your
+own machine is the one that does, so keep it configured and run it when you can.
+Neither replaces the other.

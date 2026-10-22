@@ -11,6 +11,9 @@ on:
       - "athx-tracker/**"
       - "estimator/**"
       - ".github/workflows/build.yml"
+      # Prose does not change the image, and publishing one makes the server
+      # redeploy itself. A README is not worth restarting production for.
+      - "!**/*.md"
   workflow_dispatch:
 
 jobs:

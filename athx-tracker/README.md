@@ -9,14 +9,20 @@ single SQLite file on a volume.
 - **Today** — countdown to the event, sessions logged this week against the weekly
   target, each athlete's macros against their daily targets, and the last session
   with its full-workout scenario. The ATHX Lite running order is listed for reference.
-- **Session** — log a workout with its elapsed time. Load the seven ATHX stations
-  with one tap, then fill in what you completed and each split. Lifts and notes are
-  optional.
+- **Session** — log a workout as MetCon, Strength, Endurance, Solidcore or Other.
+  Load the seven ATHX stations with one tap, then fill in what you completed and
+  each split. Elapsed time, station times, lifts and notes are all optional: a
+  session with nothing timed is still a session, and reads as a dash rather than
+  as a time of zero. Without a time there is no pace, so the scenario below is
+  withheld rather than guessed.
 - **Meal** — describe a meal and let Grok estimate the macros, or type them in
   yourself. Editing an estimated number saves the meal as your own figures.
-- **Log** — everything logged, newest first, filterable, with delete.
-- **Setup** — event name and date, weekly session target, and each athlete's daily
-  macro targets.
+- **Log** — everything logged, newest first, filterable, with edit and delete. It
+  opens with the most recent entries and fetches the rest when asked, so a journal
+  years deep does not have to cross the network on every load.
+- **Setup** — event name and date, weekly session target, display units, each
+  athlete's bodyweight, and their daily macro targets. The bodyweight is what makes
+  calories burned possible; without it that figure is withheld.
 
 ### The full-workout scenario
 
@@ -96,7 +102,9 @@ One SQLite file holds everything. Migrations in `drizzle/` run automatically on 
 use, so a fresh volume comes up with its tables already built.
 
 Backing up is copying that file, ideally with the container stopped so the
-write-ahead log is checkpointed. After changing `db/schema.ts`, run `npm run db:generate`
+write-ahead log is checkpointed. The estimator also pulls a copy on a timer when
+`BACKUP_URL` and `BACKUP_PASSPHRASE` are set; see its README for where those
+copies land and what they do and do not protect against. After changing `db/schema.ts`, run `npm run db:generate`
 and commit the generated SQL; the new migration applies itself on the next start.
 
 ## Meal estimates
