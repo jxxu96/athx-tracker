@@ -19,6 +19,7 @@ import { SettingsForm } from "@/components/settings-form";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   ATHLETES,
+  RECENT_LIMIT,
   type Meal,
   type RecordItem,
   type Settings,
@@ -40,6 +41,7 @@ export function Tracker({
   today,
   grokReady,
   records: initialRecords,
+  total: initialTotal,
   settings: initialSettings,
   revision: initialRevision,
   loadError = "",
@@ -47,6 +49,7 @@ export function Tracker({
   today: string;
   grokReady: boolean;
   records: RecordItem[];
+  total: number;
   settings: Settings;
   revision: number;
   loadError?: string;
@@ -62,15 +65,24 @@ export function Tracker({
   const [problem, setProblem] = useState(loadError);
   const [editing, setEditing] = useState<RecordItem | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  // How many entries exist, against how many are in hand. The app opens with a
+  // recent slice; the Log offers the rest rather than making every load pay for
+  // years of history nothing on the first screen reads.
+  const [total, setTotal] = useState(initialTotal);
+  const [scope, setScope] = useState<"recent" | "all">("recent");
 
-  const refresh = useCallback(async () => {
+  const reload = useCallback(async (next: "recent" | "all") => {
     setRefreshing(true);
     try {
       const [entries, config] = await Promise.all([
-        api<{ records: RecordItem[] }>("/api/records"),
+        api<{ records: RecordItem[]; total: number }>(
+          next === "all" ? "/api/records" : `/api/records?limit=${RECENT_LIMIT}`,
+        ),
         api<{ settings: Settings; revision: number }>("/api/settings"),
       ]);
       setRecords(sortRecords(entries.records));
+      setTotal(entries.total);
+      setScope(next);
       setSettings(config.settings);
       setRevision(config.revision);
       setProblem("");
@@ -80,6 +92,11 @@ export function Tracker({
       setRefreshing(false);
     }
   }, []);
+
+  // Refreshing keeps whatever the Log is already showing: having asked for the
+  // whole journal once, it should not silently shrink back on the next tap.
+  const refresh = useCallback(() => reload(scope), [reload, scope]);
+  const loadAll = useCallback(() => reload("all"), [reload]);
 
   const save = useCallback(async (record: Workout | Meal) => {
     try {
@@ -241,6 +258,9 @@ export function Tracker({
             athlete="all"
             weightUnit={settings.weightUnit ?? "lb"}
             bodyweight={settings.bodyweight ?? { hippos: 0, gators: 0 }}
+            total={total}
+            loadingAll={refreshing}
+            onLoadAll={scope === "all" ? undefined : loadAll}
             onEdit={(record) => {
               setEditing(record);
               setTab(record.kind === "workout" ? "session" : "meal");

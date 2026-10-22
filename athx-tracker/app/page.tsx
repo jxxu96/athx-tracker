@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { Tracker } from "@/components/tracker";
 import {
   DEFAULT_SETTINGS,
+  RECENT_LIMIT,
   localDay,
   type RecordItem,
   type Settings,
@@ -16,13 +17,19 @@ export const dynamic = "force-dynamic";
 function readJournal() {
   try {
     const rows = database()
-      .prepare("SELECT payload FROM records ORDER BY day DESC, created_at DESC")
-      .all() as { payload: string }[];
+      .prepare(
+        "SELECT payload FROM records ORDER BY day DESC, created_at DESC LIMIT ?",
+      )
+      .all(RECENT_LIMIT) as { payload: string }[];
+    const { total } = database()
+      .prepare("SELECT COUNT(*) AS total FROM records")
+      .get() as { total: number };
     const saved = database()
       .prepare("SELECT payload, revision FROM settings WHERE id = 'team'")
       .get() as { payload: string; revision: number } | undefined;
     return {
       records: rows.map((row) => JSON.parse(row.payload) as RecordItem),
+      total,
       settings: saved
         ? (JSON.parse(saved.payload) as Settings)
         : DEFAULT_SETTINGS,
@@ -47,6 +54,7 @@ export default async function Home() {
           (config.GROK_GATEWAY_URL && config.GROK_GATEWAY_TOKEN),
       )}
       records={journal?.records ?? []}
+      total={journal?.total ?? 0}
       settings={journal?.settings ?? DEFAULT_SETTINGS}
       revision={journal?.revision ?? 0}
       loadError={

@@ -46,6 +46,14 @@ export const METCON = [
   { name: "Burpees over bench", target: 30, unit: "reps" as const, load: "Step-overs permitted in Lite" },
   { name: "Closing row", target: 40, unit: "cal" as const, load: "Shared calories" },
 ];
+/**
+ * How many entries the app opens with. Two people logging meals and sessions
+ * daily reach thousands before the event, and sending all of them to a phone on
+ * every load is megabytes that nothing on the first screen reads. The Log asks
+ * for the rest when it needs them.
+ */
+export const RECENT_LIMIT = 400;
+
 export function localDay(date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }

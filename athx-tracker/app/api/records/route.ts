@@ -4,10 +4,20 @@ import { recordSchema } from "@/lib/validation";
 export async function GET(request: Request) {
   const rejected = await guard(request);
   if (rejected) return rejected;
-  const rows = database()
-    .prepare("SELECT payload FROM records ORDER BY day DESC, created_at DESC")
-    .all() as { payload: string }[];
-  return json({ records: rows.map((row) => JSON.parse(row.payload)) });
+  // Omitting the limit returns the whole journal, which is what the backup job
+  // asks for and must keep getting.
+  const asked = Number(new URL(request.url).searchParams.get("limit"));
+  const limit = Number.isInteger(asked) && asked > 0 ? asked : null;
+  const order = "SELECT payload FROM records ORDER BY day DESC, created_at DESC";
+  const rows = (
+    limit
+      ? database().prepare(`${order} LIMIT ?`).all(limit)
+      : database().prepare(order).all()
+  ) as { payload: string }[];
+  const { total } = database()
+    .prepare("SELECT COUNT(*) AS total FROM records")
+    .get() as { total: number };
+  return json({ records: rows.map((row) => JSON.parse(row.payload)), total });
 }
 
 export async function POST(request: Request) {

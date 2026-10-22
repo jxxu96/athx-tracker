@@ -26,6 +26,9 @@ export function History({
   athlete,
   weightUnit,
   bodyweight,
+  total,
+  loadingAll,
+  onLoadAll,
   onEdit,
   onDelete,
 }: {
@@ -34,6 +37,11 @@ export function History({
   athlete: Athlete | "all";
   weightUnit: WeightUnit;
   bodyweight: Settings["bodyweight"];
+  /** Entries in the journal, which is not always how many are loaded. */
+  total: number;
+  loadingAll: boolean;
+  /** Undefined once everything is in hand, so the offer disappears. */
+  onLoadAll?: () => void;
   onEdit: (record: RecordItem) => void;
   onDelete: (id: string) => Promise<void>;
 }) {
@@ -67,6 +75,22 @@ export function History({
 
   return (
     <div className="space-y-4 pb-4">
+      {onLoadAll && total > records.length ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-muted/60 p-3">
+          <p className="text-xs text-muted-foreground">
+            Showing the most recent {records.length} of {total} entries.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            disabled={loadingAll}
+            onClick={onLoadAll}
+          >
+            {loadingAll ? "Loading…" : "Load all"}
+          </Button>
+        </div>
+      ) : null}
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">
           {visible.length} entr{visible.length === 1 ? "y" : "ies"}
