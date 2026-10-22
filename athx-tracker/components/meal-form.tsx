@@ -18,6 +18,13 @@ const MACRO_FIELDS = [
 ] as const satisfies readonly { key: keyof Macros; label: string; unit: string }[];
 
 const MEALS = ["Breakfast", "Lunch", "Dinner", "Snack"] as const;
+
+/** What the estimator was told each level means, so the word is checkable. */
+const CONFIDENCE_MEANS = {
+  high: " · matched to label or published figures",
+  medium: " · standard reference values",
+  low: " · estimated by analogy",
+} as const;
 const LIMITS: Macros = { calories: 20000, protein: 2000, carbs: 3000, fat: 2000 };
 
 type MacroDraft = Record<keyof Macros, string>;
@@ -346,7 +353,9 @@ export function MealForm({
 
         {confidence ? (
           <p className="text-xs text-muted-foreground">
-            Grok confidence: <span className="font-medium">{confidence}</span>
+            {/* Says Grok no longer: Claude answers these first. */}
+            Confidence: <span className="font-medium">{confidence}</span>
+            {CONFIDENCE_MEANS[confidence]}
             {adjusted ? " · saved as your own numbers after your edit" : null}
           </p>
         ) : null}
