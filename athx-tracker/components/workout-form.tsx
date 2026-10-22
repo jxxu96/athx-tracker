@@ -16,6 +16,9 @@ import {
   ATHLETES,
   METCON,
   PRESETS,
+  categoryShape,
+  presetElapsed,
+  presetTitle,
   formatTime,
   parseTime,
   projectWorkout,
@@ -390,15 +393,8 @@ export function WorkoutForm({
     gators: null,
   });
 
-  const usesStations = category !== "Strength";
-  const usesLifts = category === "Strength" || category === "Other";
-  // Stated as what it is not, because listing the categories that may add their
-  // own is how Tennis arrived showing an empty station panel and no way to fill
-  // it. Only MetCon and Endurance come with a circuit already; anything else
-  // that shows stations at all has to let you name them.
-  const usesCustomStations =
-    usesStations && category !== "MetCon" && category !== "Endurance";
-  const isRun = category === "Endurance";
+  const { usesStations, usesLifts, usesCustomStations, isRun } =
+    categoryShape(category);
 
   /** Changing the category reshapes the session, so rebuild its stations. */
   function changeCategory(next: Workout["category"]) {
@@ -411,25 +407,12 @@ export function WorkoutForm({
   /** Sets the shape and a usual duration; everything stays editable after. */
   function applyPreset(preset: (typeof PRESETS)[number]) {
     changeCategory(preset.category);
-    const time = formatTime(preset.minutes * 60);
-    const left = new Set(PRESETS.map((p) => formatTime(p.minutes * 60)));
     setElapsed((current) => {
       const next = { ...current };
-      for (const side of columns) {
-        // The same rule the title follows: replace what a preset put there,
-        // keep what you typed. A preset should never cost you a time you
-        // measured just because you reached for it afterwards.
-        const typed = current[side].trim();
-        if (!typed || left.has(typed)) next[side] = time;
-      }
+      for (const side of columns) next[side] = presetElapsed(current[side], preset);
       return next;
     });
-    // A preset must not overwrite a title you typed, but it does have to replace
-    // one an earlier preset left: tapping the wrong one and then the right one
-    // otherwise saves a Tennis session called Solidcore.
-    const current = title.trim();
-    const leftByAPreset = PRESETS.some((other) => other.label === current);
-    if (!current || leftByAPreset) setTitle(preset.label);
+    setTitle((current) => presetTitle(current, preset));
   }
 
   function setEntry(side: Side, index: number, patch: Partial<Entry>) {

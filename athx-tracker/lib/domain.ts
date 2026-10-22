@@ -162,6 +162,45 @@ export const PRESETS = [
   minutes: number;
 }[];
 
+/**
+ * What a category makes the session form show. Kept out of the component
+ * because every preset bug so far has been a decision like these getting a
+ * category wrong, and a decision in a component is a decision no test sees.
+ */
+export function categoryShape(category: Workout["category"]) {
+  const usesStations = category !== "Strength";
+  // MetCon and Endurance arrive with a circuit. Anything else that shows
+  // stations has to let you name them, or the panel asks for something it
+  // gives you no way to provide.
+  const bringsItsOwnCircuit = category === "MetCon" || category === "Endurance";
+  return {
+    usesStations,
+    usesLifts: category === "Strength" || category === "Other",
+    usesCustomStations: usesStations && !bringsItsOwnCircuit,
+    isRun: category === "Endurance",
+  };
+}
+
+/**
+ * What a preset should leave in the title. It replaces what another preset put
+ * there, so correcting a mistaken tap does not save a tennis session called
+ * Solidcore, and never replaces something you typed yourself.
+ */
+export function presetTitle(current: string, preset: (typeof PRESETS)[number]) {
+  const typed = current.trim();
+  const leftByAPreset = PRESETS.some((other) => other.label === typed);
+  return !typed || leftByAPreset ? preset.label : current;
+}
+
+/** The same rule for the elapsed box: replace a preset's time, keep yours. */
+export function presetElapsed(current: string, preset: (typeof PRESETS)[number]) {
+  const typed = current.trim();
+  const leftByAPreset = PRESETS.some(
+    (other) => formatTime(other.minutes * 60) === typed,
+  );
+  return !typed || leftByAPreset ? formatTime(preset.minutes * 60) : current;
+}
+
 export function formatWeight(kg: number, unit: WeightUnit) {
   return `${Math.round(fromKilograms(kg, unit) * 10) / 10} ${unit}`;
 }

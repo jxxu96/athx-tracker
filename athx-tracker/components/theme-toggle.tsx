@@ -81,6 +81,14 @@ export function ThemeToggle() {
     serverPreference,
   );
 
+  // The subscription moves the button when another tab changes the choice, but
+  // nothing applied it here, so the control claimed dark while the page stayed
+  // light. Applying on every change fixes that and is a no-op the rest of the
+  // time, since choose has already applied it.
+  useEffect(() => {
+    applyTheme(preference);
+  }, [preference]);
+
   // Only while following the device. A deliberate choice should not move
   // because the phone switched itself over at sunset.
   useEffect(() => {

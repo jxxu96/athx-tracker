@@ -2,6 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   MET_BY_CATEGORY,
+  categoryShape,
+  presetElapsed,
+  presetTitle,
   PRESETS,
   estimateBurn,
   formatTime,
@@ -97,6 +100,68 @@ test("every preset names a real category and a usable time", () => {
   }
   const labels = PRESETS.map((p) => p.label);
   assert.equal(new Set(labels).size, labels.length, "labels are used as keys");
+});
+
+// Every category there is, taken from the table that must list them all.
+const CATEGORIES = Object.keys(MET_BY_CATEGORY) as Workout["category"][];
+
+test("no category shows a station panel it gives you no way to fill", () => {
+  // Tennis shipped doing exactly this: an empty panel saying to add a station,
+  // and no button. Only the two that arrive with a circuit may be in this set,
+  // so a category added later that forgets lands here by name.
+  const stuck = CATEGORIES.filter((category) => {
+    const shape = categoryShape(category);
+    return shape.usesStations && !shape.usesCustomStations;
+  });
+  assert.deepEqual(stuck.sort(), ["Endurance", "MetCon"]);
+});
+
+test("every category offers some way to record what you did", () => {
+  for (const category of CATEGORIES) {
+    const shape = categoryShape(category);
+    const circuit = category === "MetCon" || category === "Endurance";
+    assert.ok(
+      shape.usesLifts || shape.usesCustomStations || circuit,
+      `${category} offers nothing to fill in`,
+    );
+  }
+});
+
+test("only the run category is treated as a run", () => {
+  for (const category of CATEGORIES) {
+    assert.equal(categoryShape(category).isRun, category === "Endurance", category);
+  }
+});
+
+test("a preset names the session, without overwriting your name for it", () => {
+  const [solidcore, tennis] = PRESETS;
+  assert.equal(presetTitle("", tennis), "Tennis", "blank gets named");
+  assert.equal(presetTitle("   ", tennis), "Tennis", "blank means blank");
+  // The bug: tapping the wrong preset then the right one saved a tennis
+  // session called Solidcore.
+  assert.equal(presetTitle("Solidcore", tennis), "Tennis", "a preset replaces a preset");
+  assert.equal(
+    presetTitle("Doubles with Sam", solidcore), "Doubles with Sam",
+    "what you typed is yours",
+  );
+});
+
+test("a preset fills the time, without eating one you measured", () => {
+  const [solidcore, tennis] = PRESETS;
+  assert.equal(presetElapsed("", tennis), "60:00", "blank gets the usual time");
+  assert.equal(presetElapsed("50:00", tennis), "60:00", "a preset replaces a preset");
+  // The bug: tapping a preset after timing the session threw the time away.
+  assert.equal(presetElapsed("38:00", solidcore), "38:00", "what you measured is yours");
+  assert.equal(presetElapsed("  38:00  ", solidcore), "  38:00  ", "kept verbatim");
+});
+
+test("applying a preset twice settles rather than drifting", () => {
+  for (const preset of PRESETS) {
+    const once = presetElapsed(presetElapsed("", preset), preset);
+    assert.equal(once, presetElapsed("", preset));
+    const title = presetTitle(presetTitle("", preset), preset);
+    assert.equal(title, preset.label);
+  }
 });
 
 test("a projection is withheld rather than guessed", () => {
