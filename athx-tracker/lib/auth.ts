@@ -85,6 +85,12 @@ const UNKNOWN_KEY = "unknown";
 /**
  * Identify the caller as precisely as the proxy in front allows. With no proxy
  * headers every caller shares one bucket, which is why the global tier exists.
+ *
+ * These headers come from the caller, so anyone willing to vary one gets a
+ * fresh bucket each try. That makes the per-caller tier a courtesy, keeping one
+ * person's typos from locking out the other, and not a limit an attacker is
+ * held to. The global tier is the one that actually bounds guessing, which is
+ * why it is the only one applied when nothing identifies the caller.
  */
 export async function clientKey() {
   const requestHeaders = await headers();

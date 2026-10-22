@@ -82,8 +82,16 @@ export async function drainQueue() {
   return { filled, waiting };
 }
 
+// Next reloads modules in development, so register can run again and leave a
+// second loop behind, each draining the same queue and spending estimates
+// twice. Held on globalThis for the same reason the database handle is.
+const cache = globalThis as unknown as { athxQueueStarted?: boolean };
+
 /** One loop per container, started from instrumentation. */
 export function startQueueWorker() {
+  if (cache.athxQueueStarted) return;
+  cache.athxQueueStarted = true;
+
   let wait = RETRY_MIN_MS;
   const run = async () => {
     try {
