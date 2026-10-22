@@ -25,7 +25,7 @@ export const workoutSchema = z.object({
 export const mealSchema = z.object({
   ...base, kind: z.literal("meal"), athlete: z.enum(["hippos", "gators"]),
   name: z.string().trim().min(1).max(300), meal: z.enum(["Breakfast","Lunch","Dinner","Snack"]),
-  macros: macroSchema, source: z.enum(["manual","grok"]), assumptions: z.string().max(3000),
+  macros: macroSchema, source: z.enum(["manual","grok","queued"]), assumptions: z.string().max(3000),
 }).strict();
 export const recordSchema = z.union([workoutSchema, mealSchema]);
 export const settingsSchema = z.object({

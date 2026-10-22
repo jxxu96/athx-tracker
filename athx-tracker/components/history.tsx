@@ -141,6 +141,9 @@ export function History({
                             {Math.round(record.macros.carbs)} · F{" "}
                             {Math.round(record.macros.fat)}
                             {record.source === "grok" ? " · estimated" : ""}
+                            {record.source === "queued"
+                              ? " · estimate pending"
+                              : ""}
                           </p>
                         </>
                       )}

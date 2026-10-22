@@ -15,7 +15,7 @@ export type Workout = {
 export type Meal = {
   id: string; kind: "meal"; athlete: Exclude<Athlete, "team">; day: string;
   name: string; meal: "Breakfast" | "Lunch" | "Dinner" | "Snack";
-  macros: Macros; source: "manual" | "grok"; assumptions: string;
+  macros: Macros; source: "manual" | "grok" | "queued"; assumptions: string;
 };
 export type RecordItem = Workout | Meal;
 export type Settings = {

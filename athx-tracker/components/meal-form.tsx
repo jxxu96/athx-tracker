@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles } from "lucide-react";
+import { Clock, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -71,6 +71,7 @@ export function MealForm({
   const [source, setSource] = useState<Meal["source"]>(editing?.source ?? "manual");
   const [adjusted, setAdjusted] = useState(false);
   const [estimating, setEstimating] = useState(false);
+  const [offline, setOffline] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -105,6 +106,8 @@ export function MealForm({
       setAdjusted(false);
     } catch (problem) {
       setError(message(problem));
+      // 503 means the estimator is down, not that the description is bad.
+      setOffline((problem as Error & { status?: number }).status === 503);
     } finally {
       setEstimating(false);
     }
@@ -115,6 +118,33 @@ export function MealForm({
     if (source === "grok") {
       setSource("manual");
       setAdjusted(true);
+    }
+  }
+
+  /** Save now with the description kept, and let the worker fill the macros. */
+  async function queueForLater() {
+    const text = description.trim();
+    if (text.length < 3) {
+      setError("Describe the meal first, so it can be estimated later.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave({
+        id: editing ? editing.id : newId(),
+        kind: "meal",
+        athlete: who,
+        day,
+        name: name.trim() || text.slice(0, 60),
+        meal: slot,
+        macros: { calories: 0, protein: 0, carbs: 0, fat: 0 },
+        source: "queued",
+        assumptions: text.slice(0, 3000),
+      });
+      reset();
+      setOffline(false);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -240,6 +270,25 @@ export function MealForm({
           <Sparkles />
           {estimating ? "Estimating…" : "Estimate macros"}
         </Button>
+        {offline ? (
+          <div className="rounded-xl bg-muted/60 p-3">
+            <p className="text-xs text-muted-foreground">
+              The estimator is not answering. Save the meal now and it will be
+              estimated automatically once it is back.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="mt-2 w-full"
+              disabled={saving}
+              onClick={queueForLater}
+            >
+              <Clock />
+              {saving ? "Saving…" : "Save and estimate later"}
+            </Button>
+          </div>
+        ) : null}
       </section>
 
       <section className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
