@@ -26,6 +26,9 @@ function gatewayAllowed(raw: string) {
   if (url.protocol === "https:") return true;
   if (url.protocol !== "http:") return false;
   const host = url.hostname;
+  // A single-label name resolves only on a container or local network, never
+  // publicly, so names like the compose service "estimator" are private too.
+  if (!host.includes(".")) return true;
   return (
     host === "localhost" ||
     host === "127.0.0.1" ||
