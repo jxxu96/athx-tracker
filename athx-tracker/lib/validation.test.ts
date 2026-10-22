@@ -54,7 +54,7 @@ test("completed work cannot exceed its target", () => {
 });
 
 test("every session type the form offers is accepted", () => {
-  for (const category of ["Strength", "Endurance", "MetCon", "Solidcore", "Other"]) {
+  for (const category of ["Strength", "Endurance", "MetCon", "Solidcore", "Tennis", "Other"]) {
     assert.ok(ok(workoutSchema, workout({ category })), category);
   }
   assert.ok(!ok(workoutSchema, workout({ category: "Pilates" })));

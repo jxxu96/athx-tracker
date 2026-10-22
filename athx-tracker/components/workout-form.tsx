@@ -46,7 +46,23 @@ type LiftRow = {
   gators: { kg: string; sets: string; reps: string };
 };
 
-const CATEGORIES = ["MetCon", "Strength", "Endurance", "Solidcore", "Other"] as const;
+const CATEGORIES = [
+  "MetCon", "Strength", "Endurance", "Solidcore", "Tennis", "Other",
+] as const;
+
+/**
+ * One tap for the sessions that are always the same shape. The minutes are a
+ * starting point rather than a fact: they land in the elapsed box, which stays
+ * editable. Extend this list as the routine does.
+ */
+const PRESETS = [
+  { label: "Solidcore", category: "Solidcore", minutes: 50 },
+  { label: "Tennis", category: "Tennis", minutes: 60 },
+] as const satisfies readonly {
+  label: string;
+  category: Workout["category"];
+  minutes: number;
+}[];
 const UNITS = ["reps", "m", "cal", "rounds"] as const;
 
 const OTHER = "Other";
@@ -401,6 +417,23 @@ export function WorkoutForm({
     setEntries({ hippos: entriesFor(fresh), gators: entriesFor(fresh) });
   }
 
+  /** Sets the shape and a usual duration; everything stays editable after. */
+  function applyPreset(preset: (typeof PRESETS)[number]) {
+    changeCategory(preset.category);
+    const time = formatTime(preset.minutes * 60);
+    setElapsed((current) => {
+      const next = { ...current };
+      for (const side of columns) next[side] = time;
+      return next;
+    });
+    // A preset must not overwrite a title you typed, but it does have to replace
+    // one an earlier preset left: tapping the wrong one and then the right one
+    // otherwise saves a Tennis session called Solidcore.
+    const current = title.trim();
+    const leftByAPreset = PRESETS.some((other) => other.label === current);
+    if (!current || leftByAPreset) setTitle(preset.label);
+  }
+
   function setEntry(side: Side, index: number, patch: Partial<Entry>) {
     setEntries((current) => ({
       ...current,
@@ -667,6 +700,32 @@ export function WorkoutForm({
             onChange={(event) => setTitle(event.target.value)}
           />
         </Field>
+        <div>
+          <Label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+            Quick start
+          </Label>
+          <div
+            role="group"
+            aria-label="Session presets"
+            className="grid gap-1.5"
+            style={{ gridTemplateColumns: `repeat(${PRESETS.length}, minmax(0, 1fr))` }}
+          >
+            {PRESETS.map((preset) => (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={() => applyPreset(preset)}
+                aria-pressed={category === preset.category}
+                className="rounded-lg border px-2 py-2.5 text-xs font-medium transition-colors aria-pressed:bg-accent aria-pressed:font-semibold"
+              >
+                {preset.label}
+                <span className="ml-1 font-normal text-muted-foreground">
+                  {preset.minutes}m
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Type">
             <NativeSelect

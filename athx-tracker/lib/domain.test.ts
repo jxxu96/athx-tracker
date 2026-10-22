@@ -59,6 +59,20 @@ test("burn follows MET x 3.5 x kg / 200 per minute", () => {
   assert.ok(solid < strength && strength < metcon);
 });
 
+test("every session type has a MET, and they rank sensibly", () => {
+  // A category added without a MET would silently fall back to Other's, so the
+  // burn would look plausible and be wrong.
+  const at = (category: Workout["category"]) =>
+    estimateBurn(workout({ category, seconds: 3600 }), 80)!;
+  for (const category of ["Strength", "Endurance", "MetCon", "Solidcore", "Tennis", "Other"] as const) {
+    assert.ok(at(category) > 0, category);
+  }
+  assert.ok(at("Solidcore") < at("Strength"), "slow resistance is not a lift session");
+  assert.ok(at("Strength") < at("Tennis"), "rallying moves you more than lifting");
+  assert.ok(at("Tennis") < at("MetCon"));
+  assert.ok(at("MetCon") < at("Endurance"));
+});
+
 test("burn scales with weight and duration", () => {
   const base = estimateBurn(workout({ seconds: 1800 }), 80)!;
   assert.ok(estimateBurn(workout({ seconds: 3600 }), 80)! > base);

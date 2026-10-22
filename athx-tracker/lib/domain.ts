@@ -7,7 +7,7 @@ export type Segment = {
 };
 export type Workout = {
   id: string; kind: "workout"; athlete: Athlete; day: string;
-  title: string; category: "Strength" | "Endurance" | "MetCon" | "Solidcore" | "Other";
+  title: string; category: "Strength" | "Endurance" | "MetCon" | "Solidcore" | "Tennis" | "Other";
   seconds: number; notes: string; segments: Segment[]; fatigue: number;
   transition: number; goal: number | null; context: "solo" | "pairs";
   lifts: { name: string; kg: number; sets: number; reps: number }[];
@@ -128,6 +128,9 @@ export const MET_BY_CATEGORY: Record<Workout["category"], number> = {
   // an hour the marketing claims. Deliberately conservative, because an
   // overstated burn quietly inflates what the day looks like it can afford.
   Solidcore: 5,
+  // Compendium puts general play near 7, between doubles and singles. Rallying
+  // is not continuous, and the stop-start is already in that number.
+  Tennis: 7,
   Other: 5,
 };
 
