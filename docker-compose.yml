@@ -4,6 +4,10 @@ services:
     # host took 10-20 minutes to build it, and Portainer cannot pull an image
     # that only ever existed locally, which made every redeploy fail.
     image: ghcr.io/jxxu96/athx-tracker:latest
+    # Portainer recreates the container but will not re-fetch a tag it already
+    # has on disk, and its Re-pull image toggle is a paid feature. Without this,
+    # every redeploy restarts the same stale image and looks like it worked.
+    pull_policy: always
     container_name: athx-tracker
     restart: unless-stopped
     environment:
@@ -32,6 +36,7 @@ services:
 
   estimator:
     image: ghcr.io/jxxu96/athx-estimator:latest
+    pull_policy: always
     container_name: athx-estimator
     restart: unless-stopped
     environment:
