@@ -58,6 +58,18 @@ services:
       DEPLOY_WEBHOOK: ${DEPLOY_WEBHOOK:-}
       DEPLOY_IMAGE: ${DEPLOY_IMAGE:-jxxu96/athx-tracker}
       DEPLOY_EVERY_MINUTES: ${DEPLOY_EVERY_MINUTES:-5}
+      # Backups, pulled from the app over the compose network so they happen
+      # whether or not any laptop is awake. This copy sits on the same host as
+      # the journal, so it protects against a bad delete, a bad deploy or a
+      # corrupt database, and not against losing the machine. Keep the copy on
+      # your own machine as well: that is the one that survives the server.
+      BACKUP_URL: ${BACKUP_URL:-http://athx-tracker:3000}
+      BACKUP_PASSPHRASE: ${BACKUP_PASSPHRASE:-${APP_PASSPHRASE}}
+      # Its own volume, not /config: redoing a CLI login must never be able to
+      # take the backups with it.
+      BACKUP_DIR: /backups
+      BACKUP_EVERY_HOURS: ${BACKUP_EVERY_HOURS:-12}
+      BACKUP_KEEP: ${BACKUP_KEEP:-30}
     # Lets DEPLOY_WEBHOOK reach Portainer on the host without depending on the
     # tailnet routing, or a firewall rule, from inside the container.
     extra_hosts:
@@ -65,6 +77,7 @@ services:
     volumes:
       # Holds the CLI logins. Sign in once with docker exec; this keeps it.
       - estimator-config:/config
+      - athx-backups:/backups
     # Deliberately not published: only the app, on this network, can reach it.
     expose:
       - "8787"
@@ -72,3 +85,4 @@ services:
 volumes:
   athx-data:
   estimator-config:
+  athx-backups:

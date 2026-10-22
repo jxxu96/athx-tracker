@@ -383,13 +383,24 @@ function startBackups() {
     console.log("[backup] not configured; set BACKUP_URL and BACKUP_PASSPHRASE");
     return;
   }
-  const tick = () =>
-    runBackup().catch((error) =>
-      console.error(`[backup] failed: ${error.message}`),
-    );
+  const every = BACKUP_EVERY_HOURS * 3600_000;
+  const RETRY_MS = 5 * 60 * 1000;
+  const tick = async () => {
+    let wait = every;
+    try {
+      await runBackup();
+    } catch (error) {
+      // Beside the app, both start at once and the first attempt can beat it
+      // up. Waiting the full period on that would leave a day unprotected.
+      console.error(
+        `[backup] failed: ${error.message}; trying again in ${RETRY_MS / 60000}m`,
+      );
+      wait = RETRY_MS;
+    }
+    setTimeout(tick, wait).unref?.();
+  };
   // One shortly after start, so a problem surfaces now rather than in 12 hours.
   setTimeout(tick, 30_000).unref?.();
-  setInterval(tick, BACKUP_EVERY_HOURS * 3600_000).unref?.();
   console.log(
     `[backup] every ${BACKUP_EVERY_HOURS}h from ${BACKUP_URL} into ${BACKUP_DIR}, keeping ${BACKUP_KEEP}`,
   );

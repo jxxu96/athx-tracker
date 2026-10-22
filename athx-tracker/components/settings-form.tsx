@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Field } from "@/components/workout-form";
+import { toast } from "sonner";
 import { api, message } from "@/lib/client";
 import {
   ATHLETES,
@@ -120,10 +121,13 @@ export function SettingsForm({
     setBusy("import");
     setNote("");
     try {
-      const parsed = JSON.parse(await file.text()) as { records?: unknown };
+      const parsed = JSON.parse(await file.text()) as {
+        records?: unknown;
+        settings?: unknown;
+      };
       const records = Array.isArray(parsed.records) ? parsed.records : [];
       if (records.length === 0) {
-        setNote("No entries found in that file.");
+        toast.error("No entries found in that file.");
         return;
       }
       let restored = 0;
@@ -139,12 +143,34 @@ export function SettingsForm({
           rejected += 1;
         }
       }
-      setNote(
-        `${restored} restored${rejected ? `, ${rejected} rejected as invalid` : ""}.`,
+      // An export carries the settings as well. Putting the entries back and
+      // silently dropping the targets, bodyweights and event date would be a
+      // backup that only half works, discovered at the worst moment.
+      let settingsRestored = false;
+      if (parsed.settings) {
+        try {
+          const current = await api<{ revision: number }>("/api/settings");
+          await api("/api/settings", {
+            method: "PUT",
+            body: JSON.stringify({
+              settings: parsed.settings,
+              revision: current.revision,
+            }),
+          });
+          settingsRestored = true;
+        } catch {
+          // Entries matter more; say what happened rather than failing it all.
+        }
+      }
+      // A toast, not the note below: restoring the settings bumps the revision
+      // this form is keyed on, so it remounts and anything held here is lost.
+      toast.success(
+        `${restored} restored${rejected ? `, ${rejected} rejected as invalid` : ""}` +
+          `${settingsRestored ? ", settings too" : parsed.settings ? ", but the settings would not restore" : ""}.`,
       );
       await onRefresh();
     } catch {
-      setNote("That file could not be read as a journal export.");
+      toast.error("That file could not be read as a journal export.");
     } finally {
       setBusy("");
     }
