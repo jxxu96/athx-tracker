@@ -16,6 +16,7 @@ import { WorkoutForm } from "@/components/workout-form";
 import { MealForm } from "@/components/meal-form";
 import { History } from "@/components/history";
 import { SettingsForm } from "@/components/settings-form";
+import { ThemeToggle } from "@/components/theme-toggle";
 import {
   ATHLETES,
   type Meal,
@@ -144,10 +145,11 @@ export function Tracker({
       <Toaster position="top-center" />
 
       <header className="sticky top-0 z-20 border-b bg-background/95 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur">
-        <div className="flex items-center justify-between gap-3">
-          <h1 className="text-sm font-semibold tracking-tight">
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="truncate text-sm font-semibold tracking-tight">
             Hippos &amp; Gators
           </h1>
+          <div className="flex shrink-0 items-center gap-1">
           <div
             role="group"
             aria-label="Logging for"
@@ -159,7 +161,7 @@ export function Tracker({
                 type="button"
                 onClick={() => setWho(key)}
                 aria-pressed={who === key}
-                className="rounded-full px-3 py-1 text-xs font-medium transition-colors aria-pressed:bg-background aria-pressed:shadow-sm"
+                className="rounded-full px-2.5 py-1 text-xs font-medium transition-colors aria-pressed:bg-background aria-pressed:shadow-sm"
                 style={
                   who === key && key !== "both"
                     ? { color: ATHLETES[key].color }
@@ -169,6 +171,20 @@ export function Tracker({
                 {key === "both" ? "Both" : ATHLETES[key].name}
               </button>
             ))}
+          </div>
+          {/* Two people on two phones: one logs, the other wants it without
+              hunting for the browser's own reload. */}
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            disabled={refreshing}
+            aria-label="Refresh from the server"
+            title="Refresh from the server"
+            className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+          >
+            <RotateCw className={`size-4${refreshing ? " animate-spin" : ""}`} />
+          </button>
+          <ThemeToggle />
           </div>
         </div>
       </header>

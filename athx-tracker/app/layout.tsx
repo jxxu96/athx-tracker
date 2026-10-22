@@ -28,14 +28,25 @@ export const viewport: Viewport = {
   ],
 };
 
+/**
+ * Runs before anything paints, so the page never shows one theme and then
+ * swaps. Reads the stored choice, falls back to the device, and writes the
+ * resolved answer where the stylesheet can see it.
+ */
+const THEME_SCRIPT = `try{var s=localStorage.getItem('athx-theme');var d=s==='dark'||(s!=='light'&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=d?'dark':'light'}catch(e){}`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className="antialiased">{children}</body>
+    // The script below sets data-theme, which the server cannot know about.
+    <html lang="en" suppressHydrationWarning>
+      <body className="antialiased">
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        {children}
+      </body>
     </html>
   );
 }
