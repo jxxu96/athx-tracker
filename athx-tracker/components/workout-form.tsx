@@ -404,9 +404,12 @@ export function WorkoutForm({
 
   const usesStations = category !== "Strength";
   const usesLifts = category === "Strength" || category === "Other";
-  // No preset circuit and nothing to load: start empty and let them name
-  // whatever is worth recording, as Other does.
-  const usesCustomStations = category === "Other" || category === "Solidcore";
+  // Stated as what it is not, because listing the categories that may add their
+  // own is how Tennis arrived showing an empty station panel and no way to fill
+  // it. Only MetCon and Endurance come with a circuit already; anything else
+  // that shows stations at all has to let you name them.
+  const usesCustomStations =
+    usesStations && category !== "MetCon" && category !== "Endurance";
   const isRun = category === "Endurance";
 
   /** Changing the category reshapes the session, so rebuild its stations. */
@@ -421,9 +424,16 @@ export function WorkoutForm({
   function applyPreset(preset: (typeof PRESETS)[number]) {
     changeCategory(preset.category);
     const time = formatTime(preset.minutes * 60);
+    const left = new Set(PRESETS.map((p) => formatTime(p.minutes * 60)));
     setElapsed((current) => {
       const next = { ...current };
-      for (const side of columns) next[side] = time;
+      for (const side of columns) {
+        // The same rule the title follows: replace what a preset put there,
+        // keep what you typed. A preset should never cost you a time you
+        // measured just because you reached for it afterwards.
+        const typed = current[side].trim();
+        if (!typed || left.has(typed)) next[side] = time;
+      }
       return next;
     });
     // A preset must not overwrite a title you typed, but it does have to replace
