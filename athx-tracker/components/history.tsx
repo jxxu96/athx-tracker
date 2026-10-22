@@ -9,11 +9,14 @@ import {
 } from "@/components/ui/native-select";
 import {
   ATHLETES,
+  estimateBurn,
   formatTimeOrDash,
   formatWeight,
   type Athlete,
   type RecordItem,
+  type Settings,
   type WeightUnit,
+  type Workout,
 } from "@/lib/domain";
 import { formatDay, isWorkout } from "@/lib/client";
 
@@ -22,6 +25,7 @@ export function History({
   today,
   athlete,
   weightUnit,
+  bodyweight,
   onEdit,
   onDelete,
 }: {
@@ -29,9 +33,16 @@ export function History({
   today: string;
   athlete: Athlete | "all";
   weightUnit: WeightUnit;
+  bodyweight: Settings["bodyweight"];
   onEdit: (record: RecordItem) => void;
   onDelete: (id: string) => Promise<void>;
 }) {
+  /** Null when the session has no time, or that athlete has no bodyweight. */
+  const burnedFor = (workout: Workout) =>
+    workout.athlete === "team"
+      ? null
+      : estimateBurn(workout, bodyweight[workout.athlete]);
+
   const [kind, setKind] = useState<"all" | "workout" | "meal">("all");
   const [pending, setPending] = useState("");
   const [busy, setBusy] = useState("");
@@ -107,6 +118,9 @@ export function History({
                             {formatTimeOrDash(record.seconds)}
                             {record.goal
                               ? ` · goal ${formatTimeOrDash(record.goal)}`
+                              : ""}
+                            {burnedFor(record) !== null
+                              ? ` · ~${burnedFor(record)} kcal`
                               : ""}
                           </p>
                           {record.segments.length > 0 ? (

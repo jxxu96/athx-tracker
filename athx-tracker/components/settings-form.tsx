@@ -9,10 +9,19 @@ import { Field } from "@/components/workout-form";
 import { api, message } from "@/lib/client";
 import {
   ATHLETES,
+  fromKilograms,
+  toKilograms,
   type Macros,
   type Settings,
   type WeightUnit,
 } from "@/lib/domain";
+
+/** Keeps a typed weight meaning the same number of kilograms across a unit switch. */
+function reunit(draft: string, from: WeightUnit, to: WeightUnit) {
+  const value = Number(draft.trim());
+  if (draft.trim() === "" || !Number.isFinite(value)) return draft;
+  return String(Math.round(fromKilograms(toKilograms(value, from), to) * 10) / 10);
+}
 
 const MACRO_FIELDS = [
   { key: "calories", label: "Calories", unit: "kcal" },
@@ -52,6 +61,15 @@ export function SettingsForm({
     hippos: toDraft(settings.targets.hippos),
     gators: toDraft(settings.targets.gators),
   });
+  const [bodyweight, setBodyweight] = useState<Record<"hippos" | "gators", string>>(
+    () => {
+      const unit = settings.weightUnit ?? "lb";
+      const stored = settings.bodyweight ?? { hippos: 0, gators: 0 };
+      const show = (kg: number) =>
+        kg > 0 ? String(Math.round(fromKilograms(kg, unit) * 10) / 10) : "";
+      return { hippos: show(stored.hippos), gators: show(stored.gators) };
+    },
+  );
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -151,6 +169,12 @@ export function SettingsForm({
     if (!Number.isInteger(weekly) || weekly < 1 || weekly > 21)
       return "Set a weekly session target between 1 and 21.";
     for (const athlete of ["hippos", "gators"] as const) {
+      const raw = bodyweight[athlete].trim();
+      if (raw !== "") {
+        const kg = toKilograms(Number(raw), weightUnit);
+        if (!Number.isFinite(kg) || kg <= 0 || kg > 500)
+          return `${ATHLETES[athlete].name} bodyweight needs a sensible number, or nothing at all.`;
+      }
       for (const { key, label } of MACRO_FIELDS) {
         const value = Number(targets[athlete][key].trim() || "0");
         if (!Number.isFinite(value) || value < 0)
@@ -174,6 +198,11 @@ export function SettingsForm({
         return out;
       }, {} as Macros);
 
+    const weightFor = (athlete: "hippos" | "gators") => {
+      const raw = bodyweight[athlete].trim();
+      return raw === "" ? 0 : toKilograms(Number(raw), weightUnit);
+    };
+
     setSaving(true);
     try {
       await onSave({
@@ -182,6 +211,10 @@ export function SettingsForm({
         weeklyTarget: Number(weeklyTarget),
         weightUnit,
         targets: { hippos: macrosFor("hippos"), gators: macrosFor("gators") },
+        bodyweight: {
+          hippos: weightFor("hippos"),
+          gators: weightFor("gators"),
+        },
       });
     } finally {
       setSaving(false);
@@ -224,7 +257,14 @@ export function SettingsForm({
               <button
                 key={unit}
                 type="button"
-                onClick={() => setWeightUnit(unit)}
+                onClick={() => {
+                  if (unit === weightUnit) return;
+                  setBodyweight((current) => ({
+                    hippos: reunit(current.hippos, weightUnit, unit),
+                    gators: reunit(current.gators, weightUnit, unit),
+                  }));
+                  setWeightUnit(unit);
+                }}
                 aria-pressed={weightUnit === unit}
                 className="rounded-full px-4 py-1 text-xs font-medium transition-colors aria-pressed:bg-background aria-pressed:shadow-sm"
               >
@@ -251,6 +291,22 @@ export function SettingsForm({
             />
             {ATHLETES[athlete].name} daily targets
           </h3>
+          <Field
+            label={`Bodyweight (${weightUnit})`}
+            hint="Used to estimate calories burned"
+          >
+            <Input
+              value={bodyweight[athlete]}
+              inputMode="decimal"
+              placeholder="Not set"
+              onChange={(event) =>
+                setBodyweight((current) => ({
+                  ...current,
+                  [athlete]: event.target.value,
+                }))
+              }
+            />
+          </Field>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {MACRO_FIELDS.map(({ key, label, unit }) => (
               <Field key={key} label={`${label} (${unit})`}>

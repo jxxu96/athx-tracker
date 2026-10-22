@@ -32,4 +32,7 @@ export const settingsSchema = z.object({
   eventDate: day, eventName: z.string().trim().min(1).max(100),
   weeklyTarget: z.number().int().min(1).max(21), weightUnit: z.enum(["kg","lb"]).default("lb"),
   targets: z.object({ hippos: macroSchema, gators: macroSchema }).strict(),
+  // Defaulted, so settings stored before bodyweight existed still parse.
+  bodyweight: z.object({ hippos: finite.max(500), gators: finite.max(500) })
+    .strict().default({ hippos: 0, gators: 0 }),
 }).strict();

@@ -21,6 +21,8 @@ export type RecordItem = Workout | Meal;
 export type Settings = {
   eventDate: string; eventName: string; weeklyTarget: number; weightUnit: WeightUnit;
   targets: { hippos: Macros; gators: Macros };
+  /** Kilograms, like every other weight here. Zero means not given yet. */
+  bodyweight: { hippos: number; gators: number };
 };
 export const DEFAULT_SETTINGS: Settings = {
   eventDate: "2027-08-28", eventName: "ATHX New York", weeklyTarget: 4, weightUnit: "lb",
@@ -28,6 +30,7 @@ export const DEFAULT_SETTINGS: Settings = {
     hippos: { calories: 0, protein: 0, carbs: 0, fat: 0 },
     gators: { calories: 0, protein: 0, carbs: 0, fat: 0 },
   },
+  bodyweight: { hippos: 0, gators: 0 },
 };
 export const ATHLETES = {
   hippos: { name: "Hippos", label: "Female", color: "#bb4e79" },
@@ -105,6 +108,29 @@ export function toKilograms(value: number, unit: WeightUnit) {
 export function fromKilograms(value: number, unit: WeightUnit) {
   return unit === "lb" ? value * LB_PER_KG : value;
 }
+/**
+ * Calories burned, from the compendium formula: MET x 3.5 x kg / 200 per minute.
+ * METs for vigorous effort, which is what these sessions are.
+ */
+export const MET_BY_CATEGORY: Record<Workout["category"], number> = {
+  Strength: 6,
+  MetCon: 8,
+  Endurance: 9,
+  Other: 5,
+};
+
+/**
+ * Null when it cannot be known rather than a number that looks measured: the
+ * formula needs a bodyweight, and a duration that a session logged without a
+ * time does not have. Rounded to ten, because the method is not worth more.
+ */
+export function estimateBurn(workout: Workout, bodyweightKg: number) {
+  if (!(bodyweightKg > 0) || !(workout.seconds > 0)) return null;
+  const met = MET_BY_CATEGORY[workout.category] ?? MET_BY_CATEGORY.Other;
+  const kcal = ((met * 3.5 * bodyweightKg) / 200) * (workout.seconds / 60);
+  return Math.round(kcal / 10) * 10;
+}
+
 export function formatWeight(kg: number, unit: WeightUnit) {
   return `${Math.round(fromKilograms(kg, unit) * 10) / 10} ${unit}`;
 }

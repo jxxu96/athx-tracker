@@ -221,6 +221,7 @@ export function Tracker({
             today={today}
             athlete="all"
             weightUnit={settings.weightUnit ?? "lb"}
+            bodyweight={settings.bodyweight ?? { hippos: 0, gators: 0 }}
             onEdit={(record) => {
               setEditing(record);
               setTab(record.kind === "workout" ? "session" : "meal");

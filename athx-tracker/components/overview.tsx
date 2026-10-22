@@ -4,6 +4,7 @@ import { Dumbbell, Flame, Target } from "lucide-react";
 import {
   ATHLETES,
   METCON,
+  estimateBurn,
   formatTime,
   formatTimeOrDash,
   projectWorkout,
@@ -178,6 +179,10 @@ export function Overview({
                 .filter((m) => m.athlete === key && m.day === today),
             );
             const targets = settings.targets[key];
+            const weightKg = (settings.bodyweight ?? { hippos: 0, gators: 0 })[key];
+            const burned = workouts
+              .filter((w) => w.athlete === key && w.day === today)
+              .reduce((sum, w) => sum + (estimateBurn(w, weightKg) ?? 0), 0);
             const unset = MACRO_KEYS.every(({ key: macro }) => targets[macro] === 0);
             return (
               <div key={key} className="space-y-3">
@@ -198,6 +203,24 @@ export function Overview({
                     color={ATHLETES[key].color}
                   />
                 ))}
+                {weightKg > 0 ? (
+                  <div className="space-y-1 border-t pt-2.5 text-xs">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-muted-foreground">Burned training</span>
+                      <span className="font-medium tabular-nums">~{burned} kcal</span>
+                    </div>
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-muted-foreground">Net</span>
+                      <span className="font-medium tabular-nums">
+                        {Math.round(totals.calories - burned)} kcal
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="border-t pt-2.5 text-xs text-muted-foreground">
+                    Add a bodyweight in Settings to estimate calories burned.
+                  </p>
+                )}
                 {unset ? (
                   <p className="text-xs text-muted-foreground">
                     No daily targets set yet — add them in Settings.
