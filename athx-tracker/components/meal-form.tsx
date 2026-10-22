@@ -146,8 +146,10 @@ export function MealForm({
       setAdjusted(false);
     } catch (problem) {
       setError(message(problem));
-      // 503 means the estimator is down, not that the description is bad.
-      setOffline((problem as Error & { status?: number }).status === 503);
+      // Anything but a rejected description is worth queueing: unreachable,
+      // both CLIs failing, the daily cap. Only 400 means rewording would help,
+      // and the queue spends no quota, so a capped meal still gets filled.
+      setOffline((problem as Error & { status?: number }).status !== 400);
     } finally {
       setEstimating(false);
     }
@@ -301,8 +303,9 @@ export function MealForm({
         {offline ? (
           <div className="rounded-xl bg-muted/60 p-3">
             <p className="text-xs text-muted-foreground">
-              The estimator is not answering. Save the meal now and it will be
-              estimated automatically once it is back.
+              No estimate came back. Save the meal with your description and it
+              will be filled in by itself once the estimator answers — it keeps
+              trying in the background, so nothing here needs typing twice.
             </p>
             <Button
               type="button"

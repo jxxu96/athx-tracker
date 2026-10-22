@@ -245,8 +245,8 @@ const PROVIDERS = {
 
 const configured = () => ORDER.filter((name) => PROVIDERS[name]?.bin());
 
-async function estimate(description) {
-  const deadline = Date.now() + BUDGET_MS;
+async function estimate(description, budgetMs = BUDGET_MS) {
+  const deadline = Date.now() + budgetMs;
   const tried = [];
 
   for (const [index, name] of ORDER.entries()) {
@@ -496,15 +496,21 @@ const server = createServer((request, response) => {
   });
   request.on("end", async () => {
     let description = "";
+    let budget = BUDGET_MS;
     try {
-      description = String(JSON.parse(body).description ?? "").trim();
+      const parsed = JSON.parse(body);
+      description = String(parsed.description ?? "").trim();
+      // Clamped, so a caller cannot pin a CLI open or starve one at birth.
+      const requested = Number(parsed.budgetMs);
+      if (Number.isFinite(requested))
+        budget = Math.min(180000, Math.max(8000, requested));
     } catch {
       return send(response, 400, { error: "Expected JSON with a description." });
     }
     if (description.length < 3 || description.length > 4000)
       return send(response, 400, { error: "Describe the meal in a little more detail." });
 
-    const result = await estimate(description);
+    const result = await estimate(description, budget);
     if (result.error) {
       console.error(`[estimator] all providers failed: ${result.error}`);
       // Passed to the caller, not just the log. Which CLI failed and why is the

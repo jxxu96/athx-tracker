@@ -5,6 +5,13 @@ import { z } from "zod";
 
 const DAILY_LIMIT = 60;
 
+/**
+ * Someone is watching this one, so it gives up early and hands the meal to the
+ * queue rather than holding a spinner for the best part of a minute. The queue
+ * is the patient path, and it is the one that almost always succeeds.
+ */
+const INTERACTIVE_BUDGET_MS = 25000;
+
 const estimateSchema = macroSchema.extend({
   name: z.string().min(1).max(300),
   assumptions: z.string().max(3000),
@@ -185,10 +192,10 @@ export async function POST(request: Request) {
           },
           body: JSON.stringify(
             gateway
-              ? { description }
+              ? { description, budgetMs: INTERACTIVE_BUDGET_MS }
               : grokRequest(description, config.XAI_MODEL || "grok-4.7"),
           ),
-          signal: AbortSignal.timeout(45000),
+          signal: AbortSignal.timeout(INTERACTIVE_BUDGET_MS + 5000),
         },
       );
     } catch {
