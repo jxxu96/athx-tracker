@@ -19,6 +19,7 @@ import {
   categoryShape,
   presetElapsed,
   presetTitle,
+  sessionSeconds,
   formatTime,
   parseTime,
   projectWorkout,
@@ -463,8 +464,7 @@ export function WorkoutForm({
    * know about the rest between them.
    */
   function totalFor(side: Side) {
-    if (elapsed[side].trim() !== "") return seconds(elapsed[side]);
-    return segmentsFor(side).reduce((sum, segment) => sum + segment.seconds, 0);
+    return sessionSeconds(elapsed[side], segmentsFor(side));
   }
 
   /** A column counts as used once anything at all is typed into it. */

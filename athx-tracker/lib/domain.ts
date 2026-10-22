@@ -163,6 +163,24 @@ export const PRESETS = [
 }[];
 
 /**
+ * How long a session lasted, from what was filled in. A typed time wins,
+ * because only you know about the rest between stations; with none, the
+ * station splits are the time actually spent. Nothing at all is zero, which
+ * the journal reads as not recorded rather than as a session of no length.
+ *
+ * This is the rule that took three attempts to get right, so it is here where
+ * it can be tested rather than inside the form where it could not be.
+ */
+export function sessionSeconds(
+  elapsedText: string,
+  segments: { seconds: number }[],
+) {
+  const typed = elapsedText.trim();
+  if (typed !== "") return parseTime(typed);
+  return segments.reduce((sum, segment) => sum + segment.seconds, 0);
+}
+
+/**
  * What a category makes the session form show. Kept out of the component
  * because every preset bug so far has been a decision like these getting a
  * category wrong, and a decision in a component is a decision no test sees.

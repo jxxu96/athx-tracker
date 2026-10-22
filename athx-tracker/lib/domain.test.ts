@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   MET_BY_CATEGORY,
   categoryShape,
+  sessionSeconds,
   presetElapsed,
   presetTitle,
   PRESETS,
@@ -104,6 +105,47 @@ test("every preset names a real category and a usable time", () => {
 
 // Every category there is, taken from the table that must list them all.
 const CATEGORIES = Object.keys(MET_BY_CATEGORY) as Workout["category"][];
+
+test("a session with nothing timed lasts zero, and saves", () => {
+  // The case that could not be saved at all: a strength session, no stations
+  // to derive a time from, and no time typed.
+  assert.equal(sessionSeconds("", []), 0);
+});
+
+test("station splits stand in for a time nobody wrote down", () => {
+  // A part-finished MetCon: two stations done, never looked at the clock.
+  const segments = [{ seconds: 130 }, { seconds: 95 }, { seconds: 0 }];
+  assert.equal(sessionSeconds("", segments), 225);
+});
+
+test("a time you typed beats the splits, because you know about the rest", () => {
+  const segments = [{ seconds: 130 }, { seconds: 95 }];
+  assert.equal(sessionSeconds("5:00", segments), 300, "not the 225 of the splits");
+  assert.equal(sessionSeconds("  5:00  ", segments), 300, "spaces do not change it");
+});
+
+test("a mistyped time is not quietly read as no time", () => {
+  // Returning zero here would file a typo as a session nobody timed, instead
+  // of the form telling you the time will not parse.
+  for (const bad of ["abc", "5", "5:99", "::"]) {
+    assert.ok(Number.isNaN(sessionSeconds(bad, [])), bad);
+  }
+});
+
+test("what the form computes is what the schema accepts", () => {
+  // The form and the schema have to agree, or a session either fails to save
+  // for no visible reason or is refused something it offered.
+  const cases: [string, { seconds: number }[]][] = [
+    ["", []],
+    ["", [{ seconds: 130 }]],
+    ["45:00", []],
+    ["45:00", [{ seconds: 130 }]],
+  ];
+  for (const [text, segments] of cases) {
+    const total = sessionSeconds(text, segments);
+    assert.ok(Number.isFinite(total) && total >= 0 && total <= 86400, `${text}`);
+  }
+});
 
 test("no category shows a station panel it gives you no way to fill", () => {
   // Tennis shipped doing exactly this: an empty panel saying to add a station,
