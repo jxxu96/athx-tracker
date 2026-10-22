@@ -14,7 +14,28 @@ on:
   workflow_dispatch:
 
 jobs:
+  # The image is published to :latest and the server redeploys itself from it
+  # within five minutes, so nothing between a bad push and production asks any
+  # questions. A type error already fails the image build, since that runs next
+  # build; these are the failures that compile perfectly well.
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: athx-tracker/package-lock.json
+      - run: npm ci
+        working-directory: athx-tracker
+      - run: npm run lint
+        working-directory: athx-tracker
+      - run: npm test
+        working-directory: athx-tracker
+
   image:
+    needs: checks
     runs-on: ubuntu-latest
     permissions:
       contents: read
