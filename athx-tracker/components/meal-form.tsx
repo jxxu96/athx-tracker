@@ -4,10 +4,7 @@ import { useState } from "react";
 import { Clock, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Field } from "@/components/workout-form";
 import { ATHLETES, type Macros, type Meal } from "@/lib/domain";
@@ -31,6 +28,49 @@ type Estimate = Macros & {
   assumptions: string;
   confidence: "low" | "medium" | "high";
 };
+
+function Choice<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: readonly { value: T; label: string; color?: string }[];
+  onChange: (next: T) => void;
+}) {
+  return (
+    <div>
+      <Label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+        {label}
+      </Label>
+      <div
+        role="group"
+        aria-label={label}
+        className="grid gap-1.5"
+        style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
+      >
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onChange(option.value)}
+            aria-pressed={value === option.value}
+            className="rounded-lg border px-2 py-2.5 text-xs font-medium transition-colors aria-pressed:bg-accent aria-pressed:font-semibold"
+            style={
+              value === option.value && option.color
+                ? { borderColor: option.color, color: option.color }
+                : undefined
+            }
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function MealForm({
   athlete,
@@ -206,41 +246,29 @@ export function MealForm({
         </div>
       ) : null}
       <section className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Athlete">
-            <NativeSelect
-              value={who}
-              onChange={(event) =>
-                setWho(event.target.value as Meal["athlete"])
-              }
-            >
-              {(["hippos", "gators"] as const).map((key) => (
-                <NativeSelectOption key={key} value={key}>
-                  {ATHLETES[key].name}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </Field>
-          <Field label="Date">
-            <Input
-              type="date"
-              value={day}
-              max={today}
-              onChange={(event) => setDay(event.target.value)}
-            />
-          </Field>
-        </div>
-        <Field label="Sitting">
-          <NativeSelect
-            value={slot}
-            onChange={(event) => setSlot(event.target.value as Meal["meal"])}
-          >
-            {MEALS.map((value) => (
-              <NativeSelectOption key={value} value={value}>
-                {value}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
+        <Choice
+          label="Athlete"
+          value={who}
+          onChange={setWho}
+          options={(["hippos", "gators"] as const).map((key) => ({
+            value: key,
+            label: ATHLETES[key].name,
+            color: ATHLETES[key].color,
+          }))}
+        />
+        <Choice
+          label="Sitting"
+          value={slot}
+          onChange={setSlot}
+          options={MEALS.map((value) => ({ value, label: value }))}
+        />
+        <Field label="Date">
+          <Input
+            type="date"
+            value={day}
+            max={today}
+            onChange={(event) => setDay(event.target.value)}
+          />
         </Field>
       </section>
 
