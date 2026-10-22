@@ -46,6 +46,10 @@ export const METCON = [
 export function localDay(date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }
+/** Zero means the time was not recorded, which is not the same as no time. */
+export function formatTimeOrDash(seconds: number) {
+  return seconds > 0 ? formatTime(seconds) : "—";
+}
 export function formatTime(seconds: number) {
   const value = Math.max(0, Math.round(seconds));
   return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, "0")}`;

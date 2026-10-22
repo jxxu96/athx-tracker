@@ -5,6 +5,7 @@ import {
   ATHLETES,
   METCON,
   formatTime,
+  formatTimeOrDash,
   projectWorkout,
   sumMacros,
   type Macros,
@@ -213,7 +214,7 @@ export function Overview({
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <p className="font-medium">{lastSession.title}</p>
             <p className="text-sm tabular-nums text-muted-foreground">
-              {formatTime(lastSession.seconds)}
+              {formatTimeOrDash(lastSession.seconds)}
             </p>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">

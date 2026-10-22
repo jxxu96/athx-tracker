@@ -3,8 +3,9 @@
   "configurations": [
     {
       "name": "athx-tracker",
-      "url": "http://localhost:5173",
-      "port": 5173
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "athx-tracker", "run", "dev"],
+      "port": 3000
     }
   ]
 }

@@ -54,18 +54,28 @@ const OTHER = "Other";
 /** Picking beats typing on a phone, with a way out for anything not listed. */
 const EXERCISES: { group: string; items: string[] }[] = [
   {
-    // The loaded movements from the ATHX Lite MetCon, named exactly as the
-    // stations name them, so a lift and a station read the same in the log.
-    group: "ATHX",
-    items: ["DB ground to overhead", "DB bench press", "Sandbag squats"],
+    // The three the programme is built around, first because they are typed most.
+    group: "Main lifts",
+    items: ["Deadlift", "Back squat", "Overhead press", "Push press"],
+  },
+  {
+    // Named exactly as the MetCon stations name them, so a lift and a station
+    // read the same in the log.
+    group: "ATHX stations",
+    items: [
+      "DB ground to overhead",
+      "DB bench press",
+      "Sandbag squats",
+      "Sandbag carry",
+      "Burpees over bench",
+      "Row",
+    ],
   },
   {
     group: "Lower body",
     items: [
-      "Back squat",
       "Front squat",
       "Goblet squat",
-      "Deadlift",
       "Romanian deadlift",
       "Hip thrust",
       "Walking lunge",
@@ -75,14 +85,7 @@ const EXERCISES: { group: string; items: string[] }[] = [
   },
   {
     group: "Upper push",
-    items: [
-      "Bench press",
-      "Incline bench press",
-      "Overhead press",
-      "Push press",
-      "Dip",
-      "Push-up",
-    ],
+    items: ["Bench press", "Incline bench press", "Dip", "Push-up"],
   },
   {
     group: "Upper pull",
@@ -108,27 +111,11 @@ const EXERCISES: { group: string; items: string[] }[] = [
   },
   {
     group: "Carries and strongman",
-    items: [
-      "Farmer carry",
-      "Sandbag carry",
-      "Sandbag clean",
-      "Sled push",
-      "Sled pull",
-    ],
+    items: ["Farmer carry", "Sandbag clean", "Sled push", "Sled pull"],
   },
   {
     group: "Conditioning",
-    items: [
-      "Row",
-      "Bike erg",
-      "Ski erg",
-      "Run",
-      "Burpee",
-      "Burpees over bench",
-      "Wall ball",
-      "Box jump",
-      "Double under",
-    ],
+    items: ["Bike erg", "Ski erg", "Run", "Burpee", "Wall ball", "Box jump", "Double under"],
   },
 ];
 
@@ -365,7 +352,12 @@ export function WorkoutForm({
   });
   const [elapsed, setElapsed] = useState<Record<Side, string>>(() =>
     editing && editSide
-      ? { hippos: "", gators: "", [editSide]: formatTime(editing.seconds) }
+      ? {
+        hippos: "",
+        gators: "",
+        // Zero was never recorded, so the box stays empty rather than reading 0:00.
+        [editSide]: editing.seconds > 0 ? formatTime(editing.seconds) : "",
+      }
       : { hippos: "", gators: "" },
   );
   const [lifts, setLifts] = useState<LiftRow[]>(() => {
@@ -537,14 +529,6 @@ export function WorkoutForm({
       elapsedRefs.current[side]?.focus();
       elapsedRefs.current[side]?.scrollIntoView({ block: "center" });
       return `${who}: write the elapsed time as mm:ss, or leave it empty.`;
-    }
-    if (!typed && !(total > 0)) {
-      setInvalidSide(side);
-      elapsedRefs.current[side]?.focus();
-      elapsedRefs.current[side]?.scrollIntoView({ block: "center" });
-      return usesStations
-        ? `${who}: add an elapsed time, or a time against at least one station.`
-        : `${who}: add the elapsed time as mm:ss.`;
     }
     if (total > 86400) return `${who}: that elapsed time is too long.`;
 

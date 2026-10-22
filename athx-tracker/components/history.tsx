@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/native-select";
 import {
   ATHLETES,
-  formatTime,
+  formatTimeOrDash,
   formatWeight,
   type Athlete,
   type RecordItem,
@@ -104,9 +104,9 @@ export function History({
                           </p>
                           <p className="mt-0.5 text-xs text-muted-foreground">
                             {ATHLETES[record.athlete].name} · {record.category} ·{" "}
-                            {formatTime(record.seconds)}
+                            {formatTimeOrDash(record.seconds)}
                             {record.goal
-                              ? ` · goal ${formatTime(record.goal)}`
+                              ? ` · goal ${formatTimeOrDash(record.goal)}`
                               : ""}
                           </p>
                           {record.segments.length > 0 ? (
