@@ -94,6 +94,15 @@ export function Overview({
   const workouts = records.filter(isWorkout);
   const weekWorkouts = workouts.filter((w) => weekStart(w.day) === thisWeek);
   const lastSession = workouts.find((w) => w.day <= today) ?? workouts[0];
+  // The log shows every session's burn; the panel that puts one session in
+  // front of you was the one place leaving it out.
+  const lastBurn =
+    lastSession && lastSession.athlete !== "team"
+      ? estimateBurn(
+          lastSession,
+          (settings.bodyweight ?? { hippos: 0, gators: 0 })[lastSession.athlete],
+        )
+      : null;
 
   return (
     <div className="space-y-4">
@@ -229,6 +238,7 @@ export function Overview({
             <p className="font-medium">{lastSession.title}</p>
             <p className="text-sm tabular-nums text-muted-foreground">
               {formatTimeOrDash(lastSession.seconds)}
+              {lastBurn !== null ? ` · ~${lastBurn} kcal` : ""}
             </p>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">

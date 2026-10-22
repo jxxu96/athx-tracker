@@ -37,6 +37,20 @@ const athlete = (page: Page, name: string) =>
 
 test.beforeEach(async ({ page }) => {
   await signIn(page);
+  // Each spec starts with an empty journal. Sharing one meant a spec looking
+  // for "a Tennis session" found the one another spec had saved, and failed
+  // over the suite rather than over the app.
+  await page.evaluate(async () => {
+    const data = await fetch("/api/records").then((r) => r.json());
+    for (const record of data.records as { id: string }[]) {
+      await fetch("/api/records", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: record.id }),
+      });
+    }
+  });
+  await page.reload();
 });
 
 test("no category asks for a station it gives you no way to add", async ({ page }) => {
@@ -195,4 +209,29 @@ test("the full-workout scenario is no longer in the form", async ({ page }) => {
     await expect(page.getByText("Full-workout scenario")).toHaveCount(0);
     await expect(page.getByText("Fatigue allowance on unperformed work")).toHaveCount(0);
   }
+});
+
+test("a session reports what it burned, once it can", async ({ page }) => {
+  await athlete(page, "Gators").click();
+  await openSession(page);
+  await page.getByRole("button", { name: "Tennis 60m" }).click();
+  await page.getByRole("button", { name: "Save session" }).click();
+
+  // Without a bodyweight there is nothing to compute from, and a figure is
+  // withheld rather than invented.
+  await page.getByRole("button", { name: "Log", exact: true }).click();
+  await expect(page.getByText(/· Tennis ·/)).toBeVisible();
+  await expect(page.getByText(/kcal/)).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Setup", exact: true }).click();
+  await page.getByLabel(/^Bodyweight/).nth(1).fill("185");
+  await page.getByRole("button", { name: "Save settings" }).click();
+
+  // 7 MET for tennis, 185 lb, an hour: about 620 kcal, to the nearest ten.
+  await page.getByRole("button", { name: "Log", exact: true }).click();
+  await expect(page.getByText(/· Tennis · 60:00 · ~620 kcal/)).toBeVisible();
+
+  // And on the panel that puts the last session in front of you.
+  await page.getByRole("button", { name: "Today", exact: true }).click();
+  await expect(page.getByText(/60:00 · ~620 kcal/)).toBeVisible();
 });
