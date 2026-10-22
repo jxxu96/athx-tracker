@@ -84,6 +84,16 @@ export async function GET(request: Request) {
       detail: "The estimator address must be HTTPS, or on your private network.",
     });
 
+  // Naming the target turns "unreachable" into something diagnosable: it says
+  // whether the app is pointed at the in-stack estimator or one on a laptop.
+  const target = (() => {
+    try {
+      return new URL(config.GROK_GATEWAY_URL!).host;
+    } catch {
+      return "the configured address";
+    }
+  })();
+
   try {
     const response = await fetch(new URL("/health", config.GROK_GATEWAY_URL!), {
       headers: { Authorization: `Bearer ${config.GROK_GATEWAY_TOKEN}` },
@@ -92,15 +102,21 @@ export async function GET(request: Request) {
     if (response.status === 401)
       return json({
         status: "error",
-        detail: "The estimator rejected the token. Check both sides match.",
+        detail: `${target} rejected the token. Check both sides match.`,
       });
     if (!response.ok)
-      return json({ status: "error", detail: `Estimator replied ${response.status}.` });
+      return json({
+        status: "error",
+        detail: `${target} replied ${response.status}.`,
+      });
     const body = (await response.json()) as { order?: unknown };
     const order = Array.isArray(body.order) ? body.order.map(String) : [];
     return json(
       order.length
-        ? { status: "ready", detail: `Reachable, trying ${order.join(" then ")}.` }
+        ? {
+            status: "ready",
+            detail: `${target} reachable, trying ${order.join(" then ")}.`,
+          }
         : {
             status: "error",
             detail: "Reachable, but it has no CLI configured to ask.",
@@ -109,7 +125,7 @@ export async function GET(request: Request) {
   } catch {
     return json({
       status: "unreachable",
-      detail: "No answer. Is that machine awake with the estimator running?",
+      detail: `No answer from ${target}. Is it running and reachable from the container?`,
     });
   }
 }
