@@ -235,10 +235,27 @@ export async function POST(request: Request) {
         502,
       );
     }
-    const result = await response.json();
-    const estimate = estimateSchema.parse(
-      gateway ? result : extractEstimate(result),
-    );
+    // A 200 carrying nonsense is the estimator's fault, not the description's.
+    // Left in the outer catch it became a 400, which tells you to reword a meal
+    // that was never the problem, keeps the estimate you were charged for, and
+    // stops the form offering the queue, since 400 is the one status it reads
+    // as "rewording would help".
+    let estimate;
+    try {
+      const result = await response.json();
+      estimate = estimateSchema.parse(
+        gateway ? result : extractEstimate(result),
+      );
+    } catch {
+      releaseEstimate(bucket);
+      return json(
+        {
+          error:
+            "The estimator answered with something unusable. Try again, or enter the macros by hand.",
+        },
+        502,
+      );
+    }
     return json({ estimate });
   } catch {
     return json(

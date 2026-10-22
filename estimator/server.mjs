@@ -11,7 +11,7 @@
  */
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
-import { createHash, createHmac } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { request as httpsRequest } from "node:https";
 import {
   existsSync,
@@ -504,8 +504,17 @@ function send(response, status, body) {
   response.end(payload);
 }
 
-const authorised = (request) =>
-  (request.headers.authorization ?? "") === `Bearer ${TOKEN}`;
+/**
+ * Constant time, by comparing digests rather than the strings themselves: ===
+ * returns as soon as two bytes differ, which times how much of a guess was
+ * right. The app compares its passphrase the same way.
+ */
+const digestOf = (value) => createHash("sha256").update(value).digest();
+
+const authorised = (request) => {
+  const offered = digestOf(request.headers.authorization ?? "");
+  return timingSafeEqual(offered, digestOf(`Bearer ${TOKEN}`));
+};
 
 const server = createServer((request, response) => {
   const path = (request.url ?? "/").split("?")[0];
