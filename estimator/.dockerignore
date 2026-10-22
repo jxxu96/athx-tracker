@@ -1,0 +1,12 @@
+# Only server.mjs is copied into the image. Everything else here is either a
+# secret, a backup, or documentation, and none of it needs to reach the builder.
+.env
+.env.*
+backups
+node_modules
+.git
+*.log
+README.md
+install-windows.ps1
+Dockerfile
+.dockerignore

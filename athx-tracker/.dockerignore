@@ -6,3 +6,8 @@ data
 *.log
 Dockerfile
 .dockerignore
+# Nothing in the image reads these, and the build context is the one place a
+# local build would otherwise hand them to the builder.
+.env
+.env.*
+*.test.ts
