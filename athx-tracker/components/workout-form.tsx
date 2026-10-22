@@ -46,7 +46,7 @@ type LiftRow = {
   gators: { kg: string; sets: string; reps: string };
 };
 
-const CATEGORIES = ["MetCon", "Strength", "Endurance", "Other"] as const;
+const CATEGORIES = ["MetCon", "Strength", "Endurance", "Solidcore", "Other"] as const;
 const UNITS = ["reps", "m", "cal", "rounds"] as const;
 
 const OTHER = "Other";
@@ -388,6 +388,9 @@ export function WorkoutForm({
 
   const usesStations = category !== "Strength";
   const usesLifts = category === "Strength" || category === "Other";
+  // No preset circuit and nothing to load: start empty and let them name
+  // whatever is worth recording, as Other does.
+  const usesCustomStations = category === "Other" || category === "Solidcore";
   const isRun = category === "Endurance";
 
   /** Changing the category reshapes the session, so rebuild its stations. */
@@ -727,7 +730,7 @@ export function WorkoutForm({
               : "What each of you actually completed, station by station."
           }
           action={
-            category === "Other" ? (
+            usesCustomStations ? (
               <Button type="button" variant="outline" size="sm" onClick={addStation}>
                 <Plus /> Station
               </Button>

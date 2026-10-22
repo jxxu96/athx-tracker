@@ -7,7 +7,7 @@ export type Segment = {
 };
 export type Workout = {
   id: string; kind: "workout"; athlete: Athlete; day: string;
-  title: string; category: "Strength" | "Endurance" | "MetCon" | "Other";
+  title: string; category: "Strength" | "Endurance" | "MetCon" | "Solidcore" | "Other";
   seconds: number; notes: string; segments: Segment[]; fatigue: number;
   transition: number; goal: number | null; context: "solo" | "pairs";
   lifts: { name: string; kg: number; sets: number; reps: number }[];
@@ -116,6 +116,10 @@ export const MET_BY_CATEGORY: Record<Workout["category"], number> = {
   Strength: 6,
   MetCon: 8,
   Endurance: 9,
+  // Slow resistance on a megaformer: continuous and hard, but not the 500 kcal
+  // an hour the marketing claims. Deliberately conservative, because an
+  // overstated burn quietly inflates what the day looks like it can afford.
+  Solidcore: 5,
   Other: 5,
 };
 

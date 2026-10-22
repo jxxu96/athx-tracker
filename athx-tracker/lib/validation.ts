@@ -11,7 +11,7 @@ const base = { id: z.string().uuid(), day };
 export const workoutSchema = z.object({
   ...base, kind: z.literal("workout"), athlete: z.enum(["hippos", "gators", "team"]),
   title: z.string().trim().min(1).max(120),
-  category: z.enum(["Strength", "Endurance", "MetCon", "Other"]),
+  category: z.enum(["Strength", "Endurance", "MetCon", "Solidcore", "Other"]),
   seconds: finite.max(86400), notes: z.string().max(2000),
   segments: z.array(z.object({
     name: z.string().trim().min(1).max(100), unit: z.enum(["reps", "m", "cal", "rounds"]),
