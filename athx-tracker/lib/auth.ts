@@ -114,6 +114,17 @@ export function recordFailure(client: string) {
   const sqlite = db();
   return sqlite.transaction(() => {
     const now = Date.now();
+
+    // Rows are created per caller and otherwise removed only by a correct
+    // passphrase, so without this the table keeps a row for every client that
+    // ever failed once. Forwarded headers are caller-supplied, which makes that
+    // an unbounded number of rows rather than a slowly growing one.
+    sqlite
+      .prepare(
+        "DELETE FROM login_attempts WHERE locked_until < ? AND window_start < ?",
+      )
+      .run(now, now - WINDOW_MS);
+
     const bump = (id: string, limit: number) => {
       const row = sqlite
         .prepare("SELECT count, window_start FROM login_attempts WHERE id = ?")

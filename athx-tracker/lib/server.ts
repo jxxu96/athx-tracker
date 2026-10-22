@@ -65,8 +65,36 @@ export async function guard(request: Request, write = false) {
   return null;
 }
 
+const MAX_BODY_BYTES = 64_000;
+
+/**
+ * Reads up to a cap rather than buffering the whole body and measuring after.
+ * The old order held an arbitrarily large request in memory before deciding it
+ * was too large, which is the wrong way round for the only thing that limit was
+ * there to prevent. Content-Length is checked first where it is given, but it
+ * is a claim, so the read is bounded regardless.
+ */
 export async function readBody(request: Request) {
-  const text = await request.text();
-  if (text.length > 64000) throw new Error("Request too large.");
+  const declared = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES)
+    throw new Error("Request too large.");
+
+  const reader = request.body?.getReader();
+  if (!reader) throw new Error("Empty body.");
+
+  const decoder = new TextDecoder();
+  let text = "";
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_BODY_BYTES) {
+      await reader.cancel();
+      throw new Error("Request too large.");
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  text += decoder.decode();
   return JSON.parse(text);
 }
