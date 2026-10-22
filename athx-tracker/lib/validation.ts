@@ -17,7 +17,7 @@ export const workoutSchema = z.object({
     name: z.string().trim().min(1).max(100), unit: z.enum(["reps", "m", "cal", "rounds"]),
     completed: finite, target: finite.positive(), seconds: finite.max(86400),
   }).strict().refine(s => s.completed <= s.target, "Completed volume exceeds target")
-    .refine(s => s.completed === 0 ? s.seconds === 0 : s.seconds > 0, "Measured work needs a time")).max(30),
+    .refine(s => s.completed > 0 || s.seconds === 0, "A station time needs completed work with it")).max(30),
   fatigue: finite.max(50), transition: finite.max(3600), goal: finite.positive().max(86400).nullable(),
   context: z.enum(["solo", "pairs"]),
   lifts: z.array(z.object({ name: z.string().min(1).max(80), kg: finite.positive().max(1000), sets: z.number().int().min(1).max(50), reps: z.number().int().min(1).max(100) }).strict()).max(30),

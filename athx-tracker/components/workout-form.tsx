@@ -547,8 +547,8 @@ export function WorkoutForm({
         return `${where}: completed work is above the target.`;
       if (segment.completed === 0 && segment.seconds > 0)
         return `${where}: a time needs completed work with it.`;
-      if (segment.completed > 0 && segment.seconds <= 0)
-        return `${where}: measured work needs a time.`;
+      // The reverse is allowed: reps you did not time are still reps you did.
+      // The projection needs the pace and quietly withholds itself without it.
     }
     if (segments.reduce((n, s) => n + s.seconds, 0) > total + 1)
       return `${who}: the station times add up to more than the elapsed time.`;
