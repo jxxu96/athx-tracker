@@ -6,13 +6,15 @@ import { Monitor, Moon, Sun } from "lucide-react";
 type Preference = "system" | "light" | "dark";
 
 const STORAGE_KEY = "athx-theme";
-const ORDER: Preference[] = ["system", "light", "dark"];
-const ICONS = { system: Monitor, light: Sun, dark: Moon };
-const NAMES = {
-  system: "following your device",
-  light: "light",
-  dark: "dark",
-} as const;
+const OPTIONS = [
+  { value: "system", label: "Device", Icon: Monitor },
+  { value: "light", label: "Light", Icon: Sun },
+  { value: "dark", label: "Dark", Icon: Moon },
+] as const satisfies readonly {
+  value: Preference;
+  label: string;
+  Icon: typeof Monitor;
+}[];
 
 /**
  * The preference lives in localStorage rather than in React, because the script
@@ -52,6 +54,26 @@ function resolve(preference: Preference) {
     : "light";
 }
 
+/** Writes the resolved theme where the stylesheet can see it. */
+function applyTheme(preference: Preference) {
+  document.documentElement.dataset.theme = resolve(preference);
+}
+
+/**
+ * Outside the component: it touches the document and localStorage and nothing
+ * in React's world, and a component is the wrong place to own either.
+ */
+function choose(next: Preference) {
+  applyTheme(next);
+  try {
+    if (next === "system") localStorage.removeItem(STORAGE_KEY);
+    else localStorage.setItem(STORAGE_KEY, next);
+  } catch {
+    // Not remembering it is survivable; the page is still themed.
+  }
+  listeners.forEach((listener) => listener());
+}
+
 export function ThemeToggle() {
   const preference = useSyncExternalStore(
     subscribe,
@@ -64,37 +86,32 @@ export function ThemeToggle() {
   useEffect(() => {
     if (preference !== "system") return;
     const query = window.matchMedia("(prefers-color-scheme: dark)");
-    const sync = () => {
-      document.documentElement.dataset.theme = resolve("system");
-    };
+    const sync = () => applyTheme("system");
     query.addEventListener("change", sync);
     return () => query.removeEventListener("change", sync);
   }, [preference]);
 
-  function choose(next: Preference) {
-    document.documentElement.dataset.theme = resolve(next);
-    try {
-      if (next === "system") localStorage.removeItem(STORAGE_KEY);
-      else localStorage.setItem(STORAGE_KEY, next);
-    } catch {
-      // Not remembering it is survivable; the page is still themed.
-    }
-    listeners.forEach((listener) => listener());
-  }
-
-  const next = ORDER[(ORDER.indexOf(preference) + 1) % ORDER.length];
-  const Icon = ICONS[preference];
-  const label = `Theme: ${NAMES[preference]}. Switch to ${NAMES[next]}.`;
-
+  // Three buttons rather than one that cycles: all the choices are visible, and
+  // which one is on does not have to be read off an icon.
   return (
-    <button
-      type="button"
-      onClick={() => choose(next)}
-      aria-label={label}
-      title={label}
-      className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+    <div
+      role="group"
+      aria-label="Theme"
+      className="flex shrink-0 rounded-full bg-muted p-0.5"
     >
-      <Icon className="size-4" />
-    </button>
+      {OPTIONS.map(({ value, label, Icon }) => (
+        <button
+          key={value}
+          type="button"
+          onClick={() => choose(value)}
+          aria-pressed={preference === value}
+          aria-label={label}
+          title={label}
+          className="rounded-full p-1.5 text-muted-foreground transition-colors aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm"
+        >
+          <Icon className="size-3.5" />
+        </button>
+      ))}
+    </div>
   );
 }
