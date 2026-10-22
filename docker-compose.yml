@@ -42,7 +42,12 @@ services:
     environment:
       # Must match GROK_GATEWAY_TOKEN above.
       ESTIMATOR_TOKEN: ${GROK_GATEWAY_TOKEN:?set GROK_GATEWAY_TOKEN, matching the app}
-      ESTIMATOR_ORDER: ${ESTIMATOR_ORDER:-grok,claude}
+      # Claude first, matching the estimator's own default and the reason for
+      # it: whoever runs first gets the large slice of the budget and the one
+      # that follows gets what is left. Grok leading took its full 31s and left
+      # Claude about 9s, too little from a cold container, so both timed out and
+      # the whole 40s budget burned for no answer.
+      ESTIMATOR_ORDER: ${ESTIMATOR_ORDER:-claude,grok}
       # Auto-redeploy. GitHub Actions cannot reach a tailnet address, so CI
       # cannot call Portainer. This container can: it watches ghcr.io for a new
       # image and calls the webhook below. It runs beside Portainer and is

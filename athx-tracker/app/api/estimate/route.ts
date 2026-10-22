@@ -203,12 +203,27 @@ export async function POST(request: Request) {
     }
     if (!response.ok) {
       releaseEstimate(bucket);
+      if (response.status === 401)
+        return json(
+          { error: "The estimator rejected our token. Check both sides match." },
+          502,
+        );
+      // The estimator names the CLI that failed and why. Saying "could not read
+      // this meal" instead blames the description for what is usually a login
+      // or a timeout, and sends you rewording a meal that was never the problem.
+      const detail = await response
+        .json()
+        .then((body: unknown) =>
+          body && typeof body === "object" && "detail" in body
+            ? String((body as { detail: unknown }).detail).slice(0, 300)
+            : "",
+        )
+        .catch(() => "");
       return json(
         {
-          error:
-            response.status === 401
-              ? "The estimator rejected our token. Check both sides match."
-              : "The estimator could not read this meal. Try again, or enter the macros by hand.",
+          error: detail
+            ? `No estimator could answer — ${detail}`
+            : "No estimator could answer. Try again, or enter the macros by hand.",
         },
         502,
       );

@@ -507,7 +507,13 @@ const server = createServer((request, response) => {
     const result = await estimate(description);
     if (result.error) {
       console.error(`[estimator] all providers failed: ${result.error}`);
-      return send(response, 502, { error: "No estimate available." });
+      // Passed to the caller, not just the log. Which CLI failed and why is the
+      // whole diagnosis, and docker logs is not reachable from the phone that
+      // just saw the error.
+      return send(response, 502, {
+        error: "No estimate available.",
+        detail: String(result.error).slice(0, 300),
+      });
     }
     send(response, 200, result.estimate);
   });
