@@ -1,18 +1,29 @@
 export type Athlete = "hippos" | "gators" | "team";
 export type WeightUnit = "kg" | "lb";
 export type Macros = { calories: number; protein: number; carbs: number; fat: number };
+/** Which part of a session a station belongs to. Lifts live in their own list. */
+export type Block = "metcon" | "endurance";
 export type Segment = {
   name: string; unit: "reps" | "m" | "cal" | "rounds";
   completed: number; target: number; seconds: number;
+  /**
+   * Set on stations saved since sessions could mix parts. Older stations omit
+   * it and take it from the session's category; see segmentBlock.
+   */
+  block?: Block;
+  /** The load carried, in kilograms like every other weight. Omitted when unloaded or not recorded. */
+  kg?: number;
 };
 export type Workout = {
   id: string; kind: "workout"; athlete: Athlete; day: string;
-  title: string; category: "Strength" | "Endurance" | "MetCon" | "Solidcore" | "Tennis" | "Other";
+  title: string; category: "Strength" | "Endurance" | "MetCon" | "Mixed" | "Solidcore" | "Tennis" | "Other";
   /** What "Other" actually was. Empty for every other category. */
   customCategory: string;
   seconds: number; notes: string; segments: Segment[]; fatigue: number;
   transition: number; goal: number | null; context: "solo" | "pairs";
   lifts: { name: string; kg: number; sets: number; reps: number }[];
+  /** The MetCon stopped at its time cap. Older sessions omit it, which reads as no. */
+  capHit?: boolean;
 };
 export type Meal = {
   id: string; kind: "meal"; athlete: Exclude<Athlete, "team">; day: string;
@@ -54,15 +65,30 @@ export const ATHLETES = {
     color: "#235a43", ink: "var(--athlete-team-ink)",
   },
 };
-export const METCON = [
-  { name: "Opening row", target: 40, unit: "cal" as const, load: "Shared calories" },
-  { name: "DB ground to overhead", target: 30, unit: "reps" as const, load: "Hippos 7.5 kg · Gators 15 kg" },
-  { name: "DB bench press", target: 30, unit: "reps" as const, load: "Hippos 7.5 kg · Gators 15 kg / DB" },
-  { name: "Sandbag squats", target: 30, unit: "reps" as const, load: "Hippos 20 kg · Gators 30 kg" },
-  { name: "Sandbag carry", target: 60, unit: "m" as const, load: "30 m each · Hippos 20 kg · Gators 30 kg" },
-  { name: "Burpees over bench", target: 30, unit: "reps" as const, load: "Step-overs permitted in Lite" },
-  { name: "Closing row", target: 40, unit: "cal" as const, load: "Shared calories" },
+/**
+ * The ATHX Lite circuit. Prescribed loads are kilograms per athlete, so they can
+ * be shown in whichever unit Setup says and offered as the default load.
+ */
+export const METCON: {
+  name: string; target: number; unit: Segment["unit"];
+  kg?: { hippos: number; gators: number }; before?: string; after?: string; note?: string;
+}[] = [
+  { name: "Opening row", target: 40, unit: "cal", note: "Shared calories" },
+  { name: "DB ground to overhead", target: 30, unit: "reps", kg: { hippos: 7.5, gators: 15 } },
+  { name: "DB bench press", target: 30, unit: "reps", kg: { hippos: 7.5, gators: 15 }, after: " / DB" },
+  { name: "Sandbag squats", target: 30, unit: "reps", kg: { hippos: 20, gators: 30 } },
+  { name: "Sandbag carry", target: 60, unit: "m", kg: { hippos: 20, gators: 30 }, before: "30 m each" },
+  { name: "Burpees over bench", target: 30, unit: "reps", note: "Step-overs permitted in Lite" },
+  { name: "Closing row", target: 40, unit: "cal", note: "Shared calories" },
 ];
+
+/** The line under a circuit station, in the unit you read weights in. */
+export function metconLoadText(station: (typeof METCON)[number], unit: WeightUnit) {
+  if (!station.kg) return station.note ?? "";
+  const loads = `Hippos ${formatWeight(station.kg.hippos, unit)} · Gators ${formatWeight(station.kg.gators, unit)}${station.after ?? ""}`;
+  return station.before ? `${station.before} · ${loads}` : loads;
+}
+
 /**
  * How many entries the app opens with. Two people logging meals and sessions
  * daily reach thousands before the event, and sending all of them to a phone on
@@ -172,6 +198,8 @@ export const MET_BY_CATEGORY: Record<Workout["category"], number> = {
   Strength: 6,
   MetCon: 8,
   Endurance: 9,
+  // Only the fallback: a mixed session is weighted by its parts, in sessionMet.
+  Mixed: 7,
   // Slow resistance on a megaformer: continuous and hard, but not the 500 kcal
   // an hour the marketing claims. Deliberately conservative, because an
   // overstated burn quietly inflates what the day looks like it can afford.
@@ -189,7 +217,7 @@ export const MET_BY_CATEGORY: Record<Workout["category"], number> = {
  */
 export function estimateBurn(workout: Workout, bodyweightKg: number) {
   if (!(bodyweightKg > 0) || !(workout.seconds > 0)) return null;
-  const met = MET_BY_CATEGORY[workout.category] ?? MET_BY_CATEGORY.Other;
+  const met = sessionMet(workout);
   const kcal = ((met * 3.5 * bodyweightKg) / 200) * (workout.seconds / 60);
   return Math.round(kcal / 10) * 10;
 }
@@ -224,9 +252,18 @@ export function defaultContext(sideCount: number): Workout["context"] {
  * have named it, the name is what shows.
  */
 export function categoryName(
-  workout: Pick<Workout, "category" | "customCategory">,
+  workout: Pick<Workout, "category" | "customCategory"> &
+    Partial<Pick<Workout, "segments" | "lifts">>,
 ) {
   const named = (workout.customCategory ?? "").trim();
+  if (workout.category === "Mixed") {
+    const parts = sessionParts({
+      category: workout.category,
+      segments: workout.segments ?? [],
+      lifts: workout.lifts ?? [],
+    });
+    return parts.length > 1 ? parts.map((part) => PART_LABEL[part]).join(" + ") : "Mixed";
+  }
   return workout.category === "Other" && named ? named : workout.category;
 }
 
@@ -259,12 +296,110 @@ export function categoryShape(category: Workout["category"]) {
   // stations has to let you name them, or the panel asks for something it
   // gives you no way to provide.
   const bringsItsOwnCircuit = category === "MetCon" || category === "Endurance";
+  const isMixed = category === "Mixed";
   return {
     usesStations,
-    usesLifts: category === "Strength" || category === "Other",
+    usesLifts: category === "Strength" || category === "Other" || isMixed,
     usesCustomStations: usesStations && !bringsItsOwnCircuit,
     isRun: category === "Endurance",
+    /** Each station says whether it is MetCon or endurance work. */
+    isMixed,
   };
+}
+
+/**
+ * Which part a station is. Saved stations carry it; older ones do not, and
+ * before sessions could mix, a station's part was its session's category.
+ */
+export function segmentBlock(
+  workout: Pick<Workout, "category">,
+  segment: Pick<Segment, "block">,
+): Block {
+  if (segment.block) return segment.block;
+  return workout.category === "Endurance" ? "endurance" : "metcon";
+}
+
+export type Part = "lifts" | Block;
+export const PART_LABEL: Record<Part, string> = {
+  lifts: "Strength", metcon: "MetCon", endurance: "Endurance",
+};
+
+/** The parts a session actually contains, in a fixed order. */
+export function sessionParts(
+  workout: Pick<Workout, "category" | "segments" | "lifts">,
+): Part[] {
+  const parts = new Set<Part>();
+  if (workout.lifts.length) parts.add("lifts");
+  for (const segment of workout.segments) parts.add(segmentBlock(workout, segment));
+  return (["lifts", "metcon", "endurance"] as const).filter((part) => parts.has(part));
+}
+
+/**
+ * A mixed session's MET, weighted by where its time went. Timed stations use
+ * their own part's MET. Time not spent at a timed station is lifting when the
+ * session has lifts, and otherwise the session's untimed stations. Every other
+ * category keeps the single figure it always had, so no old burn changes.
+ */
+export function sessionMet(
+  workout: Pick<Workout, "category" | "segments" | "lifts" | "seconds">,
+) {
+  if (workout.category !== "Mixed")
+    return MET_BY_CATEGORY[workout.category] ?? MET_BY_CATEGORY.Other;
+  const metOf = (part: Part) =>
+    part === "lifts" ? MET_BY_CATEGORY.Strength
+      : part === "metcon" ? MET_BY_CATEGORY.MetCon : MET_BY_CATEGORY.Endurance;
+  const parts = sessionParts(workout);
+  if (!parts.length || !(workout.seconds > 0)) return MET_BY_CATEGORY.Mixed;
+  let timed = 0, weighted = 0;
+  for (const segment of workout.segments) {
+    const seconds = Math.max(0, segment.seconds);
+    timed += seconds;
+    weighted += seconds * metOf(segmentBlock(workout, segment));
+  }
+  const rest = Math.max(0, workout.seconds - timed);
+  if (rest > 0) {
+    const restPart: Part = parts.includes("lifts") ? "lifts" : parts.includes("metcon") ? "metcon" : "endurance";
+    weighted += rest * metOf(restPart);
+  }
+  const total = timed + rest;
+  return total > 0 ? weighted / total : MET_BY_CATEGORY.Mixed;
+}
+
+/**
+ * How much of the MetCon was done, from what each station logged against its
+ * target. Null when the session has no MetCon stations. Only finished
+ * movements count as finished; the fraction is of the work, station by station.
+ */
+export function metconCompletion(
+  workout: Pick<Workout, "category" | "segments" | "capHit">,
+) {
+  // Solidcore, tennis and Other can have stations too, but none is a MetCon.
+  if (workout.category !== "MetCon" && workout.category !== "Mixed") return null;
+  const stations = workout.segments.filter(
+    (segment) => segmentBlock(workout, segment) === "metcon" && segment.target > 0,
+  );
+  if (!stations.length) return null;
+  const finished = stations.filter((s) => s.completed >= s.target).length;
+  const fraction =
+    stations.reduce((n, s) => n + Math.min(1, s.completed / s.target), 0) / stations.length;
+  return {
+    finished,
+    movements: stations.length,
+    percent: Math.round(fraction * 100),
+    complete: finished === stations.length,
+    capHit: Boolean(workout.capHit),
+  };
+}
+
+/** One line for the log: "5/7 movements · 82% · time cap". Null when finished and uncapped. */
+export function completionLine(
+  workout: Pick<Workout, "category" | "segments" | "capHit">,
+) {
+  const done = metconCompletion(workout);
+  if (!done || (done.complete && !done.capHit)) return null;
+  const parts = [`${done.finished}/${done.movements} movements`, `${done.percent}% of the work`];
+  if (done.capHit) parts.push("time cap hit");
+  return parts.join(" · ");
 }
 
 /**
@@ -288,5 +423,41 @@ export function presetElapsed(current: string, preset: (typeof PRESETS)[number])
 }
 
 export function formatWeight(kg: number, unit: WeightUnit) {
-  return `${Math.round(fromKilograms(kg, unit) * 10) / 10} ${unit}`;
+  return `${displayLoad(kg, unit)} ${unit}`;
+}
+
+/** A stored load as the number a weight box shows, to a tenth. */
+export function displayLoad(kg: number, unit: WeightUnit) {
+  return String(Math.round(fromKilograms(kg, unit) * 10) / 10);
+}
+
+/**
+ * What a weight box means in kilograms. A box still showing a saved load
+ * returns that load untouched, so opening and re-saving an entry never nudges
+ * it by a rounding step (100 kg reads 220.5 lb, which is 100.02 kg). Blank or
+ * not a positive number is null.
+ */
+export function parseLoad(text: string, unit: WeightUnit, saved?: number) {
+  const typed = text.trim();
+  if (typed === "") return null;
+  if (saved !== undefined && saved > 0 && displayLoad(saved, unit) === typed) return saved;
+  const value = Number(typed);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return Math.round(toKilograms(value, unit) * 100) / 100;
+}
+
+/**
+ * A weight box's text when the unit switches. A saved load is shown fresh in
+ * the new unit, not converted from its rounded display; anything typed is
+ * converted; anything unreadable is left for the form to complain about.
+ */
+export function reunitLoad(text: string, from: WeightUnit, to: WeightUnit, saved?: number) {
+  if (from === to) return text;
+  const typed = text.trim();
+  if (typed === "") return text;
+  if (saved !== undefined && saved > 0 && displayLoad(saved, from) === typed)
+    return displayLoad(saved, to);
+  const value = Number(typed);
+  if (!Number.isFinite(value) || value <= 0) return text;
+  return String(Math.round(fromKilograms(toKilograms(value, from), to) * 10) / 10);
 }

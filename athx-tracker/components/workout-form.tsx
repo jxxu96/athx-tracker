@@ -30,8 +30,12 @@ import {
   sessionSeconds,
   formatTime,
   parseTime,
-  fromKilograms,
-  toKilograms,
+  displayLoad,
+  metconLoadText,
+  parseLoad,
+  reunitLoad,
+  segmentBlock,
+  type Block,
   type Segment,
   type WeightUnit,
   type Workout,
@@ -45,22 +49,46 @@ type Station = {
   custom: string;
   unit: Segment["unit"];
   target: string;
-  load?: string;
+  /** MetCon or endurance work, which matters once a session mixes them. */
+  block: Block;
+  /** One of the ATHX circuit's stations, shown as prescribed rather than edited. */
+  fixed?: boolean;
 };
 
-/** What one athlete actually did at one station. */
-type Entry = { completed: string; time: string };
+/**
+ * What one athlete actually did at one station. load is in the unit on
+ * screen; savedKg is the load the entry was opened with, kept exact.
+ */
+type Entry = { completed: string; time: string; load: string; savedKg?: number };
 
+type LiftSide = { kg: string; sets: string; reps: string; savedKg?: number };
 type LiftRow = {
   name: string;
   custom: string;
-  hippos: { kg: string; sets: string; reps: string };
-  gators: { kg: string; sets: string; reps: string };
+  hippos: LiftSide;
+  gators: LiftSide;
 };
 
 const CATEGORIES = [
-  "MetCon", "Strength", "Endurance", "Solidcore", "Tennis", "Other",
+  "MetCon", "Strength", "Endurance", "Mixed", "Solidcore", "Tennis", "Other",
 ] as const;
+
+/** The circuit's own entry for a station, when it is one of the seven. */
+const circuitStation = (station: Pick<Station, "name" | "fixed">) =>
+  station.fixed ? METCON.find((s) => s.name === station.name) : undefined;
+
+/**
+ * Whether a station takes a load. A circuit station does when the circuit
+ * prescribes one; any other MetCon station may, unless it is counted in
+ * calories, which is a machine. Endurance work is never loaded.
+ */
+const loadable = (category: Workout["category"], station: Station) => {
+  // Solidcore and tennis stations are not lifted; MetCon, Mixed and Other may be.
+  if (category === "Solidcore" || category === "Tennis") return false;
+  if (station.block !== "metcon") return false;
+  if (station.fixed) return Boolean(circuitStation(station)?.kg);
+  return station.unit !== "cal";
+};
 
 const UNITS = ["reps", "m", "cal", "rounds"] as const;
 
@@ -197,8 +225,8 @@ function ExercisePicker({
   );
 }
 
-const blankEntry = (): Entry => ({ completed: "", time: "" });
-const blankLiftSide = () => ({ kg: "", sets: "", reps: "" });
+const blankEntry = (): Entry => ({ completed: "", time: "", load: "" });
+const blankLiftSide = (): LiftSide => ({ kg: "", sets: "", reps: "" });
 const blankLift = (): LiftRow => ({
   name: "",
   custom: "",
@@ -212,11 +240,12 @@ const metconStations = (): Station[] =>
     custom: "",
     unit: s.unit,
     target: String(s.target),
-    load: s.load,
+    block: "metcon",
+    fixed: true,
   }));
 
 const runStation = (): Station[] => [
-  { name: "Run", custom: "", unit: "m", target: "" },
+  { name: "Run", custom: "", unit: "m", target: "", block: "endurance" },
 ];
 
 const stationsFor = (category: Workout["category"]): Station[] =>
@@ -331,6 +360,7 @@ export function WorkoutForm({
   today,
   sides,
   weightUnit,
+  onWeightUnit,
   editing,
   onCancelEdit,
   onSave,
@@ -338,10 +368,15 @@ export function WorkoutForm({
   today: string;
   sides: readonly Side[];
   weightUnit: WeightUnit;
+  /** Remembers a unit switched here, as Setup would. */
+  onWeightUnit?: (unit: WeightUnit) => void;
   editing?: Workout | null;
   onCancelEdit?: () => void;
   onSave: (batch: Workout[]) => Promise<void>;
 }) {
+  // The form's own copy: every box here is in this unit, whether or not the
+  // switch has reached the server yet, so what is typed is read correctly.
+  const [unit, setUnit] = useState<WeightUnit>(weightUnit);
   // Editing is one athlete's record, so it fills that athlete's column alone.
   // The parent remounts on a change of target, so these initialisers are enough.
   const editSide = editing ? sideOf(editing.athlete) : null;
@@ -365,12 +400,25 @@ export function WorkoutForm({
     chosenContext ?? defaultContext(sides.length);
   const [stations, setStations] = useState<Station[]>(() =>
     editing
-      ? editing.segments.map((segment) => ({
-          ...toChoice(segment.name),
-          unit: segment.unit,
-          target: String(segment.target),
-          load: METCON.find((station) => station.name === segment.name)?.load,
-        }))
+      ? editing.segments.map((segment) => {
+          const block = segmentBlock(editing, segment);
+          const circuit = METCON.find((station) => station.name === segment.name);
+          // Before sessions could mix, every MetCon station was a circuit one.
+          const fixed =
+            Boolean(circuit) &&
+            (editing.category === "MetCon" ||
+              (editing.category === "Mixed" &&
+                block === "metcon" &&
+                circuit?.unit === segment.unit &&
+                circuit?.target === segment.target));
+          return {
+            ...(fixed ? { name: segment.name, custom: "" } : toChoice(segment.name)),
+            unit: segment.unit,
+            target: String(segment.target),
+            block,
+            fixed,
+          };
+        })
       : metconStations(),
   );
   const [entries, setEntries] = useState<Record<Side, Entry[]>>(() => {
@@ -382,6 +430,8 @@ export function WorkoutForm({
     const mine = editing.segments.map((segment) => ({
       completed: segment.completed ? String(segment.completed) : "",
       time: segment.seconds ? formatTime(segment.seconds) : "",
+      load: segment.kg ? displayLoad(segment.kg, weightUnit) : "",
+      savedKg: segment.kg,
     }));
     const empty = editing.segments.map(() => blankEntry());
     return editSide === "gators"
@@ -404,12 +454,18 @@ export function WorkoutForm({
       ...blankLift(),
       ...toChoice(lift.name),
       [editSide]: {
-        kg: String(Math.round(fromKilograms(lift.kg, weightUnit) * 10) / 10),
+        kg: displayLoad(lift.kg, weightUnit),
         sets: String(lift.sets ?? 1),
         reps: String(lift.reps),
+        savedKg: lift.kg,
       },
     }));
   });
+  const [capHit, setCapHit] = useState<Record<Side, boolean>>(() => ({
+    hippos: false,
+    gators: false,
+    ...(editing && editSide ? { [editSide]: Boolean(editing.capHit) } : {}),
+  }));
   const [goal, setGoal] = useState(editing?.goal ? formatTime(editing.goal) : "");
   const fatigue = editing?.fatigue ?? 10;
   const transition = editing ? String(editing.transition) : "";
@@ -429,8 +485,33 @@ export function WorkoutForm({
     gators: null,
   });
 
-  const { usesStations, usesLifts, usesCustomStations, isRun } =
+  const { usesStations, usesLifts, usesCustomStations, isRun, isMixed } =
     categoryShape(category);
+  // Whether the session has MetCon work to have been capped on.
+  const hasMetcon = usesStations && stations.some((s) => s.block === "metcon") &&
+    (category === "MetCon" || isMixed);
+
+  /** Distance covered is the target: a run is measured, not chased. */
+  const measured = (station: Station) =>
+    isRun || (isMixed && station.block === "endurance");
+
+  /** Every weight box follows the switch, and the choice is remembered. */
+  function changeUnit(next: WeightUnit) {
+    if (next === unit) return;
+    setLifts((current) =>
+      current.map((lift) => ({
+        ...lift,
+        hippos: { ...lift.hippos, kg: reunitLoad(lift.hippos.kg, unit, next, lift.hippos.savedKg) },
+        gators: { ...lift.gators, kg: reunitLoad(lift.gators.kg, unit, next, lift.gators.savedKg) },
+      })),
+    );
+    setEntries((current) => ({
+      hippos: current.hippos.map((e) => ({ ...e, load: reunitLoad(e.load, unit, next, e.savedKg) })),
+      gators: current.gators.map((e) => ({ ...e, load: reunitLoad(e.load, unit, next, e.savedKg) })),
+    }));
+    setUnit(next);
+    onWeightUnit?.(next);
+  }
 
   /** Changing the category reshapes the session, so rebuild its stations. */
   function changeCategory(next: Workout["category"]) {
@@ -466,15 +547,20 @@ export function WorkoutForm({
     );
   }
 
-  function addStation() {
-    setStations((current) => [
-      ...current,
-      { name: "", custom: "", unit: "reps", target: "" },
-    ]);
+  function addStations(added: Station[]) {
+    setStations((current) => [...current, ...added]);
     setEntries((current) => ({
-      hippos: [...current.hippos, blankEntry()],
-      gators: [...current.gators, blankEntry()],
+      hippos: [...current.hippos, ...entriesFor(added)],
+      gators: [...current.gators, ...entriesFor(added)],
     }));
+  }
+
+  function addStation(block: Block = "metcon") {
+    addStations([
+      block === "endurance"
+        ? { name: "Run", custom: "", unit: "m", target: "", block }
+        : { name: "", custom: "", unit: "reps", target: "", block },
+    ]);
   }
 
   function removeStation(index: number) {
@@ -485,7 +571,7 @@ export function WorkoutForm({
     }));
   }
 
-  function setLift(index: number, side: Side, patch: Partial<LiftRow["hippos"]>) {
+  function setLift(index: number, side: Side, patch: Partial<LiftSide>) {
     setLifts((current) =>
       current.map((lift, i) =>
         i === index ? { ...lift, [side]: { ...lift[side], ...patch } } : lift,
@@ -505,7 +591,11 @@ export function WorkoutForm({
   /** A column counts as used once anything at all is typed into it. */
   function used(side: Side) {
     if (elapsed[side].trim() !== "") return true;
-    if (entries[side].some((e) => e.completed.trim() !== "" || e.time.trim() !== ""))
+    if (
+      entries[side].some(
+        (e) => e.completed.trim() !== "" || e.time.trim() !== "" || e.load.trim() !== "",
+      )
+    )
       return true;
     return lifts.some(
       (lift) =>
@@ -523,14 +613,18 @@ export function WorkoutForm({
         const entry = entries[side][index];
         const completed = num(entry.completed);
         // A run is measured, not chased: what you covered is the target.
-        const target = isRun ? completed : num(station.target);
-        return {
+        const target = measured(station) ? completed : num(station.target);
+        const kg = loadable(category, station) ? parseLoad(entry.load, unit, entry.savedKg) : null;
+        const segment: Segment = {
           name: exerciseName(station.name, station.custom),
           unit: station.unit,
           completed,
           target,
           seconds: seconds(entry.time),
+          block: station.block,
         };
+        if (kg !== null) segment.kg = kg;
+        return segment;
       })
       .filter((segment) => segment.name !== "");
   }
@@ -544,9 +638,8 @@ export function WorkoutForm({
       )
       .map((lift) => ({
         name: exerciseName(lift.name, lift.custom),
-        // Entered in your unit, stored in kilograms.
-        kg:
-          Math.round(toKilograms(Number(lift[side].kg), weightUnit) * 100) / 100,
+        // Entered in your unit, stored in kilograms. Validated before this runs.
+        kg: parseLoad(lift[side].kg, unit, lift[side].savedKg) ?? 0,
         sets: Math.round(num(lift[side].sets) || 1),
         reps: Math.round(num(lift[side].reps) || 1),
       }));
@@ -568,12 +661,19 @@ export function WorkoutForm({
     }
     if (total > 86400) return `${who}: that elapsed time is too long.`;
 
+    for (const [index, station] of stations.entries()) {
+      const name = exerciseName(station.name, station.custom);
+      const typed = entries[side][index]?.load.trim() ?? "";
+      if (name && loadable(category, station) && typed !== "" && parseLoad(typed, unit) === null)
+        return `${who} · ${name}: write the load in ${unit}, or leave it empty.`;
+    }
+
     for (const segment of segments) {
       const where = `${who} · ${segment.name}`;
       if (!Number.isFinite(segment.seconds))
         return `${where}: write the time as mm:ss.`;
       if (!(segment.target > 0))
-        return isRun
+        return isRun || (isMixed && segment.block === "endurance")
           ? `${where}: add the distance covered.`
           : `${where}: set a target above zero.`;
       if (segment.completed > segment.target)
@@ -591,8 +691,8 @@ export function WorkoutForm({
       if (entry.kg.trim() === "") continue;
       const liftName = exerciseName(lift.name, lift.custom);
       if (liftName === "") return `${who}: choose or name the exercise.`;
-      if (!(Number(entry.kg) > 0))
-        return `${who} · ${liftName}: add the load in ${weightUnit}.`;
+      if (parseLoad(entry.kg, unit, entry.savedKg) === null)
+        return `${who} · ${liftName}: add the load in ${unit}.`;
       if (entry.sets.trim() !== "" && !(num(entry.sets) >= 1))
         return `${who} · ${liftName}: sets must be at least 1.`;
       if (entry.reps.trim() !== "" && !(num(entry.reps) >= 1))
@@ -621,6 +721,7 @@ export function WorkoutForm({
     setError("");
 
     const records: Workout[] = active.map((side) => ({
+      ...(hasMetcon && capHit[side] ? { capHit: true } : {}),
       id: editing ? editing.id : draftIds[side],
       kind: "workout",
       athlete: editing ? editing.athlete : side,
@@ -648,6 +749,7 @@ export function WorkoutForm({
       setStations(fresh);
       setEntries({ hippos: entriesFor(fresh), gators: entriesFor(fresh) });
       setLifts([blankLift()]);
+      setCapHit({ hippos: false, gators: false });
       setGoal("");
       setNotes("");
     } finally {
@@ -760,6 +862,30 @@ export function WorkoutForm({
             />
           </Field>
         ) : null}
+        {usesLifts || hasMetcon ? (
+          <div>
+            <Label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Weights in
+            </Label>
+            <div
+              role="group"
+              aria-label="Weight unit"
+              className="flex w-fit rounded-full bg-muted p-0.5"
+            >
+              {(["lb", "kg"] as const).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => changeUnit(option)}
+                  aria-pressed={unit === option}
+                  className="rounded-full px-4 py-1 text-xs font-medium transition-colors aria-pressed:bg-background aria-pressed:shadow-sm"
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <Panel
@@ -792,15 +918,39 @@ export function WorkoutForm({
 
       {usesStations ? (
         <Panel
-          title={isRun ? "Run" : "Stations"}
+          title={isRun ? "Run" : isMixed ? "MetCon and endurance" : "Stations"}
           note={
             isRun
               ? "Distance covered and the time it took."
-              : "What each of you actually completed, station by station."
+              : isMixed
+                ? "Add whichever parts you did. Lifts go in their own panel below."
+                : "What each of you actually completed, station by station. Stopping short is fine: log what you did."
           }
           action={
-            usesCustomStations ? (
-              <Button type="button" variant="outline" size="sm" onClick={addStation}>
+            isMixed ? (
+              <div className="flex flex-wrap gap-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => addStations(metconStations())}
+                >
+                  <Plus /> ATHX circuit
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => addStation("metcon")}>
+                  <Plus /> Station
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => addStation("endurance")}
+                >
+                  <Plus /> Endurance
+                </Button>
+              </div>
+            ) : usesCustomStations ? (
+              <Button type="button" variant="outline" size="sm" onClick={() => addStation()}>
                 <Plus /> Station
               </Button>
             ) : null
@@ -814,15 +964,32 @@ export function WorkoutForm({
             <ul className="space-y-3">
               {stations.map((station, index) => (
                 <li key={index} className="rounded-xl border bg-background p-3">
-                  {category === "MetCon" ? (
-                    <div className="mb-2.5">
-                      <p className="text-sm font-medium">
-                        {index + 1}. {station.name}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground">
-                        Target {station.target} {station.unit}
-                        {station.load ? ` · ${station.load}` : ""}
-                      </p>
+                  {station.fixed ? (
+                    <div className="mb-2.5 flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-medium">
+                          {index + 1}. {station.name}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Target {station.target} {station.unit}
+                          {(() => {
+                            const circuit = circuitStation(station);
+                            const text = circuit ? metconLoadText(circuit, unit) : "";
+                            return text ? ` · ${text}` : "";
+                          })()}
+                        </p>
+                      </div>
+                      {isMixed ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Remove station ${index + 1}`}
+                          onClick={() => removeStation(index)}
+                        >
+                          <X />
+                        </Button>
+                      ) : null}
                     </div>
                   ) : isRun ? (
                     <p className="mb-2.5 text-sm font-medium">Distance and time</p>
@@ -836,6 +1003,21 @@ export function WorkoutForm({
                         onCustom={(value) => setStation(index, { custom: value })}
                       />
                       <div className="flex items-end gap-2">
+                        {isMixed ? (
+                          <Field label="Part" className="w-28">
+                            <NativeSelect
+                              size="sm"
+                              value={station.block}
+                              onChange={(event) =>
+                                setStation(index, { block: event.target.value as Block })
+                              }
+                            >
+                              <NativeSelectOption value="metcon">MetCon</NativeSelectOption>
+                              <NativeSelectOption value="endurance">Endurance</NativeSelectOption>
+                            </NativeSelect>
+                          </Field>
+                        ) : null}
+                        {measured(station) ? null : (
                         <Field label="Target" className="w-20">
                           <Input
                             value={station.target}
@@ -846,6 +1028,7 @@ export function WorkoutForm({
                             }
                           />
                         </Field>
+                        )}
                         <Field label="Unit" className="flex-1">
                           <NativeSelect
                             size="sm"
@@ -880,7 +1063,13 @@ export function WorkoutForm({
                     {columns.map((side) => (
                       <Column key={side} side={side}>
                         <Field
-                          label={isRun ? "Distance (m)" : `Done (${station.unit})`}
+                          label={
+                            isRun
+                              ? "Distance (m)"
+                              : measured(station)
+                                ? `Covered (${station.unit})`
+                                : `Done (${station.unit})`
+                          }
                         >
                           <Input
                             value={entries[side][index]?.completed ?? ""}
@@ -904,6 +1093,23 @@ export function WorkoutForm({
                             }
                           />
                         </Field>
+                        {loadable(category, station) ? (
+                          <Field label={`Load (${unit})`} hint="Optional">
+                            <Input
+                              value={entries[side][index]?.load ?? ""}
+                              inputMode="decimal"
+                              className="h-8"
+                              aria-label={`${ATHLETES[side].name} ${exerciseName(station.name, station.custom) || `station ${index + 1}`} load`}
+                              placeholder={(() => {
+                                const kg = circuitStation(station)?.kg?.[side];
+                                return kg ? displayLoad(kg, unit) : "";
+                              })()}
+                              onChange={(event) =>
+                                setEntry(side, index, { load: event.target.value })
+                              }
+                            />
+                          </Field>
+                        ) : null}
                       </Column>
                     ))}
                   </div>
@@ -911,6 +1117,26 @@ export function WorkoutForm({
               ))}
             </ul>
           )}
+          {hasMetcon ? (
+            <div className={`grid gap-2.5 ${columns.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+              {columns.map((side) => (
+                <label
+                  key={side}
+                  className="flex items-center gap-2 rounded-lg border px-2.5 py-2 text-xs"
+                  style={{ borderColor: `${ATHLETES[side].color}44` }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={capHit[side]}
+                    onChange={(event) =>
+                      setCapHit((current) => ({ ...current, [side]: event.target.checked }))
+                    }
+                  />
+                  {ATHLETES[side].name}: stopped at the time cap
+                </label>
+              ))}
+            </div>
+          ) : null}
         </Panel>
       ) : null}
 
@@ -971,7 +1197,7 @@ export function WorkoutForm({
                 <div className={`grid gap-2.5 ${columns.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
                   {columns.map((side) => (
                     <Column key={side} side={side}>
-                      <Field label={weightUnit}>
+                      <Field label={unit}>
                         <Input
                           value={lift[side].kg}
                           inputMode="decimal"

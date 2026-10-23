@@ -22,6 +22,13 @@ single SQLite file on a volume.
   nothing timed is still a session, and reads as a dash rather than as a time of
   zero. Pairs or solo follows the switch at the top unless you set it yourself,
   and Other takes a name of its own, which is what the log then calls it.
+  **Mixed** puts lifts, MetCon and endurance in one session: add the ATHX
+  circuit, your own MetCon stations, or a run/erg, alongside lifts. MetCon
+  stations take an optional load per athlete, with the circuit's prescribed load
+  as the hint. A MetCon you did not finish is logged as what you completed at
+  each station, and "stopped at the time cap" records the cap; the log then
+  reads e.g. "5/7 movements · 82% of the work · time cap hit". The lb/kg switch
+  on the form is the same setting as Setup's and is remembered.
 - **Meal** — describe a meal and let Grok estimate the macros, or type them in
   yourself. Editing an estimated number saves the meal as your own figures.
   A live calorie breakdown checks protein × 4 + carbs × 4 + fat × 9 against
@@ -36,6 +43,15 @@ single SQLite file on a volume.
   athlete's bodyweight, and their daily macro targets. The bodyweight is what makes
   calories burned possible; without it that figure is withheld.
 
+### Weights and older entries
+
+Every weight is stored in kilograms and converted for display, so switching
+lb/kg never rewrites a record. Opening an entry and saving it again keeps the
+stored load exactly, rather than re-reading it from its rounded display.
+Stations saved before sessions could mix carry no part or load: their part is
+taken from the session's category (Endurance is endurance, anything else is
+MetCon), and a missing time-cap flag reads as no. No migration is needed.
+
 ### Calories burned
 
 `estimateBurn` in `lib/domain.ts` uses the compendium formula, MET x 3.5 x kg / 200 per
@@ -43,6 +59,11 @@ minute, with METs for vigorous effort. It needs a bodyweight, which Setup holds 
 athlete, and a duration, which a session logged without a time does not have. Either
 missing and the figure is withheld rather than guessed, because a number that looks
 measured and is not is worse than no number.
+
+A Mixed session has no single MET, so `sessionMet` weights it by where the time
+went: timed MetCon stations at 8, timed endurance at 9, and the untimed rest at
+strength's 6 when there are lifts (otherwise at the MetCon's, or endurance's).
+Every other category keeps its one figure, so no earlier burn changes.
 
 ### The full-workout scenario
 
