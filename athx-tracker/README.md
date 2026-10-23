@@ -7,9 +7,13 @@ single SQLite file on a volume.
 ## What it does
 
 - **Today** — countdown to the event, sessions logged this week against the weekly
-  target, each athlete's macros against their daily targets alongside what training
-  burned and the net, and the last session with its time and what it burned. The
-  ATHX Lite running order is listed for reference.
+  target, and fuel for each athlete. Fuel switches between today, yesterday, the
+  last 7 days, and the whole journal. A single day is that day's macros against
+  the daily targets. A longer range is the daily average of days that have a meal,
+  so a day you forgot to log is not treated as a day you ate nothing, with the
+  totals written under the bars. Total expenditure is the training burn for the
+  same range, summed across both athletes. The last session, with its time and
+  what it burned, and the ATHX Lite running order stay underneath.
 - **Session** — log a workout as MetCon, Strength, Endurance, Solidcore, Tennis or
   Other, with Solidcore and tennis a tap away under Quick start. Load the seven
   ATHX stations with one tap, then fill in what you completed and each split.

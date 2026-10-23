@@ -260,7 +260,14 @@ export function Tracker({
             </Button>
           </div>
         ) : tab === "today" ? (
-          <Overview records={records} settings={settings} today={today} />
+          <Overview
+            records={records}
+            settings={settings}
+            today={today}
+            journalTotal={total}
+            loadingAll={refreshing}
+            onLoadAll={scope === "all" || records.length >= total ? undefined : loadAll}
+          />
         ) : tab === "session" ? (
           <WorkoutForm
             key={editing?.id ?? "new-session"}

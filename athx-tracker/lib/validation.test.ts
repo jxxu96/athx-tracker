@@ -199,13 +199,24 @@ test("the app and the estimator describe an estimate the same way", async () => 
   // cannot import anything from here. Nothing kept the two in step, which is
   // how the direct API path spent a while asking a different question from the
   // one the estimator was asking.
-  // This test process needs its own token fixture, just like server.test.mjs.
-  const previousToken = process.env.ESTIMATOR_TOKEN;
-  process.env.ESTIMATOR_TOKEN = "test-token-at-least-16-chars";
-  const { SCHEMA } = await import("../../estimator/server.mjs").finally(() => {
-    if (previousToken === undefined) delete process.env.ESTIMATOR_TOKEN;
-    else process.env.ESTIMATOR_TOKEN = previousToken;
-  });
+  //
+  // Not a literal specifier. `next build` typechecks this file, and the image
+  // is built from athx-tracker/ alone. A literal import of the estimator is
+  // outside that context, so the publish failed and the site stayed on the
+  // previous image. The test runner still loads the real module; only the
+  // type checker is kept from following it out of the image. The estimator
+  // only refuses to start when it is run directly, so this import does not
+  // need a token of its own.
+  const estimatorModule = "../../estimator/server.mjs";
+  const { SCHEMA } = (await import(estimatorModule)) as {
+    SCHEMA: {
+      required: string[];
+      properties: Record<
+        "calories" | "protein" | "carbs" | "fat",
+        { maximum: number }
+      > & { confidence: { enum: string[] } };
+    };
+  };
   const { foodFormat } = await import("./grok.ts");
 
   assert.deepEqual(

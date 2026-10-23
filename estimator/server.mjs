@@ -88,13 +88,6 @@ const ORDER = (process.env.ESTIMATOR_ORDER ?? "claude,grok")
   .map((name) => name.trim().toLowerCase())
   .filter(Boolean);
 
-if (!TOKEN || TOKEN.length < 16) {
-  console.error(
-    "ESTIMATOR_TOKEN must be set to at least 16 characters (environment or estimator/.env).",
-  );
-  process.exit(1);
-}
-
 // Anchored on real figures rather than a plausible-looking average. Neither CLI
 // can look anything up (no tools, no web search, one turn), so this asks for the
 // label values the model already knows and insists it say when it is guessing
@@ -584,7 +577,17 @@ const runDirectly =
 
 export { SCHEMA, budgetSlice, clean, structured };
 
-if (runDirectly)
+if (runDirectly) {
+  // Refusing to listen without a token. The check used to run on import, and
+  // the app's tests import this file to compare schemas. On a machine with no
+  // estimator/.env that exit failed the whole suite, so the image was never
+  // published and the site stayed on the previous build.
+  if (!TOKEN || TOKEN.length < 16) {
+    console.error(
+      "ESTIMATOR_TOKEN must be set to at least 16 characters (environment or estimator/.env).",
+    );
+    process.exit(1);
+  }
   server.listen(PORT, HOST, () => {
   console.log(`[estimator] listening on http://${HOST}:${PORT}`);
   if (usedEnvFile) console.log("[estimator] config: estimator/.env");
@@ -610,3 +613,4 @@ if (runDirectly)
   if (!configured().length)
     console.error("[estimator] WARNING: no CLI found. Set GROK_BIN or CLAUDE_BIN.");
 });
+}

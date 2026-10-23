@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  addDays,
   dayToDate,
   daysBetween,
   formatDay,
@@ -36,6 +37,14 @@ test("week boundaries do not leak across a year", () => {
   assert.notEqual(sunday, monday, "Sunday belongs to the week before");
   assert.equal(dayToDate(sunday).getUTCDay(), 1);
   assert.equal(dayToDate(monday).getUTCDay(), 1);
+});
+
+test("shifting a day survives month ends and leap years", () => {
+  assert.equal(addDays("2026-10-31", 1), "2026-11-01");
+  assert.equal(addDays("2026-03-01", -1), "2026-02-28");
+  assert.equal(addDays("2028-03-01", -1), "2028-02-29");
+  assert.equal(addDays("2026-10-22", 0), "2026-10-22");
+  assert.equal(daysBetween("2026-10-22", addDays("2026-10-22", -6)), -6);
 });
 
 test("day arithmetic survives month ends and leap years", () => {

@@ -1,25 +1,17 @@
 "use client";
 
-import { Dumbbell, Flame, Target } from "lucide-react";
+import { Dumbbell, Target } from "lucide-react";
+import { Fuel } from "@/components/fuel";
 import {
   ATHLETES,
   METCON,
   categoryName,
   estimateBurn,
   formatTimeOrDash,
-  sumMacros,
-  type Macros,
   type RecordItem,
   type Settings,
 } from "@/lib/domain";
-import { daysBetween, dayToDate, isMeal, isWorkout, weekStart } from "@/lib/client";
-
-const MACRO_KEYS = [
-  { key: "calories", label: "Calories", unit: "kcal" },
-  { key: "protein", label: "Protein", unit: "g" },
-  { key: "carbs", label: "Carbs", unit: "g" },
-  { key: "fat", label: "Fat", unit: "g" },
-] as const satisfies readonly { key: keyof Macros; label: string; unit: string }[];
+import { daysBetween, dayToDate, isWorkout, weekStart } from "@/lib/client";
 
 function Panel({
   title,
@@ -41,42 +33,6 @@ function Panel({
   );
 }
 
-function MacroRow({
-  label,
-  unit,
-  value,
-  target,
-  color,
-}: {
-  label: string;
-  unit: string;
-  value: number;
-  target: number;
-  color: string;
-}) {
-  const pct = target > 0 ? Math.min(100, Math.round((value / target) * 100)) : 0;
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-baseline justify-between gap-2 text-xs">
-        <span className="text-muted-foreground">{label}</span>
-        <span className="font-medium tabular-nums">
-          {Math.round(value)}
-          {target > 0 ? (
-            <span className="text-muted-foreground"> / {Math.round(target)}</span>
-          ) : null}
-          <span className="text-muted-foreground"> {unit}</span>
-        </span>
-      </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-        <div
-          className="h-full rounded-full transition-[width]"
-          style={{ width: `${target > 0 ? pct : 0}%`, background: color }}
-        />
-      </div>
-    </div>
-  );
-}
-
 const daysLogged = (workouts: { athlete: string; day: string }[], who: string) =>
   workouts.filter((w) => w.athlete === who).map((w) => w.day);
 
@@ -84,10 +40,16 @@ export function Overview({
   records,
   settings,
   today,
+  journalTotal,
+  loadingAll,
+  onLoadAll,
 }: {
   records: RecordItem[];
   settings: Settings;
   today: string;
+  journalTotal: number;
+  loadingAll?: boolean;
+  onLoadAll?: () => void;
 }) {
   const countdown = daysBetween(today, settings.eventDate);
   const thisWeek = weekStart(today);
@@ -170,67 +132,14 @@ export function Overview({
         </p>
       </Panel>
 
-      <Panel title="Today&apos;s fuel" icon={<Flame className="size-4 text-muted-foreground" />}>
-        <div className="grid gap-5 sm:grid-cols-2">
-          {(["hippos", "gators"] as const).map((key) => {
-            const totals = sumMacros(
-              records
-                .filter(isMeal)
-                .filter((m) => m.athlete === key && m.day === today),
-            );
-            const targets = settings.targets[key];
-            const weightKg = (settings.bodyweight ?? { hippos: 0, gators: 0 })[key];
-            const burned = workouts
-              .filter((w) => w.athlete === key && w.day === today)
-              .reduce((sum, w) => sum + (estimateBurn(w, weightKg) ?? 0), 0);
-            const unset = MACRO_KEYS.every(({ key: macro }) => targets[macro] === 0);
-            return (
-              <div key={key} className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <span
-                    className="size-2.5 rounded-full"
-                    style={{ background: ATHLETES[key].color }}
-                  />
-                  <p className="text-sm font-medium">{ATHLETES[key].name}</p>
-                </div>
-                {MACRO_KEYS.map(({ key: macro, label, unit }) => (
-                  <MacroRow
-                    key={macro}
-                    label={label}
-                    unit={unit}
-                    value={totals[macro]}
-                    target={targets[macro]}
-                    color={ATHLETES[key].color}
-                  />
-                ))}
-                {weightKg > 0 ? (
-                  <div className="space-y-1 border-t pt-2.5 text-xs">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="text-muted-foreground">Burned training</span>
-                      <span className="font-medium tabular-nums">~{burned} kcal</span>
-                    </div>
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="text-muted-foreground">Net</span>
-                      <span className="font-medium tabular-nums">
-                        {Math.round(totals.calories - burned)} kcal
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="border-t pt-2.5 text-xs text-muted-foreground">
-                    Add a bodyweight in Settings to estimate calories burned.
-                  </p>
-                )}
-                {unset ? (
-                  <p className="text-xs text-muted-foreground">
-                    No daily targets set yet — add them in Settings.
-                  </p>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      </Panel>
+      <Fuel
+        records={records}
+        settings={settings}
+        today={today}
+        journalTotal={journalTotal}
+        loadingAll={loadingAll}
+        onLoadAll={onLoadAll}
+      />
 
       {lastSession ? (
         <Panel title="Last session" icon={<Target className="size-4 text-muted-foreground" />}>
