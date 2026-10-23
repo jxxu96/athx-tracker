@@ -1,5 +1,6 @@
 import { BodyTooLarge, database, guard, json, readBody, tooLarge } from "@/lib/server";
 import { recordSchema } from "@/lib/validation";
+import { ZodError } from "zod";
 
 export async function GET(request: Request) {
   const rejected = await guard(request);
@@ -40,6 +41,12 @@ export async function POST(request: Request) {
     return json({ record });
   } catch (error) {
     if (error instanceof BodyTooLarge) return tooLarge();
+    if (error instanceof ZodError) {
+      const mismatch = error.issues.find((issue) =>
+        issue.code === "custom" && issue.path.join(".") === "macros.calories",
+      );
+      if (mismatch) return json({ error: mismatch.message }, 400);
+    }
     return json(
       {
         error:

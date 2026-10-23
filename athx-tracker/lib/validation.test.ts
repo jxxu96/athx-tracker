@@ -80,7 +80,7 @@ test("a meal needs an athlete who eats", () => {
   const meal = {
     id: "3f1a5f2e-9c4b-4d7a-8e21-6b0c9d5a1234", kind: "meal", athlete: "gators",
     day: "2026-10-22", name: "Oats", meal: "Breakfast",
-    macros: { calories: 400, protein: 20, carbs: 50, fat: 10 },
+    macros: { calories: 370, protein: 20, carbs: 50, fat: 10 },
     source: "manual", assumptions: "",
   };
   assert.ok(ok(recordSchema, meal));
@@ -142,7 +142,7 @@ test("the schema cannot permit a record the server would refuse to read", () => 
     id: "3f1a5f2e-9c4b-4d7a-8e21-6b0c9d5a1235",
     kind: "meal", athlete: "gators", day: "2026-10-22",
     name: fill(300, "M"), meal: "Lunch",
-    macros: { calories: 20000, protein: 2000, carbs: 3000, fat: 2000 },
+    macros: { calories: 20000, protein: 2000, carbs: 3000, fat: 0 },
     source: "grok", assumptions: fill(3000, "A"),
   };
 
@@ -204,7 +204,9 @@ test("the app and the estimator describe an estimate the same way", async () => 
   // is built from athx-tracker/ alone. A literal import of the estimator is
   // outside that context, so the publish failed and the site stayed on the
   // previous image. The test runner still loads the real module; only the
-  // type checker is kept from following it out of the image.
+  // type checker is kept from following it out of the image. The estimator
+  // only refuses to start when it is run directly, so this import does not
+  // need a token of its own.
   const estimatorModule = "../../estimator/server.mjs";
   const { SCHEMA } = (await import(estimatorModule)) as {
     SCHEMA: {

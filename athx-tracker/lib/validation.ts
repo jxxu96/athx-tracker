@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { mealCalorieError, reconcileEstimate } from "./meal-calories.ts";
 const finite = z.number().finite().nonnegative();
 export const macroSchema = z.object({
   calories: finite.max(20000), protein: finite.max(2000), carbs: finite.max(3000), fat: finite.max(2000),
@@ -27,7 +28,10 @@ export const workoutSchema = z.object({
 export const mealSchema = z.object({
   ...base, kind: z.literal("meal"), athlete: z.enum(["hippos", "gators"]),
   name: z.string().trim().min(1).max(300), meal: z.enum(["Breakfast","Lunch","Dinner","Snack"]),
-  macros: macroSchema, source: z.enum(["manual","grok","queued"]), assumptions: z.string().max(3000),
+  macros: macroSchema.superRefine((macros, context) => {
+    const message = mealCalorieError(macros);
+    if (message) context.addIssue({ code: z.ZodIssueCode.custom, path: ["calories"], message });
+  }), source: z.enum(["manual","grok","queued"]), assumptions: z.string().max(3000),
 }).strict();
 /** What an estimator has to come back with, wherever the answer came from. */
 export const estimateSchema = macroSchema.extend({
@@ -35,6 +39,9 @@ export const estimateSchema = macroSchema.extend({
   assumptions: z.string().max(3000),
   confidence: z.enum(["low", "medium", "high"]),
 });
+// Both interactive estimates and the background queue use this boundary.
+// Validate again after reconciliation so derived calories cannot exceed the cap.
+export const reconciledEstimateSchema = estimateSchema.transform(reconcileEstimate).pipe(estimateSchema);
 export const recordSchema = z.union([workoutSchema, mealSchema]);
 export const settingsSchema = z.object({
   eventDate: day, eventName: z.string().trim().min(1).max(100),
