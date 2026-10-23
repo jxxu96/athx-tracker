@@ -1,11 +1,11 @@
 # Meal estimator sidecar
 
-Estimates meal macros using the Grok and Claude CLIs you already pay a monthly
-fee for, instead of a metered API key.
+Estimates meal macros using the Codex, Claude, and Grok CLIs you already pay a
+monthly fee for, instead of a metered API key.
 
 ## You are not paying per token
 
-Both CLIs run on your subscription login, not an API key. Every API key variable
+The CLIs run on your subscription login, not an API key. Every API key variable
 is deleted from the environment before a CLI starts, so there is no path by
 which this falls back to metered billing: a CLI that is not logged in fails, it
 does not charge you. The startup log states which mode it is in.
@@ -68,8 +68,8 @@ Everything can go in `estimator/.env`; a real environment variable overrides it.
 | `ESTIMATOR_TOKEN` | — | Required, 16+ characters. Must match `GROK_GATEWAY_TOKEN`. |
 | `ESTIMATOR_HOST` | `127.0.0.1` | Bind address. Your tailnet IP for the container to reach it. |
 | `ESTIMATOR_PORT` | `8787` | Port. |
-| `ESTIMATOR_ORDER` | `claude,grok` | Providers to try, in order. |
-| `GROK_BIN` / `CLAUDE_BIN` | auto | Found in the usual install paths; set to override. |
+| `ESTIMATOR_ORDER` | `codex,claude,grok` | Providers to try, in order. |
+| `CODEX_BIN` / `CLAUDE_BIN` / `GROK_BIN` | auto | Found in the usual install paths; set to override. |
 | `CLAUDE_MODEL` | `claude-haiku-5-5` | See the warning below. |
 | `ESTIMATOR_BUDGET_MS` | `40000` | Total time for all providers. |
 | `ESTIMATOR_TIMEOUT_MS` | `35000` | Cap for any one provider. |
@@ -77,7 +77,15 @@ Everything can go in `estimator/.env`; a real environment variable overrides it.
 
 `GET /health` (bearer token required) reports the order without running anything.
 
-## Why Claude goes first
+## Provider order
+
+Codex goes first, then Claude, then Grok. The first one that returns a usable
+estimate wins. A CLI that is not installed or not signed in fails immediately
+and the next one is asked, so estimates keep working before Codex is logged in.
+
+Whoever is not last still leaves a reserve of time. That is why Grok does not
+lead: it takes about 32 s, and the fallback then has nothing left. Claude on
+Haiku is the fast middle step, about 7 s.
 
 Measured here, one estimate each:
 
@@ -87,16 +95,7 @@ Measured here, one estimate each:
 | Grok | `grok-4.7-build` | ~32 s | ~$0.0113 |
 | Claude | `claude-opus-5-5` | ~8 s | ~$0.302 |
 
-Three reasons, the third being the one that matters most:
-
-1. Haiku is about four times lighter on your plan.
-2. It is about four times faster.
-3. **The fallback only fits if the fast one leads.** The app gives up after 45 s.
-   Claude then Grok is about 39 s worst case and both get a turn. Grok then
-   Claude leaves almost nothing for the fallback, so a slow Grok means no
-   estimate at all rather than a slower one.
-
-`ESTIMATOR_ORDER=grok,claude` reverses it if you prefer.
+`ESTIMATOR_ORDER` overrides the order if you prefer a different one.
 
 **Do not run Claude on Opus for this.** It is over a hundred times heavier than
 Haiku for the same answer, and almost all of that is agent scaffolding sent on
@@ -114,7 +113,7 @@ box could run agent sessions as you.
 
 **Hardware.** That server has 3.8 GB of RAM and a disk already saturated — 54.7%
 iowait when we looked, with another process stuck in uninterruptible sleep. The
-CLI binaries are 293 MB (Claude) and 153 MB (Grok), and each estimate spawns one.
+CLI binaries are large, and each estimate spawns one.
 That is a poor fit for the slowest part of that machine, and it would compete
 with everything else on it.
 
@@ -148,19 +147,21 @@ per call.
 
 The estimator can run beside the app rather than on your machine, which is the
 only way estimates work when your machine is asleep. `estimator/Dockerfile`
-builds an image with both CLIs inside, and the compose stack runs it as a second
+builds an image with the CLIs inside, and the compose stack runs it as a second
 service. The app reaches it at `http://estimator:8787` over the compose network,
 so there is no tailnet hop, no published port, and no firewall rule.
 
 Sign each CLI in once; the logins persist in the `estimator-config` volume:
 
 ```sh
-docker exec -it athx-estimator grok
+docker exec -it athx-estimator codex login --device-auth
 docker exec -it athx-estimator claude
+docker exec -it athx-estimator grok
 ```
 
-Each prints a URL to open in your own browser. The credentials are created in
-the container rather than copied from anywhere.
+Codex prints a one-time code and a link to open in your own browser. Claude and
+Grok print a URL. The credentials are created in the container rather than
+copied from anywhere. A Codex login on your laptop does not sign the container in.
 
 Worth knowing before you do this: a CLI login grants full access to that account,
 not something scoped to meal estimates, and whoever administers that host can

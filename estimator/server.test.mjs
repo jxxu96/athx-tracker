@@ -11,7 +11,7 @@ process.env.ESTIMATOR_TOKEN = "test-token-at-least-16-chars";
 process.env.ESTIMATOR_BUDGET_MS = "40000";
 process.env.ESTIMATOR_TIMEOUT_MS = "35000";
 process.env.ESTIMATOR_RESERVE_MS = "9000";
-const { budgetSlice, clean, structured } = await import("./server.mjs");
+const { budgetSlice, clean, parseCliOutput, structured } = await import("./server.mjs");
 
 const whole = {
   name: "Chicken thigh rice bowl",
@@ -79,7 +79,15 @@ test("each CLI's wrapper is unwrapped, and bare output is taken as is", () => {
 test("output that is not JSON is not an estimate", () => {
   for (const junk of ["", "not json", "{", "<html>", "undefined"]) {
     assert.equal(structured(junk), null, junk);
+    assert.equal(parseCliOutput(junk), null, junk);
   }
+});
+
+test("a status line in front of the JSON still yields the estimate", () => {
+  const payload = { name: "Bowl", calories: 190, protein: 12, carbs: 13, fat: 10 };
+  const raw = `working\n${JSON.stringify(payload)}\n`;
+  assert.deepEqual(parseCliOutput(raw), payload);
+  assert.deepEqual(parseCliOutput(JSON.stringify({ structured_output: payload })), payload);
 });
 
 test("whoever goes first leaves the fallback something to work with", () => {

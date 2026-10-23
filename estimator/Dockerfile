@@ -1,4 +1,4 @@
-# The estimator, with both CLIs inside, so estimates work whether or not any
+# The estimator, with the CLIs inside, so estimates work whether or not any
 # particular laptop is awake.
 #
 # The CLIs install into $HOME, but HOME at runtime is a volume holding the
@@ -23,6 +23,10 @@ RUN set -eux; \
   npm install -g @anthropic-ai/claude-code; \
   claude --version
 
+RUN set -eux; \
+  npm install -g @openai/codex; \
+  codex --version
+
 WORKDIR /app
 COPY server.mjs ./
 
@@ -31,7 +35,8 @@ ENV HOME=/config \
     ESTIMATOR_HOST=0.0.0.0 \
     ESTIMATOR_PORT=8787 \
     GROK_BIN=/usr/local/bin/grok \
-    CLAUDE_BIN=/usr/local/bin/claude
+    CLAUDE_BIN=/usr/local/bin/claude \
+    CODEX_BIN=/usr/local/bin/codex
 RUN mkdir -p /config && chown -R node:node /config /app
 USER node
 EXPOSE 8787

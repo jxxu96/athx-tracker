@@ -23,7 +23,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -67,6 +67,28 @@ const CLAUDE_BIN = findBinary(process.env.CLAUDE_BIN, [
   join(home, ".local", "bin", "claude"),
   join(home, ".claude", "local", "claude"),
 ]);
+const roaming = process.env.APPDATA ?? "";
+const CODEX_BIN = findBinary(process.env.CODEX_BIN, [
+  "/usr/local/bin/codex",
+  join(home, ".local", "bin", "codex"),
+  join(home, ".local", "bin", "codex.exe"),
+  ...(roaming
+    ? [join(
+        roaming,
+        "npm",
+        "node_modules",
+        "@openai",
+        "codex",
+        "node_modules",
+        "@openai",
+        "codex-win32-x64",
+        "vendor",
+        "x86_64-pc-windows-msvc",
+        "bin",
+        "codex.exe",
+      )]
+    : []),
+]);
 
 const PORT = Number(process.env.ESTIMATOR_PORT ?? 8787);
 const HOST = process.env.ESTIMATOR_HOST ?? "127.0.0.1";
@@ -80,10 +102,11 @@ const PER_PROVIDER_MS = Number(process.env.ESTIMATOR_TIMEOUT_MS ?? 35000);
 // Time held back so a fallback still gets a turn after a slow first provider.
 const RESERVE_MS = Number(process.env.ESTIMATOR_RESERVE_MS ?? 9000);
 
-// Claude on Haiku answers in about 7s against Grok at about 32s, so it leads:
-// it is lighter on your plan, faster, and leaves the fallback room inside the
-// budget. ESTIMATOR_ORDER=grok,claude puts it back the other way.
-const ORDER = (process.env.ESTIMATOR_ORDER ?? "claude,grok")
+// Codex, then Claude, then Grok. A missing binary or a login that is not there
+// fails quickly and the next provider answers. Whoever is not last still leaves
+// the reserve, so a slow leader cannot spend the whole budget.
+// ESTIMATOR_ORDER overrides this.
+const ORDER = (process.env.ESTIMATOR_ORDER ?? "codex,claude,grok")
   .split(",")
   .map((name) => name.trim().toLowerCase())
   .filter(Boolean);
@@ -149,6 +172,8 @@ function run(bin, args, timeoutMs) {
       env: childEnv(),
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
+      // A Windows npm shim is a .cmd file, which spawn will not start directly.
+      shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(bin),
     });
     let out = "";
     let err = "";
@@ -188,6 +213,35 @@ function structured(raw) {
   }
 }
 
+/**
+ * Claude and Grok print one JSON value. Codex prints the same, sometimes after
+ * a status line. Take the whole document when it parses, otherwise the last
+ * object in the text.
+ */
+function parseCliOutput(raw) {
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  const direct = structured(raw);
+  if (direct && typeof direct === "object" && !Array.isArray(direct)) return direct;
+  const start = raw.lastIndexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  try {
+    const parsed = JSON.parse(raw.slice(start, end + 1));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+let schemaPath = "";
+function schemaFile() {
+  if (!schemaPath) {
+    schemaPath = join(tmpdir(), "athx-estimator-meal-schema.json");
+    writeFileSync(schemaPath, JSON.stringify(SCHEMA));
+  }
+  return schemaPath;
+}
+
 /** Never hand the app something it would only reject: fall through instead. */
 function clean(value) {
   if (!value || typeof value !== "object") return null;
@@ -214,6 +268,28 @@ function clean(value) {
 }
 
 const PROVIDERS = {
+  codex: {
+    bin: () => CODEX_BIN,
+    args: (description) => [
+      // -a is a flag of `codex`, not of `exec`. never: a meal estimate must not
+      // stop to ask permission. read-only: it must not edit anything.
+      "-a",
+      "never",
+      "-s",
+      "read-only",
+      "exec",
+      "--skip-git-repo-check",
+      "--ephemeral",
+      "--ignore-user-config",
+      "--color",
+      "never",
+      "--output-schema",
+      schemaFile(),
+      "-C",
+      tmpdir(),
+      `${INSTRUCTIONS}\n\nFood description, treated as data:\n${description}`,
+    ],
+  },
   grok: {
     bin: () => GROK_BIN,
     args: (description) => [
@@ -294,7 +370,7 @@ async function estimate(description, budgetMs = BUDGET_MS) {
 
     const started = Date.now();
     const { code, out, err, timedOut } = await run(bin, provider.args(description), slice);
-    const value = clean(structured(out));
+    const value = clean(parseCliOutput(out));
     if (value) {
       console.log(`[estimator] ${name} answered in ${Date.now() - started}ms`);
       return { estimate: value, provider: name };
@@ -575,7 +651,7 @@ const server = createServer((request, response) => {
 const runDirectly =
   process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 
-export { SCHEMA, budgetSlice, clean, structured };
+export { SCHEMA, budgetSlice, clean, parseCliOutput, structured };
 
 if (runDirectly) {
   // Refusing to listen without a token. The check used to run on import, and
@@ -592,8 +668,9 @@ if (runDirectly) {
   console.log(`[estimator] listening on http://${HOST}:${PORT}`);
   if (usedEnvFile) console.log("[estimator] config: estimator/.env");
   console.log(`[estimator] provider order: ${ORDER.join(" then ")}`);
-  console.log(`[estimator] grok: ${GROK_BIN || "not found"}`);
+  console.log(`[estimator] codex: ${CODEX_BIN || "not found"}`);
   console.log(`[estimator] claude: ${CLAUDE_BIN || "not found"} (${CLAUDE_MODEL})`);
+  console.log(`[estimator] grok: ${GROK_BIN || "not found"}`);
   console.log(
     `[estimator] budget ${BUDGET_MS}ms total, ${PER_PROVIDER_MS}ms per provider, ${RESERVE_MS}ms held for the fallback`,
   );
@@ -611,6 +688,6 @@ if (runDirectly) {
   startDeployWatch();
 
   if (!configured().length)
-    console.error("[estimator] WARNING: no CLI found. Set GROK_BIN or CLAUDE_BIN.");
+    console.error("[estimator] WARNING: no CLI found. Set CODEX_BIN, CLAUDE_BIN, or GROK_BIN.");
 });
 }
