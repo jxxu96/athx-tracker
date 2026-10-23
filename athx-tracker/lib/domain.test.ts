@@ -237,6 +237,11 @@ test("a projection is withheld rather than guessed", () => {
     "more completed than targeted is not a projection",
   );
   assert.equal(
+    projectWorkout([segment({ completed: 30, target: 30, seconds: 0 })], 1800),
+    null,
+    "a station finished but never timed still has no pace to project from",
+  );
+  assert.equal(
     projectWorkout([segment({ seconds: 2000 })], 100), null,
     "station times exceeding the workout is not a projection",
   );

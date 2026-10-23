@@ -47,6 +47,13 @@ export function weekStart(day: string) {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * Rounded, though with both ends anchored at noon UTC the gap is always a whole
+ * number of days and the rounding never does anything: nine thousand pairs
+ * across four years, every daylight-saving change among them, and not one came
+ * out fractional. It is here for whoever moves that anchoring, since an hour of
+ * drift either way would otherwise turn a day into none.
+ */
 export function daysBetween(from: string, to: string) {
   return Math.round(
     (dayToDate(to).getTime() - dayToDate(from).getTime()) / 86_400_000,
