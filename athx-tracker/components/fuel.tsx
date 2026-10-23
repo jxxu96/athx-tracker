@@ -277,7 +277,7 @@ export function Fuel({
             aria-label={item.name}
             aria-pressed={span === item.id}
             onClick={() => setSpan(item.id)}
-            className="rounded-full px-1 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm sm:text-xs"
+            className="rounded-full px-1 py-1.5 text-[11px] font-medium transition-colors aria-pressed:bg-background aria-pressed:shadow-sm sm:text-xs"
           >
             {item.label}
           </button>
