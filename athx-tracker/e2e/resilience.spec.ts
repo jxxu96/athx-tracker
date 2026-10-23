@@ -78,3 +78,51 @@ for (const timezoneId of ["Pacific/Kiritimati", "Pacific/Niue"]) {
     });
   });
 }
+
+test("the estimator test says why a provider failed", async ({ page }) => {
+  await signIn(page);
+  await page.getByRole("button", { name: "Setup", exact: true }).click();
+
+  // Reachable, but both CLIs fall over — which is the only way this has ever
+  // failed, and the reason used to live in a log on the server.
+  await page.route("**/api/estimate", async (route) => {
+    if (route.request().method() === "GET") {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "ready", detail: "estimator reachable" }),
+      });
+    }
+    return route.fulfill({
+      status: 502,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: "No estimator could answer — claude: exit 1 not logged in",
+      }),
+    });
+  });
+
+  await page.getByRole("button", { name: "Test", exact: true }).click();
+  await expect(page.getByText(/claude: exit 1 not logged in/)).toBeVisible();
+});
+
+test("the estimator test confirms a working one", async ({ page }) => {
+  await signIn(page);
+  await page.getByRole("button", { name: "Setup", exact: true }).click();
+  await page.route("**/api/estimate", async (route) => {
+    if (route.request().method() === "GET") {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "ready", detail: "reachable" }),
+      });
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ estimate: { calories: 105 } }),
+    });
+  });
+  await page.getByRole("button", { name: "Test", exact: true }).click();
+  await expect(page.getByText(/Working\. A test banana came back as 105 kcal\./)).toBeVisible();
+});

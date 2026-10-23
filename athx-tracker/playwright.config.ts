@@ -28,6 +28,10 @@ export default defineConfig({
       // Its own file, so a spec can never reach the journal you actually use.
       DATABASE_FILE: ".playwright/athx-e2e.db",
       PORT: String(PORT),
+      // Pointed at nothing. It only has to be configured for the estimator
+      // controls to render; the specs drive the responses themselves.
+      GROK_GATEWAY_URL: "http://127.0.0.1:9",
+      GROK_GATEWAY_TOKEN: "e2e-only-gateway-token-00",
     },
   },
 });

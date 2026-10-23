@@ -176,11 +176,32 @@ export function SettingsForm({
     }
   }
 
+  /**
+   * Reachable and working are different things, and this has only ever failed
+   * at the second. The old test asked whether the estimator answers, which it
+   * does, and then said it was fine. It runs a real meal through now, so the
+   * reason a CLI failed lands here instead of in a log on the server.
+   */
   async function testConnection() {
     setTesting(true);
     setProbe(null);
     try {
-      setProbe(await api<{ status: string; detail: string }>("/api/estimate"));
+      const reach = await api<{ status: string; detail: string }>("/api/estimate");
+      if (reach.status !== "ready") {
+        setProbe(reach);
+        return;
+      }
+      const { estimate } = await api<{ estimate: { calories: number } }>(
+        "/api/estimate",
+        {
+          method: "POST",
+          body: JSON.stringify({ description: "one medium banana" }),
+        },
+      );
+      setProbe({
+        status: "ready",
+        detail: `Working. A test banana came back as ${Math.round(estimate.calories)} kcal.`,
+      });
     } catch (problem) {
       setProbe({ status: "error", detail: message(problem) });
     } finally {
@@ -430,6 +451,13 @@ export function SettingsForm({
             </Button>
           ) : null}
         </div>
+        {grokReady ? (
+          <p className="text-[11px]">
+            The test estimates a real meal, so it says why a provider failed
+            rather than only whether it answered. A failed one costs nothing; a
+            successful one uses a single estimate from the day&apos;s sixty.
+          </p>
+        ) : null}
         {probe ? (
           <p
             className={probe.status === "ready" ? "text-foreground" : "text-destructive"}
