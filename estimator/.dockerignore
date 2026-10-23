@@ -10,3 +10,4 @@ README.md
 install-windows.ps1
 Dockerfile
 .dockerignore
+*.test.mjs

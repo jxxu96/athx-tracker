@@ -22,7 +22,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { homedir } from "node:os";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -267,6 +267,15 @@ const PROVIDERS = {
 
 const configured = () => ORDER.filter((name) => PROVIDERS[name]?.bin());
 
+/**
+ * How long one provider may have. Whoever is not last leaves the reserve
+ * behind, because a slow leader taking everything is how both ended up with
+ * nothing: Grok spent its full slice and left Claude too little to finish in.
+ */
+function budgetSlice(remaining, isLast) {
+  return Math.min(PER_PROVIDER_MS, isLast ? remaining : remaining - RESERVE_MS);
+}
+
 async function estimate(description, budgetMs = BUDGET_MS) {
   const deadline = Date.now() + budgetMs;
   const tried = [];
@@ -281,11 +290,9 @@ async function estimate(description, budgetMs = BUDGET_MS) {
     }
 
     // Hold time back for whoever is next, so a slow leader cannot eat the lot.
-    const remaining = deadline - Date.now();
-    const isLast = index === ORDER.length - 1;
-    const slice = Math.min(
-      PER_PROVIDER_MS,
-      isLast ? remaining : remaining - RESERVE_MS,
+    const slice = budgetSlice(
+      deadline - Date.now(),
+      index === ORDER.length - 1,
     );
     if (slice < 4000) {
       tried.push(`${name}: skipped, out of time`);
@@ -567,7 +574,18 @@ const server = createServer((request, response) => {
   });
 });
 
-server.listen(PORT, HOST, () => {
+/**
+ * Only when this file is the thing being run. Importing it — to test the parts
+ * that read whatever a CLI printed — used to start a listener, a backup timer
+ * and a deploy watcher, which is why none of those parts had a test.
+ */
+const runDirectly =
+  process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+export { budgetSlice, clean, structured };
+
+if (runDirectly)
+  server.listen(PORT, HOST, () => {
   console.log(`[estimator] listening on http://${HOST}:${PORT}`);
   if (usedEnvFile) console.log("[estimator] config: estimator/.env");
   console.log(`[estimator] provider order: ${ORDER.join(" then ")}`);
