@@ -10,6 +10,7 @@ import { Field } from "@/components/workout-form";
 import { ATHLETES, type Macros, type Meal } from "@/lib/domain";
 import { api, message, newId } from "@/lib/client";
 import { CALORIE_TOLERANCE, macroCalories, mealCalorieError } from "@/lib/meal-calories";
+import { fanOutMeal, type LoggingFor, type MealDraft } from "@/lib/meal-fanout";
 
 const MACRO_FIELDS = [
   { key: "calories", label: "Calories", unit: "kcal" },
@@ -81,25 +82,25 @@ function Choice<T extends string>({
 }
 
 export function MealForm({
-  athlete,
+  loggingFor,
   today,
   grokReady,
   editing,
-  onAthlete,
+  onLoggingFor,
   onCancelEdit,
   onSave,
 }: {
-  athlete: Meal["athlete"];
+  loggingFor: LoggingFor;
   today: string;
   grokReady: boolean;
   editing?: Meal | null;
-  onAthlete: (next: Meal["athlete"]) => void;
+  onLoggingFor: (next: LoggingFor) => void;
   onCancelEdit?: () => void;
   onSave: (batch: Meal[]) => Promise<void>;
 }) {
   // Controlled by the switch in the header, so the two never disagree.
-  const who = athlete;
-  const setWho = onAthlete;
+  // An open edit stays on that record's athlete; the header keeps its own switch.
+  const who: LoggingFor = editing ? editing.athlete : loggingFor;
   const [day, setDay] = useState(editing?.day ?? today);
   const [slot, setSlot] = useState<Meal["meal"]>(editing?.meal ?? "Lunch");
   const [description, setDescription] = useState("");
@@ -122,6 +123,13 @@ export function MealForm({
   const [offline, setOffline] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // Stable across attempts. The endpoint upserts on id, so a retry after a
+  // half-failed save corrects the athlete that landed rather than adding a
+  // second copy. New ids only once the whole submit is through.
+  const [draftIds, setDraftIds] = useState(() => ({
+    hippos: newId(),
+    gators: newId(),
+  }));
 
   const parsedMacros = MACRO_FIELDS.reduce((out, { key }) => {
     out[key] = Number(macros[key].trim());
@@ -183,6 +191,21 @@ export function MealForm({
     }
   }
 
+  /** One record, or one per athlete when logging for both. An edit stays singular. */
+  function recordsFor(draft: MealDraft) {
+    return fanOutMeal({
+      loggingFor,
+      editing: editing ? { id: editing.id, athlete: editing.athlete } : null,
+      draft,
+      ids: draftIds,
+    });
+  }
+
+  async function saveDraft(draft: MealDraft) {
+    await onSave(recordsFor(draft));
+    setDraftIds({ hippos: newId(), gators: newId() });
+  }
+
   /** Save now with the description kept, and let the worker fill the macros. */
   async function queueForLater() {
     const text = description.trim();
@@ -192,17 +215,15 @@ export function MealForm({
     }
     setSaving(true);
     try {
-      await onSave([{
-        id: editing ? editing.id : newId(),
+      await saveDraft({
         kind: "meal",
-        athlete: who,
         day,
         name: name.trim() || text.slice(0, 60),
         meal: slot,
         macros: { calories: 0, protein: 0, carbs: 0, fat: 0 },
         source: "queued",
         assumptions: text.slice(0, 3000),
-      }]);
+      });
       reset();
       setOffline(false);
     } finally {
@@ -231,21 +252,17 @@ export function MealForm({
     setError(problem);
     if (problem) return;
 
-    const record: Meal = {
-      id: editing ? editing.id : newId(),
-      kind: "meal",
-      athlete: who,
-      day,
-      name: name.trim(),
-      meal: slot,
-      macros: parsedMacros,
-      source,
-      assumptions: assumptions.trim().slice(0, 3000),
-    };
-
     setSaving(true);
     try {
-      await onSave([record]);
+      await saveDraft({
+        kind: "meal",
+        day,
+        name: name.trim(),
+        meal: slot,
+        macros: parsedMacros,
+        source,
+        assumptions: assumptions.trim().slice(0, 3000),
+      });
       reset();
     } finally {
       setSaving(false);
@@ -268,13 +285,25 @@ export function MealForm({
         <Choice
           label="Athlete"
           value={who}
-          onChange={setWho}
-          options={(["hippos", "gators"] as const).map((key) => ({
+          onChange={(next) => {
+            // An edit is one record. Switching here would move the header and
+            // leave the open meal looking like it changed athlete.
+            if (!editing) onLoggingFor(next);
+          }}
+          options={(editing
+            ? (["hippos", "gators"] as const)
+            : (["hippos", "gators", "both"] as const)
+          ).map((key) => ({
             value: key,
-            label: ATHLETES[key].name,
-            color: ATHLETES[key].ink,
+            label: key === "both" ? "Both" : ATHLETES[key].name,
+            color: key === "both" ? undefined : ATHLETES[key].ink,
           }))}
         />
+        {!editing && loggingFor === "both" ? (
+          <p className="text-xs text-muted-foreground">
+            One save writes this meal for Hippos and for Gators.
+          </p>
+        ) : null}
         <Choice
           label="Sitting"
           value={slot}

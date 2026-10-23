@@ -67,8 +67,8 @@ export function Tracker({
   );
 
   const [tab, setTab] = useState<Tab>("today");
-  // One switch drives both forms: which columns the session shows, and whose
-  // meal you are logging. "both" is the two-column session you asked for.
+  // One switch drives both forms: which columns the session shows, and who a
+  // new meal is saved for. "both" writes both athletes.
   const [who, setWho] = useState<"hippos" | "gators" | "both">("both");
   const sides = who === "both" ? (["hippos", "gators"] as const) : ([who] as const);
   const [records, setRecords] = useState(() => sortRecords(initialRecords));
@@ -151,7 +151,9 @@ export function Tracker({
             ? batch.length > 1
               ? "Sessions saved"
               : "Session saved"
-            : "Meal saved",
+            : batch.length > 1
+              ? `Meals saved for ${batch.map((item) => ATHLETES[item.athlete].name).join(" and ")}`
+              : "Meal saved",
       );
       setEditing(null);
       setTab("today");
@@ -281,17 +283,11 @@ export function Tracker({
         ) : tab === "meal" ? (
           <MealForm
             key={editing?.id ?? "new-meal"}
-            athlete={
-              editing?.kind === "meal"
-                ? editing.athlete
-                : who === "both"
-                  ? "hippos"
-                  : who
-            }
+            loggingFor={editing?.kind === "meal" ? editing.athlete : who}
             today={today}
             grokReady={grokReady}
             editing={editing?.kind === "meal" ? editing : null}
-            onAthlete={setWho}
+            onLoggingFor={setWho}
             onCancelEdit={() => setEditing(null)}
             onSave={save}
           />

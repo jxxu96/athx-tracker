@@ -5,11 +5,15 @@ import { PASSPHRASE } from "../playwright.config.ts";
 async function meals(page: Page) {
   return page.evaluate(async () => {
     const data = await fetch("/api/records").then((r) => r.json());
-    return data.records as { id: string; name: string; source: string; macros: {
-      calories: number; protein: number; carbs: number; fat: number;
-    } }[];
+    return data.records as {
+      id: string; athlete: string; day: string; name: string; meal: string; source: string;
+      macros: { calories: number; protein: number; carbs: number; fat: number };
+    }[];
   });
 }
+
+const loggingFor = (page: Page, name: "Hippos" | "Gators" | "Both") =>
+  page.getByRole("group", { name: "Logging for" }).getByRole("button", { name });
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/login");
@@ -35,11 +39,16 @@ test("a mismatched meal must be corrected before it is saved or updated", async 
   await expect(page.locator("form").getByRole("alert")).toContainText("Calories must be within 10 kcal");
   expect((await meals(page)).some((meal) => meal.name === "Calorie check bowl")).toBe(false);
 
+  // The correction is one athlete. Both is its own case below, and an update
+  // has to land on the single record this save creates.
+  await loggingFor(page, "Hippos").click();
   await page.getByRole("button", { name: "Use macro total" }).click();
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("455");
   await expect(page.getByText("Calories match.", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Save meal", exact: true }).click();
   await expect.poll(async () => (await meals(page)).find((meal) => meal.name === "Calorie check bowl")?.macros.calories).toBe(455);
+  const saved = (await meals(page)).filter((meal) => meal.name === "Calorie check bowl");
+  expect(saved).toHaveLength(1);
 
   await page.getByRole("button", { name: "Log", exact: true }).click();
   await page.getByText("Calorie check bowl", { exact: true }).locator("..").locator("..").getByLabel("Edit entry").click();
@@ -50,9 +59,14 @@ test("a mismatched meal must be corrected before it is saved or updated", async 
   await page.getByRole("button", { name: "Use macro total" }).click();
   await page.getByRole("button", { name: "Update meal" }).click();
   await expect.poll(async () => (await meals(page)).find((meal) => meal.name === "Calorie check bowl")?.macros.calories).toBe(495);
+  const updated = (await meals(page)).filter((meal) => meal.name === "Calorie check bowl");
+  expect(updated).toHaveLength(1);
+  expect(updated[0]?.id).toBe(saved[0]?.id);
+  expect(updated[0]?.athlete).toBe(saved[0]?.athlete);
 });
 
 test("a small rounding difference can be saved and invalid input has no misleading total", async ({ page }) => {
+  await loggingFor(page, "Hippos").click();
   await page.getByLabel("Meal", { exact: true }).fill("Rounded meal");
   await page.getByLabel("Calories (kcal)").fill("460");
   await page.getByLabel("Protein (g)").fill("30");
@@ -81,6 +95,7 @@ test("the API refuses a mismatch even when the form is bypassed", async ({ page 
 });
 
 test("editing an estimate rechecks calories and saves the correction as manual", async ({ page }) => {
+  await loggingFor(page, "Hippos").click();
   await page.route("**/api/estimate", (route) => route.fulfill({
     status: 200, contentType: "application/json",
     body: JSON.stringify({ estimate: { name: "Estimated bowl", calories: 190,
@@ -98,4 +113,102 @@ test("editing an estimate rechecks calories and saves the correction as manual",
     const saved = (await meals(page)).find((meal) => meal.name === "Estimated bowl");
     return saved ? { source: saved.source, calories: saved.macros.calories } : null;
   }).toEqual({ source: "manual", calories: 280 });
+});
+
+test("logging for both saves one meal for each athlete, and one athlete saves once", async ({ page }) => {
+  const athletes = page.getByRole("group", { name: "Athlete" });
+  await expect(loggingFor(page, "Both")).toHaveAttribute("aria-pressed", "true");
+  await expect(athletes.getByRole("button", { name: "Both" })).toHaveAttribute("aria-pressed", "true");
+  await expect(athletes.getByRole("button", { name: "Hippos" })).toHaveAttribute("aria-pressed", "false");
+  await expect(athletes.getByRole("button")).toHaveCount(3);
+  await expect(page.getByText("One save writes this meal for Hippos and for Gators.")).toBeVisible();
+
+  await page.getByRole("group", { name: "Sitting" }).getByRole("button", { name: "Dinner" }).click();
+  await page.getByLabel("Meal", { exact: true }).fill("Shared oats");
+  await page.getByLabel("Calories (kcal)").fill("455");
+  await page.getByLabel("Protein (g)").fill("30");
+  await page.getByLabel("Carbs (g)").fill("50");
+  await page.getByLabel("Fat (g)").fill("15");
+  await page.getByRole("button", { name: "Save meal", exact: true }).click();
+  await expect(page.getByText("Meals saved for Hippos and Gators", { exact: true })).toBeVisible();
+  await expect.poll(async () => {
+    const saved = (await meals(page)).filter((meal) => meal.name === "Shared oats");
+    return {
+      athletes: saved.map((meal) => meal.athlete).sort(),
+      ids: new Set(saved.map((meal) => meal.id)).size,
+      days: new Set(saved.map((meal) => meal.day)).size,
+      sittings: saved.map((meal) => meal.meal).sort(),
+      sources: [...new Set(saved.map((meal) => meal.source))],
+      macros: saved.map((meal) => meal.macros),
+    };
+  }).toEqual({
+    athletes: ["gators", "hippos"],
+    ids: 2,
+    days: 1,
+    sittings: ["Dinner", "Dinner"],
+    sources: ["manual"],
+    macros: [
+      { calories: 455, protein: 30, carbs: 50, fat: 15 },
+      { calories: 455, protein: 30, carbs: 50, fat: 15 },
+    ],
+  });
+
+  await page.getByRole("button", { name: "Meal", exact: true }).click();
+  await loggingFor(page, "Gators").click();
+  await expect(page.getByText("One save writes this meal for Hippos and for Gators.")).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Athlete" }).getByRole("button", { name: "Gators" })).toHaveAttribute("aria-pressed", "true");
+  await page.getByLabel("Meal", { exact: true }).fill("Gators only");
+  await page.getByLabel("Calories (kcal)").fill("455");
+  await page.getByLabel("Protein (g)").fill("30");
+  await page.getByLabel("Carbs (g)").fill("50");
+  await page.getByLabel("Fat (g)").fill("15");
+  await page.getByRole("button", { name: "Save meal", exact: true }).click();
+  await expect(page.getByText("Meal saved", { exact: true })).toBeVisible();
+  await expect.poll(async () =>
+    (await meals(page)).filter((meal) => meal.name === "Gators only").map((meal) => meal.athlete),
+  ).toEqual(["gators"]);
+  expect((await meals(page)).filter((meal) => meal.name === "Shared oats")).toHaveLength(2);
+});
+
+test("a both meal that fails halfway is not duplicated on retry", async ({ page }) => {
+  await page.getByRole("group", { name: "Sitting" }).getByRole("button", { name: "Snack" }).click();
+  await page.getByLabel("Meal", { exact: true }).fill("Retry oats");
+  await page.getByLabel("Calories (kcal)").fill("455");
+  await page.getByLabel("Protein (g)").fill("30");
+  await page.getByLabel("Carbs (g)").fill("50");
+  await page.getByLabel("Fat (g)").fill("15");
+
+  let posts = 0;
+  await page.route("**/api/records", async (route) => {
+    if (route.request().method() === "POST") {
+      posts += 1;
+      if (posts === 2) return route.abort("internetdisconnected");
+    }
+    await route.continue();
+  });
+  await page.getByRole("button", { name: "Save meal", exact: true }).click();
+
+  let landed = "";
+  await expect.poll(async () => {
+    const saved = (await meals(page)).filter((meal) => meal.name === "Retry oats");
+    landed = saved.length === 1 ? saved[0].id : "";
+    return saved.map((meal) => meal.athlete);
+  }).toEqual(["hippos"]);
+  await expect(page.getByRole("button", { name: "Save meal", exact: true })).toBeEnabled();
+
+  await page.unroute("**/api/records");
+  await page.getByRole("button", { name: "Save meal", exact: true }).click();
+  await expect(page.getByText("Meals saved for Hippos and Gators", { exact: true })).toBeVisible();
+  await expect.poll(async () => {
+    const saved = (await meals(page)).filter((meal) => meal.name === "Retry oats");
+    return {
+      athletes: saved.map((meal) => meal.athlete).sort(),
+      hippos: saved.filter((meal) => meal.athlete === "hippos").map((meal) => meal.id),
+      gators: saved.filter((meal) => meal.athlete === "gators").length,
+    };
+  }).toEqual({
+    athletes: ["gators", "hippos"],
+    hippos: [landed],
+    gators: 1,
+  });
 });
