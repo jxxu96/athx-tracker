@@ -173,3 +173,26 @@ whether or not any laptop is awake. It does not cover losing the machine: a copy
 on the server it is backing up cannot survive that server. The estimator on your
 own machine is the one that does, so keep it configured and run it when you can.
 Neither replaces the other.
+
+### Codex login in the container
+
+The image also installs the Codex CLI. After the updated image has been
+published and pulled, recreate the estimator through the existing Portainer
+stack. A restart alone keeps the old image. Then run on the Docker host:
+
+```sh
+docker exec -it athx-estimator codex --version
+docker exec -it athx-estimator codex login --device-auth
+docker exec -it athx-estimator codex login status
+```
+
+Open the printed link in your own browser, sign in with your ChatGPT account,
+and enter the one-time code. Enable device code login in ChatGPT security
+settings if requested. This uses subscription authentication; no API key is
+needed. See the [official authentication instructions](https://learn.chatgpt.com/docs/auth#login-on-headless-devices).
+
+`CODEX_HOME=/config/.codex` keeps the login in the existing `estimator-config`
+volume, owned by the same `node` user that runs the service. Keep that volume
+when recreating the container. Installing and signing in to Codex does not yet
+make it a meal-estimate provider: `server.mjs` currently supports only `claude`
+and `grok`, so adding `codex` to `ESTIMATOR_ORDER` alone will not enable it.
