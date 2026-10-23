@@ -161,3 +161,42 @@ test("the log draws a windowful, however much is loaded", async ({ page }) => {
   expect(await page.getByLabel("Delete entry").count()).toBe(120);
   await expect(page.getByRole("button", { name: "Show more" })).toHaveCount(0);
 });
+
+test("an oversized request is refused before it is read", async ({ page }) => {
+  await signIn(page);
+  // The cap exists so a huge body is not pulled into memory before anyone
+  // decides it is too big. No valid entry comes near it, so without its own
+  // answer the schema would refuse the same thing and the cap could vanish
+  // unnoticed.
+  const statuses = await page.evaluate(async () => {
+    const huge = "x".repeat(300_000);
+    const send = (path: string, body: unknown) =>
+      fetch(path, {
+        method: path.includes("settings") ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => r.status);
+    return {
+      records: await send("/api/records", { id: "x", notes: huge }),
+      settings: await send("/api/settings", { settings: { huge }, revision: 0 }),
+      estimate: await send("/api/estimate", { description: huge }),
+    };
+  });
+  expect(statuses.records).toBe(413);
+  expect(statuses.settings).toBe(413);
+  expect(statuses.estimate).toBe(413);
+});
+
+test("a body within the cap is judged on its contents", async ({ page }) => {
+  await signIn(page);
+  // The cap must not become the answer to everything: something small and
+  // wrong is still a 400.
+  const status = await page.evaluate(() =>
+    fetch("/api/records", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "not-a-uuid", kind: "meal" }),
+    }).then((r) => r.status),
+  );
+  expect(status).toBe(400);
+});

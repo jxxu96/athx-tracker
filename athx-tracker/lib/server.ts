@@ -14,6 +14,11 @@ export function runtime() {
   };
 }
 
+/** 413 and a reason, for anything that never got as far as being parsed. */
+export function tooLarge() {
+  return json({ error: "That was too large to read. Nothing was saved." }, 413);
+}
+
 export function json(value: unknown, status = 200) {
   return Response.json(value, { status, headers: { "Cache-Control": "no-store" } });
 }
@@ -68,6 +73,19 @@ export async function guard(request: Request, write = false) {
 const MAX_BODY_BYTES = 64_000;
 
 /**
+ * Distinct from a body that parsed and was wrong. Both used to come back as
+ * "check the entry", which is unhelpful to whoever sent it and means the cap
+ * cannot be told apart from the schema refusing the same thing: no test could
+ * see whether it was still there.
+ */
+export class BodyTooLarge extends Error {
+  constructor() {
+    super("Request too large.");
+    this.name = "BodyTooLarge";
+  }
+}
+
+/**
  * Reads up to a cap rather than buffering the whole body and measuring after.
  * The old order held an arbitrarily large request in memory before deciding it
  * was too large, which is the wrong way round for the only thing that limit was
@@ -77,7 +95,7 @@ const MAX_BODY_BYTES = 64_000;
 export async function readBody(request: Request) {
   const declared = Number(request.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > MAX_BODY_BYTES)
-    throw new Error("Request too large.");
+    throw new BodyTooLarge();
 
   const reader = request.body?.getReader();
   if (!reader) throw new Error("Empty body.");
@@ -91,7 +109,7 @@ export async function readBody(request: Request) {
     size += value.byteLength;
     if (size > MAX_BODY_BYTES) {
       await reader.cancel();
-      throw new Error("Request too large.");
+      throw new BodyTooLarge();
     }
     text += decoder.decode(value, { stream: true });
   }

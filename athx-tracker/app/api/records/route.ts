@@ -1,4 +1,4 @@
-import { database, guard, json, readBody } from "@/lib/server";
+import { BodyTooLarge, database, guard, json, readBody, tooLarge } from "@/lib/server";
 import { recordSchema } from "@/lib/validation";
 
 export async function GET(request: Request) {
@@ -38,7 +38,8 @@ export async function POST(request: Request) {
         new Date().toISOString(),
       );
     return json({ record });
-  } catch {
+  } catch (error) {
+    if (error instanceof BodyTooLarge) return tooLarge();
     return json(
       {
         error:
@@ -58,7 +59,8 @@ export async function DELETE(request: Request) {
       return json({ error: "Invalid record." }, 400);
     database().prepare("DELETE FROM records WHERE id = ?").run(id);
     return json({ ok: true });
-  } catch {
+  } catch (error) {
+    if (error instanceof BodyTooLarge) return tooLarge();
     return json({ error: "Could not delete entry." }, 400);
   }
 }

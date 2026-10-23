@@ -1,4 +1,4 @@
-import { database, guard, json, readBody, runtime } from "@/lib/server";
+import { BodyTooLarge, database, guard, json, readBody, runtime, tooLarge } from "@/lib/server";
 import { DEFAULT_SETTINGS } from "@/lib/domain";
 import { settingsSchema } from "@/lib/validation";
 
@@ -44,7 +44,8 @@ export async function PUT(request: Request) {
         409,
       );
     return json({ settings, revision: body.revision + 1 });
-  } catch {
+  } catch (error) {
+    if (error instanceof BodyTooLarge) return tooLarge();
     return json({ error: "Check your settings and targets." }, 400);
   }
 }

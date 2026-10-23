@@ -1,4 +1,4 @@
-import { database, guard, json, readBody, runtime } from "@/lib/server";
+import { BodyTooLarge, database, guard, json, readBody, runtime, tooLarge } from "@/lib/server";
 import { grokRequest, extractEstimate } from "@/lib/grok";
 import { gatewayAllowed } from "@/lib/gateway";
 import { macroSchema } from "@/lib/validation";
@@ -70,7 +70,8 @@ export async function GET(request: Request) {
   const target = (() => {
     try {
       return new URL(config.GROK_GATEWAY_URL!).host;
-    } catch {
+    } catch (error) {
+      if (error instanceof BodyTooLarge) return tooLarge();
       return "the configured address";
     }
   })();
@@ -103,7 +104,8 @@ export async function GET(request: Request) {
             detail: "Reachable, but it has no CLI configured to ask.",
           },
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof BodyTooLarge) return tooLarge();
     return json({
       status: "unreachable",
       detail: `No answer from ${target}. Is it running and reachable from the container?`,
@@ -169,7 +171,8 @@ export async function POST(request: Request) {
           signal: AbortSignal.timeout(INTERACTIVE_BUDGET_MS + 5000),
         },
       );
-    } catch {
+    } catch (error) {
+      if (error instanceof BodyTooLarge) return tooLarge();
       releaseEstimate(bucket);
       return json(
         {
@@ -217,7 +220,8 @@ export async function POST(request: Request) {
       estimate = estimateSchema.parse(
         gateway ? result : extractEstimate(result),
       );
-    } catch {
+    } catch (error) {
+      if (error instanceof BodyTooLarge) return tooLarge();
       releaseEstimate(bucket);
       return json(
         {
@@ -228,7 +232,8 @@ export async function POST(request: Request) {
       );
     }
     return json({ estimate });
-  } catch {
+  } catch (error) {
+    if (error instanceof BodyTooLarge) return tooLarge();
     return json(
       {
         error:
