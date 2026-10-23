@@ -110,3 +110,81 @@ test("settings reject nonsense bodyweights", () => {
   assert.ok(!ok(settingsSchema, { ...base, bodyweight: { hippos: -1, gators: 84 } }));
   assert.ok(!ok(settingsSchema, { ...base, bodyweight: { hippos: 0, gators: 900 } }));
 });
+
+test("the schema cannot permit a record the server would refuse to read", () => {
+  // readBody stops at 64 KB. These two limits were set in different files on
+  // different days and nothing connects them, so if a max length is raised
+  // later the save fails as "Request too large" with nothing on the form
+  // looking wrong. This is the thread between them.
+  const MAX_BODY_BYTES = 64_000;
+  const fill = (n: number, c: string) => c.repeat(n);
+
+  const biggestWorkout = {
+    id: "3f1a5f2e-9c4b-4d7a-8e21-6b0c9d5a1234",
+    kind: "workout", athlete: "gators", day: "2026-10-22",
+    title: fill(120, "T"), category: "Other", customCategory: fill(60, "C"),
+    seconds: 86400, notes: fill(2000, "N"),
+    segments: Array.from({ length: 30 }, () => ({
+      name: fill(100, "S"), unit: "reps", completed: 30, target: 30, seconds: 120,
+    })),
+    fatigue: 50, transition: 3600, goal: 86400, context: "pairs",
+    lifts: Array.from({ length: 30 }, () => ({
+      name: fill(80, "L"), kg: 1000, sets: 50, reps: 100,
+    })),
+  };
+
+  const biggestMeal = {
+    id: "3f1a5f2e-9c4b-4d7a-8e21-6b0c9d5a1235",
+    kind: "meal", athlete: "gators", day: "2026-10-22",
+    name: fill(300, "M"), meal: "Lunch",
+    macros: { calories: 20000, protein: 2000, carbs: 3000, fat: 2000 },
+    source: "grok", assumptions: fill(3000, "A"),
+  };
+
+  // The sizes above are the schema's limits, so these prove they still are.
+  // Raise one and this fails here, where the reason it matters is written down,
+  // rather than later as a save that will not go through.
+  const over = (record: object, patch: object) =>
+    recordSchema.safeParse({ ...record, ...patch }).success;
+  assert.ok(!over(biggestWorkout, { title: fill(121, "T") }), "title limit moved");
+  assert.ok(!over(biggestWorkout, { notes: fill(2001, "N") }), "notes limit moved");
+  assert.ok(
+    !over(biggestWorkout, { customCategory: fill(61, "C") }),
+    "custom category limit moved",
+  );
+  assert.ok(
+    !over(biggestWorkout, {
+      segments: [
+        ...biggestWorkout.segments,
+        { name: "x", unit: "reps", completed: 1, target: 1, seconds: 1 },
+      ],
+    }),
+    "station count limit moved",
+  );
+  assert.ok(
+    !over(biggestWorkout, {
+      lifts: [...biggestWorkout.lifts, { name: "x", kg: 1, sets: 1, reps: 1 }],
+    }),
+    "lift count limit moved",
+  );
+  assert.ok(!over(biggestMeal, { name: fill(301, "M") }), "meal name limit moved");
+  assert.ok(
+    !over(biggestMeal, { assumptions: fill(3001, "A") }),
+    "assumptions limit moved",
+  );
+
+  for (const [what, record] of [
+    ["workout", biggestWorkout],
+    ["meal", biggestMeal],
+  ] as const) {
+    assert.ok(
+      recordSchema.safeParse(record).success,
+      `the largest legal ${what} must actually be legal`,
+    );
+    const bytes = Buffer.byteLength(JSON.stringify(record));
+    assert.ok(
+      bytes < MAX_BODY_BYTES,
+      `the largest legal ${what} is ${bytes} bytes, past the ${MAX_BODY_BYTES} the server reads`,
+    );
+  }
+});
