@@ -13,9 +13,10 @@ const meal: Meal = {
 
 test("each macro contributes its calories, including fractional grams", () => {
   assert.deepEqual(macroCalories({ protein: 12.5, carbs: 20.25, fat: 3.5 }), {
-    protein: 50, carbs: 81, fat: 31.5, total: 162.5,
+    protein: 50, carbs: 81, fat: 31.5, alcohol: 0, total: 162.5,
   });
   assert.equal(macroCalories({ protein: 0, carbs: 0, fat: 0 }).total, 0);
+  assert.equal(macroCalories({ protein: 0, carbs: 20, fat: 0, alcohol: 10 }).total, 150);
 });
 
 test("meal saves allow rounding but refuse discrepancies in either direction", () => {
@@ -26,6 +27,39 @@ test("meal saves allow rounding but refuse discrepancies in either direction", (
       assert.equal(mealCalorieError(macros) === "", matches);
       assert.equal(mealSchema.safeParse({ ...meal, source, macros }).success, matches);
     }
+  }
+});
+
+test("an alcohol sitting counts ethanol and food, and other sittings refuse ethanol", () => {
+  const drinks = {
+    ...meal,
+    meal: "Alcohol" as const,
+    macros: { calories: 665, protein: 30, carbs: 50, fat: 15, alcohol: 30 },
+  };
+  assert.equal(mealCalorieError(drinks.macros), "");
+  assert.ok(mealSchema.safeParse(drinks).success, "snacks alongside the drinks");
+  assert.ok(mealSchema.safeParse({
+    ...drinks,
+    macros: { calories: 70, protein: 0, carbs: 0, fat: 0, alcohol: 10 },
+  }).success, "drinks with nothing alongside");
+  assert.ok(!mealSchema.safeParse({
+    ...drinks,
+    macros: { ...drinks.macros, calories: 676 },
+  }).success, "eleven kcal off still fails");
+
+  assert.ok(mealSchema.safeParse(meal).success, "older meals omit ethanol");
+  assert.equal(mealSchema.parse(meal).macros.alcohol, 0);
+  assert.ok(!mealSchema.safeParse({
+    ...meal,
+    meal: "Breakfast",
+    macros: { calories: 525, protein: 30, carbs: 50, fat: 15, alcohol: 10 },
+  }).success, "breakfast cannot carry ethanol");
+  for (const sitting of ["Lunch", "Dinner", "Snack"] as const) {
+    assert.ok(!mealSchema.safeParse({
+      ...meal,
+      meal: sitting,
+      macros: { ...meal.macros, alcohol: 1 },
+    }).success, sitting);
   }
 });
 

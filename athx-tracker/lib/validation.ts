@@ -4,6 +4,10 @@ const finite = z.number().finite().nonnegative();
 export const macroSchema = z.object({
   calories: finite.max(20000), protein: finite.max(2000), carbs: finite.max(3000), fat: finite.max(2000),
 }).strict();
+/** Meal macros only. Daily targets stay on macroSchema, which has no ethanol. */
+const mealMacroSchema = macroSchema.extend({
+  alcohol: finite.max(500).default(0),
+}).strict();
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v => {
   const d = new Date(`${v}T12:00:00Z`);
   return Number.isFinite(d.getTime()) && d.toISOString().slice(0,10) === v;
@@ -27,12 +31,24 @@ export const workoutSchema = z.object({
 }).strict().refine(w => w.seconds === 0 || w.segments.reduce((n,s) => n+s.seconds,0) <= w.seconds + 1, "Station times exceed elapsed workout time");
 export const mealSchema = z.object({
   ...base, kind: z.literal("meal"), athlete: z.enum(["hippos", "gators"]),
-  name: z.string().trim().min(1).max(300), meal: z.enum(["Breakfast","Lunch","Dinner","Snack"]),
-  macros: macroSchema.superRefine((macros, context) => {
-    const message = mealCalorieError(macros);
-    if (message) context.addIssue({ code: z.ZodIssueCode.custom, path: ["calories"], message });
-  }), source: z.enum(["manual","grok","queued"]), assumptions: z.string().max(3000),
-}).strict();
+  name: z.string().trim().min(1).max(300),
+  meal: z.enum(["Breakfast","Lunch","Dinner","Snack","Alcohol"]),
+  macros: mealMacroSchema,
+  source: z.enum(["manual","grok","queued"]), assumptions: z.string().max(3000),
+}).strict().superRefine((meal, context) => {
+  // Ethanol belongs to the Alcohol sitting only. One gram is 7 kcal, inside
+  // the rounding tolerance, so the calorie check alone would let it through.
+  if (meal.meal !== "Alcohol" && meal.macros.alcohol !== 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["macros", "alcohol"],
+      message: "Ethanol is only part of an alcohol sitting.",
+    });
+    return;
+  }
+  const message = mealCalorieError(meal.macros);
+  if (message) context.addIssue({ code: z.ZodIssueCode.custom, path: ["macros", "calories"], message });
+});
 /** What an estimator has to come back with, wherever the answer came from. */
 export const estimateSchema = macroSchema.extend({
   name: z.string().min(1).max(300),

@@ -1,11 +1,11 @@
-import type { Macros, Meal } from "./domain.ts";
+import type { Meal } from "./domain.ts";
 import { daysBetween } from "./client.ts";
 
 /** What one tap fills in. Taken from meals this person has repeated. */
 export type CommonMeal = {
   name: string;
   meal: Meal["meal"];
-  macros: Macros;
+  macros: Meal["macros"];
   assumptions: string;
   days: number;
 };
@@ -29,19 +29,20 @@ export function mealKey(name: string) {
     .join(" ");
 }
 
-function copyMacros(macros: Macros): Macros {
+function copyMacros(macros: Meal["macros"]): Meal["macros"] {
   return {
     calories: macros.calories,
     protein: macros.protein,
     carbs: macros.carbs,
     fat: macros.fat,
+    ...(typeof macros.alcohol === "number" ? { alcohol: macros.alcohol } : {}),
   };
 }
 
 function logged(meal: Meal) {
   if (!meal.name.trim() || meal.source === "queued") return false;
-  const { calories, protein, carbs, fat } = meal.macros;
-  return calories > 0 || protein > 0 || carbs > 0 || fat > 0;
+  const { calories, protein, carbs, fat, alcohol = 0 } = meal.macros;
+  return calories > 0 || protein > 0 || carbs > 0 || fat > 0 || alcohol > 0;
 }
 
 /**

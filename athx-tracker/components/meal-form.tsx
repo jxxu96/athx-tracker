@@ -21,7 +21,8 @@ const MACRO_FIELDS = [
   { key: "fat", label: "Fat", unit: "g" },
 ] as const satisfies readonly { key: keyof Macros; label: string; unit: string }[];
 
-const MEALS = ["Breakfast", "Lunch", "Dinner", "Snack"] as const;
+const MEALS = ["Breakfast", "Lunch", "Dinner", "Snack", "Alcohol"] as const;
+const ETHANOL_LIMIT = 500;
 
 /** What the estimator was told each level means, so the word is checkable. */
 const CONFIDENCE_MEANS = {
@@ -122,6 +123,9 @@ export function MealForm({
         }
       : emptyMacros,
   );
+  const [ethanol, setEthanol] = useState(
+    editing?.meal === "Alcohol" ? String(editing.macros.alcohol ?? 0) : "",
+  );
   const [assumptions, setAssumptions] = useState(editing?.assumptions ?? "");
   const [confidence, setConfidence] = useState<Estimate["confidence"] | null>(null);
   const [source, setSource] = useState<Meal["source"]>(editing?.source ?? "manual");
@@ -142,21 +146,38 @@ export function MealForm({
     out[key] = Number(macros[key].trim());
     return out;
   }, {} as Macros);
-  const canCheckCalories = MACRO_FIELDS.some(({ key }) => macros[key].trim() !== "") &&
+  const ethanolRaw = ethanol.trim();
+  const ethanolGrams = ethanolRaw === "" ? 0 : Number(ethanolRaw);
+  const alcoholGrams = slot === "Alcohol" ? ethanolGrams : 0;
+  const ethanolOk = slot !== "Alcohol" || (
+    Number.isFinite(ethanolGrams) && ethanolGrams >= 0 && ethanolGrams <= ETHANOL_LIMIT
+  );
+  const counted = { ...parsedMacros, alcohol: alcoholGrams };
+  const canCheckCalories = ethanolOk &&
+    MACRO_FIELDS.some(({ key }) => macros[key].trim() !== "" || (slot === "Alcohol" && ethanolRaw !== "")) &&
     MACRO_FIELDS.every(({ key }) => Number.isFinite(parsedMacros[key]) &&
       parsedMacros[key] >= 0 && parsedMacros[key] <= LIMITS[key]);
-  const breakdown = macroCalories(parsedMacros);
-  const calorieError = canCheckCalories ? mealCalorieError(parsedMacros) : "";
+  const breakdown = macroCalories(counted);
+  const calorieError = canCheckCalories ? mealCalorieError(counted) : "";
   const formatCalories = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 1 });
 
   function reset() {
     setDescription("");
     setName("");
     setMacros(emptyMacros);
+    setEthanol("");
     setAssumptions("");
     setConfidence(null);
     setSource("manual");
     setAdjusted(false);
+  }
+
+  function markManual() {
+    setError("");
+    if (source === "grok") {
+      setSource("manual");
+      setAdjusted(true);
+    }
   }
 
   async function estimate() {
@@ -214,6 +235,7 @@ export function MealForm({
       carbs: String(suggestion.macros.carbs),
       fat: String(suggestion.macros.fat),
     });
+    setEthanol(suggestion.macros.alcohol ? String(suggestion.macros.alcohol) : "");
     setAssumptions(suggestion.assumptions);
     setSource("manual");
     setAdjusted(false);
@@ -223,11 +245,7 @@ export function MealForm({
 
   function setMacro(key: keyof Macros, value: string) {
     setMacros((current) => ({ ...current, [key]: value }));
-    setError("");
-    if (source === "grok") {
-      setSource("manual");
-      setAdjusted(true);
-    }
+    markManual();
   }
 
   /** One record, or one per athlete when logging for both. An edit stays singular. */
@@ -259,7 +277,7 @@ export function MealForm({
         day,
         name: name.trim() || text.slice(0, 60),
         meal: slot,
-        macros: { calories: 0, protein: 0, carbs: 0, fat: 0 },
+        macros: { calories: 0, protein: 0, carbs: 0, fat: 0, alcohol: 0 },
         source: "queued",
         assumptions: text.slice(0, 3000),
       });
@@ -273,6 +291,10 @@ export function MealForm({
   function validate() {
     if (!name.trim()) return "Name the meal, or run an estimate first.";
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return "Pick a valid date.";
+    if (slot === "Alcohol" && !ethanolOk)
+      return ethanolGrams > ETHANOL_LIMIT
+        ? "Ethanol looks too high."
+        : "Ethanol needs a number of zero or more.";
     for (const { key, label } of MACRO_FIELDS) {
       const raw = macros[key].trim();
       const value = raw === "" ? 0 : Number(raw);
@@ -280,9 +302,9 @@ export function MealForm({
         return `${label} needs a number of zero or more.`;
       if (value > LIMITS[key]) return `${label} looks too high.`;
     }
-    if (MACRO_FIELDS.every(({ key }) => parsedMacros[key] === 0))
+    if (MACRO_FIELDS.every(({ key }) => parsedMacros[key] === 0) && alcoholGrams === 0)
       return "Add at least one macro value.";
-    return mealCalorieError(parsedMacros);
+    return mealCalorieError(counted);
   }
 
   async function submit(event: React.FormEvent) {
@@ -298,7 +320,7 @@ export function MealForm({
         day,
         name: name.trim(),
         meal: slot,
-        macros: parsedMacros,
+        macros: { ...parsedMacros, alcohol: alcoholGrams },
         source,
         assumptions: assumptions.trim().slice(0, 3000),
       });
@@ -457,6 +479,19 @@ export function MealForm({
             onChange={(event) => setName(event.target.value)}
           />
         </Field>
+        {slot === "Alcohol" ? (
+          <Field label="Ethanol (g)">
+            <Input
+              value={ethanol}
+              inputMode="decimal"
+              placeholder="0"
+              onChange={(event) => {
+                setEthanol(event.target.value);
+                markManual();
+              }}
+            />
+          </Field>
+        ) : null}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {MACRO_FIELDS.map(({ key, label, unit }) => (
             <Field key={key} label={`${label} (${unit})`}>
@@ -477,7 +512,8 @@ export function MealForm({
                 From macros: {formatCalories(breakdown.total)} kcal
               </p>
               <p className="text-xs text-muted-foreground">
-                Protein {formatCalories(breakdown.protein)} + carbs {formatCalories(breakdown.carbs)} + fat {formatCalories(breakdown.fat)} kcal
+                Protein {formatCalories(breakdown.protein)} + carbs {formatCalories(breakdown.carbs)} + fat {formatCalories(breakdown.fat)}
+                {slot === "Alcohol" ? ` + ethanol ${formatCalories(breakdown.alcohol)}` : ""} kcal
               </p>
               <p className={`text-xs ${calorieError ? "text-destructive" : "text-muted-foreground"}`}>
                 {calorieError
@@ -486,7 +522,9 @@ export function MealForm({
               </p>
             </div>
             <p className="text-[11px] text-muted-foreground">
-              Protein and carbs: 4 kcal/g · Fat: 9 kcal/g. Estimates use this total.
+              {slot === "Alcohol"
+                ? "Protein and carbs: 4 kcal/g · Fat: 9 kcal/g · Ethanol: 7 kcal/g. Food with the drinks goes in the other three."
+                : "Protein and carbs: 4 kcal/g · Fat: 9 kcal/g. Estimates use this total."}
             </p>
             {parsedMacros.calories !== Math.round(breakdown.total) && breakdown.total <= LIMITS.calories ? (
               <Button type="button" variant="outline" size="sm"

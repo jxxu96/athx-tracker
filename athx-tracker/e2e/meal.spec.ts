@@ -8,7 +8,7 @@ async function meals(page: Page) {
     const data = await fetch("/api/records").then((r) => r.json());
     return data.records as {
       id: string; athlete: string; day: string; name: string; meal: string; source: string;
-      macros: { calories: number; protein: number; carbs: number; fat: number };
+      macros: { calories: number; protein: number; carbs: number; fat: number; alcohol?: number };
     }[];
   });
 }
@@ -30,6 +30,39 @@ test("a new meal starts on the sitting that matches the time", async ({ page }) 
   await expect(page.getByText("Matched to the time.")).toBeVisible();
   await group.getByRole("button", { name: sitting === "Snack" ? "Dinner" : "Snack" }).click();
   await expect(page.getByText("Matched to the time.")).toHaveCount(0);
+});
+
+test("ethanol is only on an alcohol sitting, and snacks alongside still count", async ({ page }) => {
+  await expect(page.getByLabel("Ethanol (g)")).toHaveCount(0);
+  const sitting = page.getByRole("group", { name: "Sitting" });
+  await sitting.getByRole("button", { name: "Alcohol" }).click();
+  await expect(page.getByLabel("Ethanol (g)")).toBeVisible();
+  await sitting.getByRole("button", { name: "Lunch" }).click();
+  await expect(page.getByLabel("Ethanol (g)")).toHaveCount(0);
+  await sitting.getByRole("button", { name: "Dinner" }).click();
+  await expect(page.getByLabel("Ethanol (g)")).toHaveCount(0);
+  await sitting.getByRole("button", { name: "Breakfast" }).click();
+  await expect(page.getByLabel("Ethanol (g)")).toHaveCount(0);
+  await sitting.getByRole("button", { name: "Snack" }).click();
+  await expect(page.getByLabel("Ethanol (g)")).toHaveCount(0);
+
+  await loggingFor(page, "Hippos").click();
+  await sitting.getByRole("button", { name: "Alcohol" }).click();
+  await page.getByLabel("Meal", { exact: true }).fill("Beers and chips");
+  await page.getByLabel("Ethanol (g)").fill("10");
+  await page.getByLabel("Calories (kcal)").fill("150");
+  await page.getByLabel("Protein (g)").fill("0");
+  await page.getByLabel("Carbs (g)").fill("20");
+  await page.getByLabel("Fat (g)").fill("0");
+  await expect(page.getByText(/ethanol 70/)).toBeVisible();
+  await expect(page.getByText("Calories match.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Save meal", exact: true }).click();
+  await expect.poll(async () => {
+    const saved = (await meals(page)).find((meal) => meal.name === "Beers and chips");
+    return saved
+      ? { meal: saved.meal, calories: saved.macros.calories, carbs: saved.macros.carbs, alcohol: saved.macros.alcohol }
+      : null;
+  }).toEqual({ meal: "Alcohol", calories: 150, carbs: 20, alcohol: 10 });
 });
 
 test("a mismatched meal must be corrected before it is saved or updated", async ({ page }) => {
@@ -207,8 +240,8 @@ test("logging for both saves one meal for each athlete, and one athlete saves on
     sittings: ["Dinner", "Dinner"],
     sources: ["manual"],
     macros: [
-      { calories: 455, protein: 30, carbs: 50, fat: 15 },
-      { calories: 455, protein: 30, carbs: 50, fat: 15 },
+      { calories: 455, protein: 30, carbs: 50, fat: 15, alcohol: 0 },
+      { calories: 455, protein: 30, carbs: 50, fat: 15, alcohol: 0 },
     ],
   });
 

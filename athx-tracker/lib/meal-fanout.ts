@@ -1,4 +1,4 @@
-import type { Macros, Meal } from "./domain.ts";
+import type { Meal } from "./domain.ts";
 
 /** The header switch: one athlete, or a meal written for both of them. */
 export type LoggingFor = "hippos" | "gators" | "both";
@@ -9,12 +9,13 @@ export type MealDraft = Omit<Meal, "id" | "athlete">;
 /** Stable for the life of one draft, so a retry upserts instead of inserting again. */
 export type MealDraftIds = Record<Exclude<LoggingFor, "both">, string>;
 
-function copyMacros(macros: Macros): Macros {
+function copyMacros(macros: Meal["macros"]): Meal["macros"] {
   return {
     calories: macros.calories,
     protein: macros.protein,
     carbs: macros.carbs,
     fat: macros.fat,
+    ...(typeof macros.alcohol === "number" ? { alcohol: macros.alcohol } : {}),
   };
 }
 
