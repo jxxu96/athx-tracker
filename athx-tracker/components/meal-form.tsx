@@ -12,6 +12,7 @@ import { api, message, newId } from "@/lib/client";
 import { commonMeals, type CommonMeal } from "@/lib/common-meals";
 import { CALORIE_TOLERANCE, macroCalories, mealCalorieError } from "@/lib/meal-calories";
 import { fanOutMeal, type LoggingFor, type MealDraft } from "@/lib/meal-fanout";
+import { mealForTime } from "@/lib/meal-time";
 
 const MACRO_FIELDS = [
   { key: "calories", label: "Calories", unit: "kcal" },
@@ -105,7 +106,10 @@ export function MealForm({
   // An open edit stays on that record's athlete; the header keeps its own switch.
   const who: LoggingFor = editing ? editing.athlete : loggingFor;
   const [day, setDay] = useState(editing?.day ?? today);
-  const [slot, setSlot] = useState<Meal["meal"]>(editing?.meal ?? "Lunch");
+  // A new meal follows the clock. An edit, or a tap on a usual meal, keeps
+  // the sitting that was chosen. Null means "still the clock".
+  const [picked, setSlot] = useState<Meal["meal"] | null>(editing?.meal ?? null);
+  const slot = picked ?? mealForTime(new Date());
   const [description, setDescription] = useState("");
   const [name, setName] = useState(editing?.name ?? "");
   const [macros, setMacros] = useState<MacroDraft>(() =>
@@ -383,6 +387,9 @@ export function MealForm({
           onChange={setSlot}
           options={MEALS.map((value) => ({ value, label: value }))}
         />
+        {!editing && picked === null ? (
+          <p className="text-xs text-muted-foreground">Matched to the time.</p>
+        ) : null}
         <Field label="Date">
           <Input
             type="date"

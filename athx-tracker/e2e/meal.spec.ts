@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { PASSPHRASE } from "../playwright.config.ts";
+import { mealForTime } from "../lib/meal-time.ts";
 
 async function meals(page: Page) {
   return page.evaluate(async () => {
@@ -20,6 +21,15 @@ test.beforeEach(async ({ page }) => {
   await page.getByLabel("Passphrase").fill(PASSPHRASE);
   await page.getByRole("button", { name: "Open journal" }).click();
   await page.getByRole("button", { name: "Meal", exact: true }).click();
+});
+
+test("a new meal starts on the sitting that matches the time", async ({ page }) => {
+  const sitting = mealForTime(new Date());
+  const group = page.getByRole("group", { name: "Sitting" });
+  await expect(group.getByRole("button", { name: sitting })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Matched to the time.")).toBeVisible();
+  await group.getByRole("button", { name: sitting === "Snack" ? "Dinner" : "Snack" }).click();
+  await expect(page.getByText("Matched to the time.")).toHaveCount(0);
 });
 
 test("a mismatched meal must be corrected before it is saved or updated", async ({ page }) => {
@@ -52,6 +62,8 @@ test("a mismatched meal must be corrected before it is saved or updated", async 
 
   await page.getByRole("button", { name: "Log", exact: true }).click();
   await page.getByText("Calorie check bowl", { exact: true }).locator("..").locator("..").getByLabel("Edit entry").click();
+  await expect(page.getByRole("group", { name: "Sitting" }).getByRole("button", { name: saved[0]?.meal ?? "" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Matched to the time.")).toHaveCount(0);
   await page.getByLabel("Protein (g)").fill("40");
   await expect(page.getByText(/Total is 40 kcal below/)).toBeVisible();
   await page.getByRole("button", { name: "Update meal" }).click();
