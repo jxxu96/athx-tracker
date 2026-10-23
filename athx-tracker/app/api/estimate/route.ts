@@ -1,5 +1,6 @@
 import { database, guard, json, readBody, runtime } from "@/lib/server";
 import { grokRequest, extractEstimate } from "@/lib/grok";
+import { gatewayAllowed } from "@/lib/gateway";
 import { macroSchema } from "@/lib/validation";
 import { z } from "zod";
 
@@ -18,36 +19,6 @@ const estimateSchema = macroSchema.extend({
   confidence: z.enum(["low", "medium", "high"]),
 });
 
-/**
- * A gateway must be HTTPS on the open internet, but plain HTTP is fine when the
- * host is on a private network or a tailnet, where the transport is already
- * encrypted and the estimator is not publicly reachable.
- */
-function gatewayAllowed(raw: string) {
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    return false;
-  }
-  if (url.protocol === "https:") return true;
-  if (url.protocol !== "http:") return false;
-  const host = url.hostname;
-  // A single-label name resolves only on a container or local network, never
-  // publicly, so names like the compose service "estimator" are private too.
-  if (!host.includes(".")) return true;
-  return (
-    host === "localhost" ||
-    host === "127.0.0.1" ||
-    host === "::1" ||
-    /^10\./.test(host) ||
-    /^192\.168\./.test(host) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
-    // Tailscale hands out 100.64.0.0/10.
-    /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(host) ||
-    host.endsWith(".ts.net")
-  );
-}
 
 /** Counts in the database, not in memory, so a restart cannot reset the budget. */
 function claimEstimate(bucket: string) {
