@@ -40,6 +40,13 @@ export function dayToDate(day: string) {
   return new Date(`${day}T12:00:00Z`);
 }
 
+/** Calendar shift on the same noon-UTC anchor as every other day here. */
+export function addDays(day: string, delta: number) {
+  const date = dayToDate(day);
+  date.setUTCDate(date.getUTCDate() + delta);
+  return date.toISOString().slice(0, 10);
+}
+
 /** Monday-anchored week key, so both athletes count the same week. */
 export function weekStart(day: string) {
   const date = dayToDate(day);
