@@ -582,7 +582,7 @@ const server = createServer((request, response) => {
 const runDirectly =
   process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 
-export { budgetSlice, clean, structured };
+export { SCHEMA, budgetSlice, clean, structured };
 
 if (runDirectly)
   server.listen(PORT, HOST, () => {

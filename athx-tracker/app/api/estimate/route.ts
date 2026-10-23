@@ -1,7 +1,7 @@
 import { BodyTooLarge, database, guard, json, readBody, runtime, tooLarge } from "@/lib/server";
 import { grokRequest, extractEstimate } from "@/lib/grok";
 import { gatewayAllowed } from "@/lib/gateway";
-import { macroSchema } from "@/lib/validation";
+import { estimateSchema } from "@/lib/validation";
 import { z } from "zod";
 
 const DAILY_LIMIT = 60;
@@ -12,12 +12,6 @@ const DAILY_LIMIT = 60;
  * is the patient path, and it is the one that almost always succeeds.
  */
 const INTERACTIVE_BUDGET_MS = 25000;
-
-const estimateSchema = macroSchema.extend({
-  name: z.string().min(1).max(300),
-  assumptions: z.string().max(3000),
-  confidence: z.enum(["low", "medium", "high"]),
-});
 
 
 /** Counts in the database, not in memory, so a restart cannot reset the budget. */

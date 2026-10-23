@@ -1,6 +1,5 @@
-import { z } from "zod";
 import { database, runtime } from "./server";
-import { macroSchema } from "./validation";
+import { estimateSchema } from "./validation";
 import type { Meal } from "./domain";
 import {
   RETRY_MAX_MS,
@@ -18,12 +17,6 @@ import {
  * afford a budget the interactive path cannot, and it holds the description
  * until an estimate actually arrives rather than asking anyone to retype it.
  */
-const estimateSchema = macroSchema.extend({
-  name: z.string().min(1).max(300),
-  assumptions: z.string().max(3000),
-  confidence: z.enum(["low", "medium", "high"]),
-});
-
 /** No browser deadline here, so a slow CLI is merely slow, not a failure. */
 const QUEUE_BUDGET_MS = 150_000;
 

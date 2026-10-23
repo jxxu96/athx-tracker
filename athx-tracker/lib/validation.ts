@@ -29,6 +29,12 @@ export const mealSchema = z.object({
   name: z.string().trim().min(1).max(300), meal: z.enum(["Breakfast","Lunch","Dinner","Snack"]),
   macros: macroSchema, source: z.enum(["manual","grok","queued"]), assumptions: z.string().max(3000),
 }).strict();
+/** What an estimator has to come back with, wherever the answer came from. */
+export const estimateSchema = macroSchema.extend({
+  name: z.string().min(1).max(300),
+  assumptions: z.string().max(3000),
+  confidence: z.enum(["low", "medium", "high"]),
+});
 export const recordSchema = z.union([workoutSchema, mealSchema]);
 export const settingsSchema = z.object({
   eventDate: day, eventName: z.string().trim().min(1).max(100),

@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { recordSchema, settingsSchema, workoutSchema } from "./validation.ts";
+import {
+  estimateSchema,
+  recordSchema,
+  settingsSchema,
+  workoutSchema,
+} from "./validation.ts";
 
 const ok = (schema: { safeParse: (v: unknown) => { success: boolean } }, value: unknown) =>
   schema.safeParse(value).success;
@@ -185,6 +190,54 @@ test("the schema cannot permit a record the server would refuse to read", () => 
     assert.ok(
       bytes < MAX_BODY_BYTES,
       `the largest legal ${what} is ${bytes} bytes, past the ${MAX_BODY_BYTES} the server reads`,
+    );
+  }
+});
+
+test("the app and the estimator describe an estimate the same way", async () => {
+  // The estimator ships on its own and states this shape as JSON Schema, so it
+  // cannot import anything from here. Nothing kept the two in step, which is
+  // how the direct API path spent a while asking a different question from the
+  // one the estimator was asking.
+  const { SCHEMA } = await import("../../estimator/server.mjs");
+  const { foodFormat } = await import("./grok.ts");
+
+  assert.deepEqual(
+    SCHEMA.required,
+    foodFormat.schema.required,
+    "the two JSON schemas require different fields",
+  );
+
+  const base = {
+    name: "x", assumptions: "", confidence: "low",
+    calories: 0, protein: 0, carbs: 0, fat: 0,
+  };
+  for (const field of ["calories", "protein", "carbs", "fat"] as const) {
+    const ceiling = SCHEMA.properties[field].maximum;
+    assert.equal(
+      ceiling,
+      foodFormat.schema.properties[field].maximum,
+      `${field}: the two JSON schemas disagree`,
+    );
+    assert.ok(
+      estimateSchema.safeParse({ ...base, [field]: ceiling }).success,
+      `${field}: the app rejects what the estimator is allowed to send`,
+    );
+    assert.ok(
+      !estimateSchema.safeParse({ ...base, [field]: ceiling + 1 }).success,
+      `${field}: the app accepts more than the estimator may send`,
+    );
+  }
+
+  assert.deepEqual(
+    SCHEMA.properties.confidence.enum,
+    foodFormat.schema.properties.confidence.enum,
+    "the two offer different confidences",
+  );
+  for (const level of SCHEMA.properties.confidence.enum) {
+    assert.ok(
+      estimateSchema.safeParse({ ...base, confidence: level }).success,
+      `the app rejects confidence "${level}", which the estimator may send`,
     );
   }
 });
