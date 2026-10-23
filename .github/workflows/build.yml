@@ -38,7 +38,20 @@ jobs:
         working-directory: athx-tracker
       # Every bug that reached a phone in this app was wiring or rendering,
       # which the unit tests cannot see. These drive a real browser.
-      - run: npx playwright install --with-deps chromium
+      #
+      # --with-deps spent five minutes of every run in apt, against seventy
+      # seconds of actual testing, and the image it runs on already carries
+      # what headless chromium needs. Only the browser has to arrive, and only
+      # when the cache misses. Keyed on the lockfile, so a Playwright upgrade
+      # fetches the matching build instead of reusing the old one.
+      - name: Cache the browser
+        id: browser
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('athx-tracker/package-lock.json') }}
+      - run: npx playwright install chromium
+        if: steps.browser.outputs.cache-hit != 'true'
         working-directory: athx-tracker
       - run: npm run test:e2e
         working-directory: athx-tracker
