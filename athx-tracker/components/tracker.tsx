@@ -26,7 +26,7 @@ import {
   type Settings,
   type Workout,
 } from "@/lib/domain";
-import { api, message, sortRecords } from "@/lib/client";
+import { api, isMeal, message, sortRecords } from "@/lib/client";
 
 type Tab = "today" | "session" | "meal" | "log" | "settings";
 
@@ -284,6 +284,7 @@ export function Tracker({
           <MealForm
             key={editing?.id ?? "new-meal"}
             loggingFor={editing?.kind === "meal" ? editing.athlete : who}
+            meals={records.filter(isMeal)}
             today={today}
             grokReady={grokReady}
             editing={editing?.kind === "meal" ? editing : null}

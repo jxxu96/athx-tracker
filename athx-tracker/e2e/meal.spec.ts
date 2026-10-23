@@ -115,6 +115,53 @@ test("editing an estimate rechecks calories and saves the correction as manual",
   }).toEqual({ source: "manual", calories: 280 });
 });
 
+test("usual meals are one person's repeats, and a tap fills only that person's meal", async ({ page }) => {
+  await page.evaluate(async () => {
+    const today = new Intl.DateTimeFormat("en-CA", {
+      year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(new Date());
+    const day = (offset: number) => {
+      const date = new Date(`${today}T12:00:00Z`);
+      date.setUTCDate(date.getUTCDate() - offset);
+      return date.toISOString().slice(0, 10);
+    };
+    const post = (athlete: string, name: string, offset: number) =>
+      fetch("/api/records", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: crypto.randomUUID(), kind: "meal", athlete, day: day(offset), name,
+          meal: "Breakfast", source: "manual", assumptions: "",
+          macros: { calories: 455, protein: 30, carbs: 50, fat: 15 },
+        }),
+      });
+    await post("hippos", "Usual oats", 0);
+    await post("hippos", "usual oats", 2);
+    await post("hippos", "Lonely soup", 1);
+    await post("gators", "Usual shake", 0);
+    await post("gators", "Usual shake", 3);
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "Meal", exact: true }).click();
+
+  await expect(page.getByRole("button", { name: "Hippos: Usual oats" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Gators: Usual shake" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Lonely soup/ })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Hippos: Usual oats" }).click();
+  await expect(loggingFor(page, "Hippos")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel("Meal", { exact: true })).toHaveValue("Usual oats");
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("455");
+  await expect(page.getByRole("button", { name: "Gators: Usual shake" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Save meal", exact: true }).click();
+  await expect(page.getByText("Meal saved", { exact: true })).toBeVisible();
+  await expect.poll(async () => {
+    const saved = (await meals(page)).filter((meal) => meal.name === "Usual oats");
+    return saved.map((meal) => meal.athlete).sort();
+  }).toEqual(["hippos", "hippos"]);
+});
+
 test("logging for both saves one meal for each athlete, and one athlete saves once", async ({ page }) => {
   const athletes = page.getByRole("group", { name: "Athlete" });
   await expect(loggingFor(page, "Both")).toHaveAttribute("aria-pressed", "true");

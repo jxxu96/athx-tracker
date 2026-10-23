@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Field } from "@/components/workout-form";
 import { ATHLETES, type Macros, type Meal } from "@/lib/domain";
 import { api, message, newId } from "@/lib/client";
+import { commonMeals, type CommonMeal } from "@/lib/common-meals";
 import { CALORIE_TOLERANCE, macroCalories, mealCalorieError } from "@/lib/meal-calories";
 import { fanOutMeal, type LoggingFor, type MealDraft } from "@/lib/meal-fanout";
 
@@ -83,6 +84,7 @@ function Choice<T extends string>({
 
 export function MealForm({
   loggingFor,
+  meals,
   today,
   grokReady,
   editing,
@@ -91,6 +93,7 @@ export function MealForm({
   onSave,
 }: {
   loggingFor: LoggingFor;
+  meals: Meal[];
   today: string;
   grokReady: boolean;
   editing?: Meal | null;
@@ -180,6 +183,38 @@ export function MealForm({
     } finally {
       setEstimating(false);
     }
+  }
+
+  const suggestionSides = editing
+    ? []
+    : loggingFor === "both"
+      ? (["hippos", "gators"] as const)
+      : ([loggingFor] as const);
+  const suggestionGroups = suggestionSides
+    .map((athlete) => ({
+      athlete,
+      items: commonMeals(
+        meals.filter((meal) => meal.athlete === athlete),
+        today,
+      ),
+    }))
+    .filter((group) => group.items.length > 0);
+
+  function applyCommon(athlete: "hippos" | "gators", suggestion: CommonMeal) {
+    if (loggingFor !== athlete) onLoggingFor(athlete);
+    setName(suggestion.name);
+    setSlot(suggestion.meal);
+    setMacros({
+      calories: String(suggestion.macros.calories),
+      protein: String(suggestion.macros.protein),
+      carbs: String(suggestion.macros.carbs),
+      fat: String(suggestion.macros.fat),
+    });
+    setAssumptions(suggestion.assumptions);
+    setSource("manual");
+    setAdjusted(false);
+    setConfidence(null);
+    setError("");
   }
 
   function setMacro(key: keyof Macros, value: string) {
@@ -280,6 +315,44 @@ export function MealForm({
             Cancel
           </Button>
         </div>
+      ) : null}
+      {suggestionGroups.length > 0 ? (
+        <section className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
+          <div>
+            <h3 className="text-sm font-semibold">Usual meals</h3>
+            <p className="text-[11px] text-muted-foreground">
+              From what each of you logs more than once. One tap fills this meal.
+            </p>
+          </div>
+          {suggestionGroups.map((group) => (
+            <div key={group.athlete}>
+              {suggestionGroups.length > 1 ? (
+                <p
+                  className="mb-1.5 text-xs font-medium"
+                  style={{ color: ATHLETES[group.athlete].ink }}
+                >
+                  {ATHLETES[group.athlete].name}
+                </p>
+              ) : null}
+              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
+                {group.items.map((suggestion) => (
+                  <button
+                    key={`${group.athlete}-${suggestion.name}`}
+                    type="button"
+                    aria-label={`${ATHLETES[group.athlete].name}: ${suggestion.name}`}
+                    onClick={() => applyCommon(group.athlete, suggestion)}
+                    className="rounded-lg border px-2 py-2 text-left text-xs font-medium transition-colors hover:bg-accent"
+                  >
+                    <span className="block truncate">{suggestion.name}</span>
+                    <span className="block text-[10px] font-normal text-muted-foreground">
+                      {suggestion.meal}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </section>
       ) : null}
       <section className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
         <Choice
