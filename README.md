@@ -4,7 +4,7 @@ Shared training and nutrition journal for ATHX New York 2027.
 
 The app lives in [`athx-tracker/`](athx-tracker/). Its
 [README](athx-tracker/README.md) covers what it does, how access works, and how the
-full-workout scenario is calculated.
+figures it reports are arrived at.
 
 ## Deploying
 

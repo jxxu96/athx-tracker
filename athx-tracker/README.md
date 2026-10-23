@@ -7,31 +7,46 @@ single SQLite file on a volume.
 ## What it does
 
 - **Today** — countdown to the event, sessions logged this week against the weekly
-  target, each athlete's macros against their daily targets, and the last session
-  with its full-workout scenario. The ATHX Lite running order is listed for reference.
-- **Session** — log a workout as MetCon, Strength, Endurance, Solidcore or Other.
-  Load the seven ATHX stations with one tap, then fill in what you completed and
-  each split. Elapsed time, station times, lifts and notes are all optional: a
-  session with nothing timed is still a session, and reads as a dash rather than
-  as a time of zero. Without a time there is no pace, so the scenario below is
-  withheld rather than guessed.
+  target, each athlete's macros against their daily targets alongside what training
+  burned and the net, and the last session with its time and what it burned. The
+  ATHX Lite running order is listed for reference.
+- **Session** — log a workout as MetCon, Strength, Endurance, Solidcore, Tennis or
+  Other, with Solidcore and tennis a tap away under Quick start. Load the seven
+  ATHX stations with one tap, then fill in what you completed and each split.
+  Elapsed time, station times, lifts and notes are all optional: a session with
+  nothing timed is still a session, and reads as a dash rather than as a time of
+  zero. Pairs or solo follows the switch at the top unless you set it yourself,
+  and Other takes a name of its own, which is what the log then calls it.
 - **Meal** — describe a meal and let Grok estimate the macros, or type them in
   yourself. Editing an estimated number saves the meal as your own figures.
-- **Log** — everything logged, newest first, filterable, with edit and delete. It
-  opens with the most recent entries and fetches the rest when asked, so a journal
-  years deep does not have to cross the network on every load.
+- **Log** — everything logged, newest first, filterable, with edit and delete, each
+  session showing what it burned. It opens with the most recent entries and fetches
+  the rest when asked, and draws a hundred at a time however many are loaded, so a
+  journal years deep neither crosses the network nor reaches the screen all at once.
 - **Setup** — event name and date, weekly session target, display units, each
   athlete's bodyweight, and their daily macro targets. The bodyweight is what makes
   calories burned possible; without it that figure is withheld.
 
+### Calories burned
+
+`estimateBurn` in `lib/domain.ts` uses the compendium formula, MET x 3.5 x kg / 200 per
+minute, with METs for vigorous effort. It needs a bodyweight, which Setup holds per
+athlete, and a duration, which a session logged without a time does not have. Either
+missing and the figure is withheld rather than guessed, because a number that looks
+measured and is not is worse than no number.
+
 ### The full-workout scenario
 
-When a session has stations, `projectWorkout` in `lib/domain.ts` extends a part-finished
-workout to the whole thing. Observed time is kept as measured; only unperformed work is
-extended, at the pace you actually held at that station, plus an adjustable fatigue
-allowance. A station you never started is never given another movement's pace, so the
-scenario only appears once every station has some completed work with a split time.
-It is a scenario built from your own paces, not a physiological prediction.
+`projectWorkout` in `lib/domain.ts` extends a part-finished workout to the whole thing:
+observed time kept as measured, only unperformed work extended at the pace you actually
+held at that station, plus a fatigue allowance. A station you never started is never
+given another movement's pace, and one finished but never timed has no pace to offer, so
+it declines rather than guessing.
+
+It is calculated and stored with every session but no longer shown anywhere. The two
+inputs it took were being asked for while you were trying to log a session, which is the
+wrong moment. Nothing was removed from the record, so it can be surfaced again without
+anyone having to fill anything in.
 
 ## Running it
 
