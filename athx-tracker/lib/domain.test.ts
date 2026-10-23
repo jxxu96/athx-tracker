@@ -15,6 +15,7 @@ import {
   fromKilograms,
   parseTime,
   projectWorkout,
+  scenarioLine,
   sumMacros,
   toKilograms,
   type Segment,
@@ -252,6 +253,59 @@ test("a finished workout projects to itself", () => {
   assert.equal(done.partial, false);
   assert.equal(done.estimate, 1800);
   assert.equal(done.coverage, 100);
+});
+
+test("a saved session shows the full-workout scenario as one line, or nothing", () => {
+  const half = workout({
+    seconds: 300,
+    segments: [segment({ completed: 15, target: 30, seconds: 120 })],
+  });
+  const projected = projectWorkout(
+    half.segments,
+    half.seconds,
+    half.fatigue,
+    half.transition,
+  );
+  assert.ok(projected?.partial);
+  assert.equal(
+    scenarioLine(half),
+    `At this pace, the whole session is about ${formatTime(projected!.estimate)}.`,
+  );
+
+  assert.equal(
+    scenarioLine(workout({
+      seconds: 1800,
+      segments: [segment({ completed: 30, target: 30 })],
+    })),
+    null,
+    "a finished station only repeats the time already logged",
+  );
+  assert.equal(
+    scenarioLine(workout({ seconds: 0, segments: [segment()] })),
+    null,
+    "an untimed session",
+  );
+  assert.equal(
+    scenarioLine(workout({ seconds: 1800, segments: [] })),
+    null,
+    "no stations",
+  );
+  assert.equal(
+    scenarioLine(workout({
+      seconds: 1800,
+      segments: [segment({ completed: 10, seconds: 0 })],
+    })),
+    null,
+    "unfinished work with no pace",
+  );
+  assert.equal(
+    scenarioLine(workout({
+      seconds: 100,
+      segments: [segment({ seconds: 2000 })],
+    })),
+    null,
+    "station times that cannot fit the elapsed time",
+  );
 });
 
 test("a partial workout projects past what was observed", () => {

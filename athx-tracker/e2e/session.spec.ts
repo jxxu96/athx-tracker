@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { formatTime, projectWorkout } from "../lib/domain.ts";
 import { PASSPHRASE } from "../playwright.config.ts";
 
 // These cover the paths that have actually broken. Every bug that reached the
@@ -200,6 +201,55 @@ test("the name field belongs to Other alone", async ({ page }) => {
       }),
     )
     .toContain("Tennis:");
+});
+
+test("a partial session shows its finish on the log, and an untimed one does not", async ({ page }) => {
+  await athlete(page, "Gators").click();
+  await openSession(page);
+  await typeSelect(page).selectOption("Tennis");
+  await page.getByRole("button", { name: "Station", exact: true }).click();
+  await page
+    .locator("select")
+    .filter({ has: page.locator('option[value="Row"]') })
+    .selectOption("Row");
+  await page.getByLabel("Target").fill("30");
+  await page.getByLabel("Done (reps)").fill("15");
+  await page.getByLabel("Time", { exact: true }).fill("2:00");
+  await elapsed(page).fill("5:00");
+  await page.getByRole("button", { name: "Save session" }).click();
+
+  // Same estimate the log is built from: observed 5:00 kept, the unfinished
+  // half of the station extended at the pace just held, with the stored
+  // fatigue allowance. Not a second copy of that arithmetic.
+  const projected = projectWorkout(
+    [{ name: "Row", unit: "reps", completed: 15, target: 30, seconds: 120 }],
+    300,
+    10,
+    0,
+  );
+  const finish = `At this pace, the whole session is about ${formatTime(projected!.estimate)}.`;
+
+  await page.getByRole("button", { name: "Today", exact: true }).click();
+  await expect(page.getByText(finish)).toBeVisible();
+
+  await page.getByRole("button", { name: "Log", exact: true }).click();
+  const partial = page.getByRole("listitem").filter({ hasText: "Tennis" });
+  await expect(partial.getByText(finish)).toBeVisible();
+
+  await openSession(page);
+  await typeSelect(page).selectOption("Strength");
+  await page
+    .locator("select")
+    .filter({ has: page.locator('option[value="Deadlift"]') })
+    .first()
+    .selectOption("Deadlift");
+  await page.getByLabel("lb", { exact: true }).first().fill("140");
+  await page.getByRole("button", { name: "Save session" }).click();
+  await page.getByRole("button", { name: "Log", exact: true }).click();
+  const untimed = page.getByRole("listitem").filter({ hasText: "Strength" });
+  await expect(untimed.getByText(/· —/)).toBeVisible();
+  await expect(untimed.getByText(/whole session/)).toHaveCount(0);
+  await expect(page.getByText(finish)).toBeVisible();
 });
 
 test("the full-workout scenario is no longer in the form", async ({ page }) => {

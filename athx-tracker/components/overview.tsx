@@ -8,6 +8,7 @@ import {
   categoryName,
   estimateBurn,
   formatTimeOrDash,
+  scenarioLine,
   type RecordItem,
   type Settings,
 } from "@/lib/domain";
@@ -65,6 +66,7 @@ export function Overview({
           (settings.bodyweight ?? { hippos: 0, gators: 0 })[lastSession.athlete],
         )
       : null;
+  const lastScenario = lastSession ? scenarioLine(lastSession) : null;
 
   return (
     <div className="space-y-4">
@@ -150,6 +152,9 @@ export function Overview({
               {lastBurn !== null ? ` · ~${lastBurn} kcal` : ""}
             </p>
           </div>
+          {lastScenario ? (
+            <p className="mt-1 text-xs text-muted-foreground">{lastScenario}</p>
+          ) : null}
           <p className="mt-1 text-xs text-muted-foreground">
             {ATHLETES[lastSession.athlete].name} · {categoryName(lastSession)} ·{" "}
             {lastSession.context === "pairs" ? "Pairs" : "Solo"} · {lastSession.day}

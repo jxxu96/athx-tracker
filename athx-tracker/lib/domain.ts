@@ -125,6 +125,25 @@ export function projectWorkout(segments: Segment[], observedSeconds: number, fat
     partial: pending,
   };
 }
+
+/**
+ * The full-workout finish, read back from a session already saved.
+ * Uses the estimate projectWorkout already makes. A finished session would
+ * only repeat the time that was logged, and a session the scenario withholds
+ * gets no figure at all, not a zero.
+ */
+export function scenarioLine(
+  workout: Pick<Workout, "segments" | "seconds" | "fatigue" | "transition">,
+) {
+  const projected = projectWorkout(
+    workout.segments,
+    workout.seconds,
+    workout.fatigue,
+    workout.transition,
+  );
+  if (!projected?.partial) return null;
+  return `At this pace, the whole session is about ${formatTime(projected.estimate)}.`;
+}
 export function sumMacros(meals: Meal[]): Macros {
   return meals.reduce((out, m) => {
     for (const k of ["calories", "protein", "carbs", "fat"] as const) out[k] += m.macros[k];

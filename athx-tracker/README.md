@@ -12,8 +12,9 @@ single SQLite file on a volume.
   the daily targets. A longer range is the daily average of days that have a meal,
   so a day you forgot to log is not treated as a day you ate nothing, with the
   totals written under the bars. Total expenditure is the training burn for the
-  same range, summed across both athletes. The last session, with its time and
-  what it burned, and the ATHX Lite running order stay underneath.
+  same range, summed across both athletes. The last session stays underneath,
+  with its time, what it burned, and the whole-session estimate when the
+  stations support one, and so does the ATHX Lite running order.
 - **Session** — log a workout as MetCon, Strength, Endurance, Solidcore, Tennis or
   Other, with Solidcore and tennis a tap away under Quick start. Load the seven
   ATHX stations with one tap, then fill in what you completed and each split.
@@ -51,10 +52,13 @@ held at that station, plus a fatigue allowance. A station you never started is n
 given another movement's pace, and one finished but never timed has no pace to offer, so
 it declines rather than guessing.
 
-It is calculated and stored with every session but no longer shown anywhere. The two
-inputs it took were being asked for while you were trying to log a session, which is the
-wrong moment. Nothing was removed from the record, so it can be surfaced again without
-anyone having to fill anything in.
+It is worked out again from the stations, fatigue and transition already on the
+session, not stored as a second figure that could drift. Reading a part-finished
+session shows it as one line, on the log entry and on Today's last session: the
+estimated finish as a clock time, beside the time and the burn. A session with no
+stations, no elapsed time, unfinished work that has no pace, or station times that
+cannot fit the elapsed time shows nothing, not a zero. Logging still does not ask
+for it.
 
 ## Running it
 

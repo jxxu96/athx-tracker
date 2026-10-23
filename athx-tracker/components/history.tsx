@@ -13,6 +13,7 @@ import {
   estimateBurn,
   formatTimeOrDash,
   formatWeight,
+  scenarioLine,
   type Athlete,
   type RecordItem,
   type Settings,
@@ -137,7 +138,9 @@ export function History({
             <ul className="divide-y">
               {visible
                 .filter((record) => record.day === day)
-                .map((record) => (
+                .map((record) => {
+                  const finish = isWorkout(record) ? scenarioLine(record) : null;
+                  return (
                   <li key={record.id} className="flex items-start gap-3 p-4">
                     <span
                       className="mt-1.5 size-2.5 shrink-0 rounded-full"
@@ -160,6 +163,11 @@ export function History({
                               ? ` · ~${burnedFor(record)} kcal`
                               : ""}
                           </p>
+                          {finish ? (
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              {finish}
+                            </p>
+                          ) : null}
                           {record.segments.length > 0 ? (
                             <p className="mt-0.5 text-xs text-muted-foreground">
                               {record.segments.length} station
@@ -240,7 +248,8 @@ export function History({
                       </div>
                     )}
                   </li>
-                ))}
+                  );
+                })}
             </ul>
           </section>
         ))
