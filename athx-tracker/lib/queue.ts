@@ -2,6 +2,12 @@ import { z } from "zod";
 import { database, runtime } from "./server";
 import { macroSchema } from "./validation";
 import type { Meal } from "./domain";
+import {
+  RETRY_MAX_MS,
+  RETRY_MIN_MS,
+  fillQueuedMeal,
+  nextRetryDelay,
+} from "./queue-rules";
 
 /**
  * Meals saved while the estimator could not answer are stored with source
@@ -20,8 +26,6 @@ const estimateSchema = macroSchema.extend({
 
 /** No browser deadline here, so a slow CLI is merely slow, not a failure. */
 const QUEUE_BUDGET_MS = 150_000;
-const RETRY_MIN_MS = 2 * 60 * 1000;
-const RETRY_MAX_MS = 30 * 60 * 1000;
 
 async function estimate(description: string) {
   const config = runtime();
@@ -58,18 +62,7 @@ export async function drainQueue() {
     // Still failing: stop rather than burn through the rest and fail each.
     if (!result) break;
 
-    const updated: Meal = {
-      ...meal,
-      name: meal.name.trim() || result.name,
-      macros: {
-        calories: result.calories,
-        protein: result.protein,
-        carbs: result.carbs,
-        fat: result.fat,
-      },
-      assumptions: result.assumptions,
-      source: "grok",
-    };
+    const updated = fillQueuedMeal(meal, result);
     database()
       .prepare("UPDATE records SET payload = ? WHERE id = ?")
       .run(JSON.stringify(updated), meal.id);
@@ -95,17 +88,10 @@ export function startQueueWorker() {
   let wait = RETRY_MIN_MS;
   const run = async () => {
     try {
-      const { filled, waiting } = await drainQueue();
-      // Back off only while there is work that is not getting done. Nothing
-      // queued is not a failure, and one success means the estimator is back,
-      // so a long outage does not leave a long wait behind it.
-      wait =
-        waiting > 0 && filled === 0
-          ? Math.min(RETRY_MAX_MS, wait * 2)
-          : RETRY_MIN_MS;
+      wait = nextRetryDelay(wait, await drainQueue());
     } catch (error) {
       console.error(`[queue] drain failed: ${(error as Error).message}`);
-      wait = Math.min(RETRY_MAX_MS, wait * 2);
+      wait = nextRetryDelay(wait, "failed");
     }
     setTimeout(run, wait).unref?.();
   };
