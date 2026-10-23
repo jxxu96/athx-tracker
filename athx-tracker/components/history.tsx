@@ -10,6 +10,7 @@ import {
 import {
   ATHLETES,
   categoryName,
+  completionLine,
   estimateBurn,
   formatTimeOrDash,
   formatWeight,
@@ -173,6 +174,22 @@ export function History({
                               {record.segments.length} station
                               {record.segments.length === 1 ? "" : "s"} ·{" "}
                               {record.context === "pairs" ? "Pairs" : "Solo"}
+                            </p>
+                          ) : null}
+                          {completionLine(record) ? (
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              {completionLine(record)}
+                            </p>
+                          ) : null}
+                          {record.segments.some((segment) => segment.kg) ? (
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              {record.segments
+                                .filter((segment) => segment.kg)
+                                .map(
+                                  (segment) =>
+                                    `${segment.name} ${formatWeight(segment.kg ?? 0, weightUnit)}`,
+                                )
+                                .join(" · ")}
                             </p>
                           ) : null}
                           {record.lifts.length > 0 ? (

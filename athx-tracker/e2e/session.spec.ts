@@ -8,7 +8,7 @@ import { PASSPHRASE } from "../playwright.config.ts";
 // over what had been typed, a control showing one theme while the page showed
 // another.
 
-const CATEGORIES = ["MetCon", "Strength", "Endurance", "Solidcore", "Tennis", "Other"];
+const CATEGORIES = ["MetCon", "Strength", "Endurance", "Mixed", "Solidcore", "Tennis", "Other"];
 
 async function signIn(page: Page) {
   await page.goto("/login");
@@ -284,4 +284,52 @@ test("a session reports what it burned, once it can", async ({ page }) => {
   // And on the panel that puts the last session in front of you.
   await page.getByRole("button", { name: "Today", exact: true }).click();
   await expect(page.getByText(/60:00 · ~620 kcal/)).toBeVisible();
+});
+
+test("one session holds lifts, a part-finished MetCon with loads, and a run", async ({ page }) => {
+  await athlete(page, "Gators").click();
+  await openSession(page);
+  await typeSelect(page).selectOption("Mixed");
+
+  // Weights switched here are remembered, and the boxes read in the new unit.
+  await page.getByRole("group", { name: "Weight unit" }).getByRole("button", { name: "kg" }).click();
+
+  await page
+    .locator("select")
+    .filter({ has: page.locator('option[value="Deadlift"]') })
+    .first()
+    .selectOption("Deadlift");
+  await page.getByLabel("kg", { exact: true }).fill("100");
+
+  await page.getByRole("button", { name: "ATHX circuit" }).click();
+  await page.getByLabel("Done (cal)").first().fill("40");
+  await page.getByLabel("Done (reps)").first().fill("20");
+  await page.getByLabel("Gators DB ground to overhead load").fill("12.5");
+  await page.getByLabel(/stopped at the time cap/).check();
+
+  await page.getByRole("button", { name: "Endurance" }).click();
+  await page.getByLabel("Covered (m)").fill("1000");
+  await elapsed(page).fill("30:00");
+  await page.getByRole("button", { name: "Save session" }).click();
+
+  const saved = await page.evaluate(async () => {
+    const data = await fetch("/api/records").then((r) => r.json());
+    const settings = await fetch("/api/settings").then((r) => r.json());
+    return { record: data.records[0], unit: settings.settings.weightUnit };
+  });
+  expect(saved.unit).toBe("kg");
+  expect(saved.record.category).toBe("Mixed");
+  expect(saved.record.capHit).toBe(true);
+  expect(saved.record.lifts[0].kg).toBe(100);
+  const g2oh = saved.record.segments.find((s: { name: string }) => s.name === "DB ground to overhead");
+  expect(g2oh.kg).toBe(12.5);
+  expect(g2oh.completed).toBe(20);
+  const run = saved.record.segments.find((s: { block?: string }) => s.block === "endurance");
+  expect(run).toMatchObject({ name: "Run", completed: 1000, target: 1000 });
+
+  await page.getByRole("button", { name: "Log", exact: true }).click();
+  const entry = page.getByRole("listitem").filter({ hasText: "Strength + MetCon + Endurance" });
+  await expect(entry).toBeVisible();
+  await expect(entry.getByText(/time cap hit/)).toBeVisible();
+  await expect(entry.getByText(/DB ground to overhead 12\.5 kg/)).toBeVisible();
 });

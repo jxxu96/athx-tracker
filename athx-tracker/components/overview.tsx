@@ -6,6 +6,8 @@ import {
   ATHLETES,
   METCON,
   categoryName,
+  completionLine,
+  metconLoadText,
   estimateBurn,
   formatTimeOrDash,
   scenarioLine,
@@ -155,6 +157,11 @@ export function Overview({
           {lastScenario ? (
             <p className="mt-1 text-xs text-muted-foreground">{lastScenario}</p>
           ) : null}
+          {completionLine(lastSession) ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {completionLine(lastSession)}
+            </p>
+          ) : null}
           <p className="mt-1 text-xs text-muted-foreground">
             {ATHLETES[lastSession.athlete].name} · {categoryName(lastSession)} ·{" "}
             {lastSession.context === "pairs" ? "Pairs" : "Solo"} · {lastSession.day}
@@ -178,7 +185,9 @@ export function Overview({
                 <span className="block font-medium">
                   {station.target} {station.unit} · {station.name}
                 </span>
-                <span className="block text-muted-foreground">{station.load}</span>
+                <span className="block text-muted-foreground">
+                  {metconLoadText(station, settings.weightUnit ?? "lb")}
+                </span>
               </span>
             </li>
           ))}

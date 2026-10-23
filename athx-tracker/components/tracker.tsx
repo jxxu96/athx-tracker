@@ -177,7 +177,7 @@ export function Tracker({
   }, []);
 
   const saveSettings = useCallback(
-    async (next: Settings) => {
+    async (next: Settings, notice = "Settings saved") => {
       try {
         const saved = await api<{ settings: Settings; revision: number }>(
           "/api/settings",
@@ -185,7 +185,7 @@ export function Tracker({
         );
         setSettings(saved.settings);
         setRevision(saved.revision);
-        toast.success("Settings saved");
+        toast.success(notice);
       } catch (error) {
         toast.error(message(error));
         // Someone saved from the other phone: pull their version back in.
@@ -276,6 +276,14 @@ export function Tracker({
             today={today}
             sides={sides}
             weightUnit={settings.weightUnit ?? "lb"}
+            onWeightUnit={(weightUnit) =>
+              // The form already reads its boxes in the new unit; this only
+              // remembers the choice. A failure has said so in a toast.
+              void saveSettings(
+                { ...settings, weightUnit },
+                `Weights now in ${weightUnit}`,
+              ).catch(() => {})
+            }
             editing={editing?.kind === "workout" ? editing : null}
             onCancelEdit={() => setEditing(null)}
             onSave={save}
