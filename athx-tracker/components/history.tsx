@@ -21,6 +21,9 @@ import {
 } from "@/lib/domain";
 import { formatDay, isWorkout } from "@/lib/client";
 
+/** Entries drawn at once. More arrive on request, rather than all at once. */
+const PAGE = 100;
+
 export function History({
   records,
   today,
@@ -55,13 +58,19 @@ export function History({
   const [kind, setKind] = useState<"all" | "workout" | "meal">("all");
   const [pending, setPending] = useState("");
   const [busy, setBusy] = useState("");
+  const [shown, setShown] = useState(PAGE);
 
-  const visible = records.filter(
+  const matching = records.filter(
     (record) =>
       (athlete === "all" || record.athlete === athlete) &&
       (kind === "all" || record.kind === kind),
   );
 
+  // Each entry is about twenty elements, so the whole journal on screen at once
+  // is tens of thousands of them: enough to make a phone stutter now and to
+  // stop it responding by the time there are years of them. What is loaded and
+  // what is drawn are separate questions, and this answers the second.
+  const visible = matching.slice(0, shown);
   const days = [...new Set(visible.map((record) => record.day))];
 
   async function remove(id: string) {
@@ -94,16 +103,19 @@ export function History({
       ) : null}
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">
-          {visible.length} entr{visible.length === 1 ? "y" : "ies"}
+          {matching.length} entr{matching.length === 1 ? "y" : "ies"}
         </p>
         <div className="[&>div]:w-auto">
           <NativeSelect
             size="sm"
             value={kind}
             aria-label="Filter by entry type"
-            onChange={(event) =>
-              setKind(event.target.value as "all" | "workout" | "meal")
-            }
+            onChange={(event) => {
+              setKind(event.target.value as "all" | "workout" | "meal");
+              // A new filter is a new list; starting it part-scrolled would be
+              // showing the middle of something nobody has seen the top of.
+              setShown(PAGE);
+            }}
           >
             <NativeSelectOption value="all">Everything</NativeSelectOption>
             <NativeSelectOption value="workout">Sessions</NativeSelectOption>
@@ -233,6 +245,22 @@ export function History({
           </section>
         ))
       )}
+
+      {matching.length > shown ? (
+        <div className="flex flex-col items-center gap-1 pt-1">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setShown((current) => current + PAGE)}
+          >
+            Show more
+          </Button>
+          <p className="text-[11px] text-muted-foreground">
+            Showing {shown} of {matching.length}.
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }

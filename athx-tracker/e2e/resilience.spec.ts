@@ -126,3 +126,38 @@ test("the estimator test confirms a working one", async ({ page }) => {
   await page.getByRole("button", { name: "Test", exact: true }).click();
   await expect(page.getByText(/Working\. A test banana came back as 105 kcal\./)).toBeVisible();
 });
+
+test("the log draws a windowful, however much is loaded", async ({ page }) => {
+  await signIn(page);
+  // Each entry is around twenty elements. Drawing a whole journal at once is
+  // tens of thousands of them, which is how a phone stops responding.
+  await page.evaluate(async () => {
+    for (let i = 0; i < 120; i += 1) {
+      await fetch("/api/records", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: crypto.randomUUID(),
+          kind: "meal",
+          athlete: i % 2 ? "gators" : "hippos",
+          day: new Date(Date.now() - i * 43200000).toISOString().slice(0, 10),
+          name: `Seeded meal ${i}`,
+          meal: "Lunch",
+          macros: { calories: 500, protein: 30, carbs: 50, fat: 15 },
+          source: "manual",
+          assumptions: "",
+        }),
+      });
+    }
+  });
+  await page.reload();
+
+  await page.getByRole("button", { name: "Log", exact: true }).click();
+  await expect(page.getByText("120 entries")).toBeVisible();
+  await expect(page.getByText("Showing 100 of 120.")).toBeVisible();
+  expect(await page.getByLabel("Delete entry").count()).toBe(100);
+
+  await page.getByRole("button", { name: "Show more" }).click();
+  expect(await page.getByLabel("Delete entry").count()).toBe(120);
+  await expect(page.getByRole("button", { name: "Show more" })).toHaveCount(0);
+});
