@@ -1,8 +1,8 @@
 import { BodyTooLarge, database, guard, json, readBody, runtime, tooLarge } from "@/lib/server";
 import { grokRequest, extractEstimate } from "@/lib/grok";
 import { gatewayAllowed } from "@/lib/gateway";
-import { reconciledEstimateSchema } from "@/lib/validation";
-import { z } from "zod";
+import { estimateRequestSchema, reconciledEstimateSchema } from "@/lib/validation";
+import { estimatePrompt } from "@/lib/estimate-conversation";
 
 const DAILY_LIMIT = 60;
 
@@ -124,9 +124,8 @@ export async function POST(request: Request) {
       503,
     );
   try {
-    const { description } = z
-      .object({ description: z.string().trim().min(3).max(4000) })
-      .parse(await readBody(request));
+    const input = estimateRequestSchema.parse(await readBody(request));
+    const description = estimatePrompt(input.description, input.refinement);
 
     const bucket = new Date().toISOString().slice(0, 10);
     if (!claimEstimate(bucket))

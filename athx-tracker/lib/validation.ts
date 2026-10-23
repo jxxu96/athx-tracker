@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CONVERSATION_LIMIT, MAX_REPLIES, REPLY_LIMIT } from "./estimate-conversation.ts";
 import { mealCalorieError, reconcileEstimate } from "./meal-calories.ts";
 const finite = z.number().finite().nonnegative();
 export const macroSchema = z.object({
@@ -39,6 +40,16 @@ export const estimateSchema = macroSchema.extend({
   assumptions: z.string().max(3000),
   confidence: z.enum(["low", "medium", "high"]),
 });
+/** Keep the latest estimate and every user correction within a bounded request. */
+export const estimateRequestSchema = z.object({
+  description: z.string().trim().min(3).max(4000),
+  refinement: z.object({
+    previous: estimateSchema,
+    replies: z.array(z.string().trim().min(1).max(REPLY_LIMIT)).min(1).max(MAX_REPLIES)
+      .refine((replies) => replies.join("").length <= CONVERSATION_LIMIT, "Conversation is too long."),
+  }).strict().optional(),
+}).strict();
+
 // Both interactive estimates and the background queue use this boundary.
 // Validate again after reconciliation so derived calories cannot exceed the cap.
 export const reconciledEstimateSchema = estimateSchema.transform(reconcileEstimate).pipe(estimateSchema);

@@ -133,6 +133,7 @@ const INSTRUCTIONS = [
   "Do not give dietary advice.",
   "Do not claim to have looked anything up or checked it against a database:",
   "these are figures you recall, and you have no network access.",
+  "When the description contains mealDescription, previousEstimate and replies, continue that meal conversation. Apply all user corrections in replies, with newer facts taking priority over older assumptions. Answer the latest question in assumptions and explain any changes. Keep the previous totals when the reply only asks a question without changing the food or portions.",
   "Output only the required JSON.",
 ].join(" ");
 
@@ -607,10 +608,13 @@ const server = createServer((request, response) => {
 
   if (request.method !== "POST") return send(response, 405, { error: "POST only" });
 
+  // Follow-ups include the previous estimate and earlier corrections. Decode
+  // across chunk boundaries so longer descriptions preserve Unicode too.
+  request.setEncoding("utf8");
   let body = "";
   request.on("data", (chunk) => {
     body += chunk;
-    if (body.length > 8000) request.destroy();
+    if (body.length > 64000) request.destroy();
   });
   request.on("end", async () => {
     let description = "";
@@ -625,7 +629,7 @@ const server = createServer((request, response) => {
     } catch {
       return send(response, 400, { error: "Expected JSON with a description." });
     }
-    if (description.length < 3 || description.length > 4000)
+    if (description.length < 3 || description.length > 40000)
       return send(response, 400, { error: "Describe the meal in a little more detail." });
 
     const result = await estimate(description, budget);

@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { Clock, Sparkles } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Clock, MessageCircle, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { CONVERSATION_LIMIT, MAX_REPLIES, REPLY_LIMIT, type MealEstimate as Estimate } from "@/lib/estimate-conversation";
 import { Field } from "@/components/workout-form";
 import { ATHLETES, type Macros, type Meal } from "@/lib/domain";
 import { api, message, newId } from "@/lib/client";
@@ -33,11 +35,11 @@ const LIMITS: Macros = { calories: 20000, protein: 2000, carbs: 3000, fat: 2000 
 type MacroDraft = Record<keyof Macros, string>;
 const emptyMacros: MacroDraft = { calories: "", protein: "", carbs: "", fat: "" };
 
-type Estimate = Macros & {
-  name: string;
-  assumptions: string;
-  confidence: "low" | "medium" | "high";
-};
+type EstimateTurn = { reply?: string; estimate: Estimate };
+
+function savedEstimate(meal: Pick<Meal, "name" | "macros" | "assumptions">): Estimate {
+  return { ...meal.macros, name: meal.name, assumptions: meal.assumptions, confidence: "low" };
+}
 
 function Choice<T extends string>({
   label,
@@ -106,7 +108,7 @@ export function MealForm({
   const who: LoggingFor = editing ? editing.athlete : loggingFor;
   const [day, setDay] = useState(editing?.day ?? today);
   const [slot, setSlot] = useState<Meal["meal"]>(editing?.meal ?? "Lunch");
-  const [description, setDescription] = useState("");
+  const [description, setDescription] = useState(editing?.source === "queued" ? editing.assumptions : editing?.name ?? "");
   const [name, setName] = useState(editing?.name ?? "");
   const [macros, setMacros] = useState<MacroDraft>(() =>
     editing
@@ -126,6 +128,25 @@ export function MealForm({
   const [offline, setOffline] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [conversation, setConversation] = useState<EstimateTurn[]>(() =>
+    editing && editing.source !== "queued" ? [{ estimate: savedEstimate(editing) }] : [],
+  );
+  const [reply, setReply] = useState("");
+  const [replyError, setReplyError] = useState("");
+  const [refineOpen, setRefineOpen] = useState(false);
+  const conversationLog = useRef<HTMLDivElement>(null);
+  const replyButton = useRef<HTMLButtonElement>(null);
+  const replies = conversation.flatMap((turn) => turn.reply ? [turn.reply] : []);
+  const conversationFull = replies.length >= MAX_REPLIES ||
+    replies.join("").length + reply.trim().length > CONVERSATION_LIMIT;
+  const canReply = grokReady && !estimating && !saving && !conversationFull &&
+    reply.trim().length > 0 && reply.trim().length <= REPLY_LIMIT;
+
+  useEffect(() => {
+    if (refineOpen && conversationLog.current)
+      conversationLog.current.scrollTop = conversationLog.current.scrollHeight;
+  }, [refineOpen, conversation.length]);
+
   // Stable across attempts. The endpoint upserts on id, so a retry after a
   // half-failed save corrects the athlete that landed rather than adding a
   // second copy. New ids only once the whole submit is through.
@@ -153,15 +174,38 @@ export function MealForm({
     setConfidence(null);
     setSource("manual");
     setAdjusted(false);
+    setConversation([]);
+    setReply("");
+    setReplyError("");
+    setRefineOpen(false);
+    setOffline(false);
   }
 
-  async function estimate() {
+  async function estimate(followUp?: string) {
+    if (estimating || saving) return;
+    const refining = followUp !== undefined;
+    const previous = conversation.at(-1)?.estimate;
+    if (refining && (!previous || !canReply)) return;
     setError("");
+    setReplyError("");
     setEstimating(true);
     try {
       const { estimate } = await api<{ estimate: Estimate }>("/api/estimate", {
         method: "POST",
-        body: JSON.stringify({ description: description.trim() }),
+        body: JSON.stringify({
+          description: description.trim().length >= 3 ? description.trim() : `Meal: ${name.trim()}`,
+          ...(refining && previous ? {
+            refinement: {
+              previous: {
+                ...previous,
+                ...(canCheckCalories ? parsedMacros : {}),
+                name: name.trim() || previous.name,
+                assumptions,
+              },
+              replies: [...replies, followUp],
+            },
+          } : {}),
+        }),
       });
       setName(estimate.name.slice(0, 300));
       setMacros({
@@ -174,12 +218,21 @@ export function MealForm({
       setConfidence(estimate.confidence);
       setSource("grok");
       setAdjusted(false);
+      setOffline(false);
+      setConversation((current) => refining
+        ? [...current, { reply: followUp, estimate }]
+        : [{ estimate }]);
+      setReply("");
     } catch (problem) {
+      if (refining) {
+        setReplyError(`${message(problem)} Your current estimate and reply have been kept.`);
+        return;
+      }
       setError(message(problem));
       // Anything but a rejected description is worth queueing: unreachable,
       // both CLIs failing, the daily cap. Only 400 means rewording would help,
       // and the queue spends no quota, so a capped meal still gets filled.
-      setOffline((problem as Error & { status?: number }).status !== 400);
+      setOffline(conversation.length === 0 && (problem as Error & { status?: number }).status !== 400);
     } finally {
       setEstimating(false);
     }
@@ -202,6 +255,11 @@ export function MealForm({
 
   function applyCommon(athlete: "hippos" | "gators", suggestion: CommonMeal) {
     if (loggingFor !== athlete) onLoggingFor(athlete);
+    setDescription(suggestion.name);
+    setConversation([{ estimate: savedEstimate(suggestion) }]);
+    setReply("");
+    setReplyError("");
+    setOffline(false);
     setName(suggestion.name);
     setSlot(suggestion.meal);
     setMacros({
@@ -283,6 +341,7 @@ export function MealForm({
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (estimating || saving) return;
     const problem = validate();
     setError(problem);
     if (problem) return;
@@ -306,6 +365,7 @@ export function MealForm({
 
   return (
     <form onSubmit={submit} className="space-y-4 pb-4">
+      <fieldset disabled={estimating || saving} className="min-w-0 space-y-4">
       {editing ? (
         <div className="flex items-center justify-between gap-3 rounded-2xl border bg-muted/50 p-3">
           <p className="text-xs">
@@ -398,11 +458,12 @@ export function MealForm({
           <h3 className="text-sm font-semibold">Describe it</h3>
           <p className="text-[11px] text-muted-foreground">
             {grokReady
-              ? "Grok reads the description and fills the macros. Check them before saving."
-              : "Grok is not connected, so enter the macros yourself below."}
+              ? "The estimator fills the macros. Review its assumptions, then reply to refine them."
+              : "The estimator is not connected, so enter the macros yourself below."}
           </p>
         </div>
         <Textarea
+          aria-label="Meal description"
           value={description}
           maxLength={4000}
           rows={3}
@@ -414,7 +475,7 @@ export function MealForm({
           variant="outline"
           className="w-full"
           disabled={!grokReady || estimating || description.trim().length < 3}
-          onClick={estimate}
+          onClick={() => estimate()}
         >
           <Sparkles />
           {estimating ? "Estimating…" : "Estimate macros"}
@@ -440,6 +501,27 @@ export function MealForm({
           </div>
         ) : null}
       </section>
+
+      {assumptions || conversation.length > 0 ? (
+        <section aria-label="Review estimate" className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
+          <div>
+            <h3 className="text-sm font-semibold">Review the assumptions</h3>
+            <p className="text-xs text-muted-foreground">
+              Different portion, ingredient or preparation? Tell the estimator below.
+            </p>
+          </div>
+          <Field label="Assumptions">
+            <Textarea value={assumptions} maxLength={3000} rows={4}
+              onChange={(event) => setAssumptions(event.target.value)} />
+          </Field>
+          {conversation.length > 0 ? (
+            <Button ref={replyButton} type="button" variant="outline" className="w-full"
+              disabled={!grokReady} onClick={() => setRefineOpen(true)}>
+              <MessageCircle /> Reply to estimate
+            </Button>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
         <Field label="Meal">
@@ -499,16 +581,7 @@ export function MealForm({
           </p>
         ) : null}
 
-        {assumptions ? (
-          <Field label="Assumptions">
-            <Textarea
-              value={assumptions}
-              maxLength={3000}
-              rows={3}
-              onChange={(event) => setAssumptions(event.target.value)}
-            />
-          </Field>
-        ) : null}
+
       </section>
 
       {error ? (
@@ -520,6 +593,61 @@ export function MealForm({
       <Button type="submit" size="lg" className="w-full" disabled={saving}>
         {saving ? "Saving…" : editing ? "Update meal" : "Save meal"}
       </Button>
+      </fieldset>
+      <Dialog open={refineOpen} onOpenChange={setRefineOpen}>
+        <DialogContent className="flex max-h-[85dvh] flex-col p-4 sm:p-6"
+          onCloseAutoFocus={(event) => { event.preventDefault(); replyButton.current?.focus(); }}>
+          <DialogHeader className="shrink-0 pr-6 text-left">
+            <DialogTitle>Refine estimate</DialogTitle>
+            <DialogDescription>
+              Add a detail or ask a question. Each reply updates the meal below; save it when you’re happy.
+            </DialogDescription>
+          </DialogHeader>
+          <div ref={conversationLog} role="log" aria-label="Estimate conversation"
+            aria-live="polite" aria-relevant="additions"
+            className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain rounded-xl border bg-muted/20 p-3">
+            <div className="ml-6 rounded-xl bg-accent p-3 text-sm">
+              <p className="mb-1 text-xs font-semibold">Meal description</p>
+              <p className="whitespace-pre-wrap break-words">{description || name}</p>
+            </div>
+            {conversation.map((turn, index) => (
+              <div key={index} className="space-y-2">
+                {turn.reply ? (
+                  <div className="ml-6 rounded-xl bg-accent p-3 text-sm">
+                    <p className="mb-1 text-xs font-semibold">You</p>
+                    <p className="whitespace-pre-wrap break-words">{turn.reply}</p>
+                  </div>
+                ) : null}
+                <div className="mr-3 rounded-xl border bg-card p-3 text-sm">
+                  <p className="mb-1 text-xs font-semibold">Estimator</p>
+                  <p className="whitespace-pre-wrap break-words">{turn.estimate.assumptions || "No assumptions supplied."}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {Math.round(turn.estimate.calories)} kcal · {Math.round(turn.estimate.protein)} g protein · {Math.round(turn.estimate.carbs)} g carbs · {Math.round(turn.estimate.fat)} g fat
+                  </p>
+                </div>
+              </div>
+            ))}
+            {estimating ? <p role="status" className="text-sm text-muted-foreground">Re-estimating with your reply…</p> : null}
+          </div>
+          <div className="shrink-0 space-y-2">
+            <Label htmlFor="estimate-reply">Your reply</Label>
+            <Textarea id="estimate-reply" value={reply} maxLength={REPLY_LIMIT} rows={3}
+              disabled={estimating || saving}
+              placeholder="It was 150 g of cooked rice, with no oil. Or: why is the fat so high?"
+              onChange={(event) => { setReply(event.target.value); setReplyError(""); }} />
+            <p className="text-xs text-muted-foreground">
+              {conversationFull ? "This conversation is full. Add the final details to the meal description and estimate again." : "Earlier replies are included. A successful reply uses one estimate."}
+            </p>
+            {replyError ? <p role="alert" className="text-sm text-destructive">{replyError}</p> : null}
+          </div>
+          <DialogFooter className="shrink-0">
+            <Button type="button" variant="outline" onClick={() => setRefineOpen(false)}>Back to meal</Button>
+            <Button type="button" disabled={!canReply} onClick={() => estimate(reply.trim())}>
+              <Sparkles /> {estimating ? "Re-estimating…" : "Send & re-estimate"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </form>
   );
 }
