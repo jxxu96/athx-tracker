@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Field } from "@/components/workout-form";
 import { ATHLETES, type Macros, type Meal } from "@/lib/domain";
 import { api, message, newId } from "@/lib/client";
+import { CALORIE_TOLERANCE, macroCalories, mealCalorieError } from "@/lib/meal-calories";
 
 const MACRO_FIELDS = [
   { key: "calories", label: "Calories", unit: "kcal" },
@@ -122,6 +123,17 @@ export function MealForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  const parsedMacros = MACRO_FIELDS.reduce((out, { key }) => {
+    out[key] = Number(macros[key].trim());
+    return out;
+  }, {} as Macros);
+  const canCheckCalories = MACRO_FIELDS.some(({ key }) => macros[key].trim() !== "") &&
+    MACRO_FIELDS.every(({ key }) => Number.isFinite(parsedMacros[key]) &&
+      parsedMacros[key] >= 0 && parsedMacros[key] <= LIMITS[key]);
+  const breakdown = macroCalories(parsedMacros);
+  const calorieError = canCheckCalories ? mealCalorieError(parsedMacros) : "";
+  const formatCalories = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 1 });
+
   function reset() {
     setDescription("");
     setName("");
@@ -164,6 +176,7 @@ export function MealForm({
 
   function setMacro(key: keyof Macros, value: string) {
     setMacros((current) => ({ ...current, [key]: value }));
+    setError("");
     if (source === "grok") {
       setSource("manual");
       setAdjusted(true);
@@ -207,9 +220,9 @@ export function MealForm({
         return `${label} needs a number of zero or more.`;
       if (value > LIMITS[key]) return `${label} looks too high.`;
     }
-    if (MACRO_FIELDS.every(({ key }) => (macros[key].trim() || "0") === "0"))
+    if (MACRO_FIELDS.every(({ key }) => parsedMacros[key] === 0))
       return "Add at least one macro value.";
-    return "";
+    return mealCalorieError(parsedMacros);
   }
 
   async function submit(event: React.FormEvent) {
@@ -225,10 +238,7 @@ export function MealForm({
       day,
       name: name.trim(),
       meal: slot,
-      macros: MACRO_FIELDS.reduce((out, { key }) => {
-        out[key] = macros[key].trim() === "" ? 0 : Number(macros[key]);
-        return out;
-      }, {} as Macros),
+      macros: parsedMacros,
       source,
       assumptions: assumptions.trim().slice(0, 3000),
     };
@@ -350,6 +360,33 @@ export function MealForm({
             </Field>
           ))}
         </div>
+
+        {canCheckCalories ? (
+          <div className="space-y-2 rounded-xl border bg-muted/40 p-3">
+            <div role="status" aria-live="polite" aria-atomic="true" className="space-y-1">
+              <p className="text-xs font-medium">
+                From macros: {formatCalories(breakdown.total)} kcal
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Protein {formatCalories(breakdown.protein)} + carbs {formatCalories(breakdown.carbs)} + fat {formatCalories(breakdown.fat)} kcal
+              </p>
+              <p className={`text-xs ${calorieError ? "text-destructive" : "text-muted-foreground"}`}>
+                {calorieError
+                  ? `Total is ${formatCalories(Math.abs(parsedMacros.calories - breakdown.total))} kcal ${parsedMacros.calories > breakdown.total ? "above" : "below"} the macros. Adjust the numbers before saving.`
+                  : `Calories match${parsedMacros.calories === breakdown.total ? "." : ` within ${CALORIE_TOLERANCE} kcal for rounding.`}`}
+              </p>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Protein and carbs: 4 kcal/g · Fat: 9 kcal/g. Estimates use this total.
+            </p>
+            {parsedMacros.calories !== Math.round(breakdown.total) && breakdown.total <= LIMITS.calories ? (
+              <Button type="button" variant="outline" size="sm"
+                onClick={() => setMacro("calories", String(Math.round(breakdown.total)))}>
+                Use macro total
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
 
         {confidence ? (
           <p className="text-xs text-muted-foreground">

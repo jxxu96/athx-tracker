@@ -30,7 +30,8 @@ test("a cookie nobody issued is refused", () => {
 test("altering either half invalidates it", () => {
   as("a real passphrase", () => {
     const [expiry, mac] = issue().split(".");
-    assert.ok(!valid(`${expiry}.${mac.slice(0, -1)}0`), "signature changed");
+    const changed = mac.endsWith("0") ? "1" : "0";
+    assert.ok(!valid(`${expiry}.${mac.slice(0, -1)}${changed}`), "signature changed");
     assert.ok(!valid(`${Number(expiry) + 1000}.${mac}`), "expiry extended");
     assert.ok(!valid(`${expiry}.${mac}extra`), "signature lengthened");
     assert.ok(!valid(`${expiry}.`), "signature removed");

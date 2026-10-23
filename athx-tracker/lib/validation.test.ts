@@ -80,7 +80,7 @@ test("a meal needs an athlete who eats", () => {
   const meal = {
     id: "3f1a5f2e-9c4b-4d7a-8e21-6b0c9d5a1234", kind: "meal", athlete: "gators",
     day: "2026-10-22", name: "Oats", meal: "Breakfast",
-    macros: { calories: 400, protein: 20, carbs: 50, fat: 10 },
+    macros: { calories: 370, protein: 20, carbs: 50, fat: 10 },
     source: "manual", assumptions: "",
   };
   assert.ok(ok(recordSchema, meal));
@@ -142,7 +142,7 @@ test("the schema cannot permit a record the server would refuse to read", () => 
     id: "3f1a5f2e-9c4b-4d7a-8e21-6b0c9d5a1235",
     kind: "meal", athlete: "gators", day: "2026-10-22",
     name: fill(300, "M"), meal: "Lunch",
-    macros: { calories: 20000, protein: 2000, carbs: 3000, fat: 2000 },
+    macros: { calories: 20000, protein: 2000, carbs: 3000, fat: 0 },
     source: "grok", assumptions: fill(3000, "A"),
   };
 
@@ -199,7 +199,13 @@ test("the app and the estimator describe an estimate the same way", async () => 
   // cannot import anything from here. Nothing kept the two in step, which is
   // how the direct API path spent a while asking a different question from the
   // one the estimator was asking.
-  const { SCHEMA } = await import("../../estimator/server.mjs");
+  // This test process needs its own token fixture, just like server.test.mjs.
+  const previousToken = process.env.ESTIMATOR_TOKEN;
+  process.env.ESTIMATOR_TOKEN = "test-token-at-least-16-chars";
+  const { SCHEMA } = await import("../../estimator/server.mjs").finally(() => {
+    if (previousToken === undefined) delete process.env.ESTIMATOR_TOKEN;
+    else process.env.ESTIMATOR_TOKEN = previousToken;
+  });
   const { foodFormat } = await import("./grok.ts");
 
   assert.deepEqual(

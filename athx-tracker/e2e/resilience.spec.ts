@@ -143,7 +143,7 @@ test("the log draws a windowful, however much is loaded", async ({ page }) => {
           day: new Date(Date.now() - i * 43200000).toISOString().slice(0, 10),
           name: `Seeded meal ${i}`,
           meal: "Lunch",
-          macros: { calories: 500, protein: 30, carbs: 50, fat: 15 },
+          macros: { calories: 455, protein: 30, carbs: 50, fat: 15 },
           source: "manual",
           assumptions: "",
         }),

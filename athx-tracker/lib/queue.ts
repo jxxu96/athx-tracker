@@ -1,5 +1,5 @@
 import { database, runtime } from "./server";
-import { estimateSchema } from "./validation";
+import { reconciledEstimateSchema } from "./validation";
 import type { Meal } from "./domain";
 import {
   RETRY_MAX_MS,
@@ -33,7 +33,7 @@ async function estimate(description: string) {
     signal: AbortSignal.timeout(QUEUE_BUDGET_MS + 15_000),
   });
   if (!response.ok) return null;
-  return estimateSchema.parse(await response.json());
+  return reconciledEstimateSchema.parse(await response.json());
 }
 
 function queuedMeals(): Meal[] {
