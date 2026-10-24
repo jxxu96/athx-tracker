@@ -128,9 +128,9 @@ const INSTRUCTIONS = [
   "Set confidence from the weakest basis you relied on:",
   "high only when matched to a label or published figure, medium for standard reference values,",
   "low when extrapolating.",
-  "Calories in kcal; protein, carbohydrates and fat in grams.",
+  "Calories in kcal; protein, carbohydrates, fat and fiber in grams.",
   "Return alcohol as grams of ethanol, separate from carbohydrates; use 0 when there is none. For drinks, estimate ethanol from the stated volume and ABV (mL x ABV/100 x 0.789 g/mL); state any assumed serving size and ABV. Include ethanol at 7 kcal/g in total calories, alongside all food and mixers.",
-  "Carbs means total carbohydrate, including dietary fiber, not net carbs. Preserve the source calorie total rather than forcing it to equal protein x 4 + carbs x 4 + fat x 9 + ethanol x 7. When estimating calories, account for fiber and sugar alcohols using source values where available; do not assume every carb gram provides 4 kcal. Sugar alcohols are not ethanol and must not be included in alcohol grams. Totals cover the entire described meal.",
+  "Carbs means total carbohydrate, including dietary fiber, not net carbs. Return fiber as grams of dietary fiber already included in those carbs; use 0 when there is none, and never more fiber than carbs. Count fiber at 2 kcal/g and the remaining carbohydrate at 4 kcal/g. Preserve the source calorie total rather than forcing it to equal protein x 4 + (carbs - fiber) x 4 + fiber x 2 + fat x 9 + ethanol x 7. When estimating calories, account for sugar alcohols using source values where available; do not assume every remaining carb gram provides 4 kcal. Sugar alcohols are not ethanol and must not be included in alcohol grams or in fiber grams. Totals cover the entire described meal.",
   "Do not give dietary advice.",
   "Do not claim to have looked anything up or checked it against a database:",
   "these are figures you recall, and you have no network access.",
@@ -146,11 +146,12 @@ const SCHEMA = {
     protein: { type: "number", minimum: 0, maximum: 2000 },
     carbs: { type: "number", minimum: 0, maximum: 3000 },
     fat: { type: "number", minimum: 0, maximum: 2000 },
+    fiber: { type: "number", minimum: 0, maximum: 3000 },
     alcohol: { type: "number", minimum: 0, maximum: 500 },
     assumptions: { type: "string" },
     confidence: { type: "string", enum: ["low", "medium", "high"] },
   },
-  required: ["name", "calories", "protein", "carbs", "fat", "alcohol", "assumptions", "confidence"],
+  required: ["name", "calories", "protein", "carbs", "fat", "fiber", "alcohol", "assumptions", "confidence"],
 };
 
 const API_KEY_VARS =
@@ -258,16 +259,20 @@ function clean(value) {
     protein: number(value.protein, 2000),
     carbs: number(value.carbs, 3000),
     fat: number(value.fat, 2000),
+    fiber: number(value.fiber === undefined ? 0 : value.fiber, 3000),
     alcohol: number(value.alcohol === undefined ? 0 : value.alcohol, 500),
     assumptions: String(value.assumptions ?? "").trim().slice(0, 3000),
     confidence: ["low", "medium", "high"].includes(value.confidence)
       ? value.confidence
       : "low",
   };
-  const missing = ["calories", "protein", "carbs", "fat", "alcohol"].some(
+  const missing = ["calories", "protein", "carbs", "fat", "fiber", "alcohol"].some(
     (key) => estimate[key] === null,
   );
-  return estimate.name && !missing ? estimate : null;
+  if (!estimate.name || missing) return null;
+  // Fiber is a subset of total carbs. An estimate that says otherwise is unusable.
+  if (estimate.fiber > estimate.carbs) return null;
+  return estimate;
 }
 
 const PROVIDERS = {
@@ -654,7 +659,7 @@ const server = createServer((request, response) => {
 const runDirectly =
   process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 
-export { SCHEMA, budgetSlice, clean, parseCliOutput, structured };
+export { INSTRUCTIONS, SCHEMA, budgetSlice, clean, parseCliOutput, structured };
 
 if (runDirectly) {
   // Refusing to listen without a token. The check used to run on import, and

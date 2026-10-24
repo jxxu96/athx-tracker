@@ -36,6 +36,7 @@ function copyMacros(macros: Meal["macros"]): Meal["macros"] {
     carbs: macros.carbs,
     fat: macros.fat,
     ...(typeof macros.alcohol === "number" ? { alcohol: macros.alcohol } : {}),
+    ...(typeof macros.fiber === "number" ? { fiber: macros.fiber } : {}),
   };
 }
 

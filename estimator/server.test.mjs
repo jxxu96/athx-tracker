@@ -15,13 +15,26 @@ const { budgetSlice, clean, parseCliOutput, structured } = await import("./serve
 
 const whole = {
   name: "Chicken thigh rice bowl",
-  calories: 780, protein: 46, carbs: 72, fat: 33, alcohol: 0,
+  calories: 780, protein: 46, carbs: 72, fat: 33, fiber: 0, alcohol: 0,
   assumptions: "150 g cooked thigh, 200 g rice.",
   confidence: "medium",
 };
 
 test("a usable estimate survives intact", () => {
   assert.deepEqual(clean(whole), whole);
+});
+
+test("the gateway preserves fiber, accepts an answer with none, and rejects fiber above carbs", () => {
+  assert.equal(clean({ ...whole, fiber: 8.26 }).fiber, 8.3);
+  assert.equal(clean({ ...whole, fiber: 72 }).fiber, 72);
+  const { fiber: omitted, ...old } = whole;
+  assert.equal(omitted, 0);
+  assert.equal(clean(old).fiber, 0);
+  assert.equal(clean({ ...whole, fiber: 80 }), null, "fiber above total carbs");
+  assert.equal(clean({ ...whole, carbs: 10.04, fiber: 10.06 }), null, "rounding must not invent fiber");
+  for (const fiber of [-1, Infinity, "many", 3001]) {
+    assert.equal(clean({ ...whole, carbs: 3000, fiber }), null, String(fiber));
+  }
 });
 
 test("the gateway preserves ethanol, accepts old responses and rejects invalid grams", () => {

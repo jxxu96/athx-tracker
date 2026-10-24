@@ -3,10 +3,25 @@ const finite = z.number().finite().nonnegative();
 export const macroSchema = z.object({
   calories: finite.max(20000), protein: finite.max(2000), carbs: finite.max(3000), fat: finite.max(2000),
 }).strict();
-/** Meal macros only. Daily targets stay on macroSchema, which has no ethanol. */
+/** Meal macros only. Daily targets stay on macroSchema, which has no ethanol or fiber. */
 const mealMacroSchema = macroSchema.extend({
   alcohol: finite.max(500).default(0),
+  /** Dietary fiber, already included in carbs. Older meals omit it. */
+  fiber: finite.max(3000).default(0),
 }).strict();
+function rejectFiberAboveCarbs(
+  macros: { fiber: number; carbs: number },
+  context: z.RefinementCtx,
+  path: (string | number)[],
+) {
+  if (macros.fiber > macros.carbs) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path,
+      message: "Fiber is part of total carbs, so it cannot be higher.",
+    });
+  }
+}
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v => {
   const d = new Date(`${v}T12:00:00Z`);
   return Number.isFinite(d.getTime()) && d.toISOString().slice(0,10) === v;
@@ -46,14 +61,16 @@ export const mealSchema = z.object({
       path: ["macros", "alcohol"],
       message: "Ethanol is only part of an alcohol sitting.",
     });
-    return;
   }
+  rejectFiberAboveCarbs(meal.macros, context, ["macros", "fiber"]);
 });
 /** What an estimator has to come back with, wherever the answer came from. */
 export const estimateSchema = mealMacroSchema.extend({
   name: z.string().min(1).max(300),
   assumptions: z.string().max(3000),
   confidence: z.enum(["low", "medium", "high"]),
+}).superRefine((estimate, context) => {
+  rejectFiberAboveCarbs(estimate, context, ["fiber"]);
 });
 export const recordSchema = z.union([workoutSchema, mealSchema]);
 export const settingsSchema = z.object({

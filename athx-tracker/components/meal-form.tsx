@@ -23,6 +23,7 @@ const MACRO_FIELDS = [
 
 const MEALS = ["Breakfast", "Lunch", "Dinner", "Snack", "Alcohol"] as const;
 const ETHANOL_LIMIT = 500;
+const FIBER_LIMIT = 3000;
 
 /** What the estimator was told each level means, so the word is checkable. */
 const CONFIDENCE_MEANS = {
@@ -37,6 +38,7 @@ const emptyMacros: MacroDraft = { calories: "", protein: "", carbs: "", fat: "" 
 
 type Estimate = Macros & {
   alcohol?: number;
+  fiber?: number;
   name: string;
   assumptions: string;
   confidence: "low" | "medium" | "high";
@@ -127,6 +129,7 @@ export function MealForm({
   const [ethanol, setEthanol] = useState(
     editing?.meal === "Alcohol" ? String(editing.macros.alcohol ?? 0) : "",
   );
+  const [fiber, setFiber] = useState(editing ? String(editing.macros.fiber ?? 0) : "");
   const [assumptions, setAssumptions] = useState(editing?.assumptions ?? "");
   const [confidence, setConfidence] = useState<Estimate["confidence"] | null>(null);
   const [source, setSource] = useState<Meal["source"]>(editing?.source ?? "manual");
@@ -153,9 +156,13 @@ export function MealForm({
   const ethanolOk = slot !== "Alcohol" || (
     Number.isFinite(ethanolGrams) && ethanolGrams >= 0 && ethanolGrams <= ETHANOL_LIMIT
   );
-  const counted = { ...parsedMacros, alcohol: alcoholGrams };
-  const canCheckCalories = ethanolOk &&
-    MACRO_FIELDS.some(({ key }) => macros[key].trim() !== "" || (slot === "Alcohol" && ethanolRaw !== "")) &&
+  const fiberRaw = fiber.trim();
+  const fiberGrams = fiberRaw === "" ? 0 : Number(fiberRaw);
+  const fiberOk = Number.isFinite(fiberGrams) && fiberGrams >= 0 && fiberGrams <= FIBER_LIMIT
+    && Number.isFinite(parsedMacros.carbs) && fiberGrams <= parsedMacros.carbs;
+  const counted = { ...parsedMacros, alcohol: alcoholGrams, fiber: fiberGrams };
+  const canCheckCalories = ethanolOk && fiberOk &&
+    MACRO_FIELDS.some(({ key }) => macros[key].trim() !== "" || (slot === "Alcohol" && ethanolRaw !== "") || fiberRaw !== "") &&
     MACRO_FIELDS.every(({ key }) => Number.isFinite(parsedMacros[key]) &&
       parsedMacros[key] >= 0 && parsedMacros[key] <= LIMITS[key]);
   const breakdown = macroCalories(counted);
@@ -166,6 +173,7 @@ export function MealForm({
     setName("");
     setMacros(emptyMacros);
     setEthanol("");
+    setFiber("");
     setAssumptions("");
     setConfidence(null);
     setSource("manual");
@@ -190,6 +198,7 @@ export function MealForm({
       });
       setName(estimate.name.slice(0, 300));
       setEthanol(String(estimate.alcohol ?? 0));
+      setFiber(String(estimate.fiber ?? 0));
       if ((estimate.alcohol ?? 0) > 0) setSlot("Alcohol");
       setMacros({
         calories: String(estimate.calories),
@@ -238,6 +247,7 @@ export function MealForm({
       fat: String(suggestion.macros.fat),
     });
     setEthanol(suggestion.macros.alcohol ? String(suggestion.macros.alcohol) : "");
+    setFiber(suggestion.macros.fiber ? String(suggestion.macros.fiber) : "");
     setAssumptions(suggestion.assumptions);
     setSource("manual");
     setAdjusted(false);
@@ -279,7 +289,7 @@ export function MealForm({
         day,
         name: name.trim() || text.slice(0, 60),
         meal: slot,
-        macros: { calories: 0, protein: 0, carbs: 0, fat: 0, alcohol: 0 },
+        macros: { calories: 0, protein: 0, carbs: 0, fat: 0, alcohol: 0, fiber: 0 },
         source: "queued",
         assumptions: text.slice(0, 3000),
       });
@@ -304,6 +314,12 @@ export function MealForm({
         return `${label} needs a number of zero or more.`;
       if (value > LIMITS[key]) return `${label} looks too high.`;
     }
+    if (!fiberOk) {
+      if (!Number.isFinite(fiberGrams) || fiberGrams < 0)
+        return "Fiber needs a number of zero or more.";
+      if (fiberGrams > FIBER_LIMIT) return "Fiber looks too high.";
+      return "Fiber is part of total carbs, so it cannot be higher.";
+    }
     if (MACRO_FIELDS.every(({ key }) => parsedMacros[key] === 0) && alcoholGrams === 0)
       return "Add at least one macro value.";
     return "";
@@ -322,7 +338,7 @@ export function MealForm({
         day,
         name: name.trim(),
         meal: slot,
-        macros: { ...parsedMacros, alcohol: alcoholGrams },
+        macros: { ...parsedMacros, alcohol: alcoholGrams, fiber: fiberGrams },
         source,
         assumptions: assumptions.trim().slice(0, 3000),
       });
@@ -495,7 +511,28 @@ export function MealForm({
           </Field>
         ) : null}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {MACRO_FIELDS.map(({ key, label, unit }) => (
+          {MACRO_FIELDS.slice(0, 3).map(({ key, label, unit }) => (
+            <Field key={key} label={`${label} (${unit})`}>
+              <Input
+                value={macros[key]}
+                inputMode="decimal"
+                placeholder="0"
+                onChange={(event) => setMacro(key, event.target.value)}
+              />
+            </Field>
+          ))}
+          <Field label="Fiber (g)">
+            <Input
+              value={fiber}
+              inputMode="decimal"
+              placeholder="0"
+              onChange={(event) => {
+                setFiber(event.target.value);
+                markManual();
+              }}
+            />
+          </Field>
+          {MACRO_FIELDS.slice(3).map(({ key, label, unit }) => (
             <Field key={key} label={`${label} (${unit})`}>
               <Input
                 value={macros[key]}
@@ -514,8 +551,13 @@ export function MealForm({
                 Rough macro estimate: {formatCalories(breakdown.total)} kcal
               </p>
               <p className="text-xs text-muted-foreground">
-                Protein {formatCalories(breakdown.protein)} + carbs {formatCalories(breakdown.carbs)} + fat {formatCalories(breakdown.fat)}
-                {slot === "Alcohol" ? ` + ethanol ${formatCalories(breakdown.alcohol)}` : ""} kcal
+                {[
+                  `Protein ${formatCalories(breakdown.protein)}`,
+                  `carbs ${formatCalories(breakdown.carbs)}`,
+                  ...(breakdown.fiber > 0 ? [`fiber ${formatCalories(breakdown.fiber)}`] : []),
+                  `fat ${formatCalories(breakdown.fat)}`,
+                  ...(slot === "Alcohol" ? [`ethanol ${formatCalories(breakdown.alcohol)}`] : []),
+                ].join(" + ")} kcal
               </p>
               <p className="text-xs text-muted-foreground">
                 {parsedMacros.calories === breakdown.total
@@ -525,11 +567,11 @@ export function MealForm({
             </div>
             <p className="text-[11px] text-muted-foreground">
               {slot === "Alcohol"
-                ? "Protein and carbs: 4 kcal/g · Fat: 9 kcal/g · Ethanol: 7 kcal/g. Food with the drinks goes in the other three."
-                : "Protein and carbs: 4 kcal/g · Fat: 9 kcal/g."}
+                ? "Protein: 4 kcal/g · Carbs other than fiber: 4 kcal/g · Fiber: 2 kcal/g · Fat: 9 kcal/g · Ethanol: 7 kcal/g. Food with the drinks goes in the other three."
+                : "Protein: 4 kcal/g · Carbs other than fiber: 4 kcal/g · Fiber: 2 kcal/g · Fat: 9 kcal/g."}
             </p>
             <p className="text-[11px] text-muted-foreground">
-              Fiber, sugar alcohols, food-specific factors and rounding can change the total.
+              Fiber is already inside total carbs. Sugar alcohols and food-specific factors can still change the total.
               Your calorie total is kept; matching is optional.
             </p>
           </div>

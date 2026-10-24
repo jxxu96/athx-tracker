@@ -51,6 +51,18 @@ test("a meal logged once is not common, and two days of it are", () => {
   assert.equal(twice[0].assumptions, "today");
 });
 
+test("a repeated meal keeps the fiber from its latest portions", () => {
+  const latest = { calories: 160, protein: 6, carbs: 40, fat: 3, fiber: 12 };
+  const found = commonMeals([
+    meal({ day: "2026-10-23", name: "Cereal", macros: latest }),
+    meal({ day: "2026-10-21", name: "Cereal", macros: { calories: 150, protein: 5, carbs: 38, fat: 3, fiber: 8 } }),
+  ], today);
+  assert.equal(found.length, 1);
+  assert.equal(found[0].macros.fiber, 12);
+  found[0].macros.fiber = 1;
+  assert.equal(latest.fiber, 12);
+});
+
 test("the usual sitting wins, and a queued placeholder never does", () => {
   const saved = commonMeals([
     meal({ day: "2026-10-23", name: "Yogurt", meal: "Snack", source: "queued",

@@ -8,7 +8,7 @@ async function meals(page: Page) {
     const data = await fetch("/api/records").then((r) => r.json());
     return data.records as {
       id: string; athlete: string; day: string; name: string; meal: string; source: string;
-      macros: { calories: number; protein: number; carbs: number; fat: number; alcohol?: number };
+      macros: { calories: number; protein: number; carbs: number; fat: number; alcohol?: number; fiber?: number };
     }[];
   });
 }
@@ -33,10 +33,12 @@ test("a new meal starts on the sitting that matches the time", async ({ page }) 
 });
 
 test("ethanol is only on an alcohol sitting, and snacks alongside still count", async ({ page }) => {
+  await expect(page.getByLabel("Fiber (g)")).toBeVisible();
   await expect(page.getByLabel("Ethanol (g)")).toHaveCount(0);
   const sitting = page.getByRole("group", { name: "Sitting" });
   await sitting.getByRole("button", { name: "Alcohol" }).click();
   await expect(page.getByLabel("Ethanol (g)")).toBeVisible();
+  await expect(page.getByLabel("Fiber (g)")).toBeVisible();
   await sitting.getByRole("button", { name: "Lunch" }).click();
   await expect(page.getByLabel("Ethanol (g)")).toHaveCount(0);
   await sitting.getByRole("button", { name: "Dinner" }).click();
@@ -149,7 +151,8 @@ test("the macro comparison is advisory when creating and editing a meal", async 
   await expect(page.getByRole("status").filter({ hasText: "Rough macro estimate:" })).toContainText("455 kcal");
   await expect(page.getByText("Protein 120 + carbs 200 + fat 135 kcal")).toBeVisible();
   await expect(page.getByText(/Your calorie total is 445 kcal above/)).toBeVisible();
-  await expect(page.getByText(/Fiber, sugar alcohols/)).toBeVisible();
+  await expect(page.getByText(/Fiber is already inside total carbs/)).toBeVisible();
+  await expect(page.getByText(/Fiber: 2 kcal\/g/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Use macro total" })).toHaveCount(0);
   const { violations } = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
@@ -204,20 +207,33 @@ test("a fiber-containing estimate keeps calories and fractional grams, including
   await page.route("**/api/estimate", (route) => route.fulfill({
     status: 200, contentType: "application/json",
     body: JSON.stringify({ estimate: { name: "Estimated fiber cereal", calories: 160,
-      protein: 6.2, carbs: 40.4, fat: 2.6, assumptions: "Total carbs include fiber", confidence: "medium" } }),
+      protein: 6.2, carbs: 40.4, fat: 2.6, fiber: 12, assumptions: "Total carbs include fiber", confidence: "medium" } }),
   }));
   await page.getByPlaceholder("Two eggs, 80 g oats with milk, banana, flat white").fill("One bowl of fiber cereal");
   await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("160");
   await expect(page.getByLabel("Carbs (g)")).toHaveValue("40.4");
-  await expect(page.getByText(/Rough macro estimate: 209.8 kcal/)).toBeVisible();
+  await expect(page.getByLabel("Fiber (g)")).toHaveValue("12");
+  // 12 g of the 40.4 g carbs at 2 kcal/g, the other 28.4 g at 4.
+  await expect(page.getByText(/Rough macro estimate: 185.8 kcal/)).toBeVisible();
+  await expect(page.getByText("Protein 24.8 + carbs 113.6 + fiber 24 + fat 23.4 kcal")).toBeVisible();
   await page.getByLabel("Fat (g)").fill("3.6");
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("160");
+  await page.getByLabel("Fiber (g)").fill("50");
+  await page.getByRole("button", { name: "Save meal", exact: true }).click();
+  await expect(page.locator("form").getByRole("alert")).toContainText("Fiber is part of total carbs");
+  await page.getByLabel("Fiber (g)").fill("10");
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("160");
+  await expect(page.getByText(/Rough macro estimate: 198.8 kcal/)).toBeVisible();
   await page.getByRole("button", { name: "Save meal", exact: true }).click();
   await expect.poll(async () => {
     const saved = (await meals(page)).find((meal) => meal.name === "Estimated fiber cereal");
-    return saved ? { source: saved.source, calories: saved.macros.calories, carbs: saved.macros.carbs } : null;
-  }).toEqual({ source: "manual", calories: 160, carbs: 40.4 });
+    return saved
+      ? { source: saved.source, calories: saved.macros.calories, carbs: saved.macros.carbs, fiber: saved.macros.fiber }
+      : null;
+  }).toEqual({ source: "manual", calories: 160, carbs: 40.4, fiber: 10 });
+  await page.getByRole("button", { name: "Log", exact: true }).click();
+  await expect(page.getByRole("listitem").filter({ hasText: "Estimated fiber cereal" })).toContainText("Fiber 10 g");
 });
 
 test("usual meals are one person's repeats, and a tap fills only that person's meal", async ({ page }) => {
@@ -300,8 +316,8 @@ test("logging for both saves one meal for each athlete, and one athlete saves on
     sittings: ["Dinner", "Dinner"],
     sources: ["manual"],
     macros: [
-      { calories: 455, protein: 30, carbs: 50, fat: 15, alcohol: 0 },
-      { calories: 455, protein: 30, carbs: 50, fat: 15, alcohol: 0 },
+      { calories: 455, protein: 30, carbs: 50, fat: 15, alcohol: 0, fiber: 0 },
+      { calories: 455, protein: 30, carbs: 50, fat: 15, alcohol: 0, fiber: 0 },
     ],
   });
 

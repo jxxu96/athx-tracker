@@ -28,8 +28,11 @@ export type Workout = {
 export type Meal = {
   id: string; kind: "meal"; athlete: Exclude<Athlete, "team">; day: string;
   name: string; meal: "Breakfast" | "Lunch" | "Dinner" | "Snack" | "Alcohol";
-  /** Alcohol grams are only meaningful on an Alcohol sitting. Older meals omit it. */
-  macros: Macros & { alcohol?: number };
+  /**
+   * Alcohol grams are only meaningful on an Alcohol sitting. Fiber grams are
+   * already included in carbs. Older meals omit either one.
+   */
+  macros: Macros & { alcohol?: number; fiber?: number };
   source: "manual" | "grok" | "queued"; assumptions: string;
 };
 export type RecordItem = Workout | Meal;

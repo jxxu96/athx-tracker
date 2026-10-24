@@ -46,6 +46,18 @@ test("logging for both writes two meals that share the fields and not the object
   assert.equal(retry[0].macros.protein, 30);
 });
 
+test("fiber is copied onto each athlete and the two copies stay separate", () => {
+  const { draft, ids } = sample();
+  draft.macros = { ...draft.macros, fiber: 8, alcohol: 0 };
+  const saved = fanOutMeal({ loggingFor: "both", editing: null, draft, ids });
+  assert.equal(saved[0].macros.fiber, 8);
+  assert.equal(saved[1].macros.fiber, 8);
+  assert.notEqual(saved[0].macros, saved[1].macros);
+  saved[0].macros.fiber = 1;
+  assert.equal(saved[1].macros.fiber, 8);
+  assert.equal(draft.macros.fiber, 8);
+});
+
 test("logging for one athlete writes only that athlete", () => {
   const { draft, ids } = sample();
   const saved = fanOutMeal({ loggingFor: "gators", editing: null, draft, ids });

@@ -224,6 +224,9 @@ export function History({
                             P {Math.round(record.macros.protein)} · C{" "}
                             {Math.round(record.macros.carbs)} · F{" "}
                             {Math.round(record.macros.fat)}
+                            {record.macros.fiber
+                              ? ` · Fiber ${Math.round(record.macros.fiber)} g`
+                              : ""}
                             {record.meal === "Alcohol"
                               ? ` · Ethanol ${Math.round(record.macros.alcohol ?? 0)} g`
                               : ""}

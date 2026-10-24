@@ -208,16 +208,22 @@ test("the app and the estimator describe an estimate the same way", async () => 
   // only refuses to start when it is run directly, so this import does not
   // need a token of its own.
   const estimatorModule = "../../estimator/server.mjs";
-  const { SCHEMA } = (await import(estimatorModule)) as {
+  const { SCHEMA, INSTRUCTIONS } = (await import(estimatorModule)) as {
+    INSTRUCTIONS: string;
     SCHEMA: {
       required: string[];
       properties: Record<
-        "calories" | "protein" | "carbs" | "fat",
+        "calories" | "protein" | "carbs" | "fat" | "fiber" | "alcohol",
         { maximum: number }
       > & { confidence: { enum: string[] } };
     };
   };
-  const { foodFormat } = await import("./grok.ts");
+  const { foodFormat, grokRequest } = await import("./grok.ts");
+  assert.equal(
+    grokRequest("one banana", "grok-4.7").instructions,
+    INSTRUCTIONS,
+    "the direct API and the estimator ask different questions",
+  );
 
   assert.deepEqual(
     SCHEMA.required,
@@ -257,4 +263,25 @@ test("the app and the estimator describe an estimate the same way", async () => 
       `the app rejects confidence "${level}", which the estimator may send`,
     );
   }
+
+  for (const field of ["fiber", "alcohol"] as const) {
+    assert.equal(
+      SCHEMA.properties[field].maximum,
+      foodFormat.schema.properties[field].maximum,
+      `${field}: the two JSON schemas disagree`,
+    );
+  }
+  const fiberCeiling = SCHEMA.properties.fiber.maximum;
+  assert.ok(
+    estimateSchema.safeParse({ ...base, carbs: fiberCeiling, fiber: fiberCeiling }).success,
+    "fiber at the carb ceiling must be legal",
+  );
+  assert.ok(
+    !estimateSchema.safeParse({ ...base, carbs: fiberCeiling, fiber: fiberCeiling + 1 }).success,
+    "fiber past its ceiling must be refused",
+  );
+  assert.ok(
+    !estimateSchema.safeParse({ ...base, carbs: 10, fiber: 11 }).success,
+    "fiber above total carbs must be refused",
+  );
 });
