@@ -1001,6 +1001,46 @@ export function WorkoutForm({
     return "";
   }
 
+  /**
+   * The numbers stay with the session when an edit names the other person.
+   * Leaving them on the old side would open a blank column.
+   */
+  function relocate(from: Side, to: Side) {
+    if (from === to) return;
+    setElapsed((current) => ({ hippos: "", gators: "", [to]: current[from] }));
+    setEntries((current) => {
+      const moved = current[from].map((entry) => ({ ...entry }));
+      const empty = () => current[from].map(() => blankEntry());
+      return {
+        hippos: to === "hippos" ? moved : empty(),
+        gators: to === "gators" ? moved : empty(),
+      };
+    });
+    setLifts((current) =>
+      current.map((lift) => ({
+        ...lift,
+        hippos: to === "hippos" ? { ...lift[from] } : blankLiftSide(),
+        gators: to === "gators" ? { ...lift[from] } : blankLiftSide(),
+      })),
+    );
+    setCapHit((current) => ({ hippos: false, gators: false, [to]: current[from] }));
+  }
+
+  function chooseFormat(next: Format) {
+    setInvalidSide(null);
+    if (!editing || !editSide) {
+      onLoggingFor(next === "pairs" ? "both" : next);
+      return;
+    }
+    if (next === "pairs") {
+      setRecordContext("pairs");
+      return;
+    }
+    relocate(recordSide, next);
+    setRecordSide(next);
+    setRecordContext("solo");
+  }
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (drafting || listening) return;
@@ -1025,7 +1065,7 @@ export function WorkoutForm({
       ...(hasMetcon && capHit[side] ? { capHit: true } : {}),
       id: editing ? editing.id : draftIds[side],
       kind: "workout",
-      athlete: editing ? editing.athlete : side,
+      athlete: editing ? athleteForEdit : side,
       day,
       title: title.trim() || dateTitle(day),
       category,
@@ -1066,9 +1106,9 @@ export function WorkoutForm({
         <div className="flex items-center justify-between gap-3 rounded-2xl border bg-muted/50 p-3">
           <p className="text-xs">
             Editing{" "}
-            <span className="font-medium">{ATHLETES[editing.athlete].name}</span>
+            <span className="font-medium">{ATHLETES[athleteForEdit].name}</span>
             {" · "}
-            {editing.day}
+            {day}
           </p>
           <Button type="button" variant="ghost" size="xs" onClick={onCancelEdit}>
             Cancel
@@ -1097,27 +1137,8 @@ export function WorkoutForm({
       </Panel>
       <fieldset disabled={drafting || listening || saving} className="min-w-0 space-y-4">
       <section className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Date">
-            <Input
-              type="date"
-              value={day}
-              max={today}
-              onChange={(event) => setDay(event.target.value)}
-            />
-          </Field>
-          <Field label="Format">
-            <NativeSelect
-              value={context}
-              onChange={(event) =>
-                setChosenContext(event.target.value as Workout["context"])
-              }
-            >
-              <NativeSelectOption value="pairs">Pairs</NativeSelectOption>
-              <NativeSelectOption value="solo">Solo</NativeSelectOption>
-            </NativeSelect>
-          </Field>
-        </div>
+        <DayButtons today={today} day={day} onChange={setDay} />
+        <FormatButtons value={format} onChange={chooseFormat} />
         <Field label="Session" hint="Optional — the date is used if left blank">
           <Input
             value={title}

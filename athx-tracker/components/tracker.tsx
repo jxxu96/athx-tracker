@@ -287,6 +287,7 @@ export function Tracker({
               ).catch(() => {})
             }
             editing={editing?.kind === "workout" ? editing : null}
+            onLoggingFor={setWho}
             onCancelEdit={() => setEditing(null)}
             onSave={save}
           />

@@ -43,11 +43,19 @@ const elapsed = (page: Page) => page.getByLabel(/elapsed time$/);
 // The title field is labelled "Session" and the lift load by its unit.
 const title = (page: Page) => page.getByLabel("Session", { exact: true });
 
-const formatSelect = (page: Page) =>
-  page.locator("select").filter({ has: page.locator('option[value="pairs"]') });
+const formatButton = (page: Page, name: "Hippos" | "Gators" | "Pairs") =>
+  page.getByRole("group", { name: "Format" }).getByRole("button", { name });
 
 const athlete = (page: Page, name: string) =>
   page.getByRole("group", { name: "Logging for" }).getByRole("button", { name });
+
+const sessions = (page: Page) =>
+  page.evaluate(async () => {
+    const data = await fetch("/api/records").then((r) => r.json());
+    return (data.records as { athlete: string; context: string; day: string }[])
+      .map((record) => `${record.athlete}:${record.context}:${record.day}`)
+      .sort();
+  });
 
 test.beforeEach(async ({ page }) => {
   await signIn(page);
@@ -165,26 +173,118 @@ test("a theme chosen in one tab follows into the other", async ({ page, context 
   await second.close();
 });
 
-test("the format follows the switch at the top", async ({ page }) => {
-  // It sat at Pairs whatever the switch said, so a solo session claimed
-  // otherwise unless you noticed the dropdown.
+test("format names who is training and matches the switch", async ({ page }) => {
+  // Solo and Pairs never said which athlete the session was for.
   await athlete(page, "Both").click();
   await openSession(page);
-  await expect(formatSelect(page)).toHaveValue("pairs");
+  await expect(formatButton(page, "Pairs")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel(/elapsed time$/)).toHaveCount(2);
 
-  await athlete(page, "Gators").click();
-  await expect(formatSelect(page)).toHaveValue("solo");
+  await formatButton(page, "Gators").click();
+  await expect(formatButton(page, "Gators")).toHaveAttribute("aria-pressed", "true");
+  await expect(athlete(page, "Gators")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel(/elapsed time$/)).toHaveCount(1);
 
-  await athlete(page, "Both").click();
-  await expect(formatSelect(page)).toHaveValue("pairs");
+  await athlete(page, "Hippos").click();
+  await expect(formatButton(page, "Hippos")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel(/elapsed time$/)).toHaveCount(1);
+
+  await formatButton(page, "Pairs").click();
+  await expect(athlete(page, "Both")).toHaveAttribute("aria-pressed", "true");
+  await expect(formatButton(page, "Pairs")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel(/elapsed time$/)).toHaveCount(2);
 });
 
-test("choosing the format yourself pins it against the switch", async ({ page }) => {
-  await athlete(page, "Both").click();
+test("pairs writes both people and one person writes a solo session", async ({ page }) => {
   await openSession(page);
-  await formatSelect(page).selectOption("solo");
+  await page.getByRole("button", { name: "Tennis 60m" }).click();
+  await page.getByRole("button", { name: "Save session" }).click();
+  await expect(page.getByText("Sessions saved")).toBeVisible();
+
+  const today = await page.evaluate(() =>
+    new Intl.DateTimeFormat("en-CA", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date()),
+  );
+  await expect.poll(() => sessions(page)).toEqual([
+    `gators:pairs:${today}`,
+    `hippos:pairs:${today}`,
+  ]);
+
+  await openSession(page);
+  await formatButton(page, "Hippos").click();
+  await page.getByRole("button", { name: "Tennis 60m" }).click();
+  await page.getByRole("button", { name: "Save session" }).click();
+  await expect(page.getByText("Session saved")).toBeVisible();
+  await expect.poll(() => sessions(page)).toEqual([
+    `gators:pairs:${today}`,
+    `hippos:pairs:${today}`,
+    `hippos:solo:${today}`,
+  ]);
+});
+
+test("the date is today, yesterday, or a day from the calendar", async ({ page }) => {
   await athlete(page, "Gators").click();
-  await expect(formatSelect(page)).toHaveValue("solo");
+  await openSession(page);
+  const dates = page.getByRole("group", { name: "Date" });
+  await expect(dates.getByRole("button", { name: "Today", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  await dates.getByRole("button", { name: "Yesterday", exact: true }).click();
+  await expect(dates.getByRole("button", { name: "Yesterday", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  const picked = await page.evaluate(() => {
+    const date = new Date();
+    date.setDate(date.getDate() - 3);
+    return {
+      day: new Intl.DateTimeFormat("en-CA", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(date),
+      dataDay: date.toLocaleDateString(),
+    };
+  });
+  await dates.getByRole("button", { name: "Calendar", exact: true }).click();
+  const tomorrow = await page.evaluate(() => {
+    const date = new Date();
+    date.setDate(date.getDate() + 1);
+    return date.toLocaleDateString();
+  });
+  await expect(page.locator(`[data-day="${tomorrow}"]`)).toBeDisabled();
+  await page.locator(`[data-day="${picked.dataDay}"]`).click();
+  await expect(dates.getByRole("button", { name: /^Calendar/ })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  await page.getByRole("button", { name: "Tennis 60m" }).click();
+  await page.getByRole("button", { name: "Save session" }).click();
+  await expect.poll(() => sessions(page)).toEqual([`gators:solo:${picked.day}`]);
+});
+
+test("pairs on an open edit stays one record", async ({ page }) => {
+  await athlete(page, "Gators").click();
+  await openSession(page);
+  await page.getByRole("button", { name: "Tennis 60m" }).click();
+  await page.getByRole("button", { name: "Save session" }).click();
+  await openLog(page);
+  await page.getByLabel("Edit entry").click();
+  await expect(formatButton(page, "Gators")).toHaveAttribute("aria-pressed", "true");
+  await formatButton(page, "Pairs").click();
+  await expect(formatButton(page, "Pairs")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel(/elapsed time$/)).toHaveCount(1);
+  await page.getByRole("button", { name: "Update session" }).click();
+  await expect.poll(async () =>
+    (await sessions(page)).map((row) => row.split(":").slice(0, 2).join(":")),
+  ).toEqual(["gators:pairs"]);
 });
 
 test("an Other session is logged under the name you give it", async ({ page }) => {
@@ -253,7 +353,7 @@ test("a partial session shows its finish on the log, and an untimed one does not
   );
   const finish = `At this pace, the whole session is about ${formatTime(projected!.estimate)}.`;
 
-  await page.getByRole("button", { name: "Today", exact: true }).click();
+  await page.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: "Today", exact: true }).click();
   await expect(page.getByText(finish)).toBeVisible();
 
   await openLog(page);
@@ -307,7 +407,7 @@ test("a session reports what it burned, once it can", async ({ page }) => {
   await expect(page.getByText(/· Tennis · 60:00 · ~620 kcal/)).toBeVisible();
 
   // And on the panel that puts the last session in front of you.
-  await page.getByRole("button", { name: "Today", exact: true }).click();
+  await page.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: "Today", exact: true }).click();
   await expect(page.getByText(/60:00 · ~620 kcal/)).toBeVisible();
 });
 

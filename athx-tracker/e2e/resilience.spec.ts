@@ -74,7 +74,20 @@ for (const timezoneId of ["Pacific/Kiritimati", "Pacific/Niue"]) {
         }).format(new Date()),
       );
       await page.getByRole("button", { name: "Session", exact: true }).click();
-      await expect(page.getByLabel("Date")).toHaveValue(onDevice);
+      await expect(
+        page.getByRole("group", { name: "Date" }).getByRole("button", { name: "Today", exact: true }),
+      ).toHaveAttribute("aria-pressed", "true");
+      // Today has to be this phone's day. A zone ahead of the server used to
+      // file the session on the server's date instead.
+      await page.getByRole("button", { name: "Tennis 60m" }).click();
+      await page.getByRole("button", { name: "Save session" }).click();
+      await expect(page.getByText("Sessions saved")).toBeVisible();
+      await expect.poll(async () =>
+        page.evaluate(async () => {
+          const data = await fetch("/api/records").then((r) => r.json());
+          return (data.records as { day: string }[]).map((record) => record.day).sort();
+        }),
+      ).toEqual([onDevice, onDevice]);
     });
   });
 }
