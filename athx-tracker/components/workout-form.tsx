@@ -588,13 +588,6 @@ export function WorkoutForm({
   const [recordContext, setRecordContext] = useState<Workout["context"]>(
     editing?.context ?? "solo",
   );
-  // The current select still allows an explicit solo/pairs choice. Preserve
-  // that choice while the header continues to control the athlete columns.
-  const [contextPinned, setContextPinned] = useState(Boolean(editing));
-  function setChosenContext(next: Workout["context"]) {
-    setRecordContext(next);
-    setContextPinned(true);
-  }
   const format: Format = editing
     ? recordContext === "pairs"
       ? "pairs"
@@ -602,7 +595,7 @@ export function WorkoutForm({
     : sides.length > 1
       ? "pairs"
       : sides[0];
-  const context: Workout["context"] = contextPinned
+  const context: Workout["context"] = editing
     ? recordContext
     : defaultContext(sides.length);
   // Switching person on an edit keeps the original athlete when the side did
