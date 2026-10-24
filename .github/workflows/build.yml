@@ -7,13 +7,20 @@ name: Build and publish image
 on:
   push:
     branches: [main]
-    paths:
+    paths: &code
       - "athx-tracker/**"
       - "estimator/**"
       - ".github/workflows/build.yml"
       # Prose does not change the image, and publishing one makes the server
       # redeploy itself. A README is not worth restarting production for.
       - "!**/*.md"
+  # The checks only ever ran after a merge, so a pull request could not be
+  # told apart from a good one until it was already on main. That is how main
+  # went red and stayed red. They run on the pull request now; publishing
+  # still happens only once it has landed.
+  pull_request:
+    branches: [main]
+    paths: *code
   workflow_dispatch:
 
 jobs:
@@ -58,6 +65,9 @@ jobs:
 
   image:
     needs: checks
+    # A pull request gets the checks, not a published image: :latest is what
+    # the server pulls, and it should only ever hold what is on main.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read

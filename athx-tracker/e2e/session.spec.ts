@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { formatTime, projectWorkout } from "../lib/domain.ts";
+import { DEFAULT_SETTINGS, formatTime, projectWorkout } from "../lib/domain.ts";
 import { PASSPHRASE } from "../playwright.config.ts";
 
 // These cover the paths that have actually broken. Every bug that reached the
@@ -20,6 +20,19 @@ async function signIn(page: Page) {
 const openSession = async (page: Page) => {
   await page.getByRole("button", { name: "Session", exact: true }).click();
   await expect(page.getByRole("group", { name: "Session presets" })).toBeVisible();
+};
+
+/**
+ * Today repeats the last session's athlete, type and date, so a locator that
+ * finds an entry does not prove the Log is showing. This waits for something
+ * only the Log has, which matters most for assertions that something is
+ * absent: those pass or fail on whichever page happens to be up.
+ */
+const openLog = async (page: Page) => {
+  await page.getByRole("button", { name: "Log", exact: true }).click();
+  await expect(
+    page.locator("select").filter({ has: page.locator('option[value="workout"]') }),
+  ).toHaveCount(1);
 };
 
 const typeSelect = (page: Page) =>
@@ -51,6 +64,17 @@ test.beforeEach(async ({ page }) => {
       });
     }
   });
+  // And with the settings as they come. Clearing only the journal left the
+  // bodyweight another spec file had set, and these files run in name order,
+  // so whether a spec saw one depended on which letter its file started with.
+  await page.evaluate(async (settings) => {
+    const { revision } = await fetch("/api/settings").then((r) => r.json());
+    await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings, revision }),
+    });
+  }, DEFAULT_SETTINGS);
   await page.reload();
 });
 
@@ -106,7 +130,7 @@ test("a session with nothing timed can still be saved", async ({ page }) => {
     .selectOption("Deadlift");
   await page.getByLabel("lb", { exact: true }).first().fill("140");
   await page.getByRole("button", { name: "Save session" }).click();
-  await page.getByRole("button", { name: "Log", exact: true }).click();
+  await openLog(page);
   // Not recorded, which is not a time of zero.
   await expect(page.getByText(/Strength · —/)).toBeVisible();
 });
@@ -171,7 +195,7 @@ test("an Other session is logged under the name you give it", async ({ page }) =
   await elapsed(page).first().fill("90:00");
   await page.getByRole("button", { name: "Save session" }).click();
 
-  await page.getByRole("button", { name: "Log", exact: true }).click();
+  await openLog(page);
   await expect(page.getByText(/· Hiking ·/)).toBeVisible();
   await expect(page.getByText(/· Other ·/)).toHaveCount(0);
 });
@@ -232,7 +256,7 @@ test("a partial session shows its finish on the log, and an untimed one does not
   await page.getByRole("button", { name: "Today", exact: true }).click();
   await expect(page.getByText(finish)).toBeVisible();
 
-  await page.getByRole("button", { name: "Log", exact: true }).click();
+  await openLog(page);
   const partial = page.getByRole("listitem").filter({ hasText: "Tennis" });
   await expect(partial.getByText(finish)).toBeVisible();
 
@@ -245,7 +269,7 @@ test("a partial session shows its finish on the log, and an untimed one does not
     .selectOption("Deadlift");
   await page.getByLabel("lb", { exact: true }).first().fill("140");
   await page.getByRole("button", { name: "Save session" }).click();
-  await page.getByRole("button", { name: "Log", exact: true }).click();
+  await openLog(page);
   const untimed = page.getByRole("listitem").filter({ hasText: "Strength" });
   await expect(untimed.getByText(/· —/)).toBeVisible();
   await expect(untimed.getByText(/whole session/)).toHaveCount(0);
@@ -269,16 +293,17 @@ test("a session reports what it burned, once it can", async ({ page }) => {
 
   // Without a bodyweight there is nothing to compute from, and a figure is
   // withheld rather than invented.
-  await page.getByRole("button", { name: "Log", exact: true }).click();
-  await expect(page.getByText(/· Tennis ·/)).toBeVisible();
-  await expect(page.getByText(/kcal/)).toHaveCount(0);
+  await openLog(page);
+  const row = page.getByRole("listitem").filter({ hasText: "Tennis" });
+  await expect(row).toBeVisible();
+  await expect(row.getByText(/kcal/)).toHaveCount(0);
 
   await page.getByRole("button", { name: "Setup", exact: true }).click();
   await page.getByLabel(/^Bodyweight/).nth(1).fill("185");
   await page.getByRole("button", { name: "Save settings" }).click();
 
   // 7 MET for tennis, 185 lb, an hour: about 620 kcal, to the nearest ten.
-  await page.getByRole("button", { name: "Log", exact: true }).click();
+  await openLog(page);
   await expect(page.getByText(/· Tennis · 60:00 · ~620 kcal/)).toBeVisible();
 
   // And on the panel that puts the last session in front of you.
@@ -305,7 +330,7 @@ test("squats with no clock still show a burn", async ({ page }) => {
   await page.getByRole("button", { name: "Save session" }).click();
 
   // 3x5 with no clock, 185 lb. Six minutes at 6 MET rounds to 50.
-  await page.getByRole("button", { name: "Log", exact: true }).click();
+  await openLog(page);
   await expect(page.getByText(/Strength · — · ~50 kcal/)).toBeVisible();
 });
 
@@ -350,7 +375,7 @@ test("one session holds lifts, a part-finished MetCon with loads, and a run", as
   const run = saved.record.segments.find((s: { block?: string }) => s.block === "endurance");
   expect(run).toMatchObject({ name: "Run", completed: 1000, target: 1000 });
 
-  await page.getByRole("button", { name: "Log", exact: true }).click();
+  await openLog(page);
   const entry = page.getByRole("listitem").filter({ hasText: "Strength + MetCon + Endurance" });
   await expect(entry).toBeVisible();
   await expect(entry.getByText(/time cap hit/)).toBeVisible();
@@ -393,7 +418,7 @@ test("circuit loads start at the standard weight, and reopening keeps it", async
   expect(station(saved, "Sandbag squats").kg).toBeUndefined();
 
   // Reopen and save untouched: the same 35 lb, and not a gram of drift.
-  await page.getByRole("button", { name: "Log", exact: true }).click();
+  await openLog(page);
   await page.getByLabel("Edit entry").first().click();
   await expect(g2oh).toHaveValue("35");
   await expect(page.getByLabel("Gators Sandbag squats load")).toHaveValue("");
@@ -415,7 +440,7 @@ test("an older entry with no loads is not given any when edited", async ({ page 
     });
   });
   await page.reload();
-  await page.getByRole("button", { name: "Log", exact: true }).click();
+  await openLog(page);
   await page.getByLabel("Edit entry").first().click();
   await expect(page.getByLabel("Gators DB ground to overhead load")).toHaveValue("");
   await page.getByRole("button", { name: "Update session" }).click();
