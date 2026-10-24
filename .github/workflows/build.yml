@@ -86,6 +86,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # The deploy watcher follows the app tag. Publish its companion first so
+      # a redeploy cannot pull a new app with an estimator that lacks its task.
+      - name: Build and publish the estimator
+        uses: docker/build-push-action@v6
+        with:
+          context: ./estimator
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/jxxu96/athx-estimator:latest
+          cache-from: type=gha,scope=estimator
+          cache-to: type=gha,mode=max,scope=estimator
+
       - uses: docker/build-push-action@v6
         with:
           context: ./athx-tracker
@@ -99,16 +111,6 @@ jobs:
           # Layer cache between runs, so later builds are minutes not tens of them.
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Build and publish the estimator
-        uses: docker/build-push-action@v6
-        with:
-          context: ./estimator
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ghcr.io/jxxu96/athx-estimator:latest
-          cache-from: type=gha,scope=estimator
-          cache-to: type=gha,mode=max,scope=estimator
 
       # Kept for a reachable Portainer. GitHub runners cannot route to a tailnet
       # address, so with Portainer on one this no-ops and the estimator on your

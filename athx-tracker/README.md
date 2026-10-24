@@ -32,6 +32,12 @@ single SQLite file on a volume.
   each station, and "stopped at the time cap" records the cap; the log then
   reads e.g. "5/7 movements · 82% of the work · time cap hit". The lb/kg switch
   on the form is the same setting as Setup's and is remembered.
+  **Describe your workout** accepts typed text or browser dictation and uses the
+  same subscription-backed estimator as meals to fill an editable draft. `1 x 2`
+  means **1 set of 2 reps**. Include weights and units; an omitted unit follows
+  the form's lb/kg setting. Named results stay with that athlete, and missing
+  numbers stay blank for review. AI replaces the workout fields but saves only
+  when you choose Save session. Unsupported browsers can use keyboard dictation.
 - **Meal** — describe a meal and let Grok estimate the macros, or type them in
   yourself. Editing an estimated number saves the meal as your own figures.
   Calories keep the source's reported or estimated total, including in queued

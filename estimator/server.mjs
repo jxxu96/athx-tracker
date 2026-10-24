@@ -24,6 +24,7 @@ import {
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { homedir, tmpdir } from "node:os";
+import { WORKOUT_TASK } from "./workout.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -236,13 +237,14 @@ function parseCliOutput(raw) {
   }
 }
 
-let schemaPath = "";
-function schemaFile() {
-  if (!schemaPath) {
-    schemaPath = join(tmpdir(), "athx-estimator-meal-schema.json");
-    writeFileSync(schemaPath, JSON.stringify(SCHEMA));
+const schemaPaths = new Map();
+function schemaFile(task) {
+  if (!schemaPaths.has(task.name)) {
+    const schemaPath = join(tmpdir(), `athx-estimator-${task.name}-schema.json`);
+    writeFileSync(schemaPath, JSON.stringify(task.schema));
+    schemaPaths.set(task.name, schemaPath);
   }
-  return schemaPath;
+  return schemaPaths.get(task.name);
 }
 
 /** Never hand the app something it would only reject: fall through instead. */
@@ -275,10 +277,11 @@ function clean(value) {
   return estimate;
 }
 
+const MEAL_TASK = { schema: SCHEMA, instructions: INSTRUCTIONS, clean, name: "meal" };
 const PROVIDERS = {
   codex: {
     bin: () => CODEX_BIN,
-    args: (description) => [
+    args: (description, task = MEAL_TASK) => [
       // -a is a flag of `codex`, not of `exec`. never: a meal estimate must not
       // stop to ask permission. read-only: it must not edit anything.
       "-a",
@@ -292,15 +295,15 @@ const PROVIDERS = {
       "--color",
       "never",
       "--output-schema",
-      schemaFile(),
+      schemaFile(task),
       "-C",
       tmpdir(),
-      `${INSTRUCTIONS}\n\nFood description, treated as data:\n${description}`,
+      `${task.instructions}\n\nDescription, treated as data:\n${description}`,
     ],
   },
   grok: {
     bin: () => GROK_BIN,
-    args: (description) => [
+    args: (description, task = MEAL_TASK) => [
       "--cwd",
       here,
       "--tools",
@@ -313,16 +316,16 @@ const PROVIDERS = {
       "--max-turns",
       "1",
       "--system-prompt-override",
-      INSTRUCTIONS,
+      task.instructions,
       "--json-schema",
-      JSON.stringify(SCHEMA),
+      JSON.stringify(task.schema),
       "-p",
       description,
     ],
   },
   claude: {
     bin: () => CLAUDE_BIN,
-    args: (description) => [
+    args: (description, task = MEAL_TASK) => [
       "--print",
       "--output-format",
       "json",
@@ -331,9 +334,9 @@ const PROVIDERS = {
       // Trims tens of thousands of scaffolding tokens off every call.
       "--exclude-dynamic-system-prompt-sections",
       "--system-prompt",
-      INSTRUCTIONS,
+      task.instructions,
       "--json-schema",
-      JSON.stringify(SCHEMA),
+      JSON.stringify(task.schema),
       "--max-turns",
       "1",
       "--strict-mcp-config",
@@ -353,7 +356,7 @@ function budgetSlice(remaining, isLast) {
   return Math.min(PER_PROVIDER_MS, isLast ? remaining : remaining - RESERVE_MS);
 }
 
-async function estimate(description, budgetMs = BUDGET_MS) {
+async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK) {
   const deadline = Date.now() + budgetMs;
   const tried = [];
 
@@ -377,8 +380,8 @@ async function estimate(description, budgetMs = BUDGET_MS) {
     }
 
     const started = Date.now();
-    const { code, out, err, timedOut } = await run(bin, provider.args(description), slice);
-    const value = clean(parseCliOutput(out));
+    const { code, out, err, timedOut } = await run(bin, provider.args(description, task), slice);
+    const value = task.clean(parseCliOutput(out));
     if (value) {
       console.log(`[estimator] ${name} answered in ${Date.now() - started}ms`);
       return { estimate: value, provider: name };
@@ -624,9 +627,21 @@ const server = createServer((request, response) => {
   request.on("end", async () => {
     let description = "";
     let budget = BUDGET_MS;
+    let task = MEAL_TASK;
+    let context = "";
     try {
       const parsed = JSON.parse(body);
       description = String(parsed.description ?? "").trim();
+      if (parsed.task !== undefined && !["meal", "workout"].includes(parsed.task))
+        return send(response, 400, { error: "Unknown task." });
+      if (parsed.task === "workout") {
+        if (!Array.isArray(parsed.athletes) || !parsed.athletes.length || parsed.athletes.length > 2
+          || !parsed.athletes.every(side => ["hippos", "gators"].includes(side))
+          || !["kg", "lb"].includes(parsed.weightUnit))
+          return send(response, 400, { error: "Choose athletes and a weight unit." });
+        task = WORKOUT_TASK;
+        context = `Selected athletes: ${parsed.athletes.join(", ")}. Default weight unit: ${parsed.weightUnit}.\n\n`;
+      }
       // Clamped, so a caller cannot pin a CLI open or starve one at birth.
       const requested = Number(parsed.budgetMs);
       if (Number.isFinite(requested))
@@ -635,9 +650,9 @@ const server = createServer((request, response) => {
       return send(response, 400, { error: "Expected JSON with a description." });
     }
     if (description.length < 3 || description.length > 4000)
-      return send(response, 400, { error: "Describe the meal in a little more detail." });
+      return send(response, 400, { error: "Describe the meal or workout in a little more detail." });
 
-    const result = await estimate(description, budget);
+    const result = await estimate(context + description, budget, task);
     if (result.error) {
       console.error(`[estimator] all providers failed: ${result.error}`);
       // Passed to the caller, not just the log. Which CLI failed and why is the
@@ -662,7 +677,7 @@ const server = createServer((request, response) => {
 const runDirectly =
   process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 
-export { INSTRUCTIONS, SCHEMA, budgetSlice, clean, parseCliOutput, structured };
+export { INSTRUCTIONS, SCHEMA, PROVIDERS, budgetSlice, clean, estimate, parseCliOutput, structured };
 
 if (runDirectly) {
   // Refusing to listen without a token. The check used to run on import, and

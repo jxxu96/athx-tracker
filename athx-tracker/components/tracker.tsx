@@ -274,7 +274,9 @@ export function Tracker({
           <WorkoutForm
             key={editing?.id ?? "new-session"}
             today={today}
+            grokReady={grokReady}
             sides={sides}
+            onLoggingFor={setWho}
             weightUnit={settings.weightUnit ?? "lb"}
             onWeightUnit={(weightUnit) =>
               // The form already reads its boxes in the new unit; this only
