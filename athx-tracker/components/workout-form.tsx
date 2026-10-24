@@ -8,8 +8,9 @@ import {
   useState,
   type ReactElement,
 } from "react";
-import { Plus, X } from "lucide-react";
+import { CalendarDays, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -17,14 +18,16 @@ import {
   NativeSelectOptGroup,
   NativeSelectOption,
 } from "@/components/ui/native-select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
-import { dayToDate, newId } from "@/lib/client";
+import { addDays, dayToDate, newId } from "@/lib/client";
 import {
   ATHLETES,
   METCON,
   PRESETS,
   categoryShape,
   defaultContext,
+  localDay,
   presetElapsed,
   presetTitle,
   sessionSeconds,
@@ -43,6 +46,7 @@ import {
 } from "@/lib/domain";
 
 type Side = "hippos" | "gators";
+type Format = "hippos" | "gators" | "pairs";
 
 /** What the session is made of, shared by both athletes. */
 type Station = {
@@ -301,6 +305,155 @@ const dateTitle = (day: string) =>
     timeZone: "UTC",
   }).format(dayToDate(day));
 
+/** The calendar button names a day that is neither today nor yesterday. */
+const shortDay = (day: string) =>
+  new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  }).format(dayToDate(day));
+
+/** Local midnight, so the calendar's day is the day in the string. */
+const parseDay = (day: string) => {
+  const [year, month, date] = day.split("-").map(Number);
+  return new Date(year, (month ?? 1) - 1, date ?? 1);
+};
+
+const CHOICE =
+  "inline-flex min-w-0 items-center justify-center gap-1.5 rounded-lg border px-2 py-2.5 text-xs font-medium whitespace-nowrap transition-colors aria-pressed:bg-accent aria-pressed:font-semibold";
+
+const FORMAT_OPTIONS: readonly {
+  value: Format;
+  label: string;
+  ink: string;
+  dots: readonly string[];
+}[] = [
+  { value: "hippos", label: "Hippos", ink: ATHLETES.hippos.ink, dots: [ATHLETES.hippos.color] },
+  { value: "gators", label: "Gators", ink: ATHLETES.gators.ink, dots: [ATHLETES.gators.color] },
+  {
+    value: "pairs",
+    label: "Pairs",
+    ink: ATHLETES.team.ink,
+    dots: [ATHLETES.hippos.color, ATHLETES.gators.color],
+  },
+];
+
+function FormatButtons({
+  value,
+  onChange,
+}: {
+  value: Format;
+  onChange: (next: Format) => void;
+}) {
+  return (
+    <div>
+      <Label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+        Format
+      </Label>
+      <div role="group" aria-label="Format" className="grid grid-cols-3 gap-1.5">
+        {FORMAT_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onChange(option.value)}
+            aria-pressed={value === option.value}
+            className={CHOICE}
+            style={
+              value === option.value
+                ? { borderColor: option.ink, color: option.ink }
+                : undefined
+            }
+          >
+            <span className="flex shrink-0 gap-0.5" aria-hidden="true">
+              {option.dots.map((color) => (
+                <span
+                  key={color}
+                  className="size-2 rounded-full"
+                  style={{ background: color }}
+                />
+              ))}
+            </span>
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DayButtons({
+  today,
+  day,
+  onChange,
+}: {
+  today: string;
+  day: string;
+  onChange: (next: string) => void;
+}) {
+  const yesterday = addDays(today, -1);
+  const custom = day !== today && day !== yesterday;
+  const [open, setOpen] = useState(false);
+  const choose = (next: string) => {
+    onChange(next);
+    setOpen(false);
+  };
+
+  return (
+    <div>
+      <Label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+        Date
+      </Label>
+      <div role="group" aria-label="Date" className="grid grid-cols-3 gap-1.5">
+        <button
+          type="button"
+          onClick={() => choose(today)}
+          aria-pressed={day === today}
+          className={CHOICE}
+        >
+          Today
+        </button>
+        <button
+          type="button"
+          onClick={() => choose(yesterday)}
+          aria-pressed={day === yesterday}
+          className={CHOICE}
+        >
+          Yesterday
+        </button>
+        <div className="min-w-0">
+          <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                aria-pressed={custom}
+                aria-label={custom ? `Calendar, ${shortDay(day)}` : "Calendar"}
+                className={`${CHOICE} w-full`}
+              >
+                <CalendarDays className="size-3.5 shrink-0" aria-hidden="true" />
+                <span className="truncate">{custom ? shortDay(day) : "Calendar"}</span>
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-auto p-0">
+              <Calendar
+                mode="single"
+                selected={parseDay(day)}
+                defaultMonth={parseDay(day)}
+                disabled={{ after: parseDay(today) }}
+                onSelect={(selected) => {
+                  if (!selected) return;
+                  const next = localDay(selected);
+                  if (next > today) return;
+                  choose(next);
+                }}
+              />
+            </PopoverContent>
+          </Popover>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Field({
   label,
   hint,
@@ -392,6 +545,7 @@ export function WorkoutForm({
   sides,
   weightUnit,
   onWeightUnit,
+  onLoggingFor,
   editing,
   onCancelEdit,
   onSave,
@@ -401,6 +555,8 @@ export function WorkoutForm({
   weightUnit: WeightUnit;
   /** Remembers a unit switched here, as Setup would. */
   onWeightUnit?: (unit: WeightUnit) => void;
+  /** Hippos, Gators, or both. The header switch and these buttons are one choice. */
+  onLoggingFor: (next: "hippos" | "gators" | "both") => void;
   editing?: Workout | null;
   onCancelEdit?: () => void;
   onSave: (batch: Workout[]) => Promise<void>;
@@ -411,24 +567,37 @@ export function WorkoutForm({
   // Editing is one athlete's record, so it fills that athlete's column alone.
   // The parent remounts on a change of target, so these initialisers are enough.
   const editSide = editing ? sideOf(editing.athlete) : null;
-  const columns = editSide ? ([editSide] as const) : sides;
 
   const [day, setDay] = useState(editing?.day ?? today);
   const [title, setTitle] = useState(editing?.title ?? "");
   const [category, setCategory] = useState<Workout["category"]>(
     editing?.category ?? "MetCon",
   );
-  // Follows the switch at the top rather than sitting at Pairs regardless:
-  // logging for both is a pairs session, logging for one is not. Choosing it
-  // yourself pins it, and editing keeps whatever was saved.
   const [customCategory, setCustomCategory] = useState(
     editing?.customCategory ?? "",
   );
-  const [chosenContext, setChosenContext] = useState<Workout["context"] | null>(
-    editing?.context ?? null,
+  // An open edit is one record. These name that record. A new session follows
+  // the header, and the format buttons are that switch: one person is solo,
+  // Pairs is both.
+  const [recordSide, setRecordSide] = useState<Side>(editSide ?? "hippos");
+  const [recordContext, setRecordContext] = useState<Workout["context"]>(
+    editing?.context ?? "solo",
   );
-  const context: Workout["context"] =
-    chosenContext ?? defaultContext(sides.length);
+  const format: Format = editing
+    ? recordContext === "pairs"
+      ? "pairs"
+      : recordSide
+    : sides.length > 1
+      ? "pairs"
+      : sides[0];
+  const context: Workout["context"] = editing
+    ? recordContext
+    : defaultContext(sides.length);
+  // Switching person on an edit keeps the original athlete when the side did
+  // not change, so a legacy team record is not rewritten just by opening it.
+  const athleteForEdit: Workout["athlete"] =
+    editing && editSide && recordSide === editSide ? editing.athlete : recordSide;
+  const columns: readonly Side[] = editing ? [recordSide] : sides;
   const [stations, setStations] = useState<Station[]>(() =>
     editing
       ? editing.segments.map((segment) => {
