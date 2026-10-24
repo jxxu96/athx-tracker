@@ -65,6 +65,38 @@ test("ethanol is only on an alcohol sitting, and snacks alongside still count", 
   }).toEqual({ meal: "Alcohol", calories: 150, carbs: 20, alcohol: 10 });
 });
 
+test("the log marks a meal with a bowl and a session with a weight", async ({ page }) => {
+  const posted = await page.evaluate(async () => {
+    const send = (body: object) =>
+      fetch("/api/records", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((response) => response.ok);
+    const meal = await send({
+      id: crypto.randomUUID(), kind: "meal", athlete: "hippos", day: "2026-10-24",
+      name: "Marked oats", meal: "Breakfast", source: "manual", assumptions: "",
+      macros: { calories: 455, protein: 30, carbs: 50, fat: 15 },
+    });
+    const session = await send({
+      id: crypto.randomUUID(), kind: "workout", athlete: "gators", day: "2026-10-24",
+      title: "Marked squats", category: "Strength", seconds: 0, notes: "",
+      segments: [], fatigue: 0, transition: 0, goal: null, context: "solo",
+      lifts: [{ name: "Back squat", kg: 60, sets: 3, reps: 5 }],
+    });
+    return meal && session;
+  });
+  expect(posted).toBe(true);
+  await page.reload();
+  await page.getByRole("button", { name: "Log", exact: true }).click();
+  const meal = page.getByRole("listitem").filter({ hasText: "Marked oats" });
+  const session = page.getByRole("listitem").filter({ hasText: "Marked squats" });
+  await expect(meal.locator(".lucide-soup")).toBeVisible();
+  await expect(meal.locator(".lucide-weight")).toHaveCount(0);
+  await expect(session.locator(".lucide-weight")).toBeVisible();
+  await expect(session.locator(".lucide-soup")).toHaveCount(0);
+});
+
 test("a mismatched meal must be corrected before it is saved or updated", async ({ page }) => {
   await expect(page.getByText(/From macros:/)).toHaveCount(0);
   await page.getByLabel("Meal", { exact: true }).fill("Calorie check bowl");

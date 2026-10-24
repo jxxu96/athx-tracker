@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Soup, Trash2, Weight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   NativeSelect,
@@ -143,11 +143,19 @@ export function History({
                   const finish = isWorkout(record) ? scenarioLine(record) : null;
                   return (
                   <li key={record.id} className="flex items-start gap-3 p-4">
-                    <span
-                      className="mt-1.5 size-2.5 shrink-0 rounded-full"
-                      style={{ background: ATHLETES[record.athlete].color }}
-                      aria-hidden="true"
-                    />
+                    {isWorkout(record) ? (
+                      <Weight
+                        className="mt-0.5 size-4 shrink-0"
+                        style={{ color: ATHLETES[record.athlete].color }}
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <Soup
+                        className="mt-0.5 size-4 shrink-0"
+                        style={{ color: ATHLETES[record.athlete].color }}
+                        aria-hidden="true"
+                      />
+                    )}
                     <div className="min-w-0 flex-1">
                       {isWorkout(record) ? (
                         <>
