@@ -10,7 +10,7 @@ Dockerfile
 # local build would otherwise hand them to the builder.
 .env
 .env.*
-*.test.ts
+**/*.test.ts
 e2e
 .playwright
 test-results
