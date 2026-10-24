@@ -28,7 +28,7 @@ RUN set -eux; \
   codex --version
 
 WORKDIR /app
-COPY server.mjs ./
+COPY server.mjs workout.mjs ./
 
 # Credentials and backups live here so they survive a redeploy.
 ENV HOME=/config \

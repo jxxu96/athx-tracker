@@ -25,6 +25,12 @@ description going out and macros coming back.
 
 The app already speaks this protocol: it is the `GROK_GATEWAY_URL` path, which
 POSTs `{"description": "..."}` with a bearer token and expects the estimate back.
+Workout drafts use the same authenticated service and provider fallback with
+`{"task":"workout","description":"Deadlift 1 x 2 at 185 lb","athletes":["hippos"],"weightUnit":"lb"}`.
+They return editable workout fields instead of meal macros. Sets precede reps in
+`sets x reps` shorthand, all returned weights are kg, and unreported numbers are
+null. No metered API fallback is used for workouts. Deploy the app and estimator
+images together; the estimator image includes `workout.mjs`.
 
 ## Setup
 

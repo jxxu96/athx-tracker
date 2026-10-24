@@ -3,12 +3,15 @@
 import {
   cloneElement,
   isValidElement,
+  useEffect,
   useId,
   useRef,
   useState,
   type ReactElement,
 } from "react";
-import { CalendarDays, Plus, X } from "lucide-react";
+import { CalendarDays, Plus, Sparkles, X } from "lucide-react";
+import { WorkoutDictation } from "@/components/workout-dictation";
+import { workoutDraftSchema, type WorkoutDraft } from "@/lib/workout-draft";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
@@ -20,7 +23,7 @@ import {
 } from "@/components/ui/native-select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
-import { addDays, dayToDate, newId } from "@/lib/client";
+import { addDays, api, dayToDate, message, newId } from "@/lib/client";
 import {
   ATHLETES,
   METCON,
@@ -544,6 +547,7 @@ export function WorkoutForm({
   today,
   sides,
   weightUnit,
+  grokReady,
   onWeightUnit,
   onLoggingFor,
   editing,
@@ -553,6 +557,7 @@ export function WorkoutForm({
   today: string;
   sides: readonly Side[];
   weightUnit: WeightUnit;
+  grokReady: boolean;
   /** Remembers a unit switched here, as Setup would. */
   onWeightUnit?: (unit: WeightUnit) => void;
   /** Hippos, Gators, or both. The header switch and these buttons are one choice. */
@@ -677,6 +682,73 @@ export function WorkoutForm({
     gators: newId(),
   }));
   const [saving, setSaving] = useState(false);
+  const [description, setDescription] = useState("");
+  const [drafting, setDrafting] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [draftError, setDraftError] = useState("");
+  const [draftNotice, setDraftNotice] = useState("");
+  const draftRequest = useRef<AbortController | null>(null);
+  const columnKey = columns.join(",");
+  // A response for the old athlete selection must never fill the new one.
+  useEffect(() => () => { draftRequest.current?.abort(); }, [columnKey]);
+
+  async function fillWorkout() {
+    setDraftError("");
+    setDraftNotice("");
+    setDrafting(true);
+    const controller = new AbortController();
+    draftRequest.current = controller;
+    try {
+      const result = await api<{ draft: WorkoutDraft; provider?: string }>("/api/workout-draft", {
+        method: "POST", signal: controller.signal,
+        body: JSON.stringify({ description: description.trim(), athletes: columns, weightUnit: unit }),
+      });
+      if (controller.signal.aborted) return;
+      const draft = workoutDraftSchema.parse(result.draft);
+      const string = (value: number | null) => value === null ? "" : String(value);
+      const time = (value: number | null) => value === null || value === 0 ? "" : formatTime(value);
+      const load = (value: number | null) => value === null ? "" : displayLoad(value, unit);
+      const nextStations: Station[] = draft.stations.map(station => ({
+        ...toChoice(station.name), unit: station.unit, target: String(station.target), block: station.block,
+      }));
+      const nextEntries = (side: Side): Entry[] => draft.stations.map(station => columns.includes(side) ? ({
+        completed: string(station[side].completed), time: time(station[side].seconds),
+        load: load(station[side].kg), savedKg: station[side].kg ?? undefined,
+      }) : blankEntry());
+      const nextLiftSide = (side: Side, lift: WorkoutDraft["lifts"][number]): LiftSide => columns.includes(side) ? ({
+        kg: load(lift[side].kg), sets: string(lift[side].sets), reps: string(lift[side].reps),
+        savedKg: lift[side].kg ?? undefined,
+      }) : blankLiftSide();
+      // The Endurance panel labels its boxes as a run. Other endurance activities
+      // use Mixed so their names and units remain visible and editable.
+      setCategory(draft.category === "Endurance" && draft.stations.some(s => s.name !== "Run" || s.unit !== "m")
+        ? "Mixed" : draft.category);
+      setTitle(draft.title);
+      setCustomCategory(draft.customCategory);
+      setStations(nextStations);
+      setEntries({ hippos: nextEntries("hippos"), gators: nextEntries("gators") });
+      setLifts(draft.lifts.length ? draft.lifts.map(lift => ({
+        ...toChoice(lift.name), hippos: nextLiftSide("hippos", lift), gators: nextLiftSide("gators", lift),
+      })) : [blankLift()]);
+      setElapsed({
+        hippos: columns.includes("hippos") ? time(draft.elapsed.hippos) : "",
+        gators: columns.includes("gators") ? time(draft.elapsed.gators) : "",
+      });
+      setNotes([draft.notes, draft.assumptions].filter(Boolean).join("\n\n").slice(0, 2000));
+      setGoal("");
+      setCapHit({ hippos: false, gators: false });
+      setInvalidSide(null);
+      setError("");
+      setDraftNotice(`Workout filled. Review the fields below before saving.${draft.assumptions ? ` ${draft.assumptions}` : ""}`);
+    } catch (problem) {
+      setDraftError(controller.signal.aborted
+        ? "The athlete selection changed. Fill the workout again for the selected athletes."
+        : message(problem));
+    } finally {
+      setDrafting(false);
+      draftRequest.current = null;
+    }
+  }
   const elapsedRefs = useRef<Record<Side, HTMLInputElement | null>>({
     hippos: null,
     gators: null,
@@ -905,6 +977,10 @@ export function WorkoutForm({
 
     for (const lift of lifts) {
       const entry = lift[side];
+      if (draftNotice && exerciseName(lift.name, lift.custom) !== "" &&
+        [entry.kg, entry.sets, entry.reps].some(value => value.trim() !== "") &&
+        [entry.kg, entry.sets, entry.reps].some(value => value.trim() === ""))
+        return `${who} · ${exerciseName(lift.name, lift.custom)}: fill in the missing weight, sets and reps, or remove this lift before saving.`;
       if (entry.kg.trim() === "") continue;
       const liftName = exerciseName(lift.name, lift.custom);
       if (liftName === "") return `${who}: choose or name the exercise.`;
@@ -920,6 +996,7 @@ export function WorkoutForm({
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (drafting || listening) return;
     setInvalidSide(null);
     const active = columns.filter(used);
 
@@ -969,6 +1046,8 @@ export function WorkoutForm({
       setCapHit({ hippos: false, gators: false });
       setGoal("");
       setNotes("");
+      setDescription("");
+      setDraftNotice("");
     } finally {
       setSaving(false);
     }
@@ -989,6 +1068,27 @@ export function WorkoutForm({
           </Button>
         </div>
       ) : null}
+      <Panel title="Describe your workout" note="Type it or dictate it, then let AI fill the form.">
+        <Field label="Workout description" hint="Sets × reps: 1 x 2 means 1 set of 2 reps. Include weights and units when you know them.">
+          <Textarea value={description} maxLength={4000} rows={4} disabled={drafting || listening || saving}
+            placeholder="Hippos: deadlift 3 x 5 at 185 lb, back squat 1 x 2 at 135 lb. Gators: deadlift 3 x 5 at 95 lb."
+            onChange={event => setDescription(event.target.value)} />
+        </Field>
+        <div className="flex flex-wrap items-start gap-2">
+          <Button type="button" size="sm" disabled={!grokReady || drafting || listening || saving || description.trim().length < 3}
+            onClick={() => void fillWorkout()}>
+            <Sparkles /> {drafting ? "Filling workout…" : "Fill workout with AI"}
+          </Button>
+          <WorkoutDictation value={description} onChange={setDescription} disabled={drafting || saving}
+            listening={listening} onListening={setListening} />
+        </div>
+        <p className="text-xs text-muted-foreground">Fills the selected athletes and replaces the workout fields below. Nothing is saved until you choose {editing ? "Update session" : "Save session"}.</p>
+        {!grokReady ? <p className="text-xs text-muted-foreground">Connect the estimator in Setup to fill workouts with AI.</p> : null}
+        {drafting ? <p role="status" className="text-xs text-muted-foreground">AI is reading your workout. This can take about a minute.</p> : null}
+        {draftNotice ? <p role="status" className="text-xs text-muted-foreground">{draftNotice}</p> : null}
+        {draftError ? <p role="alert" className="text-sm text-destructive">{draftError}</p> : null}
+      </Panel>
+      <fieldset disabled={drafting || listening || saving} className="min-w-0 space-y-4">
       <section className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Date">
@@ -1482,6 +1582,7 @@ export function WorkoutForm({
       <Button type="submit" size="lg" className="w-full" disabled={saving}>
         {saving ? "Saving…" : editing ? "Update session" : "Save session"}
       </Button>
+      </fieldset>
     </form>
   );
 }
