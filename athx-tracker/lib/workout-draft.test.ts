@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { workoutDraftSchema, type WorkoutDraft } from "./workout-draft.ts";
-import { cleanWorkout } from "../../estimator/workout.mjs";
+// The app image's build context excludes its sibling estimator directory.
+// Resolve this test-only module at runtime, as the meal schema parity test does.
+const { cleanWorkout } = await import(new URL("../../estimator/workout.mjs", import.meta.url).href);
 
 const emptyLift = { kg: null, sets: null, reps: null };
 const emptyStation = { completed: null, seconds: null, kg: null };
