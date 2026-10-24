@@ -136,13 +136,13 @@ const EXERCISES: { group: string; items: string[] }[] = [
   },
   {
     group: "Upper push",
-    items: ["Bench press", "Incline bench press", "Dip", "Push-up"],
+    items: ["Bench press", "Incline bench press", "Dip", "Push-up", "Lu Raises"],
   },
   {
     group: "Upper pull",
     items: [
       "Pull-up",
-      "Chin-up",
+      "Curls",
       "Barbell row",
       "Dumbbell row",
       "Lat pulldown",
