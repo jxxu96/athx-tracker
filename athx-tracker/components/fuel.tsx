@@ -152,7 +152,7 @@ function AthleteFuelCard({
   const showNet = fuel.burnKnown && (fuel.daysWithMeals > 0 || fuel.sessions > 0);
 
   return (
-    <div className="space-y-3">
+    <div role="group" aria-label={`${ATHLETES[athlete].name} fuel`} className="space-y-3">
       <div className="flex items-center gap-2">
         <span
           className="size-2.5 rounded-full"
@@ -190,14 +190,35 @@ function AthleteFuelCard({
           ) : null}
         </>
       )}
-      {showNet ? (
-        <p className="text-xs">
-          <span className="text-muted-foreground">Net </span>
-          <span className="font-medium tabular-nums">
-            {formatAmount(fuel.eaten.calories - fuel.burned)} kcal
-          </span>
+      <div className="border-t pt-3">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
+          Expenditure
         </p>
-      ) : null}
+        {fuel.burnKnown ? (
+          <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">
+            ~{formatAmount(fuel.burned)}
+            <span className="ml-1 text-sm font-normal text-muted-foreground">kcal</span>
+          </p>
+        ) : (
+          <p className="mt-1 text-xs text-muted-foreground">
+            Add a bodyweight in Setup to estimate calories burned.
+          </p>
+        )}
+        {showNet ? (
+          <p className="mt-1 text-xs">
+            <span className="text-muted-foreground">Net </span>
+            <span className="font-medium tabular-nums">
+              {formatAmount(fuel.eaten.calories - fuel.burned)} kcal
+            </span>
+          </p>
+        ) : null}
+        {fuel.untimed > 0 ? (
+          <p className="mt-1 text-xs text-muted-foreground">
+            {fuel.untimed} session{fuel.untimed === 1 ? "" : "s"} had no duration, so{" "}
+            {fuel.untimed === 1 ? "it is" : "they are"} not in this burn.
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -246,9 +267,6 @@ export function Fuel({
         .map((record) => record.day),
     );
   };
-  const known = people.filter((person) => person.fuel.burnKnown);
-  const burned = known.reduce((sum, person) => sum + person.fuel.burned, 0);
-  const untimed = people.reduce((sum, person) => sum + person.fuel.untimed, 0);
   const together = teamSessions(records, span, today);
   const partial = span === "overall" && records.length < journalTotal;
   const story = people
@@ -315,44 +333,12 @@ export function Fuel({
           />
         ))}
       </div>
-      <div className="mt-4 border-t pt-3">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
-          {known.length === PEOPLE.length ? "Total expenditure" : "Expenditure"}
+      {together > 0 ? (
+        <p className="mt-4 text-xs text-muted-foreground">
+          {together} together session{together === 1 ? "" : "s"} not included.
+          A shared session has no single bodyweight.
         </p>
-        {known.length === 0 ? (
-          <p className="mt-1 text-xs text-muted-foreground">
-            Add a bodyweight in Setup to estimate calories burned.
-          </p>
-        ) : (
-          <>
-            <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">
-              ~{formatAmount(burned)}
-              <span className="ml-1 text-sm font-normal text-muted-foreground">kcal</span>
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {people
-                .map((person) =>
-                  person.fuel.burnKnown
-                    ? `${ATHLETES[person.athlete].name} ~${formatAmount(person.fuel.burned)}`
-                    : `${ATHLETES[person.athlete].name} needs a bodyweight`,
-                )
-                .join(" · ")}
-            </p>
-          </>
-        )}
-        {untimed > 0 ? (
-          <p className="mt-1 text-xs text-muted-foreground">
-            {untimed} session{untimed === 1 ? "" : "s"} had no duration, so{" "}
-            {untimed === 1 ? "it is" : "they are"} not in this burn.
-          </p>
-        ) : null}
-        {together > 0 ? (
-          <p className="mt-1 text-xs text-muted-foreground">
-            {together} together session{together === 1 ? "" : "s"} not included.
-            A shared session has no single bodyweight.
-          </p>
-        ) : null}
-      </div>
+      ) : null}
     </section>
   );
 }
