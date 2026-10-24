@@ -91,7 +91,11 @@ test("a mixed session's burn is weighted by where the time went", () => {
   // Without lifts the untimed rest is the MetCon.
   const noLifts = { ...mixed, lifts: [] };
   assert.ok(Math.abs(sessionMet(noLifts) - (600 * 8 + 900 * 9 + 2100 * 8) / 3600) < 1e-9);
-  assert.equal(estimateBurn({ ...mixed, seconds: 0 }, 80), null, "no time, still no number");
+  assert.equal(
+    estimateBurn({ ...noLifts, seconds: 0 }, 80),
+    null,
+    "station splits are not a clock unless the session saved one",
+  );
 });
 
 test("the schema refuses a part that is not one", () => {

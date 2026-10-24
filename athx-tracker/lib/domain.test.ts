@@ -52,10 +52,36 @@ test("zero seconds reads as not recorded, not as no time", () => {
   assert.equal(formatTimeOrDash(90), "1:30");
 });
 
-test("burn needs both a bodyweight and a duration", () => {
+test("burn needs a bodyweight, and either a clock or lifts", () => {
   assert.equal(estimateBurn(workout({ seconds: 0 }), 80), null);
   assert.equal(estimateBurn(workout(), 0), null);
   assert.equal(estimateBurn(workout({ seconds: 0 }), 0), null);
+});
+
+test("lifts without a clock still burn, and a clock is not counted twice", () => {
+  const squats = workout({
+    category: "Strength",
+    seconds: 0,
+    lifts: [{ name: "Back squat", kg: 61.23, sets: 3, reps: 5 }],
+  });
+  // 15 reps at 4 s, plus two rests of 150 s: 6 minutes at 6 MET.
+  // 6 * 3.5 * 74.38914874238205 / 200 * 6 = 46.86, to the nearest ten.
+  assert.equal(estimateBurn(squats, 74.38914874238205), 50);
+  const longer = workout({
+    category: "Strength",
+    seconds: 0,
+    lifts: [{ name: "Back squat", kg: 61.23, sets: 5, reps: 5 }],
+  });
+  assert.ok(estimateBurn(longer, 74.38914874238205)! > 50);
+  const timed = workout({
+    category: "Strength",
+    seconds: 1800,
+    lifts: [{ name: "Back squat", kg: 61.23, sets: 3, reps: 5 }],
+  });
+  assert.equal(
+    estimateBurn(timed, 80),
+    estimateBurn(workout({ category: "Strength", seconds: 1800 }), 80),
+  );
 });
 
 test("burn follows MET x 3.5 x kg / 200 per minute", () => {

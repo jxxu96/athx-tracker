@@ -286,6 +286,29 @@ test("a session reports what it burned, once it can", async ({ page }) => {
   await expect(page.getByText(/60:00 · ~620 kcal/)).toBeVisible();
 });
 
+test("squats with no clock still show a burn", async ({ page }) => {
+  await athlete(page, "Gators").click();
+  await page.getByRole("button", { name: "Setup", exact: true }).click();
+  await page.getByLabel(/^Bodyweight/).nth(1).fill("185");
+  await page.getByRole("button", { name: "Save settings" }).click();
+
+  await openSession(page);
+  await typeSelect(page).selectOption("Strength");
+  await page
+    .locator("select")
+    .filter({ has: page.locator('option[value="Back squat"]') })
+    .first()
+    .selectOption("Back squat");
+  await page.getByLabel("lb", { exact: true }).fill("135");
+  await page.getByLabel("Sets").fill("3");
+  await page.getByLabel("Reps").fill("5");
+  await page.getByRole("button", { name: "Save session" }).click();
+
+  // 3x5 with no clock, 185 lb. Six minutes at 6 MET rounds to 50.
+  await page.getByRole("button", { name: "Log", exact: true }).click();
+  await expect(page.getByText(/Strength · — · ~50 kcal/)).toBeVisible();
+});
+
 test("one session holds lifts, a part-finished MetCon with loads, and a run", async ({ page }) => {
   await athlete(page, "Gators").click();
   await openSession(page);

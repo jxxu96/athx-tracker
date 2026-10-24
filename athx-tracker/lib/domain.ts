@@ -211,14 +211,40 @@ export const MET_BY_CATEGORY: Record<Workout["category"], number> = {
 };
 
 /**
- * Null when it cannot be known rather than a number that looks measured: the
- * formula needs a bodyweight, and a duration that a session logged without a
- * time does not have. Rounded to ten, because the method is not worth more.
+ * A lift session with no clock. Each rep is a few seconds under the bar, and
+ * each set after the first keeps a short strength rest. The short end of a
+ * rest, on purpose: a longer one would invent a session nobody timed. Bar
+ * weight is not its own term. Bodyweight is already in the MET formula.
+ */
+const LIFT_SECONDS_PER_REP = 4;
+const LIFT_REST_SECONDS = 150;
+
+export function untimedLiftSeconds(lifts: { sets: number; reps: number }[]) {
+  let seconds = 0;
+  for (const lift of lifts) {
+    const sets = Math.max(0, Math.floor(lift.sets));
+    const reps = Math.max(0, Math.floor(lift.reps));
+    if (sets < 1 || reps < 1) continue;
+    seconds += sets * reps * LIFT_SECONDS_PER_REP;
+    seconds += Math.max(0, sets - 1) * LIFT_REST_SECONDS;
+  }
+  return seconds;
+}
+
+/**
+ * Null when it cannot be known rather than a number that looks measured.
+ * That takes a bodyweight, and either a duration or lifts with sets and reps.
+ * A clock already recorded is the duration, lifts included, so the allowance
+ * above is not added on top of it. Rounded to ten, because the method is not
+ * worth more.
  */
 export function estimateBurn(workout: Workout, bodyweightKg: number) {
-  if (!(bodyweightKg > 0) || !(workout.seconds > 0)) return null;
-  const met = sessionMet(workout);
-  const kcal = ((met * 3.5 * bodyweightKg) / 200) * (workout.seconds / 60);
+  if (!(bodyweightKg > 0)) return null;
+  const fromLifts = !(workout.seconds > 0);
+  const seconds = fromLifts ? untimedLiftSeconds(workout.lifts) : workout.seconds;
+  if (!(seconds > 0)) return null;
+  const met = fromLifts ? MET_BY_CATEGORY.Strength : sessionMet(workout);
+  const kcal = ((met * 3.5 * bodyweightKg) / 200) * (seconds / 60);
   return Math.round(kcal / 10) * 10;
 }
 
