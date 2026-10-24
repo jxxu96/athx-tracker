@@ -130,7 +130,7 @@ const INSTRUCTIONS = [
   "low when extrapolating.",
   "Calories in kcal; protein, carbohydrates and fat in grams.",
   "Return alcohol as grams of ethanol, separate from carbohydrates; use 0 when there is none. For drinks, estimate ethanol from the stated volume and ABV (mL x ABV/100 x 0.789 g/mL); state any assumed serving size and ABV. Include ethanol at 7 kcal/g in total calories, alongside all food and mixers.",
-  "Totals cover the entire described meal.",
+  "Carbs means total carbohydrate, including dietary fiber, not net carbs. Preserve the source calorie total rather than forcing it to equal protein x 4 + carbs x 4 + fat x 9 + ethanol x 7. When estimating calories, account for fiber and sugar alcohols using source values where available; do not assume every carb gram provides 4 kcal. Sugar alcohols are not ethanol and must not be included in alcohol grams. Totals cover the entire described meal.",
   "Do not give dietary advice.",
   "Do not claim to have looked anything up or checked it against a database:",
   "these are figures you recall, and you have no network access.",

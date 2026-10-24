@@ -10,7 +10,7 @@ import { Field } from "@/components/workout-form";
 import { ATHLETES, type Macros, type Meal } from "@/lib/domain";
 import { api, message, newId } from "@/lib/client";
 import { commonMeals, type CommonMeal } from "@/lib/common-meals";
-import { CALORIE_TOLERANCE, macroCalories, mealCalorieError } from "@/lib/meal-calories";
+import { macroCalories } from "@/lib/meal-calories";
 import { fanOutMeal, type LoggingFor, type MealDraft } from "@/lib/meal-fanout";
 import { mealForTime } from "@/lib/meal-time";
 
@@ -159,7 +159,6 @@ export function MealForm({
     MACRO_FIELDS.every(({ key }) => Number.isFinite(parsedMacros[key]) &&
       parsedMacros[key] >= 0 && parsedMacros[key] <= LIMITS[key]);
   const breakdown = macroCalories(counted);
-  const calorieError = canCheckCalories ? mealCalorieError(counted) : "";
   const formatCalories = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 1 });
 
   function reset() {
@@ -193,10 +192,10 @@ export function MealForm({
       setEthanol(String(estimate.alcohol ?? 0));
       if ((estimate.alcohol ?? 0) > 0) setSlot("Alcohol");
       setMacros({
-        calories: String(Math.round(estimate.calories)),
-        protein: String(Math.round(estimate.protein)),
-        carbs: String(Math.round(estimate.carbs)),
-        fat: String(Math.round(estimate.fat)),
+        calories: String(estimate.calories),
+        protein: String(estimate.protein),
+        carbs: String(estimate.carbs),
+        fat: String(estimate.fat),
       });
       setAssumptions(estimate.assumptions);
       setConfidence(estimate.confidence);
@@ -307,7 +306,7 @@ export function MealForm({
     }
     if (MACRO_FIELDS.every(({ key }) => parsedMacros[key] === 0) && alcoholGrams === 0)
       return "Add at least one macro value.";
-    return mealCalorieError(counted);
+    return "";
   }
 
   async function submit(event: React.FormEvent) {
@@ -512,29 +511,27 @@ export function MealForm({
           <div className="space-y-2 rounded-xl border bg-muted/40 p-3">
             <div role="status" aria-live="polite" aria-atomic="true" className="space-y-1">
               <p className="text-xs font-medium">
-                From macros: {formatCalories(breakdown.total)} kcal
+                Rough macro estimate: {formatCalories(breakdown.total)} kcal
               </p>
               <p className="text-xs text-muted-foreground">
                 Protein {formatCalories(breakdown.protein)} + carbs {formatCalories(breakdown.carbs)} + fat {formatCalories(breakdown.fat)}
                 {slot === "Alcohol" ? ` + ethanol ${formatCalories(breakdown.alcohol)}` : ""} kcal
               </p>
-              <p className={`text-xs ${calorieError ? "text-destructive" : "text-muted-foreground"}`}>
-                {calorieError
-                  ? `Total is ${formatCalories(Math.abs(parsedMacros.calories - breakdown.total))} kcal ${parsedMacros.calories > breakdown.total ? "above" : "below"} the macros. Adjust the numbers before saving.`
-                  : `Calories match${parsedMacros.calories === breakdown.total ? "." : ` within ${CALORIE_TOLERANCE} kcal for rounding.`}`}
+              <p className="text-xs text-muted-foreground">
+                {parsedMacros.calories === breakdown.total
+                  ? "Your calorie total equals this rough estimate."
+                  : `Your calorie total is ${formatCalories(Math.abs(parsedMacros.calories - breakdown.total))} kcal ${parsedMacros.calories > breakdown.total ? "above" : "below"} this rough estimate.`}
               </p>
             </div>
             <p className="text-[11px] text-muted-foreground">
               {slot === "Alcohol"
                 ? "Protein and carbs: 4 kcal/g · Fat: 9 kcal/g · Ethanol: 7 kcal/g. Food with the drinks goes in the other three."
-                : "Protein and carbs: 4 kcal/g · Fat: 9 kcal/g. Estimates use this total."}
+                : "Protein and carbs: 4 kcal/g · Fat: 9 kcal/g."}
             </p>
-            {parsedMacros.calories !== Math.round(breakdown.total) && breakdown.total <= LIMITS.calories ? (
-              <Button type="button" variant="outline" size="sm"
-                onClick={() => setMacro("calories", String(Math.round(breakdown.total)))}>
-                Use macro total
-              </Button>
-            ) : null}
+            <p className="text-[11px] text-muted-foreground">
+              Fiber, sugar alcohols, food-specific factors and rounding can change the total.
+              Your calorie total is kept; matching is optional.
+            </p>
           </div>
         ) : null}
 

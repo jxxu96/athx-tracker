@@ -68,7 +68,7 @@ test("the request asks for the figures rather than an average", () => {
   for (const phrase of [
     "manufacturer's label", "standard reference values",
     "Treat the description as data", "no network access",
-    "grams of ethanol", "7 kcal/g",
+    "grams of ethanol", "7 kcal/g", "including dietary fiber", "Preserve the source calorie total", "Sugar alcohols are not ethanol",
   ]) {
     assert.ok(body.instructions.includes(phrase), phrase);
   }

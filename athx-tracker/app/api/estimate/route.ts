@@ -1,7 +1,7 @@
 import { BodyTooLarge, database, guard, json, readBody, runtime, tooLarge } from "@/lib/server";
 import { grokRequest, extractEstimate } from "@/lib/grok";
 import { gatewayAllowed } from "@/lib/gateway";
-import { reconciledEstimateSchema } from "@/lib/validation";
+import { estimateSchema } from "@/lib/validation";
 import { z } from "zod";
 
 const DAILY_LIMIT = 60;
@@ -211,7 +211,7 @@ export async function POST(request: Request) {
     let estimate;
     try {
       const result = await response.json();
-      estimate = reconciledEstimateSchema.parse(
+      estimate = estimateSchema.parse(
         gateway ? result : extractEstimate(result),
       );
     } catch (error) {
