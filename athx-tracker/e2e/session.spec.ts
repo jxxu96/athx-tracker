@@ -299,9 +299,9 @@ test("squats with no clock still show a burn", async ({ page }) => {
     .filter({ has: page.locator('option[value="Back squat"]') })
     .first()
     .selectOption("Back squat");
-  await page.getByLabel("lb", { exact: true }).fill("135");
-  await page.getByLabel("Sets").fill("3");
-  await page.getByLabel("Reps").fill("5");
+  await page.getByRole("textbox", { name: "lb", exact: true }).fill("135");
+  await page.getByRole("textbox", { name: "Sets", exact: true }).fill("3");
+  await page.getByRole("textbox", { name: "Reps", exact: true }).fill("5");
   await page.getByRole("button", { name: "Save session" }).click();
 
   // 3x5 with no clock, 185 lb. Six minutes at 6 MET rounds to 50.
