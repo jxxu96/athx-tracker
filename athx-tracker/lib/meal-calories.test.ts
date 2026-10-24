@@ -76,9 +76,9 @@ test("estimates and queued meals use calories from the same rounded grams", () =
   const raw = { name: "Bowl", calories: 900, protein: 12.4, carbs: 13.4, fat: 9.6,
     assumptions: "One bowl", confidence: "medium" };
   const estimate = reconciledEstimateSchema.parse(raw);
-  assert.deepEqual(estimate, { ...raw, calories: 190, protein: 12, carbs: 13, fat: 10 });
+  assert.deepEqual(estimate, { ...raw, calories: 190, protein: 12, carbs: 13, fat: 10, alcohol: 0 });
   const filled = fillQueuedMeal({ ...meal, source: "queued" }, estimate);
-  assert.deepEqual(filled.macros, { calories: 190, protein: 12, carbs: 13, fat: 10 });
+  assert.deepEqual(filled.macros, { calories: 190, protein: 12, carbs: 13, fat: 10, alcohol: 0 });
   assert.ok(mealSchema.safeParse(filled).success);
   assert.equal(raw.calories, 900, "reconciliation must not mutate the response");
 });
@@ -91,4 +91,24 @@ test("reconciliation validates both the input and the derived calorie limit", ()
   for (const protein of [-1, NaN, Infinity, 2001]) {
     assert.ok(!reconciledEstimateSchema.safeParse({ ...raw, protein }).success);
   }
+  assert.ok(!reconciledEstimateSchema.safeParse({ ...raw, alcohol: 1 }).success);
+});
+
+test("estimated ethanol survives rounding, calories and queued saves", () => {
+  const raw = { name: "Beer and chips", calories: 250, protein: 2.2, carbs: 20.4,
+    fat: 4.6, alcohol: 14.6, assumptions: "355 mL beer, 5.2% ABV", confidence: "medium" };
+  const estimate = reconciledEstimateSchema.parse(raw);
+  assert.equal(estimate.alcohol, 15);
+  assert.equal(estimate.calories, 238);
+  for (const sitting of ["Alcohol", "Dinner"] as const) {
+    const filled = fillQueuedMeal({ ...meal, meal: sitting, source: "queued" }, estimate);
+    assert.equal(filled.meal, "Alcohol");
+    assert.equal(filled.macros.alcohol, 15);
+    assert.equal(filled.macros.calories, 238);
+    assert.ok(mealSchema.safeParse(filled).success);
+  }
+  for (const alcohol of [-1, NaN, Infinity, 501, "15"]) {
+    assert.ok(!reconciledEstimateSchema.safeParse({ ...raw, alcohol }).success);
+  }
+  assert.equal(raw.alcohol, 14.6);
 });

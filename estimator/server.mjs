@@ -129,6 +129,7 @@ const INSTRUCTIONS = [
   "high only when matched to a label or published figure, medium for standard reference values,",
   "low when extrapolating.",
   "Calories in kcal; protein, carbohydrates and fat in grams.",
+  "Return alcohol as grams of ethanol, separate from carbohydrates; use 0 when there is none. For drinks, estimate ethanol from the stated volume and ABV (mL x ABV/100 x 0.789 g/mL); state any assumed serving size and ABV. Include ethanol at 7 kcal/g in total calories, alongside all food and mixers.",
   "Totals cover the entire described meal.",
   "Do not give dietary advice.",
   "Do not claim to have looked anything up or checked it against a database:",
@@ -145,10 +146,11 @@ const SCHEMA = {
     protein: { type: "number", minimum: 0, maximum: 2000 },
     carbs: { type: "number", minimum: 0, maximum: 3000 },
     fat: { type: "number", minimum: 0, maximum: 2000 },
+    alcohol: { type: "number", minimum: 0, maximum: 500 },
     assumptions: { type: "string" },
     confidence: { type: "string", enum: ["low", "medium", "high"] },
   },
-  required: ["name", "calories", "protein", "carbs", "fat", "assumptions", "confidence"],
+  required: ["name", "calories", "protein", "carbs", "fat", "alcohol", "assumptions", "confidence"],
 };
 
 const API_KEY_VARS =
@@ -256,12 +258,13 @@ function clean(value) {
     protein: number(value.protein, 2000),
     carbs: number(value.carbs, 3000),
     fat: number(value.fat, 2000),
+    alcohol: number(value.alcohol === undefined ? 0 : value.alcohol, 500),
     assumptions: String(value.assumptions ?? "").trim().slice(0, 3000),
     confidence: ["low", "medium", "high"].includes(value.confidence)
       ? value.confidence
       : "low",
   };
-  const missing = ["calories", "protein", "carbs", "fat"].some(
+  const missing = ["calories", "protein", "carbs", "fat", "alcohol"].some(
     (key) => estimate[key] === null,
   );
   return estimate.name && !missing ? estimate : null;

@@ -15,13 +15,23 @@ const { budgetSlice, clean, parseCliOutput, structured } = await import("./serve
 
 const whole = {
   name: "Chicken thigh rice bowl",
-  calories: 780, protein: 46, carbs: 72, fat: 33,
+  calories: 780, protein: 46, carbs: 72, fat: 33, alcohol: 0,
   assumptions: "150 g cooked thigh, 200 g rice.",
   confidence: "medium",
 };
 
 test("a usable estimate survives intact", () => {
   assert.deepEqual(clean(whole), whole);
+});
+
+test("the gateway preserves ethanol, accepts old responses and rejects invalid grams", () => {
+  assert.equal(clean({ ...whole, alcohol: 14.56 }).alcohol, 14.6);
+  const { alcohol: omitted, ...old } = whole;
+  assert.equal(omitted, 0);
+  assert.equal(clean(old).alcohol, 0);
+  for (const alcohol of [-1, Infinity, "many", 501]) {
+    assert.equal(clean({ ...whole, alcohol }), null);
+  }
 });
 
 test("anything that is not an estimate is refused", () => {
