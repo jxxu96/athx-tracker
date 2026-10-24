@@ -35,6 +35,7 @@ import {
   parseLoad,
   reunitLoad,
   segmentBlock,
+  standardLoad,
   type Block,
   type Segment,
   type WeightUnit,
@@ -59,7 +60,14 @@ type Station = {
  * What one athlete actually did at one station. load is in the unit on
  * screen; savedKg is the load the entry was opened with, kept exact.
  */
-type Entry = { completed: string; time: string; load: string; savedKg?: number };
+type Entry = {
+  completed: string;
+  time: string;
+  load: string;
+  savedKg?: number;
+  /** The load box still holds the standard weight the form put there. */
+  prefilled?: boolean;
+};
 
 type LiftSide = { kg: string; sets: string; reps: string; savedKg?: number };
 type LiftRow = {
@@ -255,7 +263,24 @@ const stationsFor = (category: Workout["category"]): Station[] =>
       ? runStation()
       : [];
 
-const entriesFor = (stations: Station[]) => stations.map(() => blankEntry());
+/**
+ * Fresh entries for new stations. A circuit station that prescribes a load
+ * starts with that athlete's standard weight, rounded to the rack, so saving it
+ * untouched records it. Only ever for new stations: an entry opened for editing
+ * keeps exactly what was saved, blank included.
+ */
+const entriesFor = (stations: Station[], side: Side, unit: WeightUnit): Entry[] =>
+  stations.map((station) => {
+    const kg = circuitStation(station)?.kg?.[side];
+    return kg
+      ? { ...blankEntry(), load: standardLoad(kg, unit), prefilled: true }
+      : blankEntry();
+  });
+
+const entriesForBoth = (stations: Station[], unit: WeightUnit) => ({
+  hippos: entriesFor(stations, "hippos", unit),
+  gators: entriesFor(stations, "gators", unit),
+});
 
 const num = (value: string) => (value.trim() === "" ? 0 : Number(value));
 const seconds = (value: string) => (value.trim() === "" ? 0 : parseTime(value));
@@ -423,10 +448,7 @@ export function WorkoutForm({
   );
   const [entries, setEntries] = useState<Record<Side, Entry[]>>(() => {
     if (!editing || !editSide)
-      return {
-        hippos: entriesFor(metconStations()),
-        gators: entriesFor(metconStations()),
-      };
+      return entriesForBoth(metconStations(), weightUnit);
     const mine = editing.segments.map((segment) => ({
       completed: segment.completed ? String(segment.completed) : "",
       time: segment.seconds ? formatTime(segment.seconds) : "",
@@ -495,6 +517,16 @@ export function WorkoutForm({
   const measured = (station: Station) =>
     isRun || (isMixed && station.block === "endurance");
 
+  /**
+   * A standard weight still sitting in its box is offered again on the new
+   * unit's rack (35 lb becomes 15 kg, not 15.9); anything else converts.
+   */
+  function reunitEntry(entry: Entry, index: number, side: Side, next: WeightUnit): Entry {
+    const kg = entry.prefilled ? circuitStation(stations[index] ?? { name: "" })?.kg?.[side] : undefined;
+    if (kg) return { ...entry, load: standardLoad(kg, next) };
+    return { ...entry, load: reunitLoad(entry.load, unit, next, entry.savedKg) };
+  }
+
   /** Every weight box follows the switch, and the choice is remembered. */
   function changeUnit(next: WeightUnit) {
     if (next === unit) return;
@@ -506,8 +538,8 @@ export function WorkoutForm({
       })),
     );
     setEntries((current) => ({
-      hippos: current.hippos.map((e) => ({ ...e, load: reunitLoad(e.load, unit, next, e.savedKg) })),
-      gators: current.gators.map((e) => ({ ...e, load: reunitLoad(e.load, unit, next, e.savedKg) })),
+      hippos: current.hippos.map((e, i) => reunitEntry(e, i, "hippos", next)),
+      gators: current.gators.map((e, i) => reunitEntry(e, i, "gators", next)),
     }));
     setUnit(next);
     onWeightUnit?.(next);
@@ -518,7 +550,7 @@ export function WorkoutForm({
     setCategory(next);
     const fresh = stationsFor(next);
     setStations(fresh);
-    setEntries({ hippos: entriesFor(fresh), gators: entriesFor(fresh) });
+    setEntries(entriesForBoth(fresh, unit));
   }
 
   /** Sets the shape and a usual duration; everything stays editable after. */
@@ -550,8 +582,8 @@ export function WorkoutForm({
   function addStations(added: Station[]) {
     setStations((current) => [...current, ...added]);
     setEntries((current) => ({
-      hippos: [...current.hippos, ...entriesFor(added)],
-      gators: [...current.gators, ...entriesFor(added)],
+      hippos: [...current.hippos, ...entriesFor(added, "hippos", unit)],
+      gators: [...current.gators, ...entriesFor(added, "gators", unit)],
     }));
   }
 
@@ -593,7 +625,11 @@ export function WorkoutForm({
     if (elapsed[side].trim() !== "") return true;
     if (
       entries[side].some(
-        (e) => e.completed.trim() !== "" || e.time.trim() !== "" || e.load.trim() !== "",
+        // A standard weight the form filled in is not something you did.
+        (e) =>
+          e.completed.trim() !== "" ||
+          e.time.trim() !== "" ||
+          (!e.prefilled && e.load.trim() !== ""),
       )
     )
       return true;
@@ -614,7 +650,13 @@ export function WorkoutForm({
         const completed = num(entry.completed);
         // A run is measured, not chased: what you covered is the target.
         const target = measured(station) ? completed : num(station.target);
-        const kg = loadable(category, station) ? parseLoad(entry.load, unit, entry.savedKg) : null;
+        // A standard weight left in the box of a station never reached was
+        // not carried, so it is not recorded; one you typed always is.
+        const offered = entry.prefilled && completed === 0;
+        const kg =
+          loadable(category, station) && !offered
+            ? parseLoad(entry.load, unit, entry.savedKg)
+            : null;
         const segment: Segment = {
           name: exerciseName(station.name, station.custom),
           unit: station.unit,
@@ -747,7 +789,7 @@ export function WorkoutForm({
       setTitle("");
       setElapsed({ hippos: "", gators: "" });
       setStations(fresh);
-      setEntries({ hippos: entriesFor(fresh), gators: entriesFor(fresh) });
+      setEntries(entriesForBoth(fresh, unit));
       setLifts([blankLift()]);
       setCapHit({ hippos: false, gators: false });
       setGoal("");
@@ -1105,7 +1147,10 @@ export function WorkoutForm({
                                 return kg ? displayLoad(kg, unit) : "";
                               })()}
                               onChange={(event) =>
-                                setEntry(side, index, { load: event.target.value })
+                                setEntry(side, index, {
+                                  load: event.target.value,
+                                  prefilled: false,
+                                })
                               }
                             />
                           </Field>

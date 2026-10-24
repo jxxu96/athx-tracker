@@ -24,8 +24,11 @@ single SQLite file on a volume.
   and Other takes a name of its own, which is what the log then calls it.
   **Mixed** puts lifts, MetCon and endurance in one session: add the ATHX
   circuit, your own MetCon stations, or a run/erg, alongside lifts. MetCon
-  stations take an optional load per athlete, with the circuit's prescribed load
-  as the hint. A MetCon you did not finish is logged as what you completed at
+  stations take a load per athlete. On a new session the circuit's stations
+  start at the standard weight, rounded to the rack (nearest 5 lb, or 2.5 kg),
+  so saving untouched records it; a station you never reached does not record
+  the weight left in its box. Editing an entry shows exactly what was saved,
+  blank included. A MetCon you did not finish is logged as what you completed at
   each station, and "stopped at the time cap" records the cap; the log then
   reads e.g. "5/7 movements · 82% of the work · time cap hit". The lb/kg switch
   on the form is the same setting as Setup's and is remembered.

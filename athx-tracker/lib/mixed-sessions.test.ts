@@ -15,6 +15,7 @@ import {
   segmentBlock,
   sessionMet,
   sessionParts,
+  standardLoad,
   type Segment,
   type Workout,
 } from "./domain.ts";
@@ -179,4 +180,34 @@ test("only MetCon work counts toward completion", () => {
   assert.equal(metconCompletion(mixed)?.percent, 50);
   assert.equal(metconCompletion(workout({ category: "Solidcore", segments: [station({ completed: 1 })] })), null);
   assert.equal(metconCompletion(workout({ category: "Mixed", lifts: [{ name: "Deadlift", kg: 100, sets: 1, reps: 1 }] })), null);
+});
+
+// Standard weights, prefilled ------------------------------------------------
+
+test("a standard weight is offered on the rack: 5 lb steps, 2.5 kg steps", () => {
+  const offered = (kg: number) => [standardLoad(kg, "lb"), standardLoad(kg, "kg")];
+  assert.deepEqual(offered(7.5), ["15", "7.5"], "16.5 lb rounds down to 15");
+  assert.deepEqual(offered(15), ["35", "15"], "33.1 lb rounds up to 35");
+  assert.deepEqual(offered(20), ["45", "20"]);
+  assert.deepEqual(offered(30), ["65", "30"]);
+  assert.equal(standardLoad(0.5, "lb"), "5", "never offered as nothing");
+});
+
+test("a prefilled weight saved untouched reads back as the same number", () => {
+  // Every circuit load, in both units, and a spread of others: what is saved
+  // from the prefilled text shows again as exactly that text, now and on every
+  // later reopen-and-save.
+  const loads = METCON.flatMap((s) => (s.kg ? [s.kg.hippos, s.kg.gators] : []));
+  for (let kg = 1; kg <= 200; kg += 0.7) loads.push(Math.round(kg * 10) / 10);
+  for (const kg of loads) {
+    for (const unit of ["lb", "kg"] as const) {
+      const text = standardLoad(kg, unit);
+      let stored = parseLoad(text, unit);
+      assert.ok(stored !== null);
+      for (let i = 0; i < 3; i++) {
+        assert.equal(displayLoad(stored!, unit), text, `${kg} kg as ${text} ${unit}`);
+        stored = parseLoad(displayLoad(stored!, unit), unit, stored!);
+      }
+    }
+  }
 });

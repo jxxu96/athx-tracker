@@ -458,6 +458,24 @@ export function displayLoad(kg: number, unit: WeightUnit) {
 }
 
 /**
+ * Plate steps for a prescribed load: 5 lb in pounds, 2.5 kg in kilograms.
+ * Nobody grabs a 33.1 lb dumbbell, so the standard ATHX load is offered as
+ * the nearest weight actually on the rack.
+ */
+export const LOAD_STEP: Record<WeightUnit, number> = { lb: 5, kg: 2.5 };
+
+/**
+ * The text a weight box starts with for a prescribed load. It is what saving
+ * the box untouched records, so it has to read back as itself: parseLoad of
+ * this text, shown again in the same unit, is this text.
+ */
+export function standardLoad(kg: number, unit: WeightUnit) {
+  const step = LOAD_STEP[unit];
+  const rounded = Math.max(step, Math.round(fromKilograms(kg, unit) / step) * step);
+  return String(rounded);
+}
+
+/**
  * What a weight box means in kilograms. A box still showing a saved load
  * returns that load untouched, so opening and re-saving an entry never nudges
  * it by a rounding step (100 kg reads 220.5 lb, which is 100.02 kg). Blank or
