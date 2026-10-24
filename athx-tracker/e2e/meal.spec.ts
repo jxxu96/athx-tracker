@@ -65,6 +65,47 @@ test("ethanol is only on an alcohol sitting, and snacks alongside still count", 
   }).toEqual({ meal: "Alcohol", calories: 150, carbs: 20, alcohol: 10 });
 });
 
+for (const sitting of ["Alcohol", "Dinner"] as const) {
+  test(`estimated drinks from ${sitting} save ethanol and show ALC in the log`, async ({ page }) => {
+    await loggingFor(page, "Hippos").click();
+    await page.getByRole("group", { name: "Sitting" }).getByRole("button", { name: sitting }).click();
+    const name = `Estimated beer from ${sitting}`;
+    await page.route("**/api/estimate", (route) => route.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify({ estimate: { name, calories: 150, protein: 0,
+        carbs: 20, fat: 0, alcohol: 10, assumptions: "Beer with chips", confidence: "medium" } }),
+    }));
+    await page.getByPlaceholder("Two eggs, 80 g oats with milk, banana, flat white").fill("Beer with chips");
+    await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
+    await expect(page.getByLabel("Ethanol (g)")).toHaveValue("10");
+    await expect(page.getByText("Calories match.", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Save meal", exact: true }).click();
+    await expect.poll(async () => {
+      const saved = (await meals(page)).find((meal) => meal.name === name);
+      return saved ? { meal: saved.meal, alcohol: saved.macros.alcohol, calories: saved.macros.calories } : null;
+    }).toEqual({ meal: "Alcohol", alcohol: 10, calories: 150 });
+    await page.getByRole("button", { name: "Log", exact: true }).click();
+    await expect(page.getByRole("listitem").filter({ hasText: name })).toContainText("Ethanol 10 g");
+  });
+}
+
+test("a new food estimate clears ethanol left by a previous drink estimate", async ({ page }) => {
+  await page.getByRole("group", { name: "Sitting" }).getByRole("button", { name: "Alcohol" }).click();
+  let alcohol = 10;
+  await page.route("**/api/estimate", (route) => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ estimate: { name: "Changing estimate", calories: 80 + alcohol * 7,
+      protein: 0, carbs: 20, fat: 0, alcohol, assumptions: "", confidence: "medium" } }),
+  }));
+  await page.getByPlaceholder("Two eggs, 80 g oats with milk, banana, flat white").fill("Drink");
+  await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
+  await expect(page.getByLabel("Ethanol (g)")).toHaveValue("10");
+  alcohol = 0;
+  await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
+  await expect(page.getByLabel("Ethanol (g)")).toHaveValue("0");
+  await expect(page.getByText("Calories match.", { exact: true })).toBeVisible();
+});
+
 test("the log marks a meal with a bowl and a session with a weight", async ({ page }) => {
   const posted = await page.evaluate(async () => {
     const send = (body: object) =>

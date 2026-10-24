@@ -30,16 +30,18 @@ export function nextRetryDelay(current: number, outcome: DrainOutcome) {
  */
 export function fillQueuedMeal(
   meal: Meal,
-  estimate: Macros & { name: string; assumptions: string },
+  estimate: Macros & { alcohol?: number; name: string; assumptions: string },
 ): Meal {
   return {
     ...meal,
     name: meal.name.trim() || estimate.name,
+    meal: (estimate.alcohol ?? 0) > 0 ? "Alcohol" : meal.meal,
     macros: {
       calories: estimate.calories,
       protein: estimate.protein,
       carbs: estimate.carbs,
       fat: estimate.fat,
+      ...(estimate.alcohol !== undefined ? { alcohol: estimate.alcohol } : {}),
     },
     assumptions: estimate.assumptions,
     source: "grok",

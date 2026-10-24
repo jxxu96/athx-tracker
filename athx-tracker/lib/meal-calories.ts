@@ -22,12 +22,13 @@ export function mealCalorieError(macros: Macros & { alcohol?: number }) {
 }
 
 /** Round the displayed grams first, then derive calories from those same grams. */
-export function reconcileEstimate<T extends Macros>(estimate: T): T {
+export function reconcileEstimate<T extends Macros & { alcohol?: number }>(estimate: T): T {
   const rounded = {
     ...estimate,
     protein: Math.round(estimate.protein),
     carbs: Math.round(estimate.carbs),
     fat: Math.round(estimate.fat),
+    ...(estimate.alcohol !== undefined ? { alcohol: Math.round(estimate.alcohol) } : {}),
   };
   return { ...rounded, calories: macroCalories(rounded).total };
 }

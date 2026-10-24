@@ -54,7 +54,7 @@ export const mealSchema = z.object({
   if (message) context.addIssue({ code: z.ZodIssueCode.custom, path: ["macros", "calories"], message });
 });
 /** What an estimator has to come back with, wherever the answer came from. */
-export const estimateSchema = macroSchema.extend({
+export const estimateSchema = mealMacroSchema.extend({
   name: z.string().min(1).max(300),
   assumptions: z.string().max(3000),
   confidence: z.enum(["low", "medium", "high"]),

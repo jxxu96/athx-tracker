@@ -36,6 +36,7 @@ type MacroDraft = Record<keyof Macros, string>;
 const emptyMacros: MacroDraft = { calories: "", protein: "", carbs: "", fat: "" };
 
 type Estimate = Macros & {
+  alcohol?: number;
   name: string;
   assumptions: string;
   confidence: "low" | "medium" | "high";
@@ -189,6 +190,8 @@ export function MealForm({
         body: JSON.stringify({ description: description.trim() }),
       });
       setName(estimate.name.slice(0, 300));
+      setEthanol(String(estimate.alcohol ?? 0));
+      if ((estimate.alcohol ?? 0) > 0) setSlot("Alcohol");
       setMacros({
         calories: String(Math.round(estimate.calories)),
         protein: String(Math.round(estimate.protein)),
