@@ -55,7 +55,7 @@ test("ethanol is only on an alcohol sitting, and snacks alongside still count", 
   await page.getByLabel("Carbs (g)").fill("20");
   await page.getByLabel("Fat (g)").fill("0");
   await expect(page.getByText(/ethanol 70/)).toBeVisible();
-  await expect(page.getByText("Calories match.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Your calorie total equals this rough estimate.", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Save meal", exact: true }).click();
   await expect.poll(async () => {
     const saved = (await meals(page)).find((meal) => meal.name === "Beers and chips");
@@ -78,7 +78,7 @@ for (const sitting of ["Alcohol", "Dinner"] as const) {
     await page.getByPlaceholder("Two eggs, 80 g oats with milk, banana, flat white").fill("Beer with chips");
     await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
     await expect(page.getByLabel("Ethanol (g)")).toHaveValue("10");
-    await expect(page.getByText("Calories match.", { exact: true })).toBeVisible();
+    await expect(page.getByText("Your calorie total equals this rough estimate.", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Save meal", exact: true }).click();
     await expect.poll(async () => {
       const saved = (await meals(page)).find((meal) => meal.name === name);
@@ -103,7 +103,7 @@ test("a new food estimate clears ethanol left by a previous drink estimate", asy
   alcohol = 0;
   await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
   await expect(page.getByLabel("Ethanol (g)")).toHaveValue("0");
-  await expect(page.getByText("Calories match.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Your calorie total equals this rough estimate.", { exact: true })).toBeVisible();
 });
 
 test("the log marks a meal with a bowl and a session with a weight", async ({ page }) => {
@@ -138,99 +138,86 @@ test("the log marks a meal with a bowl and a session with a weight", async ({ pa
   await expect(session.locator(".lucide-soup")).toHaveCount(0);
 });
 
-test("a mismatched meal must be corrected before it is saved or updated", async ({ page }) => {
-  await expect(page.getByText(/From macros:/)).toHaveCount(0);
-  await page.getByLabel("Meal", { exact: true }).fill("Calorie check bowl");
+test("the macro comparison is advisory when creating and editing a meal", async ({ page }) => {
+  await expect(page.getByText(/Rough macro estimate:/)).toHaveCount(0);
+  await loggingFor(page, "Hippos").click();
+  await page.getByLabel("Meal", { exact: true }).fill("Independent calorie bowl");
   await page.getByLabel("Calories (kcal)").fill("900");
   await page.getByLabel("Protein (g)").fill("30");
   await page.getByLabel("Carbs (g)").fill("50");
   await page.getByLabel("Fat (g)").fill("15");
-  await expect(page.getByRole("status").filter({ hasText: "From macros:" })).toContainText("From macros: 455 kcal");
+  await expect(page.getByRole("status").filter({ hasText: "Rough macro estimate:" })).toContainText("455 kcal");
   await expect(page.getByText("Protein 120 + carbs 200 + fat 135 kcal")).toBeVisible();
-  await expect(page.getByText(/Total is 445 kcal above/)).toBeVisible();
+  await expect(page.getByText(/Your calorie total is 445 kcal above/)).toBeVisible();
+  await expect(page.getByText(/Fiber, sugar alcohols/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Use macro total" })).toHaveCount(0);
   const { violations } = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
   expect(violations).toEqual([]);
   await page.getByRole("button", { name: "Save meal", exact: true }).click();
-  await expect(page.locator("form").getByRole("alert")).toContainText("Calories must be within 10 kcal");
-  expect((await meals(page)).some((meal) => meal.name === "Calorie check bowl")).toBe(false);
-
-  // The correction is one athlete. Both is its own case below, and an update
-  // has to land on the single record this save creates.
-  await loggingFor(page, "Hippos").click();
-  await page.getByRole("button", { name: "Use macro total" }).click();
-  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("455");
-  await expect(page.getByText("Calories match.", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Save meal", exact: true }).click();
-  await expect.poll(async () => (await meals(page)).find((meal) => meal.name === "Calorie check bowl")?.macros.calories).toBe(455);
-  const saved = (await meals(page)).filter((meal) => meal.name === "Calorie check bowl");
-  expect(saved).toHaveLength(1);
-
+  await expect.poll(async () => (await meals(page)).find((meal) => meal.name === "Independent calorie bowl")?.macros.calories).toBe(900);
+  const saved = (await meals(page)).find((meal) => meal.name === "Independent calorie bowl");
   await page.getByRole("button", { name: "Log", exact: true }).click();
-  await page.getByText("Calorie check bowl", { exact: true }).locator("..").locator("..").getByLabel("Edit entry").click();
-  await expect(page.getByRole("group", { name: "Sitting" }).getByRole("button", { name: saved[0]?.meal ?? "" })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByText("Matched to the time.")).toHaveCount(0);
+  await page.getByRole("listitem").filter({ hasText: "Independent calorie bowl" }).getByLabel("Edit entry").click();
   await page.getByLabel("Protein (g)").fill("40");
-  await expect(page.getByText(/Total is 40 kcal below/)).toBeVisible();
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("900");
   await page.getByRole("button", { name: "Update meal" }).click();
-  await expect(page.locator("form").getByRole("alert")).toContainText("495 kcal");
-  await page.getByRole("button", { name: "Use macro total" }).click();
-  await page.getByRole("button", { name: "Update meal" }).click();
-  await expect.poll(async () => (await meals(page)).find((meal) => meal.name === "Calorie check bowl")?.macros.calories).toBe(495);
-  const updated = (await meals(page)).filter((meal) => meal.name === "Calorie check bowl");
+  await expect.poll(async () => (await meals(page)).find((meal) => meal.name === "Independent calorie bowl")?.macros.protein).toBe(40);
+  const updated = (await meals(page)).filter((meal) => meal.name === "Independent calorie bowl");
   expect(updated).toHaveLength(1);
-  expect(updated[0]?.id).toBe(saved[0]?.id);
-  expect(updated[0]?.athlete).toBe(saved[0]?.athlete);
+  expect(updated[0]?.id).toBe(saved?.id);
+  expect(updated[0]?.macros.calories).toBe(900);
 });
 
-test("a small rounding difference can be saved and invalid input has no misleading total", async ({ page }) => {
+test("a rounding difference is advisory and invalid grams still block saving", async ({ page }) => {
   await loggingFor(page, "Hippos").click();
   await page.getByLabel("Meal", { exact: true }).fill("Rounded meal");
   await page.getByLabel("Calories (kcal)").fill("460");
   await page.getByLabel("Protein (g)").fill("30");
   await page.getByLabel("Carbs (g)").fill("50");
   await page.getByLabel("Fat (g)").fill("nope");
-  await expect(page.getByText(/From macros:/)).toHaveCount(0);
+  await expect(page.getByText(/Rough macro estimate:/)).toHaveCount(0);
+  await page.getByRole("button", { name: "Save meal", exact: true }).click();
+  await expect(page.locator("form").getByRole("alert")).toContainText("Fat needs a number");
   await page.getByLabel("Fat (g)").fill("15");
-  await expect(page.getByText("Calories match within 10 kcal for rounding.")).toBeVisible();
+  await expect(page.getByText(/Your calorie total is 5 kcal above/)).toBeVisible();
   await page.getByRole("button", { name: "Save meal", exact: true }).click();
   await expect.poll(async () => (await meals(page)).find((meal) => meal.name === "Rounded meal")?.macros.calories).toBe(460);
 });
 
-test("the API refuses a mismatch even when the form is bypassed", async ({ page }) => {
+test("the API preserves an independent calorie total", async ({ page }) => {
   const result = await page.evaluate(async () => {
     const response = await fetch("/api/records", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: crypto.randomUUID(), kind: "meal", athlete: "gators",
-        day: "2026-10-23", name: "Mismatch", meal: "Lunch", source: "manual", assumptions: "",
-        macros: { calories: 900, protein: 30, carbs: 50, fat: 15 } }),
+        day: "2026-10-23", name: "Fiber label", meal: "Lunch", source: "manual", assumptions: "",
+        macros: { calories: 160, protein: 6, carbs: 40, fat: 3 } }),
     });
-    return { status: response.status, body: await response.json() };
+    return { status: response.status };
   });
-  expect(result.status).toBe(400);
-  expect(result.body.error).toContain("macro total (455 kcal)");
-  expect((await meals(page)).some((meal) => meal.name === "Mismatch")).toBe(false);
+  expect(result.status).toBe(200);
+  expect((await meals(page)).find((meal) => meal.name === "Fiber label")?.macros.calories).toBe(160);
 });
 
-test("editing an estimate rechecks calories and saves the correction as manual", async ({ page }) => {
+test("a fiber-containing estimate keeps calories and fractional grams, including after edits", async ({ page }) => {
   await loggingFor(page, "Hippos").click();
   await page.route("**/api/estimate", (route) => route.fulfill({
     status: 200, contentType: "application/json",
-    body: JSON.stringify({ estimate: { name: "Estimated bowl", calories: 190,
-      protein: 12, carbs: 13, fat: 10, assumptions: "One bowl", confidence: "medium" } }),
+    body: JSON.stringify({ estimate: { name: "Estimated fiber cereal", calories: 160,
+      protein: 6.2, carbs: 40.4, fat: 2.6, assumptions: "Total carbs include fiber", confidence: "medium" } }),
   }));
-  await page.getByPlaceholder("Two eggs, 80 g oats with milk, banana, flat white").fill("One bowl");
+  await page.getByPlaceholder("Two eggs, 80 g oats with milk, banana, flat white").fill("One bowl of fiber cereal");
   await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
-  await expect(page.getByText("Calories match.", { exact: true })).toBeVisible();
-  await page.getByLabel("Fat (g)").fill("20");
-  await expect(page.getByText(/Total is 90 kcal below/)).toBeVisible();
-  await page.getByRole("button", { name: "Use macro total" }).click();
-  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("280");
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("160");
+  await expect(page.getByLabel("Carbs (g)")).toHaveValue("40.4");
+  await expect(page.getByText(/Rough macro estimate: 209.8 kcal/)).toBeVisible();
+  await page.getByLabel("Fat (g)").fill("3.6");
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("160");
   await page.getByRole("button", { name: "Save meal", exact: true }).click();
   await expect.poll(async () => {
-    const saved = (await meals(page)).find((meal) => meal.name === "Estimated bowl");
-    return saved ? { source: saved.source, calories: saved.macros.calories } : null;
-  }).toEqual({ source: "manual", calories: 280 });
+    const saved = (await meals(page)).find((meal) => meal.name === "Estimated fiber cereal");
+    return saved ? { source: saved.source, calories: saved.macros.calories, carbs: saved.macros.carbs } : null;
+  }).toEqual({ source: "manual", calories: 160, carbs: 40.4 });
 });
 
 test("usual meals are one person's repeats, and a tap fills only that person's meal", async ({ page }) => {

@@ -34,10 +34,11 @@ single SQLite file on a volume.
   on the form is the same setting as Setup's and is remembered.
 - **Meal** — describe a meal and let Grok estimate the macros, or type them in
   yourself. Editing an estimated number saves the meal as your own figures.
-  A live calorie breakdown checks protein × 4 + carbs × 4 + fat × 9 against
-  the total. Differences over 10 kcal block saving; **Use macro total** fills
-  the calculated calories in one tap. Automatic estimates, including queued
-  meals, calculate calories from the rounded grams before returning them.
+  Calories keep the source's reported or estimated total, including in queued
+  meals. A rough 4/4/9 comparison (plus ethanol at 7 kcal/g on Alcohol) is
+  advisory: differences never block saving or rewrite calories. Total carbs
+  include fiber; fiber, sugar alcohols, food-specific factors and rounding can
+  make the simple calculation differ from a label's calorie total.
 - **Log** — everything logged, newest first, filterable, with edit and delete, each
   session showing what it burned. It opens with the most recent entries and fetches
   the rest when asked, and draws a hundred at a time however many are loaded, so a

@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { mealCalorieError, reconcileEstimate } from "./meal-calories.ts";
 const finite = z.number().finite().nonnegative();
 export const macroSchema = z.object({
   calories: finite.max(20000), protein: finite.max(2000), carbs: finite.max(3000), fat: finite.max(2000),
@@ -40,8 +39,7 @@ export const mealSchema = z.object({
   macros: mealMacroSchema,
   source: z.enum(["manual","grok","queued"]), assumptions: z.string().max(3000),
 }).strict().superRefine((meal, context) => {
-  // Ethanol belongs to the Alcohol sitting only. One gram is 7 kcal, inside
-  // the rounding tolerance, so the calorie check alone would let it through.
+  // Ethanol belongs to the Alcohol sitting only.
   if (meal.meal !== "Alcohol" && meal.macros.alcohol !== 0) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
@@ -50,8 +48,6 @@ export const mealSchema = z.object({
     });
     return;
   }
-  const message = mealCalorieError(meal.macros);
-  if (message) context.addIssue({ code: z.ZodIssueCode.custom, path: ["macros", "calories"], message });
 });
 /** What an estimator has to come back with, wherever the answer came from. */
 export const estimateSchema = mealMacroSchema.extend({
@@ -59,9 +55,6 @@ export const estimateSchema = mealMacroSchema.extend({
   assumptions: z.string().max(3000),
   confidence: z.enum(["low", "medium", "high"]),
 });
-// Both interactive estimates and the background queue use this boundary.
-// Validate again after reconciliation so derived calories cannot exceed the cap.
-export const reconciledEstimateSchema = estimateSchema.transform(reconcileEstimate).pipe(estimateSchema);
 export const recordSchema = z.union([workoutSchema, mealSchema]);
 export const settingsSchema = z.object({
   eventDate: day, eventName: z.string().trim().min(1).max(100),

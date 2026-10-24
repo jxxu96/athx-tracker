@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { macroCalories, mealCalorieError } from "./meal-calories.ts";
-import { mealSchema, reconciledEstimateSchema } from "./validation.ts";
+import { macroCalories } from "./meal-calories.ts";
+import { mealSchema, estimateSchema } from "./validation.ts";
 import { fillQueuedMeal } from "./queue-rules.ts";
 import type { Meal } from "./domain.ts";
 
@@ -11,7 +11,7 @@ const meal: Meal = {
   macros: { calories: 455, protein: 30, carbs: 50, fat: 15 },
 };
 
-test("each macro contributes its calories, including fractional grams", () => {
+test("the rough macro comparison includes fractional grams and ethanol", () => {
   assert.deepEqual(macroCalories({ protein: 12.5, carbs: 20.25, fat: 3.5 }), {
     protein: 50, carbs: 81, fat: 31.5, alcohol: 0, total: 162.5,
   });
@@ -19,96 +19,66 @@ test("each macro contributes its calories, including fractional grams", () => {
   assert.equal(macroCalories({ protein: 0, carbs: 20, fat: 0, alcohol: 10 }).total, 150);
 });
 
-test("meal saves allow rounding but refuse discrepancies in either direction", () => {
+test("saved calories are independent of the rough comparison for every source", () => {
   for (const source of ["manual", "grok", "queued"] as const) {
-    for (const offset of [-10.01, -10, 0, 10, 10.01, 100]) {
-      const macros = { ...meal.macros, calories: 455 + offset };
-      const matches = Math.abs(offset) <= 10;
-      assert.equal(mealCalorieError(macros) === "", matches);
-      assert.equal(mealSchema.safeParse({ ...meal, source, macros }).success, matches);
+    for (const calories of [0, 300, 445, 455, 465, 900, 20000]) {
+      const macros = { ...meal.macros, calories };
+      assert.deepEqual(mealSchema.parse({ ...meal, source, macros }).macros, { ...macros, alcohol: 0 });
+    }
+  }
+  assert.ok(mealSchema.safeParse({ ...meal, source: "queued",
+    macros: { calories: 0, protein: 0, carbs: 0, fat: 0 },
+  }).success);
+  assert.ok(mealSchema.safeParse({ ...meal,
+    macros: { calories: 500, protein: 0, carbs: 0, fat: 0 },
+  }).success, "calories may be known even when the gram breakdown is not");
+});
+
+test("alcohol entries keep source calories and other sittings still reject ethanol", () => {
+  const drinks = { ...meal, meal: "Alcohol" as const,
+    macros: { ...meal.macros, calories: 640, alcohol: 30 } };
+  assert.deepEqual(mealSchema.parse(drinks).macros, drinks.macros);
+  for (const sitting of ["Breakfast", "Lunch", "Dinner", "Snack"] as const) {
+    assert.ok(!mealSchema.safeParse({ ...drinks, meal: sitting }).success, sitting);
+  }
+  assert.equal(mealSchema.parse(meal).macros.alcohol, 0, "older records still parse");
+});
+
+test("fiber-containing estimates keep their source calories and fractional grams through the queue", () => {
+  // A high-fiber label need not equal its total-carb 4/4/9 calculation.
+  const raw = { name: "Fiber cereal", calories: 160, protein: 6.2, carbs: 40.4, fat: 2.6,
+    assumptions: "Total carbs include fiber", confidence: "medium" };
+  const estimate = estimateSchema.parse(raw);
+  assert.deepEqual(estimate, { ...raw, alcohol: 0 });
+  assert.notEqual(macroCalories(estimate).total, raw.calories);
+  const filled = fillQueuedMeal({ ...meal, source: "queued" }, estimate);
+  assert.deepEqual(filled.macros, { calories: 160, protein: 6.2, carbs: 40.4, fat: 2.6, alcohol: 0 });
+  assert.ok(mealSchema.safeParse(filled).success);
+  assert.equal(raw.calories, 160);
+});
+
+test("independent calories and grams still have numeric bounds", () => {
+  const raw = { name: "Bowl", calories: 20000, protein: 2000, carbs: 3000, fat: 1,
+    alcohol: 1, assumptions: "", confidence: "low" };
+  assert.ok(estimateSchema.safeParse(raw).success, "a derived total no longer imposes another cap");
+  for (const [field, ceiling] of Object.entries({ calories: 20000, protein: 2000, carbs: 3000, fat: 2000, alcohol: 500 })) {
+    for (const value of [-1, NaN, Infinity, ceiling + 1, "15"]) {
+      assert.ok(!estimateSchema.safeParse({ ...raw, [field]: value }).success, field + "=" + value);
+      assert.ok(!mealSchema.safeParse({ ...meal, meal: "Alcohol", macros: { ...meal.macros, [field]: value } }).success);
     }
   }
 });
 
-test("an alcohol sitting counts ethanol and food, and other sittings refuse ethanol", () => {
-  const drinks = {
-    ...meal,
-    meal: "Alcohol" as const,
-    macros: { calories: 665, protein: 30, carbs: 50, fat: 15, alcohol: 30 },
-  };
-  assert.equal(mealCalorieError(drinks.macros), "");
-  assert.ok(mealSchema.safeParse(drinks).success, "snacks alongside the drinks");
-  assert.ok(mealSchema.safeParse({
-    ...drinks,
-    macros: { calories: 70, protein: 0, carbs: 0, fat: 0, alcohol: 10 },
-  }).success, "drinks with nothing alongside");
-  assert.ok(!mealSchema.safeParse({
-    ...drinks,
-    macros: { ...drinks.macros, calories: 676 },
-  }).success, "eleven kcal off still fails");
-
-  assert.ok(mealSchema.safeParse(meal).success, "older meals omit ethanol");
-  assert.equal(mealSchema.parse(meal).macros.alcohol, 0);
-  assert.ok(!mealSchema.safeParse({
-    ...meal,
-    meal: "Breakfast",
-    macros: { calories: 525, protein: 30, carbs: 50, fat: 15, alcohol: 10 },
-  }).success, "breakfast cannot carry ethanol");
-  for (const sitting of ["Lunch", "Dinner", "Snack"] as const) {
-    assert.ok(!mealSchema.safeParse({
-      ...meal,
-      meal: sitting,
-      macros: { ...meal.macros, alcohol: 1 },
-    }).success, sitting);
-  }
-});
-
-test("the queue can still store a placeholder with no estimate yet", () => {
-  assert.ok(mealSchema.safeParse({ ...meal, source: "queued",
-    macros: { calories: 0, protein: 0, carbs: 0, fat: 0 },
-  }).success);
-  assert.ok(!mealSchema.safeParse({ ...meal,
-    macros: { calories: 500, protein: 0, carbs: 0, fat: 0 },
-  }).success, "calories alone must not bypass the check");
-});
-
-test("estimates and queued meals use calories from the same rounded grams", () => {
-  const raw = { name: "Bowl", calories: 900, protein: 12.4, carbs: 13.4, fat: 9.6,
-    assumptions: "One bowl", confidence: "medium" };
-  const estimate = reconciledEstimateSchema.parse(raw);
-  assert.deepEqual(estimate, { ...raw, calories: 190, protein: 12, carbs: 13, fat: 10, alcohol: 0 });
-  const filled = fillQueuedMeal({ ...meal, source: "queued" }, estimate);
-  assert.deepEqual(filled.macros, { calories: 190, protein: 12, carbs: 13, fat: 10, alcohol: 0 });
-  assert.ok(mealSchema.safeParse(filled).success);
-  assert.equal(raw.calories, 900, "reconciliation must not mutate the response");
-});
-
-test("reconciliation validates both the input and the derived calorie limit", () => {
-  const raw = { name: "Bowl", calories: 20000, protein: 2000, carbs: 3000, fat: 0,
-    assumptions: "", confidence: "low" };
-  assert.ok(reconciledEstimateSchema.safeParse(raw).success);
-  assert.ok(!reconciledEstimateSchema.safeParse({ ...raw, fat: 1 }).success);
-  for (const protein of [-1, NaN, Infinity, 2001]) {
-    assert.ok(!reconciledEstimateSchema.safeParse({ ...raw, protein }).success);
-  }
-  assert.ok(!reconciledEstimateSchema.safeParse({ ...raw, alcohol: 1 }).success);
-});
-
-test("estimated ethanol survives rounding, calories and queued saves", () => {
+test("estimated ethanol and its independent calorie total survive queued saves", () => {
   const raw = { name: "Beer and chips", calories: 250, protein: 2.2, carbs: 20.4,
     fat: 4.6, alcohol: 14.6, assumptions: "355 mL beer, 5.2% ABV", confidence: "medium" };
-  const estimate = reconciledEstimateSchema.parse(raw);
-  assert.equal(estimate.alcohol, 15);
-  assert.equal(estimate.calories, 238);
+  const estimate = estimateSchema.parse(raw);
+  assert.deepEqual(estimate, raw);
   for (const sitting of ["Alcohol", "Dinner"] as const) {
     const filled = fillQueuedMeal({ ...meal, meal: sitting, source: "queued" }, estimate);
     assert.equal(filled.meal, "Alcohol");
-    assert.equal(filled.macros.alcohol, 15);
-    assert.equal(filled.macros.calories, 238);
+    assert.equal(filled.macros.alcohol, 14.6);
+    assert.equal(filled.macros.calories, 250);
     assert.ok(mealSchema.safeParse(filled).success);
   }
-  for (const alcohol of [-1, NaN, Infinity, 501, "15"]) {
-    assert.ok(!reconciledEstimateSchema.safeParse({ ...raw, alcohol }).success);
-  }
-  assert.equal(raw.alcohol, 14.6);
 });
