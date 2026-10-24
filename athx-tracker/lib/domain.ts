@@ -231,20 +231,41 @@ export function untimedLiftSeconds(lifts: { sets: number; reps: number }[]) {
   return seconds;
 }
 
+function kcalFor(met: number, bodyweightKg: number, seconds: number) {
+  return ((met * 3.5 * bodyweightKg) / 200) * (seconds / 60);
+}
+
 /**
  * Null when it cannot be known rather than a number that looks measured.
- * That takes a bodyweight, and either a duration or lifts with sets and reps.
- * A clock already recorded is the duration, lifts included, so the allowance
- * above is not added on top of it. Rounded to ten, because the method is not
- * worth more.
+ * That takes a bodyweight, and some work: a clock, station splits, or lifts.
+ * Station time is the MetCon or the run. A clock longer than those splits
+ * already includes the lifts, so their allowance is not added again. A clock
+ * that is only the stations does not, and the lifts count beside it. Rounded
+ * to ten, because the method is not worth more.
  */
 export function estimateBurn(workout: Workout, bodyweightKg: number) {
   if (!(bodyweightKg > 0)) return null;
-  const fromLifts = !(workout.seconds > 0);
-  const seconds = fromLifts ? untimedLiftSeconds(workout.lifts) : workout.seconds;
-  if (!(seconds > 0)) return null;
-  const met = fromLifts ? MET_BY_CATEGORY.Strength : sessionMet(workout);
-  const kcal = ((met * 3.5 * bodyweightKg) / 200) * (seconds / 60);
+  const stationSeconds = workout.segments.reduce(
+    (sum, segment) => sum + Math.max(0, segment.seconds),
+    0,
+  );
+  const clock = Math.max(0, workout.seconds);
+  const liftSeconds = untimedLiftSeconds(workout.lifts);
+  if (clock === 0 && stationSeconds === 0) {
+    if (!(liftSeconds > 0)) return null;
+    return Math.round(kcalFor(MET_BY_CATEGORY.Strength, bodyweightKg, liftSeconds) / 10) * 10;
+  }
+  const timed = Math.max(clock, stationSeconds);
+  const gap = Math.max(0, timed - stationSeconds);
+  // The gap is already priced as lifting when this session has lifts.
+  const liftExtra = workout.lifts.length === 0
+    ? 0
+    : gap > 0
+      ? Math.max(0, liftSeconds - gap)
+      : liftSeconds;
+  const met = sessionMet({ ...workout, seconds: timed });
+  const kcal = kcalFor(met, bodyweightKg, timed)
+    + kcalFor(MET_BY_CATEGORY.Strength, bodyweightKg, liftExtra);
   return Math.round(kcal / 10) * 10;
 }
 

@@ -84,6 +84,30 @@ test("lifts without a clock still burn, and a clock is not counted twice", () =>
   );
 });
 
+test("a clock filled by stations still leaves the lifts their own burn", () => {
+  // Friday: 5:05 of MetCon stations, and 3x4 squats with no time of their own.
+  const stations = [
+    segment({ name: "Opening row", unit: "cal" as const, completed: 0, target: 40, seconds: 0 }),
+    segment({ name: "DB ground to overhead", completed: 30, target: 30, seconds: 90 }),
+    segment({ name: "DB bench press", completed: 30, target: 30, seconds: 65 }),
+    segment({ name: "Sandbag squats", completed: 30, target: 30, seconds: 90 }),
+    segment({ name: "Sandbag carry", unit: "m" as const, completed: 60, target: 60, seconds: 60 }),
+    segment({ name: "Burpees over bench", completed: 0, target: 30, seconds: 0 }),
+    segment({ name: "Closing row", unit: "cal" as const, completed: 0, target: 40, seconds: 0 }),
+  ];
+  const kg = 74.38914874238205;
+  const metcon = workout({ category: "MetCon", seconds: 305, segments: stations });
+  const both = workout({
+    category: "Mixed",
+    seconds: 305,
+    segments: stations,
+    lifts: [{ name: "Back squat", kg: 61.23, sets: 3, reps: 4 }],
+  });
+  // 305 s at 8 MET is 52.9. The squats are 12 reps and two rests, 45.3 at 6 MET.
+  assert.equal(estimateBurn(metcon, kg), 50);
+  assert.equal(estimateBurn(both, kg), 100);
+});
+
 test("burn follows MET x 3.5 x kg / 200 per minute", () => {
   // MetCon is 8 MET: 8 * 3.5 * 80 / 200 * 30 = 336, rounded to the nearest ten.
   assert.equal(estimateBurn(workout({ seconds: 1800 }), 80), 340);
