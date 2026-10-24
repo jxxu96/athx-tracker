@@ -356,3 +356,71 @@ test("one session holds lifts, a part-finished MetCon with loads, and a run", as
   await expect(entry.getByText(/time cap hit/)).toBeVisible();
   await expect(entry.getByText(/DB ground to overhead 12\.5 kg/)).toBeVisible();
 });
+
+test("circuit loads start at the standard weight, and reopening keeps it", async ({ page }) => {
+  // Logging for both: the column nobody touched must not become a session
+  // just because the form filled its weights in.
+  await openSession(page);
+  await expect(typeSelect(page)).toHaveValue("MetCon");
+  // Settings outlive each spec, so say which unit this one is in.
+  const unitSwitch = page.getByRole("group", { name: "Weight unit" });
+  await unitSwitch.getByRole("button", { name: "lb" }).click();
+  const g2oh = page.getByLabel("Gators DB ground to overhead load");
+  const hippos = page.getByLabel("Hippos DB ground to overhead load");
+  await expect(g2oh).toHaveValue("35"); // 15 kg is 33.1 lb, on the 5 lb rack
+  await expect(hippos).toHaveValue("15"); // 7.5 kg is 16.5 lb
+  // Switching offers the other rack's standard, not a conversion of this one.
+  await unitSwitch.getByRole("button", { name: "kg" }).click();
+  await expect(g2oh).toHaveValue("15");
+  await expect(hippos).toHaveValue("7.5");
+  await unitSwitch.getByRole("button", { name: "lb" }).click();
+  await expect(g2oh).toHaveValue("35");
+
+  const gators = page.locator("li").filter({ hasText: "DB ground to overhead" }).locator("div.rounded-lg").nth(1);
+  await gators.getByLabel("Done (reps)").fill("30");
+  await page.getByRole("button", { name: "Save session" }).click();
+
+  const read = () =>
+    page.evaluate(async () => (await fetch("/api/records").then((r) => r.json())).records);
+  await expect.poll(async () => (await read()).length).toBe(1);
+  const [saved] = await read();
+  expect(saved.athlete).toBe("gators");
+  const station = (record: { segments: { name: string; kg?: number }[] }, name: string) =>
+    record.segments.find((s) => s.name === name)!;
+  const kg = station(saved, "DB ground to overhead").kg;
+  expect(kg).toBeCloseTo(35 / 2.20462262, 2);
+  // Never reached, so the standard weight in its box was not carried.
+  expect(station(saved, "Sandbag squats").kg).toBeUndefined();
+
+  // Reopen and save untouched: the same 35 lb, and not a gram of drift.
+  await page.getByRole("button", { name: "Log", exact: true }).click();
+  await page.getByLabel("Edit entry").first().click();
+  await expect(g2oh).toHaveValue("35");
+  await expect(page.getByLabel("Gators Sandbag squats load")).toHaveValue("");
+  await page.getByRole("button", { name: "Update session" }).click();
+  await expect.poll(async () => station((await read())[0], "DB ground to overhead").kg).toBe(kg);
+});
+
+test("an older entry with no loads is not given any when edited", async ({ page }) => {
+  await page.evaluate(async () => {
+    await fetch("/api/records", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: "3f1a5f2e-9c4b-4d7a-8e21-6b0c9d5a1299", kind: "workout", athlete: "gators",
+        day: "2026-10-20", title: "Old circuit", category: "MetCon", seconds: 600, notes: "",
+        segments: [{ name: "DB ground to overhead", unit: "reps", completed: 30, target: 30, seconds: 120 }],
+        fatigue: 10, transition: 0, goal: null, context: "solo", lifts: [],
+      }),
+    });
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "Log", exact: true }).click();
+  await page.getByLabel("Edit entry").first().click();
+  await expect(page.getByLabel("Gators DB ground to overhead load")).toHaveValue("");
+  await page.getByRole("button", { name: "Update session" }).click();
+  const record = await page.evaluate(async () =>
+    (await fetch("/api/records").then((r) => r.json())).records[0],
+  );
+  expect(record.segments[0].kg).toBeUndefined();
+});
