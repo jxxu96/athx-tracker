@@ -105,9 +105,15 @@ const OTHER = "Other";
 /** Picking beats typing on a phone, with a way out for anything not listed. */
 const EXERCISES: { group: string; items: string[] }[] = [
   {
-    // The three the programme is built around, first because they are typed most.
+    // The lifts the programme is built around, first because they are typed most.
     group: "Main lifts",
-    items: ["Deadlift", "Back squat", "Overhead press", "Push press"],
+    items: [
+      "Deadlift",
+      "Back squat",
+      "Overhead press",
+      "Push press",
+      "Split jerk",
+    ],
   },
   {
     // Named exactly as the MetCon stations name them, so a lift and a station
