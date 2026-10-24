@@ -71,9 +71,9 @@ Everything can go in `estimator/.env`; a real environment variable overrides it.
 | `ESTIMATOR_ORDER` | `codex,claude,grok` | Providers to try, in order. |
 | `CODEX_BIN` / `CLAUDE_BIN` / `GROK_BIN` | auto | Found in the usual install paths; set to override. |
 | `CLAUDE_MODEL` | `claude-haiku-5-5` | See the warning below. |
-| `ESTIMATOR_BUDGET_MS` | `40000` | Total time for all providers. |
-| `ESTIMATOR_TIMEOUT_MS` | `35000` | Cap for any one provider. |
-| `ESTIMATOR_RESERVE_MS` | `9000` | Time held back so the fallback still gets a turn. |
+| `ESTIMATOR_BUDGET_MS` | `56000` | Total time for all providers when the caller does not set one. |
+| `ESTIMATOR_TIMEOUT_MS` | `49000` | Cap for any one provider. |
+| `ESTIMATOR_RESERVE_MS` | `12600` | Time held back so the fallback still gets a turn. |
 
 `GET /health` (bearer token required) reports the order without running anything.
 
@@ -85,7 +85,9 @@ and the next one is asked, so estimates keep working before Codex is logged in.
 
 Whoever is not last still leaves a reserve of time. That is why Grok does not
 lead: it takes about 32 s, and the fallback then has nothing left. Claude on
-Haiku is the fast middle step, about 7 s.
+Haiku is the fast middle step, about 7 s. A click from the app allows the
+first provider its full 49 s cap and still holds the reserve. The background
+queue allows 210 s, so each provider can use the cap.
 
 Measured here, one estimate each:
 

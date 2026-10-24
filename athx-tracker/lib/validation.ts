@@ -53,6 +53,8 @@ export const mealSchema = z.object({
   meal: z.enum(["Breakfast","Lunch","Dinner","Snack","Alcohol"]),
   macros: mealMacroSchema,
   source: z.enum(["manual","grok","queued"]), assumptions: z.string().max(3000),
+  // Optional, so meals saved before the answer named its model still parse.
+  estimator: z.enum(["codex", "claude", "grok"]).optional(),
 }).strict().superRefine((meal, context) => {
   // Ethanol belongs to the Alcohol sitting only.
   if (meal.meal !== "Alcohol" && meal.macros.alcohol !== 0) {

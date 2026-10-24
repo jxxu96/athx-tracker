@@ -9,6 +9,7 @@ async function meals(page: Page) {
     return data.records as {
       id: string; athlete: string; day: string; name: string; meal: string; source: string;
       macros: { calories: number; protein: number; carbs: number; fat: number; alcohol?: number; fiber?: number };
+      estimator?: string;
     }[];
   });
 }
@@ -75,19 +76,25 @@ for (const sitting of ["Alcohol", "Dinner"] as const) {
     await page.route("**/api/estimate", (route) => route.fulfill({
       status: 200, contentType: "application/json",
       body: JSON.stringify({ estimate: { name, calories: 150, protein: 0,
-        carbs: 20, fat: 0, alcohol: 10, assumptions: "Beer with chips", confidence: "medium" } }),
+        carbs: 20, fat: 0, alcohol: 10, assumptions: "Beer with chips", confidence: "medium" },
+        provider: "codex" }),
     }));
     await page.getByPlaceholder("Two eggs, 80 g oats with milk, banana, flat white").fill("Beer with chips");
     await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
     await expect(page.getByLabel("Ethanol (g)")).toHaveValue("10");
+    await expect(page.getByText("Answered by Codex")).toBeVisible();
     await expect(page.getByText("Your calorie total equals this rough estimate.", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Save meal", exact: true }).click();
     await expect.poll(async () => {
       const saved = (await meals(page)).find((meal) => meal.name === name);
-      return saved ? { meal: saved.meal, alcohol: saved.macros.alcohol, calories: saved.macros.calories } : null;
-    }).toEqual({ meal: "Alcohol", alcohol: 10, calories: 150 });
+      return saved
+        ? { meal: saved.meal, alcohol: saved.macros.alcohol, calories: saved.macros.calories, estimator: saved.estimator }
+        : null;
+    }).toEqual({ meal: "Alcohol", alcohol: 10, calories: 150, estimator: "codex" });
     await page.getByRole("button", { name: "Log", exact: true }).click();
-    await expect(page.getByRole("listitem").filter({ hasText: name })).toContainText("Ethanol 10 g");
+    const row = page.getByRole("listitem").filter({ hasText: name });
+    await expect(row).toContainText("Ethanol 10 g");
+    await expect(row).toContainText("Codex");
   });
 }
 

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Field } from "@/components/workout-form";
-import { ATHLETES, type Macros, type Meal } from "@/lib/domain";
+import { ATHLETES, ESTIMATORS, type Estimator, type Macros, type Meal } from "@/lib/domain";
 import { api, message, newId } from "@/lib/client";
 import { commonMeals, type CommonMeal } from "@/lib/common-meals";
 import { macroCalories } from "@/lib/meal-calories";
@@ -132,6 +132,7 @@ export function MealForm({
   const [fiber, setFiber] = useState(editing ? String(editing.macros.fiber ?? 0) : "");
   const [assumptions, setAssumptions] = useState(editing?.assumptions ?? "");
   const [confidence, setConfidence] = useState<Estimate["confidence"] | null>(null);
+  const [answeredBy, setAnsweredBy] = useState<Estimator | null>(editing?.estimator ?? null);
   const [source, setSource] = useState<Meal["source"]>(editing?.source ?? "manual");
   const [adjusted, setAdjusted] = useState(false);
   const [estimating, setEstimating] = useState(false);
@@ -176,6 +177,7 @@ export function MealForm({
     setFiber("");
     setAssumptions("");
     setConfidence(null);
+    setAnsweredBy(null);
     setSource("manual");
     setAdjusted(false);
   }
@@ -192,7 +194,7 @@ export function MealForm({
     setError("");
     setEstimating(true);
     try {
-      const { estimate } = await api<{ estimate: Estimate }>("/api/estimate", {
+      const { estimate, provider } = await api<{ estimate: Estimate; provider?: Estimator }>("/api/estimate", {
         method: "POST",
         body: JSON.stringify({ description: description.trim() }),
       });
@@ -208,6 +210,7 @@ export function MealForm({
       });
       setAssumptions(estimate.assumptions);
       setConfidence(estimate.confidence);
+      setAnsweredBy(provider && provider in ESTIMATORS ? provider : null);
       setSource("grok");
       setAdjusted(false);
     } catch (problem) {
@@ -252,6 +255,7 @@ export function MealForm({
     setSource("manual");
     setAdjusted(false);
     setConfidence(null);
+    setAnsweredBy(null);
     setError("");
   }
 
@@ -341,6 +345,7 @@ export function MealForm({
         macros: { ...parsedMacros, alcohol: alcoholGrams, fiber: fiberGrams },
         source,
         assumptions: assumptions.trim().slice(0, 3000),
+        ...(source === "grok" && answeredBy ? { estimator: answeredBy } : {}),
       });
       reset();
     } finally {
@@ -577,11 +582,20 @@ export function MealForm({
           </div>
         ) : null}
 
-        {confidence ? (
+        {confidence || answeredBy ? (
           <p className="text-xs text-muted-foreground">
-            {/* Says Grok no longer: Claude answers these first. */}
-            Confidence: <span className="font-medium">{confidence}</span>
-            {CONFIDENCE_MEANS[confidence]}
+            {answeredBy ? (
+              <>
+                Answered by <span className="font-medium">{ESTIMATORS[answeredBy]}</span>
+              </>
+            ) : null}
+            {confidence ? (
+              <>
+                {answeredBy ? " · " : null}
+                Confidence: <span className="font-medium">{confidence}</span>
+                {CONFIDENCE_MEANS[confidence]}
+              </>
+            ) : null}
             {adjusted ? " · saved as your own numbers after your edit" : null}
           </p>
         ) : null}

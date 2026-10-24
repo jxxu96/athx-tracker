@@ -1,4 +1,4 @@
-import type { Macros, Meal } from "./domain";
+import type { Estimator, Macros, Meal } from "./domain";
 
 /*
  * The two decisions the queue worker makes, kept where a test can reach them.
@@ -30,7 +30,9 @@ export function nextRetryDelay(current: number, outcome: DrainOutcome) {
  */
 export function fillQueuedMeal(
   meal: Meal,
-  estimate: Macros & { alcohol?: number; fiber?: number; name: string; assumptions: string },
+  estimate: Macros & {
+    alcohol?: number; fiber?: number; name: string; assumptions: string; estimator?: Estimator;
+  },
 ): Meal {
   return {
     ...meal,
@@ -46,5 +48,6 @@ export function fillQueuedMeal(
     },
     assumptions: estimate.assumptions,
     source: "grok",
+    ...(estimate.estimator ? { estimator: estimate.estimator } : {}),
   };
 }

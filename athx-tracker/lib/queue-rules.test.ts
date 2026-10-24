@@ -20,6 +20,12 @@ const estimate = {
   assumptions: "Assumed 150 g cooked thigh.",
 };
 
+test("the model that answered is kept on the meal", () => {
+  const filled = fillQueuedMeal(queued(), { ...estimate, estimator: "claude" });
+  assert.equal(filled.estimator, "claude");
+  assert.equal("estimator" in filled.macros, false);
+});
+
 test("an estimate that arrives fills the meal in", () => {
   const filled = fillQueuedMeal(queued(), estimate);
   assert.deepEqual(filled.macros, { calories: 780, protein: 46, carbs: 72, fat: 33 });

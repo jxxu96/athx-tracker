@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/native-select";
 import {
   ATHLETES,
+  ESTIMATORS,
   categoryName,
   completionLine,
   estimateBurn,
@@ -230,7 +231,11 @@ export function History({
                             {record.meal === "Alcohol"
                               ? ` · Ethanol ${Math.round(record.macros.alcohol ?? 0)} g`
                               : ""}
-                            {record.source === "grok" ? " · estimated" : ""}
+                            {record.source === "grok"
+                              ? record.estimator
+                                ? ` · ${ESTIMATORS[record.estimator]}`
+                                : " · estimated"
+                              : ""}
                             {record.source === "queued"
                               ? " · estimate pending"
                               : ""}

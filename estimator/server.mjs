@@ -95,12 +95,12 @@ const HOST = process.env.ESTIMATOR_HOST ?? "127.0.0.1";
 const TOKEN = process.env.ESTIMATOR_TOKEN ?? "";
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL ?? "claude-haiku-5-5";
 
-// The app aborts its request after 45s. Finish inside that, or the caller gives
-// up while a provider is still thinking and nobody learns anything.
-const BUDGET_MS = Number(process.env.ESTIMATOR_BUDGET_MS ?? 40000);
-const PER_PROVIDER_MS = Number(process.env.ESTIMATOR_TIMEOUT_MS ?? 35000);
+// 40% above the old 40s / 35s / 9s. The click path sends its own budget, large
+// enough for one provider to use this cap and still leave the reserve.
+const BUDGET_MS = Number(process.env.ESTIMATOR_BUDGET_MS ?? 56000);
+const PER_PROVIDER_MS = Number(process.env.ESTIMATOR_TIMEOUT_MS ?? 49000);
 // Time held back so a fallback still gets a turn after a slow first provider.
-const RESERVE_MS = Number(process.env.ESTIMATOR_RESERVE_MS ?? 9000);
+const RESERVE_MS = Number(process.env.ESTIMATOR_RESERVE_MS ?? 12600);
 
 // Codex, then Claude, then Grok. A missing binary or a login that is not there
 // fails quickly and the next provider answers. Whoever is not last still leaves
@@ -578,12 +578,13 @@ function startDeployWatch() {
   console.log(`[deploy] checking ${DEPLOY_IMAGE} every ${DEPLOY_EVERY_MINUTES}m`);
 }
 
-function send(response, status, body) {
+function send(response, status, body, headers = {}) {
   const payload = JSON.stringify(body);
   response.writeHead(status, {
     "Content-Type": "application/json",
     "Cache-Control": "no-store",
     "Content-Length": Buffer.byteLength(payload),
+    ...headers,
   });
   response.end(payload);
 }
@@ -629,7 +630,7 @@ const server = createServer((request, response) => {
       // Clamped, so a caller cannot pin a CLI open or starve one at birth.
       const requested = Number(parsed.budgetMs);
       if (Number.isFinite(requested))
-        budget = Math.min(180000, Math.max(8000, requested));
+        budget = Math.min(252000, Math.max(8000, requested));
     } catch {
       return send(response, 400, { error: "Expected JSON with a description." });
     }
@@ -647,7 +648,9 @@ const server = createServer((request, response) => {
         detail: String(result.error).slice(0, 300),
       });
     }
-    send(response, 200, result.estimate);
+    // Header, not a body field: the body is the estimate, and an extra key
+    // there would be rejected by the app. An older app ignores the header.
+    send(response, 200, result.estimate, { "X-Athx-Provider": result.provider });
   });
 });
 

@@ -1,6 +1,6 @@
 import { database, runtime } from "./server";
 import { estimateSchema } from "./validation";
-import type { Meal } from "./domain";
+import { type Estimator, type Meal } from "./domain";
 import {
   RETRY_MAX_MS,
   RETRY_MIN_MS,
@@ -18,7 +18,9 @@ import {
  * until an estimate actually arrives rather than asking anyone to retype it.
  */
 /** No browser deadline here, so a slow CLI is merely slow, not a failure. */
-const QUEUE_BUDGET_MS = 150_000;
+const QUEUE_BUDGET_MS = 210_000;
+
+const PROVIDERS = ["codex", "claude", "grok"] as const;
 
 async function estimate(description: string) {
   const config = runtime();
@@ -33,7 +35,9 @@ async function estimate(description: string) {
     signal: AbortSignal.timeout(QUEUE_BUDGET_MS + 15_000),
   });
   if (!response.ok) return null;
-  return estimateSchema.parse(await response.json());
+  const estimate = estimateSchema.parse(await response.json());
+  const provider = PROVIDERS.find((name) => name === response.headers.get("x-athx-provider"));
+  return provider ? { ...estimate, estimator: provider satisfies Estimator } : estimate;
 }
 
 function queuedMeals(): Meal[] {

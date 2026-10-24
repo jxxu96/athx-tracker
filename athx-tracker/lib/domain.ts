@@ -34,7 +34,15 @@ export type Meal = {
    */
   macros: Macros & { alcohol?: number; fiber?: number };
   source: "manual" | "grok" | "queued"; assumptions: string;
+  /** Which CLI produced an estimate. Older meals, and anything typed by hand, omit it. */
+  estimator?: Estimator;
 };
+export const ESTIMATORS = {
+  codex: "Codex",
+  claude: "Claude",
+  grok: "Grok",
+} as const;
+export type Estimator = keyof typeof ESTIMATORS;
 export type RecordItem = Workout | Meal;
 export type Settings = {
   eventDate: string; eventName: string; weeklyTarget: number; weightUnit: WeightUnit;

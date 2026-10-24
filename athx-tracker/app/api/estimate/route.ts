@@ -7,11 +7,16 @@ import { z } from "zod";
 const DAILY_LIMIT = 60;
 
 /**
- * Someone is watching this one, so it gives up early and hands the meal to the
- * queue rather than holding a spinner for the best part of a minute. The queue
- * is the patient path, and it is the one that almost always succeeds.
+ * Long enough for the first model to use its full cap, plus the reserve the
+ * estimator holds for a fallback. A shorter budget was cutting that model off
+ * while it was still working. The queue remains the path with no one waiting.
  */
-const INTERACTIVE_BUDGET_MS = 25000;
+const INTERACTIVE_BUDGET_MS = 49_000 + 12_600;
+
+const PROVIDERS = ["codex", "claude", "grok"] as const;
+function namedProvider(value: string | null) {
+  return PROVIDERS.find((provider) => provider === value);
+}
 
 
 /** Counts in the database, not in memory, so a restart cannot reset the budget. */
@@ -209,11 +214,15 @@ export async function POST(request: Request) {
     // stops the form offering the queue, since 400 is the one status it reads
     // as "rewording would help".
     let estimate;
+    let provider: (typeof PROVIDERS)[number] | undefined;
     try {
       const result = await response.json();
       estimate = estimateSchema.parse(
         gateway ? result : extractEstimate(result),
       );
+      // The gateway names who answered in a header, so the body stays an
+      // estimate. The direct API is Grok itself.
+      provider = gateway ? namedProvider(response.headers.get("x-athx-provider")) : "grok";
     } catch (error) {
       if (error instanceof BodyTooLarge) return tooLarge();
       releaseEstimate(bucket);
@@ -225,7 +234,7 @@ export async function POST(request: Request) {
         502,
       );
     }
-    return json({ estimate });
+    return json({ estimate, ...(provider ? { provider } : {}) });
   } catch (error) {
     if (error instanceof BodyTooLarge) return tooLarge();
     return json(

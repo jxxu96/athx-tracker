@@ -8,9 +8,9 @@ process.env.ESTIMATOR_TOKEN = "test-token-at-least-16-chars";
 // machine happens to hold. These pin the numbers so the test is about the
 // arithmetic and not about somebody's local configuration; a real environment
 // variable wins over that file, which is what makes this work.
-process.env.ESTIMATOR_BUDGET_MS = "40000";
-process.env.ESTIMATOR_TIMEOUT_MS = "35000";
-process.env.ESTIMATOR_RESERVE_MS = "9000";
+process.env.ESTIMATOR_BUDGET_MS = "56000";
+process.env.ESTIMATOR_TIMEOUT_MS = "49000";
+process.env.ESTIMATOR_RESERVE_MS = "12600";
 const { budgetSlice, clean, parseCliOutput, structured } = await import("./server.mjs");
 
 const whole = {
@@ -116,18 +116,20 @@ test("a status line in front of the JSON still yields the estimate", () => {
 test("whoever goes first leaves the fallback something to work with", () => {
   // The real failure: Grok led, took its whole slice, and left Claude too
   // little to finish in, so the budget burned and nobody answered.
-  const first = budgetSlice(40000, false);
-  const left = 40000 - first;
-  assert.ok(first < 40000, "the leader cannot take the whole budget");
-  assert.ok(left >= 9000, `the fallback was left ${left}ms`);
+  const first = budgetSlice(56000, false);
+  const left = 56000 - first;
+  assert.ok(first < 56000, "the leader cannot take the whole budget");
+  assert.ok(left >= 12600, `the fallback was left ${left}ms`);
   // The last one may use whatever remains, there being nobody after it.
-  assert.equal(budgetSlice(9000, true), 9000);
+  assert.equal(budgetSlice(12600, true), 12600);
+  // What the app sends on a click: the cap, plus the reserve for whoever follows.
+  assert.equal(budgetSlice(49000 + 12600, false), 49000);
 });
 
 test("a provider is never given more than its own ceiling", () => {
-  for (const remaining of [40000, 150000, 1_000_000]) {
+  for (const remaining of [56000, 210000, 1_000_000]) {
     for (const isLast of [true, false]) {
-      assert.ok(budgetSlice(remaining, isLast) <= 35000, `${remaining}/${isLast}`);
+      assert.ok(budgetSlice(remaining, isLast) <= 49000, `${remaining}/${isLast}`);
     }
   }
 });
