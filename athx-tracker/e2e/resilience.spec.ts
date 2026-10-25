@@ -81,13 +81,13 @@ for (const timezoneId of ["Pacific/Kiritimati", "Pacific/Niue"]) {
       // file the session on the server's date instead.
       await page.getByRole("button", { name: "Tennis 60m" }).click();
       await page.getByRole("button", { name: "Save session" }).click();
-      await expect(page.getByText("Sessions saved")).toBeVisible();
+      await expect(page.getByText("Session saved", { exact: true })).toBeVisible();
       await expect.poll(async () =>
         page.evaluate(async () => {
           const data = await fetch("/api/records").then((r) => r.json());
           return (data.records as { day: string }[]).map((record) => record.day).sort();
         }),
-      ).toEqual([onDevice, onDevice]);
+      ).toEqual([onDevice]);
     });
   });
 }

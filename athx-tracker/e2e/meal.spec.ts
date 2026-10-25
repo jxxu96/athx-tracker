@@ -101,6 +101,15 @@ test("the meal boxes take the colour of who the meal is for", async ({ page }) =
   const athlete = page.getByRole("group", { name: "Athlete" });
   const ring = () => card.evaluate((el) => getComputedStyle(el).backgroundImage);
 
+  await expect(athlete.getByRole("button", { name: "Hippos" })).toHaveAttribute("data-athlete-outline", "hippos");
+  await expect(loggingFor(page, "Hippos")).toHaveAttribute("data-athlete-outline", "hippos");
+  await expect(card).toHaveAttribute("data-athlete-outline", "hippos");
+  await expect(athlete.getByRole("button", { name: "Both" })).not.toHaveAttribute("data-athlete-outline");
+  const pink = await ring();
+  expect(pink).toContain(colors.hippos);
+  expect(pink).not.toContain(colors.gators);
+
+  await athlete.getByRole("button", { name: "Both" }).click();
   await expect(athlete.getByRole("button", { name: "Both" })).toHaveAttribute("data-athlete-outline", "both");
   await expect(loggingFor(page, "Both")).toHaveAttribute("data-athlete-outline", "both");
   await expect(card).toHaveAttribute("data-athlete-outline", "both");
@@ -116,13 +125,6 @@ test("the meal boxes take the colour of who the meal is for", async ({ page }) =
   const green = await ring();
   expect(green).toContain(colors.gators);
   expect(green).not.toContain(colors.hippos);
-
-  await loggingFor(page, "Hippos").click();
-  await expect(card).toHaveAttribute("data-athlete-outline", "hippos");
-  await expect(athlete.getByRole("button", { name: "Hippos" })).toHaveAttribute("data-athlete-outline", "hippos");
-  const pink = await ring();
-  expect(pink).toContain(colors.hippos);
-  expect(pink).not.toContain(colors.gators);
 });
 
 test("a new meal starts on the sitting that matches the time", async ({ page }) => {
@@ -374,8 +376,16 @@ test("usual meals are one person's repeats, and a tap fills only that person's m
   await page.getByRole("button", { name: "Meal", exact: true }).click();
 
   await expect(page.getByRole("button", { name: "Hippos: Usual oats" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Gators: Usual shake" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Gators: Usual shake" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Lonely soup/ })).toHaveCount(0);
+
+  await loggingFor(page, "Gators").click();
+  await expect(page.getByRole("button", { name: "Gators: Usual shake" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Hippos: Usual oats" })).toHaveCount(0);
+
+  await loggingFor(page, "Both").click();
+  await expect(page.getByRole("button", { name: "Hippos: Usual oats" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Gators: Usual shake" })).toBeVisible();
 
   await page.getByRole("button", { name: "Hippos: Usual oats" }).click();
   await expect(loggingFor(page, "Hippos")).toHaveAttribute("aria-pressed", "true");
@@ -393,6 +403,7 @@ test("usual meals are one person's repeats, and a tap fills only that person's m
 
 test("logging for both saves one meal for each athlete, and one athlete saves once", async ({ page }) => {
   const athletes = page.getByRole("group", { name: "Athlete" });
+  await loggingFor(page, "Both").click();
   await expect(loggingFor(page, "Both")).toHaveAttribute("aria-pressed", "true");
   await expect(athletes.getByRole("button", { name: "Both" })).toHaveAttribute("aria-pressed", "true");
   await expect(athletes.getByRole("button", { name: "Hippos" })).toHaveAttribute("aria-pressed", "false");
@@ -447,6 +458,7 @@ test("logging for both saves one meal for each athlete, and one athlete saves on
 });
 
 test("a both meal that fails halfway is not duplicated on retry", async ({ page }) => {
+  await loggingFor(page, "Both").click();
   await page.getByRole("group", { name: "Sitting" }).getByRole("button", { name: "Snack" }).click();
   await page.getByLabel("Meal", { exact: true }).fill("Retry oats");
   await page.getByLabel("Calories (kcal)").fill("455");
