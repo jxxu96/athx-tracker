@@ -6,6 +6,7 @@ import {
   Dumbbell,
   RotateCw,
   Settings as SettingsIcon,
+  TrendingUp,
   UtensilsCrossed,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -15,6 +16,7 @@ import { Overview } from "@/components/overview";
 import { WorkoutForm } from "@/components/workout-form";
 import { MealForm } from "@/components/meal-form";
 import { History } from "@/components/history";
+import { Progress } from "@/components/progress";
 import { SettingsForm } from "@/components/settings-form";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
@@ -29,12 +31,13 @@ import {
 import { athleteOutline } from "@/lib/athlete-outline";
 import { api, isMeal, message, sortRecords } from "@/lib/client";
 
-type Tab = "today" | "session" | "meal" | "log" | "settings";
+type Tab = "today" | "session" | "meal" | "progress" | "log" | "settings";
 
 const TABS = [
   { id: "today", label: "Today", icon: CalendarDays },
   { id: "session", label: "Session", icon: Dumbbell },
   { id: "meal", label: "Meal", icon: UtensilsCrossed },
+  { id: "progress", label: "Progress", icon: TrendingUp },
   { id: "log", label: "Log", icon: RotateCw },
   { id: "settings", label: "Setup", icon: SettingsIcon },
 ] as const satisfies readonly { id: Tab; label: string; icon: typeof Dumbbell }[];
@@ -299,6 +302,15 @@ export function Tracker({
             onCancelEdit={() => setEditing(null)}
             onSave={save}
           />
+        ) : tab === "progress" ? (
+          <Progress
+            records={records}
+            settings={settings}
+            today={today}
+            journalTotal={total}
+            loadingAll={refreshing}
+            onLoadAll={scope === "all" || records.length >= total ? undefined : loadAll}
+          />
         ) : tab === "log" ? (
           <History
             records={records}
@@ -329,7 +341,7 @@ export function Tracker({
 
       <nav
         aria-label="Sections"
-        className="sticky bottom-0 z-20 grid grid-cols-5 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur"
+        className="sticky bottom-0 z-20 grid grid-cols-6 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur"
       >
         {TABS.map(({ id, label, icon: Icon }) => (
           <button

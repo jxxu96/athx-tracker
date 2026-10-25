@@ -47,13 +47,27 @@ single SQLite file on a volume.
   advisory: differences never block saving or rewrite calories. Total carbs
   include fiber; fiber, sugar alcohols, food-specific factors and rounding can
   make the simple calculation differ from a label's calorie total.
+- **Progress** — the main lifts for each athlete: split jerk, overhead press,
+  back squat and deadlift. Each shows its start, latest, best and target, how far
+  is left, and a bar towards the target: grey up to the start, the athlete's
+  colour for what has been gained since. A day counts as its heaviest
+  set of the lift, so a warm-up is never the figure. Start is the first day the
+  lift was logged, and a best belongs to the first day it was reached. Names are
+  matched the way a described workout's are, so "OHP" typed under Other counts,
+  while push press, front squat and Romanian deadlift stay lifts of their own.
+  Together sessions count for neither athlete. While only the recent slice of the
+  journal is loaded it says so and offers the rest, because an older session can
+  hold the real start.
 - **Log** — everything logged, newest first, filterable, with edit and delete, each
   session showing what it burned. It opens with the most recent entries and fetches
   the rest when asked, and draws a hundred at a time however many are loaded, so a
   journal years deep neither crosses the network nor reaches the screen all at once.
 - **Setup** — event name and date, weekly session target, display units, each
-  athlete's bodyweight, and their daily macro targets. The bodyweight is what makes
-  calories burned possible; without it that figure is withheld.
+  athlete's bodyweight, their daily macro targets, and their lift targets. The
+  bodyweight is what makes calories burned possible; without it that figure is
+  withheld. Lift targets are stored in kilograms like every other weight. Gators'
+  default to a 175 lb split jerk, 135 lb overhead press, 255 lb back squat and
+  335 lb deadlift; Hippos has none until set, and a blank target is no target.
 
 ### Weights and older entries
 

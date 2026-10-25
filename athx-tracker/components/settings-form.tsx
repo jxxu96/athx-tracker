@@ -10,9 +10,16 @@ import { toast } from "sonner";
 import { api, message } from "@/lib/client";
 import {
   ATHLETES,
+  DEFAULT_SETTINGS,
+  PROGRESS_LIFTS,
+  displayLoad,
   fromKilograms,
+  parseLoad,
+  reunitLoad,
   toKilograms,
+  type LiftTargets,
   type Macros,
+  type ProgressLift,
   type Settings,
   type WeightUnit,
 } from "@/lib/domain";
@@ -34,6 +41,12 @@ const MACRO_FIELDS = [
 const LIMITS: Macros = { calories: 20000, protein: 2000, carbs: 3000, fat: 2000 };
 
 type MacroDraft = Record<keyof Macros, string>;
+type LiftDraft = Record<ProgressLift, string>;
+const eachLift = <T,>(value: (key: ProgressLift) => T) =>
+  Object.fromEntries(PROGRESS_LIFTS.map(({ key }) => [key, value(key)])) as Record<
+    ProgressLift,
+    T
+  >;
 const toDraft = (macros: Macros): MacroDraft => ({
   calories: String(macros.calories),
   protein: String(macros.protein),
@@ -69,6 +82,17 @@ export function SettingsForm({
       const show = (kg: number) =>
         kg > 0 ? String(Math.round(fromKilograms(kg, unit) * 10) / 10) : "";
       return { hippos: show(stored.hippos), gators: show(stored.gators) };
+    },
+  );
+  // Settings saved before lift targets existed have none stored. Progress
+  // shows the defaults for them, so this starts from the same numbers.
+  const savedLifts = settings.liftTargets ?? DEFAULT_SETTINGS.liftTargets;
+  const [liftTargets, setLiftTargets] = useState<Record<"hippos" | "gators", LiftDraft>>(
+    () => {
+      const unit = settings.weightUnit ?? "lb";
+      const show = (targets: LiftTargets) =>
+        eachLift((key) => (targets[key] > 0 ? displayLoad(targets[key], unit) : ""));
+      return { hippos: show(savedLifts.hippos), gators: show(savedLifts.gators) };
     },
   );
   const [error, setError] = useState("");
@@ -209,6 +233,13 @@ export function SettingsForm({
     }
   }
 
+  /** A lift target box in kilograms: zero for none, null when it is not a weight. */
+  function liftKg(athlete: "hippos" | "gators", key: ProgressLift) {
+    const raw = liftTargets[athlete][key].trim();
+    if (raw === "" || Number(raw) === 0) return 0;
+    return parseLoad(raw, weightUnit, savedLifts[athlete][key]);
+  }
+
   function validate() {
     if (!eventName.trim()) return "Name the event.";
     if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) return "Pick a valid event date.";
@@ -228,6 +259,13 @@ export function SettingsForm({
           return `${ATHLETES[athlete].name} ${label.toLowerCase()} needs a number of zero or more.`;
         if (value > LIMITS[key])
           return `${ATHLETES[athlete].name} ${label.toLowerCase()} looks too high.`;
+      }
+      for (const { key, name } of PROGRESS_LIFTS) {
+        const kg = liftKg(athlete, key);
+        if (kg === null)
+          return `${ATHLETES[athlete].name} ${name.toLowerCase()} target needs a weight, or nothing at all.`;
+        if (kg > 1000)
+          return `${ATHLETES[athlete].name} ${name.toLowerCase()} target looks too high.`;
       }
     }
     return "";
@@ -250,6 +288,9 @@ export function SettingsForm({
       return raw === "" ? 0 : toKilograms(Number(raw), weightUnit);
     };
 
+    const liftsFor = (athlete: "hippos" | "gators") =>
+      eachLift((key) => liftKg(athlete, key) ?? 0);
+
     setSaving(true);
     try {
       await onSave({
@@ -261,6 +302,10 @@ export function SettingsForm({
         bodyweight: {
           hippos: weightFor("hippos"),
           gators: weightFor("gators"),
+        },
+        liftTargets: {
+          hippos: liftsFor("hippos"),
+          gators: liftsFor("gators"),
         },
       });
     } finally {
@@ -309,6 +354,14 @@ export function SettingsForm({
                   setBodyweight((current) => ({
                     hippos: reunit(current.hippos, weightUnit, unit),
                     gators: reunit(current.gators, weightUnit, unit),
+                  }));
+                  setLiftTargets((current) => ({
+                    hippos: eachLift((key) =>
+                      reunitLoad(current.hippos[key], weightUnit, unit, savedLifts.hippos[key]),
+                    ),
+                    gators: eachLift((key) =>
+                      reunitLoad(current.gators[key], weightUnit, unit, savedLifts.gators[key]),
+                    ),
                   }));
                   setWeightUnit(unit);
                 }}
@@ -375,6 +428,43 @@ export function SettingsForm({
           </p>
         </section>
       ))}
+
+      <section className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
+        <div>
+          <h3 className="text-sm font-semibold">Lift targets</h3>
+          <p className="text-[11px] text-muted-foreground">
+            What Progress measures each lift against. Leave one blank for no target.
+          </p>
+        </div>
+        {(["hippos", "gators"] as const).map((athlete) => (
+          <fieldset key={athlete} className="space-y-3">
+            <legend className="flex items-center gap-2 text-xs font-semibold">
+              <span
+                className="size-2.5 rounded-full"
+                style={{ background: ATHLETES[athlete].color }}
+              />
+              {ATHLETES[athlete].name}
+            </legend>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {PROGRESS_LIFTS.map(({ key, name }) => (
+                <Field key={key} label={`${name} (${weightUnit})`}>
+                  <Input
+                    value={liftTargets[athlete][key]}
+                    inputMode="decimal"
+                    placeholder="Not set"
+                    onChange={(event) =>
+                      setLiftTargets((current) => ({
+                        ...current,
+                        [athlete]: { ...current[athlete], [key]: event.target.value },
+                      }))
+                    }
+                  />
+                </Field>
+              ))}
+            </div>
+          </fieldset>
+        ))}
+      </section>
 
       {error ? (
         <p role="alert" className="text-sm text-destructive">
