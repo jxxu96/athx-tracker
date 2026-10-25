@@ -162,3 +162,53 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/*
+ * Who a meal or session is for, drawn as the box outline. One athlete is a
+ * solid ring. Both is split down the middle, Hippos on the left and Gators
+ * on the right, the same order as the two columns. The ring is a background
+ * layer clipped to the border, so the corner radius stays round. Ink, rather
+ * than the identity colour: a 2px line has to stay visible on the dark card.
+ * The attribute is repeated so this wins over a utility background.
+ */
+[data-athlete-outline="hippos"] {
+  --athlete-outline: linear-gradient(
+    var(--athlete-hippos-ink),
+    var(--athlete-hippos-ink)
+  );
+}
+[data-athlete-outline="gators"] {
+  --athlete-outline: linear-gradient(
+    var(--athlete-gators-ink),
+    var(--athlete-gators-ink)
+  );
+}
+[data-athlete-outline="both"] {
+  --athlete-outline: linear-gradient(
+    90deg,
+    var(--athlete-hippos-ink) 50%,
+    var(--athlete-gators-ink) 50%
+  );
+}
+[data-athlete-fill="muted"] {
+  --athlete-fill: color-mix(in srgb, var(--muted) 50%, var(--card));
+}
+[data-athlete-fill="accent"] {
+  --athlete-fill: var(--accent);
+}
+[data-athlete-fill="background"] {
+  --athlete-fill: var(--background);
+}
+[data-athlete-outline][data-athlete-outline] {
+  border: 2px solid transparent;
+  background:
+    linear-gradient(var(--athlete-fill, var(--card)), var(--athlete-fill, var(--card)))
+      padding-box,
+    var(--athlete-outline) border-box;
+}
+button[data-athlete-outline="hippos"] {
+  color: var(--athlete-hippos-ink);
+}
+button[data-athlete-outline="gators"] {
+  color: var(--athlete-gators-ink);
+}

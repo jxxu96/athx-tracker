@@ -173,6 +173,44 @@ test("a theme chosen in one tab follows into the other", async ({ page, context 
   await second.close();
 });
 
+test("the session boxes take the colour of who is training", async ({ page }) => {
+  await openSession(page);
+  const colors = await page.evaluate(() => {
+    const read = (name: string) => {
+      const probe = document.createElement("span");
+      probe.style.color = `var(${name})`;
+      document.body.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    };
+    return { hippos: read("--athlete-hippos-ink"), gators: read("--athlete-gators-ink") };
+  });
+  const card = page.locator("form section").first();
+  const ring = () => card.evaluate((el) => getComputedStyle(el).backgroundImage);
+
+  await expect(formatButton(page, "Pairs")).toHaveAttribute("data-athlete-outline", "both");
+  await expect(card).toHaveAttribute("data-athlete-outline", "both");
+  const split = await ring();
+  expect(split).toContain(colors.hippos);
+  expect(split).toContain(colors.gators);
+
+  await formatButton(page, "Gators").click();
+  await expect(formatButton(page, "Gators")).toHaveAttribute("data-athlete-outline", "gators");
+  await expect(formatButton(page, "Pairs")).not.toHaveAttribute("data-athlete-outline");
+  await expect(card).toHaveAttribute("data-athlete-outline", "gators");
+  const green = await ring();
+  expect(green).toContain(colors.gators);
+  expect(green).not.toContain(colors.hippos);
+
+  await athlete(page, "Hippos").click();
+  await expect(formatButton(page, "Hippos")).toHaveAttribute("data-athlete-outline", "hippos");
+  await expect(card).toHaveAttribute("data-athlete-outline", "hippos");
+  const pink = await ring();
+  expect(pink).toContain(colors.hippos);
+  expect(pink).not.toContain(colors.gators);
+});
+
 test("format names who is training and matches the switch", async ({ page }) => {
   // Solo and Pairs never said which athlete the session was for.
   await athlete(page, "Both").click();

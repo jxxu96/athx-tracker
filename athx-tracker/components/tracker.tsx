@@ -26,6 +26,7 @@ import {
   type Settings,
   type Workout,
 } from "@/lib/domain";
+import { athleteOutline } from "@/lib/athlete-outline";
 import { api, isMeal, message, sortRecords } from "@/lib/client";
 
 type Tab = "today" | "session" | "meal" | "log" | "settings";
@@ -220,12 +221,8 @@ export function Tracker({
                 type="button"
                 onClick={() => setWho(key)}
                 aria-pressed={who === key}
-                className="rounded-full px-2.5 py-1 text-xs font-medium transition-colors aria-pressed:bg-background aria-pressed:shadow-sm"
-                style={
-                  who === key && key !== "both"
-                    ? { color: ATHLETES[key].ink }
-                    : undefined
-                }
+                {...(who === key ? athleteOutline(key, "background") : {})}
+                className="rounded-full border-2 border-transparent px-2 py-0.5 text-xs font-medium transition-colors aria-pressed:bg-background aria-pressed:shadow-sm"
               >
                 {key === "both" ? "Both" : ATHLETES[key].name}
               </button>

@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { DayButtons, Field } from "@/components/workout-form";
+import { athleteOutline, type AthleteOutline } from "@/lib/athlete-outline";
 import { ATHLETES, ESTIMATORS, type Estimator, type Macros, type Meal } from "@/lib/domain";
 import { api, message, newId } from "@/lib/client";
 import { commonMeals, type CommonMeal } from "@/lib/common-meals";
@@ -65,7 +66,7 @@ function Choice<T extends string>({
 }: {
   label: string;
   value: T;
-  options: readonly { value: T; label: string; color?: string }[];
+  options: readonly { value: T; label: string; outline?: AthleteOutline }[];
   onChange: (next: T) => void;
 }) {
   return (
@@ -79,22 +80,23 @@ function Choice<T extends string>({
         className="grid gap-1.5"
         style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
       >
-        {options.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => onChange(option.value)}
-            aria-pressed={value === option.value}
-            className="rounded-lg border px-2 py-2.5 text-xs font-medium transition-colors aria-pressed:bg-accent aria-pressed:font-semibold"
-            style={
-              value === option.value && option.color
-                ? { borderColor: option.color, color: option.color }
-                : undefined
-            }
-          >
-            {option.label}
-          </button>
-        ))}
+        {options.map((option) => {
+          const selected = value === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onChange(option.value)}
+              aria-pressed={selected}
+              {...(selected && option.outline ? athleteOutline(option.outline, "accent") : {})}
+              className={`rounded-lg px-2 py-2.5 text-xs font-medium transition-colors aria-pressed:bg-accent aria-pressed:font-semibold ${
+                option.outline ? "border-2" : "border"
+              }`}
+            >
+              {option.label}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -438,7 +440,10 @@ export function MealForm({
     <form onSubmit={submit} className="space-y-4 pb-4">
       <fieldset disabled={estimating || saving} className="min-w-0 space-y-4">
         {editing ? (
-          <div className="flex items-center justify-between gap-3 rounded-2xl border bg-muted/50 p-3">
+          <div
+            {...athleteOutline(who, "muted")}
+            className="flex items-center justify-between gap-3 rounded-2xl border bg-muted/50 p-3"
+          >
             <p className="text-xs">
               Editing <span className="font-medium">{editing.name}</span>
             </p>
@@ -448,7 +453,10 @@ export function MealForm({
           </div>
         ) : null}
         {suggestionGroups.length > 0 ? (
-          <section className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
+          <section
+            {...athleteOutline(who)}
+            className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5"
+          >
             <div>
               <h3 className="text-sm font-semibold">Usual meals</h3>
               <p className="text-[11px] text-muted-foreground">
@@ -485,7 +493,7 @@ export function MealForm({
             ))}
           </section>
         ) : null}
-        <section className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
+        <section {...athleteOutline(who)} className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
           <Choice
             label="Athlete"
             value={who}
@@ -500,7 +508,7 @@ export function MealForm({
             ).map((key) => ({
               value: key,
               label: key === "both" ? "Both" : ATHLETES[key].name,
-              color: key === "both" ? undefined : ATHLETES[key].ink,
+              outline: key,
             }))}
           />
           {!editing && loggingFor === "both" ? (
@@ -520,7 +528,7 @@ export function MealForm({
           <DayButtons today={today} day={day} onChange={setDay} />
         </section>
 
-        <section className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
+        <section {...athleteOutline(who)} className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
           <div>
             <h3 className="text-sm font-semibold">Describe it</h3>
             <p className="text-[11px] text-muted-foreground">
@@ -570,7 +578,11 @@ export function MealForm({
         </section>
 
         {assumptions || conversation.length > 0 ? (
-          <section aria-label="Review estimate" className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
+          <section
+            {...athleteOutline(who)}
+            aria-label="Review estimate"
+            className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5"
+          >
             <div>
               <h3 className="text-sm font-semibold">Review the assumptions</h3>
               <p className="text-[11px] text-muted-foreground">
@@ -601,7 +613,7 @@ export function MealForm({
           </section>
         ) : null}
 
-        <section className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
+        <section {...athleteOutline(who)} className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
           <Field label="Meal">
             <Input
               value={name}
