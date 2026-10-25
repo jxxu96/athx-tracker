@@ -181,6 +181,30 @@ test("blocked dictation keeps text editable and offers the keyboard microphone",
   await expect(page.getByLabel("Workout description")).toHaveValue("Deadlift 1 x 2");
 });
 
+test("AI names snap to the exercise list and a far one is called out in the notes", async ({ page }) => {
+  await selection(page, "Hippos").click();
+  await page.route("**/api/workout-draft", route => route.fulfill({ json: { draft: {
+    ...draft, category: "Mixed", elapsed: { hippos: 1800, gators: null }, notes: "",
+    lifts: [
+      { name: "deadlifts", hippos: { kg: 100, sets: 1, reps: 2 }, gators: blank },
+      { name: "bak squat", hippos: { kg: 80, sets: 3, reps: 5 }, gators: blank },
+      { name: "cable reverse fly", hippos: { kg: 10, sets: 3, reps: 12 }, gators: blank },
+    ],
+    stations: [
+      { name: "wallballs", block: "metcon", unit: "reps", target: 30, hippos: { completed: 20, seconds: null, kg: 6 }, gators: { completed: null, seconds: null, kg: null } },
+    ],
+  } } }));
+  await page.getByLabel("Workout description").fill("deadlifts, a bak squat, wall balls and cable reverse fly");
+  await fill(page).click();
+  const liftNames = page.getByLabel("Lift", { exact: true });
+  await expect(liftNames.nth(0)).toHaveValue("Deadlift");
+  await expect(liftNames.nth(1)).toHaveValue("Back squat");
+  await expect(liftNames.nth(2)).toHaveValue("Other");
+  await expect(page.getByLabel("Name it")).toHaveValue("cable reverse fly");
+  await expect(page.getByLabel("Station", { exact: true })).toHaveValue("Wall ball");
+  await expect(page.getByLabel("Notes", { exact: true })).toHaveValue('Left as typed: "cable reverse fly" is not in the list.');
+});
+
 test("AI workout form fits a phone screen", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.route("**/api/workout-draft", route => route.fulfill({ json: { draft } }));

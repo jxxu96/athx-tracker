@@ -11,6 +11,8 @@ import {
 } from "react";
 import { CalendarDays, Plus, Sparkles, X } from "lucide-react";
 import { WorkoutDictation } from "@/components/workout-dictation";
+import { EXERCISES } from "@/lib/exercises";
+import { alignWorkoutDraft } from "@/lib/movement-match";
 import { workoutDraftSchema, type WorkoutDraft } from "@/lib/workout-draft";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -109,80 +111,6 @@ const loadable = (category: Workout["category"], station: Station) => {
 const UNITS = ["reps", "m", "cal", "rounds"] as const;
 
 const OTHER = "Other";
-
-/** Picking beats typing on a phone, with a way out for anything not listed. */
-const EXERCISES: { group: string; items: string[] }[] = [
-  {
-    // The lifts the programme is built around, first because they are typed most.
-    group: "Main lifts",
-    items: [
-      "Deadlift",
-      "Back squat",
-      "Overhead press",
-      "Push press",
-      "Split jerk",
-    ],
-  },
-  {
-    // Named exactly as the MetCon stations name them, so a lift and a station
-    // read the same in the log.
-    group: "ATHX stations",
-    items: [
-      "DB ground to overhead",
-      "DB bench press",
-      "Sandbag squats",
-      "Sandbag carry",
-      "Burpees over bench",
-      "Row",
-    ],
-  },
-  {
-    group: "Lower body",
-    items: [
-      "Front squat",
-      "Goblet squat",
-      "Romanian deadlift",
-      "Hip thrust",
-      "Walking lunge",
-      "Bulgarian split squat",
-      "Step-up",
-    ],
-  },
-  {
-    group: "Upper push",
-    items: ["Bench press", "Incline bench press", "Dip", "Push-up", "Lu Raises"],
-  },
-  {
-    group: "Upper pull",
-    items: [
-      "Pull-up",
-      "Curls",
-      "Barbell row",
-      "Dumbbell row",
-      "Lat pulldown",
-      "Face pull",
-    ],
-  },
-  {
-    group: "Power",
-    items: [
-      "Power clean",
-      "Clean and jerk",
-      "Snatch",
-      "Thruster",
-      "Dumbbell snatch",
-      "Kettlebell swing",
-    ],
-  },
-  {
-    group: "Carries and strongman",
-    items: ["Farmer carry", "Sandbag clean", "Sled push", "Sled pull"],
-  },
-  {
-    group: "Conditioning",
-    items: ["Bike erg", "Ski erg", "Run", "Burpee", "Wall ball", "Box jump", "Double under"],
-  },
-];
 
 /** The typed name only counts when Other is the choice. */
 const exerciseName = (choice: string, custom: string) =>
@@ -707,17 +635,35 @@ export function WorkoutForm({
         body: JSON.stringify({ description: description.trim(), athletes: columns, weightUnit: unit }),
       });
       if (controller.signal.aborted) return;
-      const draft = workoutDraftSchema.parse(result.draft);
+      const draft = alignWorkoutDraft(workoutDraftSchema.parse(result.draft));
       const string = (value: number | null) => value === null ? "" : String(value);
       const time = (value: number | null) => value === null || value === 0 ? "" : formatTime(value);
       const load = (value: number | null) => value === null ? "" : displayLoad(value, unit);
-      const nextStations: Station[] = draft.stations.map(station => ({
-        ...toChoice(station.name), unit: station.unit, target: String(station.target), block: station.block,
-      }));
-      const nextEntries = (side: Side): Entry[] => draft.stations.map(station => columns.includes(side) ? ({
-        completed: string(station[side].completed), time: time(station[side].seconds),
-        load: load(station[side].kg), savedKg: station[side].kg ?? undefined,
-      }) : blankEntry());
+      // A matched ATHX station is the circuit's own row, including the standard
+      // load when the description never named one.
+      const asCircuit = (station: WorkoutDraft["stations"][number]) => {
+        const circuit = METCON.find((item) => item.name === station.name);
+        return Boolean(circuit) && station.block === "metcon" && circuit?.unit === station.unit;
+      };
+      const nextStations: Station[] = draft.stations.map(station => {
+        const fixed = asCircuit(station);
+        return {
+          ...(fixed ? { name: station.name, custom: "" } : toChoice(station.name)),
+          unit: station.unit, target: String(station.target), block: station.block, fixed,
+        };
+      });
+      const nextEntries = (side: Side): Entry[] => draft.stations.map(station => {
+        if (!columns.includes(side)) return blankEntry();
+        const circuit = asCircuit(station) ? METCON.find((item) => item.name === station.name) : undefined;
+        const prescribed = circuit?.kg?.[side];
+        return {
+          completed: string(station[side].completed), time: time(station[side].seconds),
+          load: prescribed !== undefined && station[side].kg === null ? standardLoad(prescribed, unit) : load(station[side].kg),
+          ...(prescribed !== undefined && station[side].kg === null
+            ? { prefilled: true }
+            : { savedKg: station[side].kg ?? undefined }),
+        };
+      });
       const nextLiftSide = (side: Side, lift: WorkoutDraft["lifts"][number]): LiftSide => columns.includes(side) ? ({
         kg: load(lift[side].kg), sets: string(lift[side].sets), reps: string(lift[side].reps),
         savedKg: lift[side].kg ?? undefined,
