@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/native-select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
+import { athleteOutline, type AthleteOutline } from "@/lib/athlete-outline";
 import { addDays, api, dayToDate, message, newId } from "@/lib/client";
 import {
   ATHLETES,
@@ -328,15 +329,13 @@ const CHOICE =
 const FORMAT_OPTIONS: readonly {
   value: Format;
   label: string;
-  ink: string;
   dots: readonly string[];
 }[] = [
-  { value: "hippos", label: "Hippos", ink: ATHLETES.hippos.ink, dots: [ATHLETES.hippos.color] },
-  { value: "gators", label: "Gators", ink: ATHLETES.gators.ink, dots: [ATHLETES.gators.color] },
+  { value: "hippos", label: "Hippos", dots: [ATHLETES.hippos.color] },
+  { value: "gators", label: "Gators", dots: [ATHLETES.gators.color] },
   {
     value: "pairs",
     label: "Pairs",
-    ink: ATHLETES.team.ink,
     dots: [ATHLETES.hippos.color, ATHLETES.gators.color],
   },
 ];
@@ -354,31 +353,32 @@ function FormatButtons({
         Format
       </Label>
       <div role="group" aria-label="Format" className="grid grid-cols-3 gap-1.5">
-        {FORMAT_OPTIONS.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => onChange(option.value)}
-            aria-pressed={value === option.value}
-            className={CHOICE}
-            style={
-              value === option.value
-                ? { borderColor: option.ink, color: option.ink }
-                : undefined
-            }
-          >
-            <span className="flex shrink-0 gap-0.5" aria-hidden="true">
-              {option.dots.map((color) => (
-                <span
-                  key={color}
-                  className="size-2 rounded-full"
-                  style={{ background: color }}
-                />
-              ))}
-            </span>
-            {option.label}
-          </button>
-        ))}
+        {FORMAT_OPTIONS.map((option) => {
+          const selected = value === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onChange(option.value)}
+              aria-pressed={selected}
+              {...(selected
+                ? athleteOutline(option.value === "pairs" ? "both" : option.value, "accent")
+                : {})}
+              className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-lg border-2 px-2 py-2.5 text-xs font-medium whitespace-nowrap transition-colors aria-pressed:bg-accent aria-pressed:font-semibold"
+            >
+              <span className="flex shrink-0 gap-0.5" aria-hidden="true">
+                {option.dots.map((color) => (
+                  <span
+                    key={color}
+                    className="size-2 rounded-full"
+                    style={{ background: color }}
+                  />
+                ))}
+              </span>
+              {option.label}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -520,15 +520,17 @@ function Panel({
   title,
   note,
   action,
+  outline,
   children,
 }: {
   title: string;
   note?: string;
   action?: React.ReactNode;
+  outline: AthleteOutline;
   children: React.ReactNode;
 }) {
   return (
-    <section className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
+    <section {...athleteOutline(outline)} className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold">{title}</h3>
@@ -595,6 +597,7 @@ export function WorkoutForm({
     : sides.length > 1
       ? "pairs"
       : sides[0];
+  const outline: AthleteOutline = format === "pairs" ? "both" : format;
   const context: Workout["context"] = editing
     ? recordContext
     : defaultContext(sides.length);
@@ -1096,7 +1099,10 @@ export function WorkoutForm({
   return (
     <form onSubmit={submit} className="space-y-4 pb-4">
       {editing ? (
-        <div className="flex items-center justify-between gap-3 rounded-2xl border bg-muted/50 p-3">
+        <div
+          {...athleteOutline(outline, "muted")}
+          className="flex items-center justify-between gap-3 rounded-2xl border bg-muted/50 p-3"
+        >
           <p className="text-xs">
             Editing{" "}
             <span className="font-medium">{ATHLETES[athleteForEdit].name}</span>
@@ -1108,7 +1114,7 @@ export function WorkoutForm({
           </Button>
         </div>
       ) : null}
-      <Panel title="Describe your workout" note="Type it or dictate it, then let AI fill the form.">
+      <Panel outline={outline} title="Describe your workout" note="Type it or dictate it, then let AI fill the form.">
         <Field label="Workout description" hint="Sets × reps: 1 x 2 means 1 set of 2 reps. Include weights and units when you know them.">
           <Textarea value={description} maxLength={4000} rows={4} disabled={drafting || listening || saving}
             placeholder="Hippos: deadlift 3 x 5 at 185 lb, back squat 1 x 2 at 135 lb. Gators: deadlift 3 x 5 at 95 lb."
@@ -1129,7 +1135,7 @@ export function WorkoutForm({
         {draftError ? <p role="alert" className="text-sm text-destructive">{draftError}</p> : null}
       </Panel>
       <fieldset disabled={drafting || listening || saving} className="min-w-0 space-y-4">
-      <section className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
+      <section {...athleteOutline(outline)} className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
         <DayButtons today={today} day={day} onChange={setDay} />
         <FormatButtons value={format} onChange={chooseFormat} />
         <Field label="Session" hint="Optional — the date is used if left blank">
@@ -1227,6 +1233,7 @@ export function WorkoutForm({
       </section>
 
       <Panel
+        outline={outline}
         title="Elapsed time"
         note="Optional. Left blank, the station times are added up instead."
       >
@@ -1256,6 +1263,7 @@ export function WorkoutForm({
 
       {usesStations ? (
         <Panel
+          outline={outline}
           title={isRun ? "Run" : isMixed ? "MetCon and endurance" : "Stations"}
           note={
             isRun
@@ -1483,6 +1491,7 @@ export function WorkoutForm({
 
       {usesLifts ? (
         <Panel
+          outline={outline}
           title="Lifts"
           note="Load, sets and reps for each of you."
           action={
@@ -1582,7 +1591,7 @@ export function WorkoutForm({
       ) : null}
 
 
-      <section className="rounded-2xl border bg-card p-4 sm:p-5">
+      <section {...athleteOutline(outline)} className="rounded-2xl border bg-card p-4 sm:p-5">
         <Field label="Notes">
           <Textarea
             value={notes}

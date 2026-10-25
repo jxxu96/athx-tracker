@@ -81,6 +81,50 @@ test("the meal date is today, yesterday, or a day from the calendar", async ({ p
   ).toHaveAttribute("aria-pressed", "true");
 });
 
+async function inks(page: Page) {
+  return page.evaluate(() => {
+    const read = (name: string) => {
+      const probe = document.createElement("span");
+      probe.style.color = `var(${name})`;
+      document.body.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    };
+    return { hippos: read("--athlete-hippos-ink"), gators: read("--athlete-gators-ink") };
+  });
+}
+
+test("the meal boxes take the colour of who the meal is for", async ({ page }) => {
+  const colors = await inks(page);
+  const card = page.locator("form section").first();
+  const athlete = page.getByRole("group", { name: "Athlete" });
+  const ring = () => card.evaluate((el) => getComputedStyle(el).backgroundImage);
+
+  await expect(athlete.getByRole("button", { name: "Both" })).toHaveAttribute("data-athlete-outline", "both");
+  await expect(loggingFor(page, "Both")).toHaveAttribute("data-athlete-outline", "both");
+  await expect(card).toHaveAttribute("data-athlete-outline", "both");
+  const split = await ring();
+  expect(split).toContain(colors.hippos);
+  expect(split).toContain(colors.gators);
+
+  await athlete.getByRole("button", { name: "Gators" }).click();
+  await expect(card).toHaveAttribute("data-athlete-outline", "gators");
+  await expect(athlete.getByRole("button", { name: "Gators" })).toHaveAttribute("data-athlete-outline", "gators");
+  await expect(loggingFor(page, "Gators")).toHaveAttribute("data-athlete-outline", "gators");
+  await expect(athlete.getByRole("button", { name: "Hippos" })).not.toHaveAttribute("data-athlete-outline");
+  const green = await ring();
+  expect(green).toContain(colors.gators);
+  expect(green).not.toContain(colors.hippos);
+
+  await loggingFor(page, "Hippos").click();
+  await expect(card).toHaveAttribute("data-athlete-outline", "hippos");
+  await expect(athlete.getByRole("button", { name: "Hippos" })).toHaveAttribute("data-athlete-outline", "hippos");
+  const pink = await ring();
+  expect(pink).toContain(colors.hippos);
+  expect(pink).not.toContain(colors.gators);
+});
+
 test("a new meal starts on the sitting that matches the time", async ({ page }) => {
   const sitting = mealForTime(new Date());
   const group = page.getByRole("group", { name: "Sitting" });
