@@ -69,8 +69,8 @@ export function Tracker({
 
   const [tab, setTab] = useState<Tab>("today");
   // One switch drives both forms: which columns the session shows, and who a
-  // new meal is saved for. "both" writes both athletes.
-  const [who, setWho] = useState<"hippos" | "gators" | "both">("both");
+  // new meal is saved for. The journal opens on Hippos. "both" writes both athletes.
+  const [who, setWho] = useState<"hippos" | "gators" | "both">("hippos");
   const sides = who === "both" ? (["hippos", "gators"] as const) : ([who] as const);
   const [records, setRecords] = useState(() => sortRecords(initialRecords));
   const [settings, setSettings] = useState(initialSettings);
