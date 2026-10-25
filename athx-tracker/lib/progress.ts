@@ -100,6 +100,41 @@ export function liftProgress(
   });
 }
 
+/** Press, squat and deadlift. The split jerk is followed on its own and is not in this total. */
+export const TOTAL_LIFTS = ["overheadPress", "backSquat", "deadlift"] as const;
+
+export type LiftTotal = {
+  start: number | null;
+  latest: number | null;
+  best: number | null;
+  /** Kilograms. Null until all three lifts have a target. */
+  target: number | null;
+};
+
+/**
+ * The three lifts added together. A column stays empty until every one of them
+ * has that figure, so a missing deadlift cannot look like a small total.
+ */
+export function liftTotal(rows: LiftProgress[]): LiftTotal {
+  const three = TOTAL_LIFTS.map((key) => rows.find((row) => row.key === key));
+  const sum = (value: (row: LiftProgress) => number | null) => {
+    let total = 0;
+    for (const row of three) {
+      if (!row) return null;
+      const kg = value(row);
+      if (kg === null || !(kg > 0)) return null;
+      total += kg;
+    }
+    return total;
+  };
+  return {
+    start: sum((row) => row.start?.kg ?? null),
+    latest: sum((row) => row.latest?.kg ?? null),
+    best: sum((row) => row.best?.kg ?? null),
+    target: sum((row) => (row.target > 0 ? row.target : null)),
+  };
+}
+
 /** Together sessions that logged a followed lift. With no single athlete, they count for neither. */
 export function togetherLiftSessions(records: RecordItem[]) {
   return records.filter(
@@ -128,10 +163,21 @@ export function toGo(lift: Pick<LiftProgress, "best" | "target">, unit: WeightUn
   return shownGap(lift.best.kg, lift.target, unit);
 }
 
-/** Where the start and the best sit along the target, as percents capped at 100. Null without a target. */
-export function targetMeter(lift: Pick<LiftProgress, "start" | "best" | "target">) {
-  if (!(lift.target > 0)) return null;
-  const share = (set: TopSet | null) =>
-    set ? Math.min(100, (set.kg / lift.target) * 100) : 0;
-  return { start: share(lift.start), best: share(lift.best) };
+export type ProgressMark = "start" | "latest" | "best" | "target";
+
+/**
+ * Where each figure sits on the bar, as a percent of the heaviest one.
+ * The rightmost point is the biggest number. Null when there is nothing to place.
+ */
+export function progressMarks(
+  lift: Pick<LiftProgress, "start" | "latest" | "best" | "target">,
+): { key: ProgressMark; kg: number; at: number }[] | null {
+  const marks: { key: ProgressMark; kg: number }[] = [];
+  if (lift.start && lift.start.kg > 0) marks.push({ key: "start", kg: lift.start.kg });
+  if (lift.latest && lift.latest.kg > 0) marks.push({ key: "latest", kg: lift.latest.kg });
+  if (lift.best && lift.best.kg > 0) marks.push({ key: "best", kg: lift.best.kg });
+  if (lift.target > 0) marks.push({ key: "target", kg: lift.target });
+  if (!marks.length) return null;
+  const heaviest = Math.max(...marks.map((mark) => mark.kg));
+  return marks.map((mark) => ({ ...mark, at: (mark.kg / heaviest) * 100 }));
 }
