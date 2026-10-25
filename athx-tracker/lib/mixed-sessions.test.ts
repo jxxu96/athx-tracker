@@ -46,7 +46,7 @@ test("a session saved before parts existed reads exactly as it did", () => {
 });
 
 test("burns of every existing category are unchanged", () => {
-  for (const category of ["Strength", "Endurance", "MetCon", "Solidcore", "Tennis", "Other"] as const) {
+  for (const category of ["Strength", "Endurance", "MetCon", "Solidcore", "Tennis", "YTW", "Other"] as const) {
     const w = workout({ category, seconds: 3600 });
     assert.equal(sessionMet(w), MET_BY_CATEGORY[category], category);
     assert.equal(estimateBurn(w, 80), Math.round((MET_BY_CATEGORY[category] * 3.5 * 80 / 200) * 60 / 10) * 10);

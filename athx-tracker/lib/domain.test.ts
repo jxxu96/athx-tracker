@@ -142,9 +142,10 @@ test("every session type has a MET, and they rank sensibly", () => {
   // burn would look plausible and be wrong.
   const at = (category: Workout["category"]) =>
     estimateBurn(workout({ category, seconds: 3600 }), 80)!;
-  for (const category of ["Strength", "Endurance", "MetCon", "Solidcore", "Tennis", "Other"] as const) {
+  for (const category of ["Strength", "Endurance", "MetCon", "Solidcore", "Tennis", "YTW", "Other"] as const) {
     assert.ok(at(category) > 0, category);
   }
+  assert.ok(at("YTW") < at("Solidcore"), "light raises are not a megaformer session");
   assert.ok(at("Solidcore") < at("Strength"), "slow resistance is not a lift session");
   assert.ok(at("Strength") < at("Tennis"), "rallying moves you more than lifting");
   assert.ok(at("Tennis") < at("MetCon"));

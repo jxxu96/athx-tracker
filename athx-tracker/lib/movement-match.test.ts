@@ -147,6 +147,10 @@ test("named workouts match Solidcore and Tennis, and an unknown one is called ou
   const tennis = settled({ ...base(), category: "Other", customCategory: "tenis", lifts: [], stations: [] });
   assert.equal(tennis.category, "Tennis");
 
+  const ytw = settled({ ...base(), category: "Other", customCategory: "Y-T-W", lifts: [], stations: [] });
+  assert.equal(ytw.category, "YTW");
+  assert.equal(ytw.customCategory, "");
+
   const yoga = settled({ ...base(), category: "Other", customCategory: "Yoga", lifts: [], stations: [] });
   assert.equal(yoga.category, "Other");
   assert.equal(yoga.customCategory, "Yoga");

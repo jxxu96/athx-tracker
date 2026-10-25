@@ -15,8 +15,8 @@ single SQLite file on a volume.
   same range, summed across both athletes. The last session stays underneath,
   with its time, what it burned, and the whole-session estimate when the
   stations support one, and so does the ATHX Lite running order.
-- **Session** — log a workout as MetCon, Strength, Endurance, Solidcore, Tennis or
-  Other, with Solidcore and tennis a tap away under Quick start. Load the seven
+- **Session** — log a workout as MetCon, Strength, Endurance, Solidcore, Tennis, YTW or
+  Other, with Solidcore, tennis and YTW a tap away under Quick start. Load the seven
   ATHX stations with one tap, then fill in what you completed and each split.
   Elapsed time, station times, lifts and notes are all optional: a session with
   nothing timed is still a session, and reads as a dash rather than as a time of

@@ -13,7 +13,7 @@ const stationSide = z.object({ completed: amount.nullable(), seconds, kg }).stri
 /** Null means unreported, so the form keeps that box empty. Weights are always kg. */
 export const workoutDraftSchema = z.object({
   title: z.string().trim().min(1).max(120),
-  category: z.enum(["Strength", "Endurance", "MetCon", "Mixed", "Solidcore", "Tennis", "Other"]),
+  category: z.enum(["Strength", "Endurance", "MetCon", "Mixed", "Solidcore", "Tennis", "YTW", "Other"]),
   customCategory: z.string().trim().max(60),
   notes: z.string().max(2000),
   assumptions: z.string().max(2000),
@@ -43,7 +43,7 @@ export const workoutDraftSchema = z.object({
       if ((entry.completed ?? 0) > station.target) issue("Completed volume exceeds target.");
       if ((entry.seconds ?? 0) > 0 && !(entry.completed! > 0)) issue("Station time needs completed work.");
       if (station.block === "endurance" && entry.kg !== null) issue("Endurance loads cannot be displayed.");
-      if (["Solidcore", "Tennis"].includes(draft.category) && entry.kg !== null)
+      if (["Solidcore", "Tennis", "YTW"].includes(draft.category) && entry.kg !== null)
         issue("This category cannot display station loads.");
     }
     if (draft.elapsed[side] !== null && total > draft.elapsed[side]! + 1)
