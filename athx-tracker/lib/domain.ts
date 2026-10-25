@@ -1,10 +1,15 @@
 export type Athlete = "hippos" | "gators" | "team";
 export type WeightUnit = "kg" | "lb";
+/** What a station counts. A run uses m, km, or mi; the number is in that unit. */
+export const VOLUME_UNITS = ["reps", "m", "km", "mi", "cal", "rounds"] as const;
+export type VolumeUnit = (typeof VOLUME_UNITS)[number];
+export const DISTANCE_UNITS = ["m", "km", "mi"] as const;
+export type DistanceUnit = (typeof DISTANCE_UNITS)[number];
 export type Macros = { calories: number; protein: number; carbs: number; fat: number };
 /** Which part of a session a station belongs to. Lifts live in their own list. */
 export type Block = "metcon" | "endurance";
 export type Segment = {
-  name: string; unit: "reps" | "m" | "cal" | "rounds";
+  name: string; unit: VolumeUnit;
   completed: number; target: number; seconds: number;
   /**
    * Set on stations saved since sessions could mix parts. Older stations omit
@@ -225,6 +230,49 @@ export function toKilograms(value: number, unit: WeightUnit) {
 export function fromKilograms(value: number, unit: WeightUnit) {
   return unit === "lb" ? value * LB_PER_KG : value;
 }
+
+const METRES_PER: Record<DistanceUnit, number> = { m: 1, km: 1000, mi: 1609.344 };
+
+export function isDistanceUnit(unit: string): unit is DistanceUnit {
+  return unit === "m" || unit === "km" || unit === "mi";
+}
+
+export function toMetres(value: number, unit: DistanceUnit) {
+  return value * METRES_PER[unit];
+}
+
+export function fromMetres(metres: number, unit: DistanceUnit) {
+  return metres / METRES_PER[unit];
+}
+
+/**
+ * The number a distance box shows. Metres stay whole. Kilometres and miles
+ * keep two decimals and drop the trailing zeros, so 5 km does not read 5.00.
+ */
+export function displayDistance(value: number, unit: DistanceUnit) {
+  if (unit === "m") return String(Math.round(value));
+  return String(Math.round(value * 100) / 100);
+}
+
+/** A saved run as the log reads it: "5 km", "3.1 mi", "5,000 m". */
+export function formatDistance(value: number, unit: DistanceUnit) {
+  const shown = displayDistance(value, unit);
+  const grouped = unit === "m" ? shown.replace(/\B(?=(\d{3})+(?!\d))/g, ",") : shown;
+  return `${grouped} ${unit}`;
+}
+
+/** Endurance distances, in the unit they were logged. Null when there are none. */
+export function distanceLine(
+  workout: Pick<Workout, "category" | "segments">,
+) {
+  const parts: string[] = [];
+  for (const segment of workout.segments) {
+    if (segmentBlock(workout, segment) !== "endurance" || !isDistanceUnit(segment.unit)) continue;
+    parts.push(`${segment.name} ${formatDistance(segment.completed, segment.unit)}`);
+  }
+  return parts.length ? parts.join(" · ") : null;
+}
+
 /**
  * Calories burned, from the compendium formula: MET x 3.5 x kg / 200 per minute.
  * METs for vigorous effort, which is what these sessions are.

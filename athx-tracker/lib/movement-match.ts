@@ -1,4 +1,4 @@
-import { METCON, type Workout } from "./domain.ts";
+import { METCON, isDistanceUnit, type Workout } from "./domain.ts";
 import { EXERCISES } from "./exercises.ts";
 import type { WorkoutDraft } from "./workout-draft.ts";
 
@@ -348,7 +348,7 @@ function settle(
       return "MetCon";
     return category;
   }
-  const runOnly = stations.every((station) => station.name === "Run" && station.unit === "m");
+  const runOnly = stations.every((station) => station.name === "Run" && isDistanceUnit(station.unit));
   if (runOnly && (category === "Other" || category === "MetCon" || category === "Strength" || asked.has("Endurance")))
     return "Endurance";
   if (!runOnly && category === "Endurance") return "Mixed";

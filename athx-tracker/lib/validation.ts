@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { CONVERSATION_LIMIT, MAX_REPLIES, REPLY_LIMIT } from "./estimate-conversation.ts";
-import { DEFAULT_SETTINGS } from "./domain.ts";
+import { DEFAULT_SETTINGS, VOLUME_UNITS } from "./domain.ts";
 const finite = z.number().finite().nonnegative();
 export const macroSchema = z.object({
   calories: finite.max(20000), protein: finite.max(2000), carbs: finite.max(3000), fat: finite.max(2000),
@@ -37,7 +37,7 @@ export const workoutSchema = z.object({
   customCategory: z.string().trim().max(60).default(""),
   seconds: finite.max(86400), notes: z.string().max(2000),
   segments: z.array(z.object({
-    name: z.string().trim().min(1).max(100), unit: z.enum(["reps", "m", "cal", "rounds"]),
+    name: z.string().trim().min(1).max(100), unit: z.enum(VOLUME_UNITS),
     completed: finite, target: finite.positive(), seconds: finite.max(86400),
     // Optional, so stations saved before parts and loads existed still parse.
     block: z.enum(["metcon", "endurance"]).optional(),

@@ -39,13 +39,18 @@ import {
   sessionSeconds,
   formatTime,
   parseTime,
+  displayDistance,
   displayLoad,
+  fromMetres,
+  isDistanceUnit,
   metconLoadText,
   parseLoad,
   reunitLoad,
   segmentBlock,
   standardLoad,
+  toMetres,
   type Block,
+  type DistanceUnit,
   type Segment,
   type WeightUnit,
   type Workout,
@@ -109,6 +114,45 @@ const loadable = (category: Workout["category"], station: Station) => {
 };
 
 const UNITS = ["reps", "m", "cal", "rounds"] as const;
+
+const DISTANCE_CHOICES: readonly { value: DistanceUnit; name: string }[] = [
+  { value: "m", name: "meters" },
+  { value: "km", name: "kilometers" },
+  { value: "mi", name: "miles" },
+];
+
+/** Metres, kilometres, or miles. The number in the box converts with the choice. */
+function DistanceUnits({
+  unit,
+  onChange,
+}: {
+  unit: Segment["unit"];
+  onChange: (next: DistanceUnit) => void;
+}) {
+  return (
+    <div role="group" aria-label="Distance unit" className="flex w-fit rounded-full bg-muted p-0.5">
+      {DISTANCE_CHOICES.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          aria-label={option.name}
+          aria-pressed={unit === option.value}
+          onClick={() => onChange(option.value)}
+          className="rounded-full px-2.5 py-1 text-xs font-medium transition-colors aria-pressed:bg-background aria-pressed:shadow-sm"
+        >
+          {option.value}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function convertedDistance(text: string, from: DistanceUnit, to: DistanceUnit) {
+  if (text.trim() === "" || from === to) return text;
+  const value = Number(text);
+  if (!Number.isFinite(value)) return text;
+  return displayDistance(fromMetres(toMetres(value, from), to), to);
+}
 
 const OTHER = "Other";
 
@@ -670,7 +714,7 @@ export function WorkoutForm({
       }) : blankLiftSide();
       // The Endurance panel labels its boxes as a run. Other endurance activities
       // use Mixed so their names and units remain visible and editable.
-      setCategory(draft.category === "Endurance" && draft.stations.some(s => s.name !== "Run" || s.unit !== "m")
+      setCategory(draft.category === "Endurance" && draft.stations.some(s => s.name !== "Run" || !isDistanceUnit(s.unit))
         ? "Mixed" : draft.category);
       setTitle(draft.title);
       setCustomCategory(draft.customCategory);
@@ -773,6 +817,25 @@ export function WorkoutForm({
     setStations((current) =>
       current.map((station, i) => (i === index ? { ...station, ...patch } : station)),
     );
+  }
+
+  /** A run's boxes follow the unit. 5 km becomes 3.11 mi, not 5 mi. */
+  function changeDistanceUnit(index: number, next: DistanceUnit) {
+    const station = stations[index];
+    if (!station || station.unit === next) return;
+    const from = station.unit;
+    const convert = (text: string) =>
+      isDistanceUnit(from) ? convertedDistance(text, from, next) : text;
+    setStation(index, { unit: next, target: convert(station.target) });
+    if (!isDistanceUnit(from)) return;
+    setEntries((current) => ({
+      hippos: current.hippos.map((entry, i) =>
+        i === index ? { ...entry, completed: convert(entry.completed) } : entry,
+      ),
+      gators: current.gators.map((entry, i) =>
+        i === index ? { ...entry, completed: convert(entry.completed) } : entry,
+      ),
+    }));
   }
 
   function addStations(added: Station[]) {
@@ -1284,7 +1347,13 @@ export function WorkoutForm({
                       ) : null}
                     </div>
                   ) : isRun ? (
-                    <p className="mb-2.5 text-sm font-medium">Distance and time</p>
+                    <div className="mb-2.5 flex items-center justify-between gap-2">
+                      <p className="text-sm font-medium">Distance and time</p>
+                      <DistanceUnits
+                        unit={station.unit}
+                        onChange={(next) => changeDistanceUnit(index, next)}
+                      />
+                    </div>
                   ) : (
                     <div className="mb-2.5 space-y-2">
                       <ExercisePicker
@@ -1300,9 +1369,19 @@ export function WorkoutForm({
                             <NativeSelect
                               size="sm"
                               value={station.block}
-                              onChange={(event) =>
-                                setStation(index, { block: event.target.value as Block })
-                              }
+                              onChange={(event) => {
+                                const block = event.target.value as Block;
+                                if (block === "endurance" && !isDistanceUnit(station.unit)) {
+                                  setStation(index, { block, unit: "m" });
+                                  return;
+                                }
+                                if (block === "metcon" && isDistanceUnit(station.unit) && station.unit !== "m") {
+                                  changeDistanceUnit(index, "m");
+                                  setStation(index, { block });
+                                  return;
+                                }
+                                setStation(index, { block });
+                              }}
                             >
                               <NativeSelectOption value="metcon">MetCon</NativeSelectOption>
                               <NativeSelectOption value="endurance">Endurance</NativeSelectOption>
@@ -1321,6 +1400,17 @@ export function WorkoutForm({
                           />
                         </Field>
                         )}
+                        {measured(station) ? (
+                          <div className="flex-1">
+                            <Label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                              Distance
+                            </Label>
+                            <DistanceUnits
+                              unit={station.unit}
+                              onChange={(next) => changeDistanceUnit(index, next)}
+                            />
+                          </div>
+                        ) : (
                         <Field label="Unit" className="flex-1">
                           <NativeSelect
                             size="sm"
@@ -1338,6 +1428,7 @@ export function WorkoutForm({
                             ))}
                           </NativeSelect>
                         </Field>
+                        )}
                         <Button
                           type="button"
                           variant="ghost"
@@ -1357,7 +1448,7 @@ export function WorkoutForm({
                         <Field
                           label={
                             isRun
-                              ? "Distance (m)"
+                              ? `Distance (${station.unit})`
                               : measured(station)
                                 ? `Covered (${station.unit})`
                                 : `Done (${station.unit})`

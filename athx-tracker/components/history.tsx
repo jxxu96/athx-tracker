@@ -12,6 +12,7 @@ import {
   ESTIMATORS,
   categoryName,
   completionLine,
+  distanceLine,
   estimateBurn,
   formatTimeOrDash,
   formatWeight,
@@ -183,6 +184,11 @@ export function History({
                               {record.segments.length} station
                               {record.segments.length === 1 ? "" : "s"} ·{" "}
                               {record.context === "pairs" ? "Pairs" : "Solo"}
+                            </p>
+                          ) : null}
+                          {distanceLine(record) ? (
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              {distanceLine(record)}
                             </p>
                           ) : null}
                           {completionLine(record) ? (

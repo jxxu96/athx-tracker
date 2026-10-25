@@ -524,6 +524,40 @@ test("one session holds lifts, a part-finished MetCon with loads, and a run", as
   await expect(entry.getByText(/DB ground to overhead 12\.5 kg/)).toBeVisible();
 });
 
+test("a run can be logged in metres, kilometres, or miles", async ({ page }) => {
+  await athlete(page, "Gators").click();
+  await openSession(page);
+  await typeSelect(page).selectOption("Endurance");
+  const units = page.getByRole("group", { name: "Distance unit" });
+  const distanceUnit = (name: "meters" | "kilometers" | "miles") =>
+    units.getByRole("button", { name, exact: true });
+  await expect(distanceUnit("meters")).toHaveAttribute("aria-pressed", "true");
+  await page.getByLabel("Distance (m)").fill("5000");
+  await distanceUnit("kilometers").click();
+  await expect(page.getByLabel("Distance (km)")).toHaveValue("5");
+  await distanceUnit("miles").click();
+  await expect(page.getByLabel("Distance (mi)")).toHaveValue("3.11");
+  await page.getByLabel("Distance (mi)").fill("3");
+  await page.getByLabel("Time", { exact: true }).fill("24:00");
+  await page.getByRole("button", { name: "Save session" }).click();
+  await expect(page.getByText("Session saved", { exact: true })).toBeVisible();
+
+  const saved = await page.evaluate(async () => {
+    const data = await fetch("/api/records").then((r) => r.json());
+    return data.records[0];
+  });
+  expect(saved.segments[0]).toMatchObject({ name: "Run", unit: "mi", completed: 3, target: 3 });
+
+  await openLog(page);
+  const entry = page.getByRole("listitem").filter({ hasText: "Run 3 mi" });
+  await expect(entry).toBeVisible();
+  await entry.getByLabel("Edit entry").click();
+  await expect(
+    page.getByRole("group", { name: "Distance unit" }).getByRole("button", { name: "miles", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel("Distance (mi)")).toHaveValue("3");
+});
+
 test("circuit loads start at the standard weight, and reopening keeps it", async ({ page }) => {
   // Logging for both: the column nobody touched must not become a session
   // just because the form filled its weights in.
