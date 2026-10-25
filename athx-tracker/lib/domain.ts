@@ -103,7 +103,7 @@ export const ATHLETES = {
   },
   team: {
     name: "Together", label: "Mixed doubles",
-    color: "#235a43", ink: "var(--athlete-team-ink)",
+    color: "#6d28d9", ink: "var(--athlete-team-ink)",
   },
 };
 /**
