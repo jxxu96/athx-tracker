@@ -10,8 +10,7 @@ import {
   calorieTracking,
   formatAmount,
   fuelWindow,
-  gapLabel,
-  targetGap,
+  targetPercent,
   teamSessions,
   type AthleteFuel,
   type FuelAthlete,
@@ -74,8 +73,7 @@ function MacroRow({
   color: string;
   average: boolean;
 }) {
-  const pct = target > 0 ? Math.min(100, Math.round((value / target) * 100)) : 0;
-  const gap = gapLabel(targetGap(value, target), unit);
+  const share = targetPercent(value, target);
   return (
     <div className="space-y-1.5">
       <div className="flex items-baseline justify-between gap-3 text-xs">
@@ -87,13 +85,13 @@ function MacroRow({
             <span className="text-muted-foreground"> / {formatAmount(target)}</span>
           ) : null}
           <span className="text-muted-foreground"> {unit}</span>
-          {gap ? <span className="text-muted-foreground"> · {gap}</span> : null}
+          {share !== null ? <span className="text-muted-foreground"> · {share}%</span> : null}
         </span>
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-muted">
         <div
           className="h-full rounded-full transition-[width]"
-          style={{ width: `${target > 0 ? pct : 0}%`, background: color }}
+          style={{ width: `${share === null ? 0 : Math.min(100, share)}%`, background: color }}
         />
       </div>
     </div>

@@ -8,6 +8,7 @@ import {
   fuelWindow,
   gapLabel,
   targetGap,
+  targetPercent,
   teamSessions,
 } from "./fuel.ts";
 
@@ -87,6 +88,14 @@ test("a gap inside five percent is on target, and the band scales with the targe
   assert.equal(gapLabel(targetGap(2101, 2000), "kcal"), "101 kcal over");
   assert.equal(gapLabel(targetGap(2000, 2000), "kcal"), "on target");
   assert.equal(gapLabel(null, "kcal"), "");
+});
+
+test("a macro's share of its target is a whole percent", () => {
+  assert.equal(targetPercent(500, 2000), 25);
+  assert.equal(targetPercent(2000, 2000), 100);
+  assert.equal(targetPercent(2500, 2000), 125);
+  assert.equal(targetPercent(1, 2000), 0);
+  assert.equal(targetPercent(500, 0), null);
 });
 
 test("a day shows that day's meals and not the days around it", () => {

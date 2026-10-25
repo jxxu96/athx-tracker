@@ -36,6 +36,46 @@ test("fuel switches today, yesterday, the last week, and overall", async ({ page
   await expect(page.getByRole("button", { name: "Today", exact: true })).toHaveCount(1);
 });
 
+test("a macro shows the percent of its target", async ({ page }) => {
+  await signIn(page);
+  await page.evaluate(async () => {
+    const today = new Intl.DateTimeFormat("en-CA", {
+      year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(new Date());
+    const current = await fetch("/api/settings").then((response) => response.json());
+    const saved = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        revision: current.revision,
+        settings: {
+          ...current.settings,
+          targets: {
+            ...current.settings.targets,
+            hippos: { calories: 2000, protein: 140, carbs: 200, fat: 70 },
+          },
+        },
+      }),
+    });
+    if (!saved.ok) throw new Error("settings");
+    const meal = await fetch("/api/records", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: crypto.randomUUID(), kind: "meal", athlete: "hippos", day: today,
+        name: "Half breakfast", meal: "Breakfast", source: "manual", assumptions: "",
+        macros: { calories: 500, protein: 35, carbs: 50, fat: 14 },
+      }),
+    });
+    if (!meal.ok) throw new Error("meal");
+  });
+  await page.reload();
+  const hippos = page.getByRole("group", { name: "Hippos fuel" });
+  await expect(hippos.getByText("500 / 2,000 kcal · 25%")).toBeVisible();
+  await expect(hippos.getByText("14 / 70 g · 20%")).toBeVisible();
+  await expect(hippos.getByText(/under/)).toHaveCount(0);
+});
+
 test("each person's expenditure sits under that person", async ({ page }) => {
   await signIn(page);
   await page.evaluate(async () => {
