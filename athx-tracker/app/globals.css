@@ -109,10 +109,10 @@
    */
   --athlete-hippos: #bb4e79;
   --athlete-gators: #287653;
-  --athlete-team: #235a43;
+  --athlete-team: #6d28d9;
   --athlete-hippos-ink: #b54c75;
   --athlete-gators-ink: #287653;
-  --athlete-team-ink: #235a43;
+  --athlete-team-ink: #6d28d9;
 }
 
 :root[data-theme="light"] {
@@ -123,7 +123,7 @@
   color-scheme: dark;
   --athlete-hippos-ink: #c97194;
   --athlete-gators-ink: #5d987d;
-  --athlete-team-ink: #709485;
+  --athlete-team-ink: #c4b5fd;
   --background: #0a0a0a;
   --foreground: #ededed;
   --card: #171717;

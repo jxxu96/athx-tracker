@@ -8,6 +8,13 @@ async function signIn(page: Page) {
   await expect(page.getByRole("button", { name: "Session" })).toBeVisible();
 }
 
+test("together is purple", async ({ page }) => {
+  await signIn(page);
+  const week = page.locator("section").filter({ has: page.getByRole("heading", { name: "This week" }) });
+  const bar = week.locator("div.space-y-2").filter({ has: page.getByText("Together", { exact: true }) }).locator(".h-full");
+  await expect(bar).toHaveCSS("background-color", "rgb(109, 40, 217)");
+});
+
 test("fuel switches today, yesterday, the last week, and overall", async ({ page }) => {
   await signIn(page);
   const fuel = page.getByRole("group", { name: "Fuel range" });
