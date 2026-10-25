@@ -8,7 +8,7 @@ import { PASSPHRASE } from "../playwright.config.ts";
 // over what had been typed, a control showing one theme while the page showed
 // another.
 
-const CATEGORIES = ["MetCon", "Strength", "Endurance", "Mixed", "Solidcore", "Tennis", "Other"];
+const CATEGORIES = ["MetCon", "Strength", "Endurance", "Mixed", "Solidcore", "Tennis", "YTW", "Other"];
 
 async function signIn(page: Page) {
   await page.goto("/login");
@@ -102,6 +102,11 @@ test("no category asks for a station it gives you no way to add", async ({ page 
 
 test("a preset fills in the session in one tap", async ({ page }) => {
   await openSession(page);
+  await page.getByRole("button", { name: "YTW 15m" }).click();
+  await expect(typeSelect(page)).toHaveValue("YTW");
+  await expect(elapsed(page).first()).toHaveValue("15:00");
+  await expect(title(page)).toHaveValue("YTW");
+
   await page.getByRole("button", { name: "Tennis 60m" }).click();
   await expect(typeSelect(page)).toHaveValue("Tennis");
   await expect(elapsed(page).first()).toHaveValue("60:00");

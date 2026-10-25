@@ -14,7 +14,7 @@ const entry = object({ completed: number(Number.MAX_SAFE_INTEGER), seconds, kg }
 
 export const WORKOUT_SCHEMA = object({
   title: text(120, 1),
-  category: choice("Strength", "Endurance", "MetCon", "Mixed", "Solidcore", "Tennis", "Other"),
+  category: choice("Strength", "Endurance", "MetCon", "Mixed", "Solidcore", "Tennis", "YTW", "Other"),
   customCategory: text(60), notes: text(2000), assumptions: text(2000),
   elapsed: object({ hippos: seconds, gators: seconds }),
   lifts: array(object({ name: text(80, 1), hippos: lift, gators: lift })),
@@ -36,9 +36,9 @@ export const WORKOUT_INSTRUCTIONS = [
   "Prefer an existing list item over a new name. Listed movements, spelled exactly, are: Deadlift, Back squat, Overhead press, Push press, Split jerk, Opening row, DB ground to overhead, DB bench press, Sandbag squats, Sandbag carry, Burpees over bench, Closing row, Row, Front squat, Goblet squat, Romanian deadlift, Hip thrust, Walking lunge, Bulgarian split squat, Step-up, Bench press, Incline bench press, Dip, Push-up, Lu Raises, Pull-up, Curls, Barbell row, Dumbbell row, Lat pulldown, Face pull, Power clean, Clean and jerk, Snatch, Thruster, Dumbbell snatch, Kettlebell swing, Farmer carry, Sandbag clean, Sled push, Sled pull, Bike erg, Ski erg, Run, Burpee, Wall ball, Box jump, Double under.",
   "Match typos, plurals, abbreviations and loose phrasing to that list and use its spelling. deadlifts, dl and deadlif are Deadlift; ohp and military press are Overhead press; rdl is Romanian deadlift; db bench and dumbbell bench press are DB bench press; g2oh is DB ground to overhead; wall balls are Wall ball; farmers walk is Farmer carry; burpee over bench is Burpees over bench. A different variation is not the nearby lift: sumo deadlift is not Deadlift, and a bare squat that could be several list items stays as typed.",
   "The ATHX Lite MetCon is those circuit stations in order: Opening row (40 cal), DB ground to overhead (30 reps), DB bench press (30 reps), Sandbag squats (30 reps), Sandbag carry (60 m), Burpees over bench (30 reps), Closing row (40 cal). Words like metcon, athx and the circuit mean that circuit, not a station named MetCon. When they did that circuit and did not name other stations, include each circuit station with its prescribed target and unit and leave unreported results null.",
-  "Named workouts are Solidcore and Tennis. Session types are only Strength, Endurance, MetCon, Mixed, Solidcore, Tennis and Other. solid core is Solidcore. When a lift, station or workout is a different movement from every list item, keep their words and say so in notes, in this shape: Left as typed: \"cable reverse fly\" is not in the list.",
+  "Named workouts are Solidcore, Tennis and YTW. Session types are only Strength, Endurance, MetCon, Mixed, Solidcore, Tennis, YTW and Other. solid core is Solidcore. Y-T-W is YTW. When a lift, station or workout is a different movement from every list item, keep their words and say so in notes, in this shape: Left as typed: \"cable reverse fly\" is not in the list.",
   "Stations represent conditioning and endurance. target must be positive: use the stated target, otherwise the completed volume; completed and seconds are null if unreported. Completed cannot exceed target; when athletes differ, use the larger target. Do not create a station with no target or volume; keep that activity in notes and flag missing volume in assumptions.",
-  "Endurance block is for run/row/bike/distance work and has no kg. Other conditioning uses metcon. Strength is lifts only. Use Mixed whenever lifts and stations coexist or both station blocks coexist, and for custom conditioning circuits. Use MetCon only for the ATHX circuit explicitly described; do not add unreported circuit stations. Endurance uses only endurance stations. Tennis and Solidcore can use elapsed time without stations. Other uses customCategory.",
+  "Endurance block is for run/row/bike/distance work and has no kg. Other conditioning uses metcon. Strength is lifts only. Use Mixed whenever lifts and stations coexist or both station blocks coexist, and for custom conditioning circuits. Use MetCon only for the ATHX circuit explicitly described; do not add unreported circuit stations. Endurance uses only endurance stations. Tennis, Solidcore and YTW can use elapsed time without stations. Other uses customCategory.",
   "Station splits must add up to no more than the athlete's elapsed time. Leave elapsed null if only splits are known. A station time needs positive completed volume; otherwise keep the time in notes. Keep notes faithful to the description. Never claim a draft was saved. Output only the required JSON.",
 ].join(" ");
 
@@ -74,7 +74,7 @@ export function cleanWorkout(value) {
       total += entry.seconds ?? 0;
       if ((entry.completed ?? 0) > station.target || (entry.seconds > 0 && !(entry.completed > 0))) return null;
       if (station.block === "endurance" && entry.kg !== null) return null;
-      if (["Tennis", "Solidcore"].includes(value.category) && entry.kg !== null) return null;
+      if (["Tennis", "Solidcore", "YTW"].includes(value.category) && entry.kg !== null) return null;
     }
     if (value.elapsed[side] !== null && total > value.elapsed[side] + 1) return null;
   }

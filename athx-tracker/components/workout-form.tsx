@@ -93,7 +93,7 @@ type LiftRow = {
 };
 
 const CATEGORIES = [
-  "MetCon", "Strength", "Endurance", "Mixed", "Solidcore", "Tennis", "Other",
+  "MetCon", "Strength", "Endurance", "Mixed", "Solidcore", "Tennis", "YTW", "Other",
 ] as const;
 
 /** The circuit's own entry for a station, when it is one of the seven. */
@@ -106,8 +106,8 @@ const circuitStation = (station: Pick<Station, "name" | "fixed">) =>
  * calories, which is a machine. Endurance work is never loaded.
  */
 const loadable = (category: Workout["category"], station: Station) => {
-  // Solidcore and tennis stations are not lifted; MetCon, Mixed and Other may be.
-  if (category === "Solidcore" || category === "Tennis") return false;
+  // Solidcore, tennis and YTW stations are not lifted; MetCon, Mixed and Other may be.
+  if (category === "Solidcore" || category === "Tennis" || category === "YTW") return false;
   if (station.block !== "metcon") return false;
   if (station.fixed) return Boolean(circuitStation(station)?.kg);
   return station.unit !== "cal";

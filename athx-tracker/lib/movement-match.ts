@@ -69,6 +69,8 @@ const SESSION_PHRASES: { phrase: string; category: Workout["category"] }[] = [
   { phrase: "athx", category: "MetCon" },
   { phrase: "circuit", category: "MetCon" },
   { phrase: "solidcore", category: "Solidcore" },
+  { phrase: "y t w", category: "YTW" },
+  { phrase: "ytw", category: "YTW" },
   { phrase: "tennis", category: "Tennis" },
   { phrase: "strength", category: "Strength" },
   { phrase: "lifting", category: "Strength" },
@@ -330,6 +332,7 @@ function settle(
   if (!hasLifts && !hasMetcon && !hasEndurance) {
     if (asked.has("Solidcore")) return "Solidcore";
     if (asked.has("Tennis")) return "Tennis";
+    if (asked.has("YTW")) return "YTW";
     if (asked.has("MetCon")) return "MetCon";
     if (asked.has("Endurance")) return "Endurance";
     if (asked.has("Strength")) return "Strength";
