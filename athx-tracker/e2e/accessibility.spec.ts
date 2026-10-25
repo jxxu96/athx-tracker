@@ -6,7 +6,7 @@ import { PASSPHRASE } from "../playwright.config.ts";
 // reach them for the same reason a screen reader could not announce them. This
 // checks the whole class rather than waiting to trip over the next one.
 
-const TABS = ["Today", "Session", "Meal", "Log", "Setup"] as const;
+const TABS = ["Today", "Session", "Meal", "Progress", "Log", "Setup"] as const;
 
 async function audit(page: Page, context: string) {
   // These controls animate their colours, and a colour read halfway through a

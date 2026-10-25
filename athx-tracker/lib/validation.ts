@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CONVERSATION_LIMIT, MAX_REPLIES, REPLY_LIMIT } from "./estimate-conversation.ts";
+import { DEFAULT_SETTINGS } from "./domain.ts";
 const finite = z.number().finite().nonnegative();
 export const macroSchema = z.object({
   calories: finite.max(20000), protein: finite.max(2000), carbs: finite.max(3000), fat: finite.max(2000),
@@ -85,6 +86,11 @@ export const estimateRequestSchema = z.object({
   }).strict().optional(),
 }).strict();
 export const recordSchema = z.union([workoutSchema, mealSchema]);
+/** Kilograms, like every load. Zero is no target. */
+const liftTarget = finite.max(1000);
+const liftTargetsSchema = z.object({
+  splitJerk: liftTarget, overheadPress: liftTarget, backSquat: liftTarget, deadlift: liftTarget,
+}).strict();
 export const settingsSchema = z.object({
   eventDate: day, eventName: z.string().trim().min(1).max(100),
   weeklyTarget: z.number().int().min(1).max(21), weightUnit: z.enum(["kg","lb"]).default("lb"),
@@ -92,4 +98,8 @@ export const settingsSchema = z.object({
   // Defaulted, so settings stored before bodyweight existed still parse.
   bodyweight: z.object({ hippos: finite.max(500), gators: finite.max(500) })
     .strict().default({ hippos: 0, gators: 0 }),
+  // Defaulted, so settings stored before lift targets existed still parse, and
+  // pick up the same targets the app shows for them.
+  liftTargets: z.object({ hippos: liftTargetsSchema, gators: liftTargetsSchema })
+    .strict().default(DEFAULT_SETTINGS.liftTargets),
 }).strict();

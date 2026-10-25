@@ -44,12 +44,28 @@ export const ESTIMATORS = {
 } as const;
 export type Estimator = keyof typeof ESTIMATORS;
 export type RecordItem = Workout | Meal;
+/**
+ * The lifts Progress follows, in the order it shows them. The name is the
+ * picker's spelling; the key is what a target is stored under.
+ */
+export const PROGRESS_LIFTS = [
+  { key: "splitJerk", name: "Split jerk" },
+  { key: "overheadPress", name: "Overhead press" },
+  { key: "backSquat", name: "Back squat" },
+  { key: "deadlift", name: "Deadlift" },
+] as const;
+export type ProgressLift = (typeof PROGRESS_LIFTS)[number]["key"];
+/** Kilograms, like every other weight here. Zero means no target. */
+export type LiftTargets = Record<ProgressLift, number>;
 export type Settings = {
   eventDate: string; eventName: string; weeklyTarget: number; weightUnit: WeightUnit;
   targets: { hippos: Macros; gators: Macros };
   /** Kilograms, like every other weight here. Zero means not given yet. */
   bodyweight: { hippos: number; gators: number };
+  liftTargets: { hippos: LiftTargets; gators: LiftTargets };
 };
+/** Up here because the default lift targets below are given in pounds. */
+export const LB_PER_KG = 2.20462262;
 export const DEFAULT_SETTINGS: Settings = {
   eventDate: "2027-08-28", eventName: "ATHX New York", weeklyTarget: 4, weightUnit: "lb",
   targets: {
@@ -57,6 +73,15 @@ export const DEFAULT_SETTINGS: Settings = {
     gators: { calories: 0, protein: 0, carbs: 0, fat: 0 },
   },
   bodyweight: { hippos: 0, gators: 0 },
+  liftTargets: {
+    hippos: { splitJerk: 0, overheadPress: 0, backSquat: 0, deadlift: 0 },
+    gators: {
+      splitJerk: 175 / LB_PER_KG,
+      overheadPress: 135 / LB_PER_KG,
+      backSquat: 255 / LB_PER_KG,
+      deadlift: 335 / LB_PER_KG,
+    },
+  },
 };
 /**
  * color identifies the athlete on dots and bars. ink is the same colour made
@@ -194,7 +219,6 @@ export function sumMacros(meals: Meal[]): Macros {
  * Loads are stored in kilograms whatever the display unit, so changing the unit
  * never rewrites a record and old entries stay valid.
  */
-export const LB_PER_KG = 2.20462262;
 export function toKilograms(value: number, unit: WeightUnit) {
   return unit === "lb" ? value / LB_PER_KG : value;
 }
