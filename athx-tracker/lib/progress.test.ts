@@ -10,8 +10,8 @@ import {
 import {
   liftProgress,
   progressLift,
+  progressMarks,
   shownGap,
-  targetMeter,
   toGo,
   togetherLiftSessions,
 } from "./progress.ts";
@@ -132,12 +132,38 @@ test("the gaps are the subtraction of the numbers on screen", () => {
   assert.equal(shownGap(60, 62.5, "kg"), 2.5);
 });
 
-test("the meter places start and best along the target, capped at the end", () => {
+test("the bar places each mark by its share of the heaviest", () => {
   const at = (kg: number) => ({ day: "2026-09-01", kg, sets: 1, reps: 1 });
-  assert.deepEqual(targetMeter({ start: at(50), best: at(75), target: 100 }), { start: 50, best: 75 });
-  assert.deepEqual(targetMeter({ start: at(90), best: at(120), target: 100 }), { start: 90, best: 100 });
-  assert.deepEqual(targetMeter({ start: null, best: null, target: 100 }), { start: 0, best: 0 });
-  assert.equal(targetMeter({ start: at(50), best: at(75), target: 0 }), null);
+  const row = {
+    start: at(50),
+    latest: at(80),
+    best: at(120),
+    target: 100,
+  };
+  assert.deepEqual(
+    progressMarks(row)?.map(({ key, at: place }) => [key, place]),
+    [
+      ["start", (50 / 120) * 100],
+      ["latest", (80 / 120) * 100],
+      ["best", 100],
+      ["target", (100 / 120) * 100],
+    ],
+  );
+  assert.equal(
+    progressMarks({ start: at(50), latest: at(50), best: at(50), target: 0 })?.every(
+      (mark) => mark.at === 100,
+    ),
+    true,
+    "one weight and no target share the end of the line",
+  );
+  assert.deepEqual(
+    progressMarks({ start: null, latest: null, best: null, target: 100 })?.map((mark) => mark.key),
+    ["target"],
+  );
+  assert.equal(
+    progressMarks({ start: null, latest: null, best: null, target: 0 }),
+    null,
+  );
 });
 
 test("Gators' targets read back as given, in pounds", () => {

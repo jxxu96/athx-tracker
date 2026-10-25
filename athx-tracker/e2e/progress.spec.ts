@@ -86,10 +86,23 @@ test("each main lift shows its start, latest, best and target", async ({ page })
     "175 lb", "15 lb to go", // target
   ]);
   await expect(jerk.getByText("+25 lb since start · 91% of target · 3 sessions")).toBeVisible();
+  const order = await jerk.locator("[data-progress-mark]").evaluateAll((nodes) =>
+    nodes
+      .map((node) => ({
+        mark: node.getAttribute("data-progress-mark"),
+        x: node.getBoundingClientRect().left,
+      }))
+      .sort((a, b) => a.x - b.x)
+      .map((item) => item.mark),
+  );
+  expect(order).toEqual(["start", "latest", "best", "target"]);
 
   // Gators' other targets are there before anything is logged against them.
   await expect(page.getByRole("group", { name: "Gators overhead press" }))
     .toContainText("Not logged yet · target 135 lb");
+  await expect(
+    page.getByRole("group", { name: "Gators overhead press" }).locator("[data-progress-mark]"),
+  ).toHaveAttribute("data-progress-mark", "target");
   await expect(page.getByRole("group", { name: "Gators back squat" }))
     .toContainText("Not logged yet · target 255 lb");
   await expect(page.getByRole("group", { name: "Gators deadlift" }))

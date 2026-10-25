@@ -14,29 +14,30 @@ import { formatDay } from "@/lib/client";
 import { formatAmount, targetPercent } from "@/lib/fuel";
 import {
   liftProgress,
+  progressMarks,
   shownGap,
-  targetMeter,
   toGo,
   togetherLiftSessions,
   type LiftProgress,
   type ProgressAthlete,
+  type ProgressMark,
   type TopSet,
 } from "@/lib/progress";
 
 const PEOPLE = ["hippos", "gators"] as const;
 
 /**
- * The start's share of the meter is grey, so the athlete's colour is only what
- * has been gained since. A faded athlete colour vanished against the dark theme.
+ * Start is grey. Latest and best take the athlete's colour, and the target is
+ * an open ring. A faded athlete colour vanished against the dark theme.
  */
 const START_FILL = { background: "var(--muted-foreground)", opacity: 0.5 };
 
-function Swatch({ color }: { color?: string }) {
+function Swatch({ color, ring = false }: { color?: string; ring?: boolean }) {
   return (
     <span
       aria-hidden="true"
-      className="size-2 shrink-0 rounded-full"
-      style={color ? { background: color } : START_FILL}
+      className={ring ? "size-2 shrink-0 rounded-full border-2" : "size-2 shrink-0 rounded-full"}
+      style={ring ? { borderColor: color } : color ? { background: color } : START_FILL}
     />
   );
 }
@@ -68,22 +69,59 @@ function Stat({
   );
 }
 
-function Meter({ start, best, color }: { start: number; best: number; color: string }) {
-  const gained = best > start;
+const MARK_LAYER: Record<ProgressMark, number> = { target: 1, start: 2, latest: 3, best: 4 };
+
+function Mark({ kind, at, color }: { kind: ProgressMark; at: number; color: string }) {
+  const place = {
+    left: `${at}%`,
+    zIndex: MARK_LAYER[kind],
+  };
+  if (kind === "target") {
+    return (
+      <span
+        data-progress-mark="target"
+        className="absolute top-1/2 size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-transparent"
+        style={{ ...place, borderColor: color }}
+      />
+    );
+  }
+  if (kind === "start") {
+    return (
+      <span
+        data-progress-mark="start"
+        className="absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full"
+        style={{ ...place, ...START_FILL }}
+      />
+    );
+  }
   return (
-    <div aria-hidden="true" className="flex h-1.5 gap-0.5 overflow-hidden rounded-full bg-muted">
-      {start > 0 ? (
-        <div
-          className={gained ? "" : "rounded-r-full"}
-          style={{ width: `${start}%`, ...START_FILL }}
-        />
-      ) : null}
-      {gained ? (
-        <div
-          className="rounded-r-full"
-          style={{ width: `${best - start}%`, background: color }}
-        />
-      ) : null}
+    <span
+      data-progress-mark={kind}
+      className={
+        kind === "best"
+          ? "absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-card"
+          : "absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-card"
+      }
+      style={{ ...place, background: color }}
+    />
+  );
+}
+
+function Bar({
+  marks,
+  color,
+}: {
+  marks: { key: ProgressMark; at: number }[];
+  color: string;
+}) {
+  return (
+    <div aria-hidden="true" className="relative h-5">
+      <div className="absolute inset-x-2 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-muted" />
+      <div className="absolute inset-x-2 top-1/2 h-0">
+        {marks.map((mark) => (
+          <Mark key={mark.key} kind={mark.key} at={mark.at} color={color} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -102,6 +140,7 @@ function Lift({
   const color = ATHLETES[athlete].color;
   const label = `${ATHLETES[athlete].name} ${lift.name.toLowerCase()}`;
   const { start, latest, best } = lift;
+  const marks = progressMarks(lift);
 
   // Four dashes say less than one line does.
   if (!start || !latest || !best)
@@ -109,17 +148,19 @@ function Lift({
       <div
         role="group"
         aria-label={label}
-        className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 py-4 first:pt-0 last:pb-0"
+        className="space-y-2 py-4 first:pt-0 last:pb-0"
       >
-        <h3 className="text-sm font-medium">{lift.name}</h3>
-        <p className="text-xs text-muted-foreground">
-          Not logged yet ·{" "}
-          {lift.target > 0 ? `target ${formatWeight(lift.target, unit)}` : "no target"}
-        </p>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <h3 className="text-sm font-medium">{lift.name}</h3>
+          <p className="text-xs text-muted-foreground">
+            Not logged yet ·{" "}
+            {lift.target > 0 ? `target ${formatWeight(lift.target, unit)}` : "no target"}
+          </p>
+        </div>
+        {marks ? <Bar marks={marks} color={color} /> : null}
       </div>
     );
 
-  const meter = targetMeter(lift);
   const remaining = toGo(lift, unit);
   const share = targetPercent(best.kg, lift.target);
   const gained = shownGap(start.kg, best.kg, unit);
@@ -135,19 +176,25 @@ function Lift({
   return (
     <div role="group" aria-label={label} className="space-y-2.5 py-4 first:pt-0 last:pb-0">
       <h3 className="text-sm font-medium">{lift.name}</h3>
+      {marks ? <Bar marks={marks} color={color} /> : null}
       <dl className="grid grid-cols-4 gap-2">
         <Stat
           label="Start"
           value={formatWeight(start.kg, unit)}
           notes={notes(start)}
-          swatch={meter ? <Swatch /> : null}
+          swatch={marks ? <Swatch /> : null}
         />
-        <Stat label="Latest" value={formatWeight(latest.kg, unit)} notes={notes(latest)} />
+        <Stat
+          label="Latest"
+          value={formatWeight(latest.kg, unit)}
+          notes={notes(latest)}
+          swatch={marks ? <Swatch color={color} /> : null}
+        />
         <Stat
           label="Best"
           value={formatWeight(best.kg, unit)}
           notes={notes(best)}
-          swatch={meter ? <Swatch color={color} /> : null}
+          swatch={marks ? <Swatch color={color} /> : null}
         />
         <Stat
           label="Target"
@@ -159,9 +206,9 @@ function Lift({
                 ? ["Reached"]
                 : [`${remaining} ${unit} to go`]
           }
+          swatch={marks && lift.target > 0 ? <Swatch color={color} ring /> : null}
         />
       </dl>
-      {meter ? <Meter start={meter.start} best={meter.best} color={color} /> : null}
       <p className="text-xs text-muted-foreground">{summary}</p>
     </div>
   );
@@ -197,9 +244,9 @@ export function Progress({
           Main lifts
         </h2>
         <p className="text-xs text-muted-foreground">
-          Each day counts as its heaviest set, in {unit}. Start is the first day a
-          lift was logged, latest the most recent, and best the heaviest. Targets
-          are set in Setup.
+          Each day counts as its heaviest set, in {unit}. The bar places start,
+          latest, best and the target along the heaviest of them. Targets are set
+          in Setup.
         </p>
         {records.length < journalTotal && onLoadAll ? (
           <div className="mt-3 rounded-xl bg-muted/60 px-3 py-2.5 text-xs text-muted-foreground">

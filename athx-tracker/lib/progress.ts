@@ -128,10 +128,21 @@ export function toGo(lift: Pick<LiftProgress, "best" | "target">, unit: WeightUn
   return shownGap(lift.best.kg, lift.target, unit);
 }
 
-/** Where the start and the best sit along the target, as percents capped at 100. Null without a target. */
-export function targetMeter(lift: Pick<LiftProgress, "start" | "best" | "target">) {
-  if (!(lift.target > 0)) return null;
-  const share = (set: TopSet | null) =>
-    set ? Math.min(100, (set.kg / lift.target) * 100) : 0;
-  return { start: share(lift.start), best: share(lift.best) };
+export type ProgressMark = "start" | "latest" | "best" | "target";
+
+/**
+ * Where each figure sits on the bar, as a percent of the heaviest one.
+ * The rightmost point is the biggest number. Null when there is nothing to place.
+ */
+export function progressMarks(
+  lift: Pick<LiftProgress, "start" | "latest" | "best" | "target">,
+): { key: ProgressMark; kg: number; at: number }[] | null {
+  const marks: { key: ProgressMark; kg: number }[] = [];
+  if (lift.start && lift.start.kg > 0) marks.push({ key: "start", kg: lift.start.kg });
+  if (lift.latest && lift.latest.kg > 0) marks.push({ key: "latest", kg: lift.latest.kg });
+  if (lift.best && lift.best.kg > 0) marks.push({ key: "best", kg: lift.best.kg });
+  if (lift.target > 0) marks.push({ key: "target", kg: lift.target });
+  if (!marks.length) return null;
+  const heaviest = Math.max(...marks.map((mark) => mark.kg));
+  return marks.map((mark) => ({ ...mark, at: (mark.kg / heaviest) * 100 }));
 }
