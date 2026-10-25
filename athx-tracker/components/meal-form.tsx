@@ -1,8 +1,16 @@
 "use client";
 
-import { useState } from "react";
-import { Clock, Sparkles } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Clock, MessageCircle, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,6 +18,12 @@ import { Field } from "@/components/workout-form";
 import { ATHLETES, ESTIMATORS, type Estimator, type Macros, type Meal } from "@/lib/domain";
 import { api, message, newId } from "@/lib/client";
 import { commonMeals, type CommonMeal } from "@/lib/common-meals";
+import {
+  CONVERSATION_LIMIT,
+  MAX_REPLIES,
+  REPLY_LIMIT,
+  type MealEstimate as Estimate,
+} from "@/lib/estimate-conversation";
 import { macroCalories } from "@/lib/meal-calories";
 import { fanOutMeal, type LoggingFor, type MealDraft } from "@/lib/meal-fanout";
 import { mealForTime } from "@/lib/meal-time";
@@ -36,13 +50,12 @@ const LIMITS: Macros = { calories: 20000, protein: 2000, carbs: 3000, fat: 2000 
 type MacroDraft = Record<keyof Macros, string>;
 const emptyMacros: MacroDraft = { calories: "", protein: "", carbs: "", fat: "" };
 
-type Estimate = Macros & {
-  alcohol?: number;
-  fiber?: number;
-  name: string;
-  assumptions: string;
-  confidence: "low" | "medium" | "high";
-};
+type EstimateTurn = { reply?: string; estimate: Estimate };
+
+/** A saved or usual meal, as the estimate a reply can start from. */
+function savedEstimate(meal: Pick<Meal, "name" | "macros" | "assumptions">): Estimate {
+  return { ...meal.macros, name: meal.name, assumptions: meal.assumptions, confidence: "low" };
+}
 
 function Choice<T extends string>({
   label,
@@ -114,7 +127,11 @@ export function MealForm({
   // the sitting that was chosen. Null means "still the clock".
   const [picked, setSlot] = useState<Meal["meal"] | null>(editing?.meal ?? null);
   const slot = picked ?? mealForTime(new Date());
-  const [description, setDescription] = useState("");
+  // A queued meal keeps what was typed in its assumptions; anything else saved
+  // starts from its name, so it can be estimated again without retyping.
+  const [description, setDescription] = useState(
+    editing?.source === "queued" ? editing.assumptions : editing?.name ?? "",
+  );
   const [name, setName] = useState(editing?.name ?? "");
   const [macros, setMacros] = useState<MacroDraft>(() =>
     editing
@@ -139,6 +156,27 @@ export function MealForm({
   const [offline, setOffline] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // Lives with the open draft only. Saving keeps the final macros and
+  // assumptions; a saved meal reopens with those as the estimate to reply to.
+  const [conversation, setConversation] = useState<EstimateTurn[]>(() =>
+    editing && editing.source !== "queued" ? [{ estimate: savedEstimate(editing) }] : [],
+  );
+  const [reply, setReply] = useState("");
+  const [replyError, setReplyError] = useState("");
+  const [refineOpen, setRefineOpen] = useState(false);
+  const conversationLog = useRef<HTMLDivElement>(null);
+  const replyButton = useRef<HTMLButtonElement>(null);
+  const replies = conversation.flatMap((turn) => (turn.reply ? [turn.reply] : []));
+  const conversationFull = replies.length >= MAX_REPLIES ||
+    replies.join("").length + reply.trim().length > CONVERSATION_LIMIT;
+  const canReply = grokReady && !estimating && !saving && !conversationFull &&
+    reply.trim().length > 0 && reply.trim().length <= REPLY_LIMIT;
+
+  useEffect(() => {
+    if (refineOpen && conversationLog.current)
+      conversationLog.current.scrollTop = conversationLog.current.scrollHeight;
+  }, [refineOpen, conversation.length]);
+
   // Stable across attempts. The endpoint upserts on id, so a retry after a
   // half-failed save corrects the athlete that landed rather than adding a
   // second copy. New ids only once the whole submit is through.
@@ -180,6 +218,11 @@ export function MealForm({
     setAnsweredBy(null);
     setSource("manual");
     setAdjusted(false);
+    setConversation([]);
+    setReply("");
+    setReplyError("");
+    setRefineOpen(false);
+    setOffline(false);
   }
 
   function markManual() {
@@ -190,13 +233,34 @@ export function MealForm({
     }
   }
 
-  async function estimate() {
+  /** A fresh estimate, or with a follow-up, the next turn of the conversation. */
+  async function estimate(followUp?: string) {
+    if (estimating || saving) return;
+    const refining = followUp !== undefined;
+    const previous = conversation.at(-1)?.estimate;
+    if (refining && (!previous || !canReply)) return;
     setError("");
+    setReplyError("");
     setEstimating(true);
     try {
       const { estimate, provider } = await api<{ estimate: Estimate; provider?: Estimator }>("/api/estimate", {
         method: "POST",
-        body: JSON.stringify({ description: description.trim() }),
+        body: JSON.stringify({
+          description: description.trim().length >= 3 ? description.trim() : `Meal: ${name.trim()}`,
+          // The figures on the form, not the last answer, when they have been
+          // edited and still make sense, so a reply starts from what you see.
+          ...(refining && previous ? {
+            refinement: {
+              previous: {
+                ...previous,
+                ...(canCheckCalories ? counted : {}),
+                name: name.trim() || previous.name,
+                assumptions,
+              },
+              replies: [...replies, followUp],
+            },
+          } : {}),
+        }),
       });
       setName(estimate.name.slice(0, 300));
       setEthanol(String(estimate.alcohol ?? 0));
@@ -213,12 +277,23 @@ export function MealForm({
       setAnsweredBy(provider && provider in ESTIMATORS ? provider : null);
       setSource("grok");
       setAdjusted(false);
+      setOffline(false);
+      setConversation((current) => refining
+        ? [...current, { reply: followUp, estimate }]
+        : [{ estimate }]);
+      setReply("");
     } catch (problem) {
+      if (refining) {
+        setReplyError(`${message(problem)} Your current estimate and reply have been kept.`);
+        return;
+      }
       setError(message(problem));
       // Anything but a rejected description is worth queueing: unreachable,
       // both CLIs failing, the daily cap. Only 400 means rewording would help,
       // and the queue spends no quota, so a capped meal still gets filled.
-      setOffline((problem as Error & { status?: number }).status !== 400);
+      // Not once there is an estimate: a queued meal saves zero macros, and
+      // would throw away the figures already on the form.
+      setOffline(conversation.length === 0 && (problem as Error & { status?: number }).status !== 400);
     } finally {
       setEstimating(false);
     }
@@ -241,6 +316,11 @@ export function MealForm({
 
   function applyCommon(athlete: "hippos" | "gators", suggestion: CommonMeal) {
     if (loggingFor !== athlete) onLoggingFor(athlete);
+    setDescription(suggestion.name);
+    setConversation([{ estimate: savedEstimate(suggestion) }]);
+    setReply("");
+    setReplyError("");
+    setOffline(false);
     setName(suggestion.name);
     setSlot(suggestion.meal);
     setMacros({
@@ -331,6 +411,7 @@ export function MealForm({
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (estimating || saving) return;
     const problem = validate();
     setError(problem);
     if (problem) return;
@@ -355,272 +436,390 @@ export function MealForm({
 
   return (
     <form onSubmit={submit} className="space-y-4 pb-4">
-      {editing ? (
-        <div className="flex items-center justify-between gap-3 rounded-2xl border bg-muted/50 p-3">
-          <p className="text-xs">
-            Editing <span className="font-medium">{editing.name}</span>
-          </p>
-          <Button type="button" variant="ghost" size="xs" onClick={onCancelEdit}>
-            Cancel
-          </Button>
-        </div>
-      ) : null}
-      {suggestionGroups.length > 0 ? (
-        <section className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
-          <div>
-            <h3 className="text-sm font-semibold">Usual meals</h3>
-            <p className="text-[11px] text-muted-foreground">
-              From what each of you logs more than once. One tap fills this meal.
+      <fieldset disabled={estimating || saving} className="min-w-0 space-y-4">
+        {editing ? (
+          <div className="flex items-center justify-between gap-3 rounded-2xl border bg-muted/50 p-3">
+            <p className="text-xs">
+              Editing <span className="font-medium">{editing.name}</span>
             </p>
-          </div>
-          {suggestionGroups.map((group) => (
-            <div key={group.athlete}>
-              {suggestionGroups.length > 1 ? (
-                <p
-                  className="mb-1.5 text-xs font-medium"
-                  style={{ color: ATHLETES[group.athlete].ink }}
-                >
-                  {ATHLETES[group.athlete].name}
-                </p>
-              ) : null}
-              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
-                {group.items.map((suggestion) => (
-                  <button
-                    key={`${group.athlete}-${suggestion.name}`}
-                    type="button"
-                    aria-label={`${ATHLETES[group.athlete].name}: ${suggestion.name}`}
-                    onClick={() => applyCommon(group.athlete, suggestion)}
-                    className="rounded-lg border px-2 py-2 text-left text-xs font-medium transition-colors hover:bg-accent"
-                  >
-                    <span className="block truncate">{suggestion.name}</span>
-                    <span className="block text-[10px] font-normal text-muted-foreground">
-                      {suggestion.meal}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </section>
-      ) : null}
-      <section className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
-        <Choice
-          label="Athlete"
-          value={who}
-          onChange={(next) => {
-            // An edit is one record. Switching here would move the header and
-            // leave the open meal looking like it changed athlete.
-            if (!editing) onLoggingFor(next);
-          }}
-          options={(editing
-            ? (["hippos", "gators"] as const)
-            : (["hippos", "gators", "both"] as const)
-          ).map((key) => ({
-            value: key,
-            label: key === "both" ? "Both" : ATHLETES[key].name,
-            color: key === "both" ? undefined : ATHLETES[key].ink,
-          }))}
-        />
-        {!editing && loggingFor === "both" ? (
-          <p className="text-xs text-muted-foreground">
-            One save writes this meal for Hippos and for Gators.
-          </p>
-        ) : null}
-        <Choice
-          label="Sitting"
-          value={slot}
-          onChange={setSlot}
-          options={MEALS.map((value) => ({ value, label: value }))}
-        />
-        {!editing && picked === null ? (
-          <p className="text-xs text-muted-foreground">Matched to the time.</p>
-        ) : null}
-        <Field label="Date">
-          <Input
-            type="date"
-            value={day}
-            max={today}
-            onChange={(event) => setDay(event.target.value)}
-          />
-        </Field>
-      </section>
-
-      <section className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
-        <div>
-          <h3 className="text-sm font-semibold">Describe it</h3>
-          <p className="text-[11px] text-muted-foreground">
-            {grokReady
-              ? "Grok reads the description and fills the macros. Check them before saving."
-              : "Grok is not connected, so enter the macros yourself below."}
-          </p>
-        </div>
-        <Textarea
-          value={description}
-          maxLength={4000}
-          rows={3}
-          placeholder="Two eggs, 80 g oats with milk, banana, flat white"
-          onChange={(event) => setDescription(event.target.value)}
-        />
-        <Button
-          type="button"
-          variant="outline"
-          className="w-full"
-          disabled={!grokReady || estimating || description.trim().length < 3}
-          onClick={estimate}
-        >
-          <Sparkles />
-          {estimating ? "Estimating…" : "Estimate macros"}
-        </Button>
-        {offline ? (
-          <div className="rounded-xl bg-muted/60 p-3">
-            <p className="text-xs text-muted-foreground">
-              No estimate came back. Save the meal with your description and it
-              will be filled in by itself once the estimator answers — it keeps
-              trying in the background, so nothing here needs typing twice.
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="mt-2 w-full"
-              disabled={saving}
-              onClick={queueForLater}
-            >
-              <Clock />
-              {saving ? "Saving…" : "Save and estimate later"}
+            <Button type="button" variant="ghost" size="xs" onClick={onCancelEdit}>
+              Cancel
             </Button>
           </div>
         ) : null}
-      </section>
-
-      <section className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
-        <Field label="Meal">
-          <Input
-            value={name}
-            maxLength={300}
-            placeholder="Oats, eggs and coffee"
-            onChange={(event) => setName(event.target.value)}
-          />
-        </Field>
-        {slot === "Alcohol" ? (
-          <Field label="Ethanol (g)">
-            <Input
-              value={ethanol}
-              inputMode="decimal"
-              placeholder="0"
-              onChange={(event) => {
-                setEthanol(event.target.value);
-                markManual();
-              }}
-            />
-          </Field>
-        ) : null}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {MACRO_FIELDS.slice(0, 3).map(({ key, label, unit }) => (
-            <Field key={key} label={`${label} (${unit})`}>
-              <Input
-                value={macros[key]}
-                inputMode="decimal"
-                placeholder="0"
-                onChange={(event) => setMacro(key, event.target.value)}
-              />
-            </Field>
-          ))}
-          <Field label="Fiber (g)">
-            <Input
-              value={fiber}
-              inputMode="decimal"
-              placeholder="0"
-              onChange={(event) => {
-                setFiber(event.target.value);
-                markManual();
-              }}
-            />
-          </Field>
-          {MACRO_FIELDS.slice(3).map(({ key, label, unit }) => (
-            <Field key={key} label={`${label} (${unit})`}>
-              <Input
-                value={macros[key]}
-                inputMode="decimal"
-                placeholder="0"
-                onChange={(event) => setMacro(key, event.target.value)}
-              />
-            </Field>
-          ))}
-        </div>
-
-        {canCheckCalories ? (
-          <div className="space-y-2 rounded-xl border bg-muted/40 p-3">
-            <div role="status" aria-live="polite" aria-atomic="true" className="space-y-1">
-              <p className="text-xs font-medium">
-                Rough macro estimate: {formatCalories(breakdown.total)} kcal
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {[
-                  `Protein ${formatCalories(breakdown.protein)}`,
-                  `carbs ${formatCalories(breakdown.carbs)}`,
-                  ...(breakdown.fiber > 0 ? [`fiber ${formatCalories(breakdown.fiber)}`] : []),
-                  `fat ${formatCalories(breakdown.fat)}`,
-                  ...(slot === "Alcohol" ? [`ethanol ${formatCalories(breakdown.alcohol)}`] : []),
-                ].join(" + ")} kcal
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {parsedMacros.calories === breakdown.total
-                  ? "Your calorie total equals this rough estimate."
-                  : `Your calorie total is ${formatCalories(Math.abs(parsedMacros.calories - breakdown.total))} kcal ${parsedMacros.calories > breakdown.total ? "above" : "below"} this rough estimate.`}
+        {suggestionGroups.length > 0 ? (
+          <section className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
+            <div>
+              <h3 className="text-sm font-semibold">Usual meals</h3>
+              <p className="text-[11px] text-muted-foreground">
+                From what each of you logs more than once. One tap fills this meal.
               </p>
             </div>
-            <p className="text-[11px] text-muted-foreground">
-              {slot === "Alcohol"
-                ? "Protein: 4 kcal/g · Carbs other than fiber: 4 kcal/g · Fiber: 2 kcal/g · Fat: 9 kcal/g · Ethanol: 7 kcal/g. Food with the drinks goes in the other three."
-                : "Protein: 4 kcal/g · Carbs other than fiber: 4 kcal/g · Fiber: 2 kcal/g · Fat: 9 kcal/g."}
+            {suggestionGroups.map((group) => (
+              <div key={group.athlete}>
+                {suggestionGroups.length > 1 ? (
+                  <p
+                    className="mb-1.5 text-xs font-medium"
+                    style={{ color: ATHLETES[group.athlete].ink }}
+                  >
+                    {ATHLETES[group.athlete].name}
+                  </p>
+                ) : null}
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
+                  {group.items.map((suggestion) => (
+                    <button
+                      key={`${group.athlete}-${suggestion.name}`}
+                      type="button"
+                      aria-label={`${ATHLETES[group.athlete].name}: ${suggestion.name}`}
+                      onClick={() => applyCommon(group.athlete, suggestion)}
+                      className="rounded-lg border px-2 py-2 text-left text-xs font-medium transition-colors hover:bg-accent"
+                    >
+                      <span className="block truncate">{suggestion.name}</span>
+                      <span className="block text-[10px] font-normal text-muted-foreground">
+                        {suggestion.meal}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </section>
+        ) : null}
+        <section className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
+          <Choice
+            label="Athlete"
+            value={who}
+            onChange={(next) => {
+              // An edit is one record. Switching here would move the header and
+              // leave the open meal looking like it changed athlete.
+              if (!editing) onLoggingFor(next);
+            }}
+            options={(editing
+              ? (["hippos", "gators"] as const)
+              : (["hippos", "gators", "both"] as const)
+            ).map((key) => ({
+              value: key,
+              label: key === "both" ? "Both" : ATHLETES[key].name,
+              color: key === "both" ? undefined : ATHLETES[key].ink,
+            }))}
+          />
+          {!editing && loggingFor === "both" ? (
+            <p className="text-xs text-muted-foreground">
+              One save writes this meal for Hippos and for Gators.
             </p>
+          ) : null}
+          <Choice
+            label="Sitting"
+            value={slot}
+            onChange={setSlot}
+            options={MEALS.map((value) => ({ value, label: value }))}
+          />
+          {!editing && picked === null ? (
+            <p className="text-xs text-muted-foreground">Matched to the time.</p>
+          ) : null}
+          <Field label="Date">
+            <Input
+              type="date"
+              value={day}
+              max={today}
+              onChange={(event) => setDay(event.target.value)}
+            />
+          </Field>
+        </section>
+
+        <section className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
+          <div>
+            <h3 className="text-sm font-semibold">Describe it</h3>
             <p className="text-[11px] text-muted-foreground">
-              Fiber is already inside total carbs. Sugar alcohols and food-specific factors can still change the total.
-              Your calorie total is kept; matching is optional.
+              {grokReady
+                ? "The estimator fills the macros. Review its assumptions, then reply to refine them."
+                : "The estimator is not connected, so enter the macros yourself below."}
             </p>
           </div>
+          <Textarea
+            aria-label="Meal description"
+            value={description}
+            maxLength={4000}
+            rows={3}
+            placeholder="Two eggs, 80 g oats with milk, banana, flat white"
+            onChange={(event) => setDescription(event.target.value)}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            disabled={!grokReady || estimating || description.trim().length < 3}
+            onClick={() => estimate()}
+          >
+            <Sparkles />
+            {estimating ? "Estimating…" : "Estimate macros"}
+          </Button>
+          {offline ? (
+            <div className="rounded-xl bg-muted/60 p-3">
+              <p className="text-xs text-muted-foreground">
+                No estimate came back. Save the meal with your description and it
+                will be filled in by itself once the estimator answers — it keeps
+                trying in the background, so nothing here needs typing twice.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-2 w-full"
+                disabled={saving}
+                onClick={queueForLater}
+              >
+                <Clock />
+                {saving ? "Saving…" : "Save and estimate later"}
+              </Button>
+            </div>
+          ) : null}
+        </section>
+
+        {assumptions || conversation.length > 0 ? (
+          <section aria-label="Review estimate" className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
+            <div>
+              <h3 className="text-sm font-semibold">Review the assumptions</h3>
+              <p className="text-[11px] text-muted-foreground">
+                Different portion, ingredient or preparation? Tell the estimator below.
+              </p>
+            </div>
+            <Field label="Assumptions">
+              <Textarea
+                value={assumptions}
+                maxLength={3000}
+                rows={4}
+                onChange={(event) => setAssumptions(event.target.value)}
+              />
+            </Field>
+            {conversation.length > 0 ? (
+              <Button
+                ref={replyButton}
+                type="button"
+                variant="outline"
+                className="w-full"
+                disabled={!grokReady}
+                onClick={() => setRefineOpen(true)}
+              >
+                <MessageCircle />
+                Reply to estimate
+              </Button>
+            ) : null}
+          </section>
         ) : null}
 
-        {confidence || answeredBy ? (
-          <p className="text-xs text-muted-foreground">
-            {answeredBy ? (
-              <>
-                Answered by <span className="font-medium">{ESTIMATORS[answeredBy]}</span>
-              </>
-            ) : null}
-            {confidence ? (
-              <>
-                {answeredBy ? " · " : null}
-                Confidence: <span className="font-medium">{confidence}</span>
-                {CONFIDENCE_MEANS[confidence]}
-              </>
-            ) : null}
-            {adjusted ? " · saved as your own numbers after your edit" : null}
+        <section className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
+          <Field label="Meal">
+            <Input
+              value={name}
+              maxLength={300}
+              placeholder="Oats, eggs and coffee"
+              onChange={(event) => setName(event.target.value)}
+            />
+          </Field>
+          {slot === "Alcohol" ? (
+            <Field label="Ethanol (g)">
+              <Input
+                value={ethanol}
+                inputMode="decimal"
+                placeholder="0"
+                onChange={(event) => {
+                  setEthanol(event.target.value);
+                  markManual();
+                }}
+              />
+            </Field>
+          ) : null}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {MACRO_FIELDS.slice(0, 3).map(({ key, label, unit }) => (
+              <Field key={key} label={`${label} (${unit})`}>
+                <Input
+                  value={macros[key]}
+                  inputMode="decimal"
+                  placeholder="0"
+                  onChange={(event) => setMacro(key, event.target.value)}
+                />
+              </Field>
+            ))}
+            <Field label="Fiber (g)">
+              <Input
+                value={fiber}
+                inputMode="decimal"
+                placeholder="0"
+                onChange={(event) => {
+                  setFiber(event.target.value);
+                  markManual();
+                }}
+              />
+            </Field>
+            {MACRO_FIELDS.slice(3).map(({ key, label, unit }) => (
+              <Field key={key} label={`${label} (${unit})`}>
+                <Input
+                  value={macros[key]}
+                  inputMode="decimal"
+                  placeholder="0"
+                  onChange={(event) => setMacro(key, event.target.value)}
+                />
+              </Field>
+            ))}
+          </div>
+
+          {canCheckCalories ? (
+            <div className="space-y-2 rounded-xl border bg-muted/40 p-3">
+              <div role="status" aria-live="polite" aria-atomic="true" className="space-y-1">
+                <p className="text-xs font-medium">
+                  Rough macro estimate: {formatCalories(breakdown.total)} kcal
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {[
+                    `Protein ${formatCalories(breakdown.protein)}`,
+                    `carbs ${formatCalories(breakdown.carbs)}`,
+                    ...(breakdown.fiber > 0 ? [`fiber ${formatCalories(breakdown.fiber)}`] : []),
+                    `fat ${formatCalories(breakdown.fat)}`,
+                    ...(slot === "Alcohol" ? [`ethanol ${formatCalories(breakdown.alcohol)}`] : []),
+                  ].join(" + ")} kcal
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {parsedMacros.calories === breakdown.total
+                    ? "Your calorie total equals this rough estimate."
+                    : `Your calorie total is ${formatCalories(Math.abs(parsedMacros.calories - breakdown.total))} kcal ${parsedMacros.calories > breakdown.total ? "above" : "below"} this rough estimate.`}
+                </p>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                {slot === "Alcohol"
+                  ? "Protein: 4 kcal/g · Carbs other than fiber: 4 kcal/g · Fiber: 2 kcal/g · Fat: 9 kcal/g · Ethanol: 7 kcal/g. Food with the drinks goes in the other three."
+                  : "Protein: 4 kcal/g · Carbs other than fiber: 4 kcal/g · Fiber: 2 kcal/g · Fat: 9 kcal/g."}
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                Fiber is already inside total carbs. Sugar alcohols and food-specific factors can still change the total.
+                Your calorie total is kept; matching is optional.
+              </p>
+            </div>
+          ) : null}
+
+          {confidence || answeredBy ? (
+            <p className="text-xs text-muted-foreground">
+              {answeredBy ? (
+                <>
+                  Answered by <span className="font-medium">{ESTIMATORS[answeredBy]}</span>
+                </>
+              ) : null}
+              {confidence ? (
+                <>
+                  {answeredBy ? " · " : null}
+                  Confidence: <span className="font-medium">{confidence}</span>
+                  {CONFIDENCE_MEANS[confidence]}
+                </>
+              ) : null}
+              {adjusted ? " · saved as your own numbers after your edit" : null}
+            </p>
+          ) : null}
+        </section>
+
+        {error ? (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
           </p>
         ) : null}
 
-        {assumptions ? (
-          <Field label="Assumptions">
+        <Button type="submit" size="lg" className="w-full" disabled={saving}>
+          {saving ? "Saving…" : editing ? "Update meal" : "Save meal"}
+        </Button>
+      </fieldset>
+      <Dialog open={refineOpen} onOpenChange={setRefineOpen}>
+        <DialogContent
+          className="flex max-h-[85dvh] flex-col p-4 sm:p-6"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            replyButton.current?.focus();
+          }}
+        >
+          <DialogHeader className="shrink-0 pr-6 text-left">
+            <DialogTitle>Refine estimate</DialogTitle>
+            <DialogDescription>
+              Add a detail or ask a question. Each reply updates the meal below; save it when you’re happy.
+            </DialogDescription>
+          </DialogHeader>
+          <div
+            ref={conversationLog}
+            role="log"
+            aria-label="Estimate conversation"
+            aria-live="polite"
+            aria-relevant="additions"
+            className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain rounded-xl border bg-muted/20 p-3"
+          >
+            <div className="ml-6 rounded-xl bg-accent p-3 text-sm">
+              <p className="mb-1 text-xs font-semibold">Meal description</p>
+              <p className="whitespace-pre-wrap break-words">{description || name}</p>
+            </div>
+            {conversation.map((turn, index) => (
+              <div key={index} className="space-y-2">
+                {turn.reply ? (
+                  <div className="ml-6 rounded-xl bg-accent p-3 text-sm">
+                    <p className="mb-1 text-xs font-semibold">You</p>
+                    <p className="whitespace-pre-wrap break-words">{turn.reply}</p>
+                  </div>
+                ) : null}
+                <div className="mr-3 rounded-xl border bg-card p-3 text-sm">
+                  <p className="mb-1 text-xs font-semibold">Estimator</p>
+                  <p className="whitespace-pre-wrap break-words">
+                    {turn.estimate.assumptions || "No assumptions supplied."}
+                  </p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {[
+                      `${Math.round(turn.estimate.calories)} kcal`,
+                      `${Math.round(turn.estimate.protein)} g protein`,
+                      `${Math.round(turn.estimate.carbs)} g carbs`,
+                      ...(turn.estimate.fiber ? [`${Math.round(turn.estimate.fiber)} g fiber`] : []),
+                      `${Math.round(turn.estimate.fat)} g fat`,
+                      ...(turn.estimate.alcohol ? [`${Math.round(turn.estimate.alcohol)} g ethanol`] : []),
+                    ].join(" · ")}
+                  </p>
+                </div>
+              </div>
+            ))}
+            {estimating ? (
+              <p role="status" className="text-sm text-muted-foreground">
+                Re-estimating with your reply…
+              </p>
+            ) : null}
+          </div>
+          <div className="shrink-0 space-y-2">
+            <Label htmlFor="estimate-reply">Your reply</Label>
             <Textarea
-              value={assumptions}
-              maxLength={3000}
+              id="estimate-reply"
+              value={reply}
+              maxLength={REPLY_LIMIT}
               rows={3}
-              onChange={(event) => setAssumptions(event.target.value)}
+              disabled={estimating || saving}
+              placeholder="It was 150 g of cooked rice, with no oil. Or: why is the fat so high?"
+              onChange={(event) => {
+                setReply(event.target.value);
+                setReplyError("");
+              }}
             />
-          </Field>
-        ) : null}
-      </section>
-
-      {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
-
-      <Button type="submit" size="lg" className="w-full" disabled={saving}>
-        {saving ? "Saving…" : editing ? "Update meal" : "Save meal"}
-      </Button>
+            <p className="text-xs text-muted-foreground">
+              {conversationFull
+                ? "This conversation is full. Add the final details to the meal description and estimate again."
+                : "Earlier replies are included. A successful reply uses one estimate."}
+            </p>
+            {replyError ? (
+              <p role="alert" className="text-sm text-destructive">
+                {replyError}
+              </p>
+            ) : null}
+          </div>
+          <DialogFooter className="shrink-0">
+            <Button type="button" variant="outline" onClick={() => setRefineOpen(false)}>
+              Back to meal
+            </Button>
+            <Button type="button" disabled={!canReply} onClick={() => estimate(reply.trim())}>
+              <Sparkles />
+              {estimating ? "Re-estimating…" : "Send & re-estimate"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </form>
   );
 }

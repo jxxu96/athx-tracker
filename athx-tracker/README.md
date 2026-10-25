@@ -171,3 +171,16 @@ Macro estimates call Grok and are optional; without them the macro fields are ty
 by hand, and Setup says which mode is active. Set `XAI_API_KEY` (and optionally
 `XAI_MODEL`), or point `GROK_GATEWAY_URL` and `GROK_GATEWAY_TOKEN` at a gateway.
 Estimates are capped at 60 a day, counted in the database so a restart cannot reset it.
+
+After estimating, review the assumptions above the meal fields. **Reply to
+estimate** opens a conversation where you can correct portions or ingredients,
+or ask how the figures were reached. Each reply includes your earlier
+clarifications and updates the meal's macros and assumptions. Failed replies
+keep the current estimate and the text you were typing.
+
+The conversation stays with the open draft. Saving keeps the final macros and
+assumptions; reopening a saved meal, or tapping a usual meal, lets you start
+from those values. A fresh **Estimate macros** starts a new conversation. Each
+successful reply counts toward the daily estimate limit. Replies carry more
+context than a first estimate, so an estimator running on your own machine has
+to be updated along with the app; an older one turns replies away.

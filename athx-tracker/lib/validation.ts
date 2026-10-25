@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CONVERSATION_LIMIT, MAX_REPLIES, REPLY_LIMIT } from "./estimate-conversation.ts";
 const finite = z.number().finite().nonnegative();
 export const macroSchema = z.object({
   calories: finite.max(20000), protein: finite.max(2000), carbs: finite.max(3000), fat: finite.max(2000),
@@ -74,6 +75,15 @@ export const estimateSchema = mealMacroSchema.extend({
 }).superRefine((estimate, context) => {
   rejectFiberAboveCarbs(estimate, context, ["fiber"]);
 });
+/** Keep the latest estimate and every user correction within a bounded request. */
+export const estimateRequestSchema = z.object({
+  description: z.string().trim().min(3).max(4000),
+  refinement: z.object({
+    previous: estimateSchema,
+    replies: z.array(z.string().trim().min(1).max(REPLY_LIMIT)).min(1).max(MAX_REPLIES)
+      .refine((replies) => replies.join("").length <= CONVERSATION_LIMIT, "Conversation is too long."),
+  }).strict().optional(),
+}).strict();
 export const recordSchema = z.union([workoutSchema, mealSchema]);
 export const settingsSchema = z.object({
   eventDate: day, eventName: z.string().trim().min(1).max(100),
