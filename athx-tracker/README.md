@@ -36,7 +36,9 @@ single SQLite file on a volume.
   same subscription-backed estimator as meals to fill an editable draft. `1 x 2`
   means **1 set of 2 reps**. Include weights and units; an omitted unit follows
   the form's lb/kg setting. Named results stay with that athlete, and missing
-  numbers stay blank for review. AI replaces the workout fields but saves only
+  numbers stay blank for review. Lifts, workouts and MetCons are matched to the
+  names already in the list, including typos and loose phrasing. A name that is
+  not one of those is kept as typed and called out in the notes. AI replaces the workout fields but saves only
   when you choose Save session. Unsupported browsers can use keyboard dictation.
 - **Meal** — describe a meal and let Grok estimate the macros, or type them in
   yourself. Editing an estimated number saves the meal as your own figures.
