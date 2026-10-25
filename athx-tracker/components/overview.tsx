@@ -7,6 +7,7 @@ import {
   METCON,
   categoryName,
   completionLine,
+  distanceLine,
   metconLoadText,
   estimateBurn,
   formatTimeOrDash,
@@ -160,6 +161,11 @@ export function Overview({
           {completionLine(lastSession) ? (
             <p className="mt-1 text-xs text-muted-foreground">
               {completionLine(lastSession)}
+            </p>
+          ) : null}
+          {distanceLine(lastSession) ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {distanceLine(lastSession)}
             </p>
           ) : null}
           <p className="mt-1 text-xs text-muted-foreground">

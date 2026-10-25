@@ -12,7 +12,11 @@ import {
   estimateBurn,
   formatTime,
   formatTimeOrDash,
+  displayDistance,
+  distanceLine,
   fromKilograms,
+  fromMetres,
+  toMetres,
   parseTime,
   projectWorkout,
   scenarioLine,
@@ -31,6 +35,21 @@ const workout = (over: Partial<Workout> = {}): Workout => ({
 
 const segment = (over: Partial<Segment> = {}): Segment => ({
   name: "s", unit: "reps", completed: 30, target: 30, seconds: 120, ...over,
+});
+
+test("a run converts between metres, kilometres and miles", () => {
+  assert.equal(displayDistance(5000, "m"), "5000");
+  assert.equal(displayDistance(fromMetres(toMetres(5000, "m"), "km"), "km"), "5");
+  assert.equal(displayDistance(fromMetres(toMetres(5, "km"), "mi"), "mi"), "3.11");
+  assert.equal(displayDistance(fromMetres(toMetres(1, "mi"), "m"), "m"), "1609");
+  assert.equal(displayDistance(fromMetres(toMetres(1609, "m"), "mi"), "mi"), "1");
+  assert.equal(displayDistance(3.1, "mi"), "3.1");
+  const run = workout({
+    category: "Endurance",
+    segments: [segment({ name: "Run", unit: "km", completed: 5, target: 5, block: "endurance" })],
+  });
+  assert.equal(distanceLine(run), "Run 5 km");
+  assert.equal(distanceLine(workout()), null);
 });
 
 test("times survive a round trip", () => {

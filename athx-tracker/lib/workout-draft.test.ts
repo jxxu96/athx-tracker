@@ -15,6 +15,17 @@ const base: WorkoutDraft = {
     hippos: { completed: 1609.344, seconds: 600, kg: null }, gators: emptyStation }],
 };
 
+test("a run keeps the unit it was stated in", () => {
+  const miles = { ...base, category: "Endurance" as const, lifts: [],
+    stations: [{ name: "Run", unit: "mi" as const, target: 3, block: "endurance" as const,
+      hippos: { completed: 3, seconds: 1440, kg: null }, gators: emptyStation }] };
+  assert.equal(workoutDraftSchema.safeParse(miles).success, true);
+  assert.deepEqual(cleanWorkout(miles), miles);
+  const kilometres = { ...miles, stations: [{ ...miles.stations[0], unit: "km" as const, target: 5,
+    hippos: { completed: 5, seconds: 1500, kg: null } }] };
+  assert.deepEqual(cleanWorkout(kilometres), kilometres);
+});
+
 test("workout drafts preserve 1 set of 2 reps, converted weights and unknown athlete values", () => {
   assert.deepEqual(workoutDraftSchema.parse(base), base);
   assert.deepEqual(cleanWorkout(base), base);

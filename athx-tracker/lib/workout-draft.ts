@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { VOLUME_UNITS } from "./domain.ts";
 
 const amount = z.number().finite().nonnegative();
 const seconds = amount.max(86400).nullable();
@@ -22,7 +23,7 @@ export const workoutDraftSchema = z.object({
   }).strict()).max(30),
   stations: z.array(z.object({
     name: z.string().trim().min(1).max(80),
-    unit: z.enum(["reps", "m", "cal", "rounds"]),
+    unit: z.enum(VOLUME_UNITS),
     target: amount.positive(), block: z.enum(["metcon", "endurance"]),
     hippos: stationSide, gators: stationSide,
   }).strict()).max(30),
