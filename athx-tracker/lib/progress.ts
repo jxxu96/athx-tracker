@@ -100,6 +100,41 @@ export function liftProgress(
   });
 }
 
+/** Press, squat and deadlift. The split jerk is followed on its own and is not in this total. */
+export const TOTAL_LIFTS = ["overheadPress", "backSquat", "deadlift"] as const;
+
+export type LiftTotal = {
+  start: number | null;
+  latest: number | null;
+  best: number | null;
+  /** Kilograms. Null until all three lifts have a target. */
+  target: number | null;
+};
+
+/**
+ * The three lifts added together. A column stays empty until every one of them
+ * has that figure, so a missing deadlift cannot look like a small total.
+ */
+export function liftTotal(rows: LiftProgress[]): LiftTotal {
+  const three = TOTAL_LIFTS.map((key) => rows.find((row) => row.key === key));
+  const sum = (value: (row: LiftProgress) => number | null) => {
+    let total = 0;
+    for (const row of three) {
+      if (!row) return null;
+      const kg = value(row);
+      if (kg === null || !(kg > 0)) return null;
+      total += kg;
+    }
+    return total;
+  };
+  return {
+    start: sum((row) => row.start?.kg ?? null),
+    latest: sum((row) => row.latest?.kg ?? null),
+    best: sum((row) => row.best?.kg ?? null),
+    target: sum((row) => (row.target > 0 ? row.target : null)),
+  };
+}
+
 /** Together sessions that logged a followed lift. With no single athlete, they count for neither. */
 export function togetherLiftSessions(records: RecordItem[]) {
   return records.filter(

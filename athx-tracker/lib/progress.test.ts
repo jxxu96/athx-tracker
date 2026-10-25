@@ -4,11 +4,13 @@ import {
   DEFAULT_SETTINGS,
   PROGRESS_LIFTS,
   displayLoad,
+  formatWeight,
   type LiftTargets,
   type Workout,
 } from "./domain.ts";
 import {
   liftProgress,
+  liftTotal,
   progressLift,
   progressMarks,
   shownGap,
@@ -164,6 +166,38 @@ test("the bar places each mark by its share of the heaviest", () => {
     progressMarks({ start: null, latest: null, best: null, target: 0 }),
     null,
   );
+});
+
+test("the total adds press, squat and deadlift, and waits for all three", () => {
+  const logged = liftProgress(
+    [
+      workout({
+        lifts: [
+          lift("Overhead press", 40),
+          lift("Back squat", 100),
+          lift("Deadlift", 120),
+          lift("Split jerk", 70),
+        ],
+      }),
+    ],
+    "gators",
+    { splitJerk: 80, overheadPress: 50, backSquat: 140, deadlift: 180 },
+  );
+  const total = liftTotal(logged);
+  assert.equal(total.start, 260);
+  assert.equal(total.latest, 260);
+  assert.equal(total.best, 260);
+  assert.equal(total.target, 370);
+  const missing = liftProgress(
+    [workout({ lifts: [lift("Overhead press", 40), lift("Back squat", 100)] })],
+    "gators",
+    { splitJerk: 0, overheadPress: 50, backSquat: 140, deadlift: 0 },
+  );
+  assert.equal(liftTotal(missing).start, null);
+  assert.equal(liftTotal(missing).target, null, "one target left blank keeps the total empty");
+  const gators = liftTotal(liftProgress([], "gators", DEFAULT_SETTINGS.liftTargets.gators));
+  assert.equal(formatWeight(gators.target!, "lb"), "725 lb");
+  assert.equal(formatWeight(gators.target!, "kg"), "328.9 kg");
 });
 
 test("Gators' targets read back as given, in pounds", () => {

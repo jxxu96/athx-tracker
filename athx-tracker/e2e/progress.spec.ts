@@ -86,6 +86,12 @@ test("each main lift shows its start, latest, best and target", async ({ page })
     "175 lb", "15 lb to go", // target
   ]);
   await expect(jerk.getByText("+25 lb since start · 91% of target · 3 sessions")).toBeVisible();
+  await expect(jerk).toContainText("79.4 kg");
+  await expect(jerk).toContainText("6.8 kg");
+  const total = page.getByRole("group", { name: "Gators total" });
+  await expect(total).toContainText("725 lb");
+  await expect(total).toContainText("328.9 kg");
+  await expect(total).toContainText("Overhead press, back squat and deadlift");
   const order = await jerk.locator("[data-progress-mark]").evaluateAll((nodes) =>
     nodes
       .map((node) => ({
@@ -158,6 +164,8 @@ test("a target set in Setup is what Progress measures against", async ({ page })
   await openProgress(page);
   const deadlift = page.getByRole("group", { name: "Hippos deadlift" });
   await expect(deadlift.getByRole("definition")).toContainText(["135 lb", "185 lb", "50 lb to go"]);
+  await expect(deadlift).toContainText("83.9 kg");
+  await expect(deadlift).toContainText("22.7 kg");
   await expect(deadlift.getByText("73% of target")).toBeVisible();
 
   // The unit switch carries the targets across with it.

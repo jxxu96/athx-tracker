@@ -14,11 +14,13 @@ import { formatDay } from "@/lib/client";
 import { formatAmount, targetPercent } from "@/lib/fuel";
 import {
   liftProgress,
+  liftTotal,
   progressMarks,
   shownGap,
   toGo,
   togetherLiftSessions,
   type LiftProgress,
+  type LiftTotal,
   type ProgressAthlete,
   type ProgressMark,
   type TopSet,
@@ -126,6 +128,85 @@ function Bar({
   );
 }
 
+/** The screen unit, with kilograms beside it when the screen is in pounds. */
+function targetNotes(targetKg: number, bestKg: number | null, unit: WeightUnit) {
+  const notes: string[] = [];
+  if (unit !== "kg" && targetKg > 0) notes.push(formatWeight(targetKg, "kg"));
+  if (!(targetKg > 0)) {
+    notes.push("Set in Setup");
+    return notes;
+  }
+  if (bestKg === null) return notes;
+  const gap = toGo(
+    { best: { day: "", kg: bestKg, sets: 1, reps: 1 }, target: targetKg },
+    unit,
+  );
+  if (gap === null) return notes;
+  if (gap <= 0) {
+    notes.push("Reached");
+    return notes;
+  }
+  notes.push(`${gap} ${unit} to go`);
+  if (unit !== "kg") notes.push(`${shownGap(bestKg, targetKg, "kg")} kg`);
+  return notes;
+}
+
+function asSet(kg: number | null): TopSet | null {
+  return kg !== null && kg > 0 ? { day: "", kg, sets: 1, reps: 1 } : null;
+}
+
+function Total({
+  athlete,
+  rows,
+  unit,
+}: {
+  athlete: ProgressAthlete;
+  rows: LiftProgress[];
+  unit: WeightUnit;
+}) {
+  const color = ATHLETES[athlete].color;
+  const total: LiftTotal = liftTotal(rows);
+  const marks = progressMarks({
+    start: asSet(total.start),
+    latest: asSet(total.latest),
+    best: asSet(total.best),
+    target: total.target ?? 0,
+  });
+  const figure = (kg: number | null) => (kg !== null && kg > 0 ? formatWeight(kg, unit) : "—");
+  return (
+    <div role="group" aria-label={`${ATHLETES[athlete].name} total`} className="space-y-2.5 py-4">
+      <div>
+        <h3 className="text-sm font-medium">Total</h3>
+        <p className="text-[11px] text-muted-foreground">
+          Overhead press, back squat and deadlift
+        </p>
+      </div>
+      {marks ? <Bar marks={marks} color={color} /> : null}
+      <dl className="grid grid-cols-4 gap-2">
+        <Stat label="Start" value={figure(total.start)} notes={[]} swatch={total.start ? <Swatch /> : null} />
+        <Stat
+          label="Latest"
+          value={figure(total.latest)}
+          notes={[]}
+          swatch={total.latest ? <Swatch color={color} /> : null}
+        />
+        <Stat
+          label="Best"
+          value={figure(total.best)}
+          notes={[]}
+          swatch={total.best ? <Swatch color={color} /> : null}
+        />
+        <Stat
+          label="Target"
+          value={figure(total.target)}
+          notes={targetNotes(total.target ?? 0, total.best, unit)}
+          swatch={total.target ? <Swatch color={color} ring /> : null}
+        />
+      </dl>
+    </div>
+  );
+}
+
 function Lift({
   athlete,
   lift,
@@ -154,14 +235,15 @@ function Lift({
           <h3 className="text-sm font-medium">{lift.name}</h3>
           <p className="text-xs text-muted-foreground">
             Not logged yet ·{" "}
-            {lift.target > 0 ? `target ${formatWeight(lift.target, unit)}` : "no target"}
+            {lift.target > 0
+              ? `target ${formatWeight(lift.target, unit)}${unit === "kg" ? "" : ` · ${formatWeight(lift.target, "kg")}`}`
+              : "no target"}
           </p>
         </div>
         {marks ? <Bar marks={marks} color={color} /> : null}
       </div>
     );
 
-  const remaining = toGo(lift, unit);
   const share = targetPercent(best.kg, lift.target);
   const gained = shownGap(start.kg, best.kg, unit);
   const notes = (set: TopSet) => [formatDay(set.day, today), `${set.sets}×${set.reps}`];
@@ -199,13 +281,7 @@ function Lift({
         <Stat
           label="Target"
           value={lift.target > 0 ? formatWeight(lift.target, unit) : "—"}
-          notes={
-            remaining === null
-              ? ["Set in Setup"]
-              : remaining <= 0
-                ? ["Reached"]
-                : [`${remaining} ${unit} to go`]
-          }
+          notes={targetNotes(lift.target, best.kg, unit)}
           swatch={marks && lift.target > 0 ? <Swatch color={color} ring /> : null}
         />
       </dl>
@@ -245,8 +321,9 @@ export function Progress({
         </h2>
         <p className="text-xs text-muted-foreground">
           Each day counts as its heaviest set, in {unit}. The bar places start,
-          latest, best and the target along the heaviest of them. Targets are set
-          in Setup.
+          latest, best and the target along the heaviest of them. A target also
+          shows in kilograms. The total adds press, squat and deadlift. Targets
+          are set in Setup.
         </p>
         {records.length < journalTotal && onLoadAll ? (
           <div className="mt-3 rounded-xl bg-muted/60 px-3 py-2.5 text-xs text-muted-foreground">
@@ -269,29 +346,33 @@ export function Progress({
         ) : null}
       </section>
 
-      {PEOPLE.map((athlete) => (
-        <section
-          key={athlete}
-          aria-labelledby={`progress-${athlete}`}
-          className="rounded-2xl border bg-card p-4 sm:p-5"
-        >
-          <h2
-            id={`progress-${athlete}`}
-            className="mb-4 flex items-center gap-2 text-sm font-semibold"
+      {PEOPLE.map((athlete) => {
+        const rows = liftProgress(records, athlete, targets[athlete]);
+        return (
+          <section
+            key={athlete}
+            aria-labelledby={`progress-${athlete}`}
+            className="rounded-2xl border bg-card p-4 sm:p-5"
           >
-            <span
-              className="size-2.5 rounded-full"
-              style={{ background: ATHLETES[athlete].color }}
-            />
-            {ATHLETES[athlete].name}
-          </h2>
-          <div className="divide-y">
-            {liftProgress(records, athlete, targets[athlete]).map((lift) => (
-              <Lift key={lift.key} athlete={athlete} lift={lift} unit={unit} today={today} />
-            ))}
-          </div>
-        </section>
-      ))}
+            <h2
+              id={`progress-${athlete}`}
+              className="mb-4 flex items-center gap-2 text-sm font-semibold"
+            >
+              <span
+                className="size-2.5 rounded-full"
+                style={{ background: ATHLETES[athlete].color }}
+              />
+              {ATHLETES[athlete].name}
+            </h2>
+            <div className="divide-y">
+              {rows.map((lift) => (
+                <Lift key={lift.key} athlete={athlete} lift={lift} unit={unit} today={today} />
+              ))}
+              <Total athlete={athlete} rows={rows} unit={unit} />
+            </div>
+          </section>
+        );
+      })}
 
       {together > 0 ? (
         <p className="text-xs text-muted-foreground">
