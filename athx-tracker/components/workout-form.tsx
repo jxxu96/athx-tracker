@@ -384,7 +384,7 @@ function FormatButtons({
   );
 }
 
-function DayButtons({
+export function DayButtons({
   today,
   day,
   onChange,

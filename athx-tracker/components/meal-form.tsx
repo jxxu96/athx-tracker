@@ -14,7 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Field } from "@/components/workout-form";
+import { DayButtons, Field } from "@/components/workout-form";
 import { ATHLETES, ESTIMATORS, type Estimator, type Macros, type Meal } from "@/lib/domain";
 import { api, message, newId } from "@/lib/client";
 import { commonMeals, type CommonMeal } from "@/lib/common-meals";
@@ -517,14 +517,7 @@ export function MealForm({
           {!editing && picked === null ? (
             <p className="text-xs text-muted-foreground">Matched to the time.</p>
           ) : null}
-          <Field label="Date">
-            <Input
-              type="date"
-              value={day}
-              max={today}
-              onChange={(event) => setDay(event.target.value)}
-            />
-          </Field>
+          <DayButtons today={today} day={day} onChange={setDay} />
         </section>
 
         <section className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
