@@ -24,6 +24,63 @@ test.beforeEach(async ({ page }) => {
   await page.getByRole("button", { name: "Meal", exact: true }).click();
 });
 
+test("the meal date is today, yesterday, or a day from the calendar", async ({ page }) => {
+  await loggingFor(page, "Hippos").click();
+  const dates = page.getByRole("group", { name: "Date" });
+  await expect(dates.getByRole("button", { name: "Today", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  await dates.getByRole("button", { name: "Yesterday", exact: true }).click();
+  await expect(dates.getByRole("button", { name: "Yesterday", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  const picked = await page.evaluate(() => {
+    const date = new Date();
+    date.setDate(date.getDate() - 3);
+    return {
+      day: new Intl.DateTimeFormat("en-CA", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(date),
+      dataDay: date.toLocaleDateString(),
+    };
+  });
+  await dates.getByRole("button", { name: "Calendar", exact: true }).click();
+  const tomorrow = await page.evaluate(() => {
+    const date = new Date();
+    date.setDate(date.getDate() + 1);
+    return date.toLocaleDateString();
+  });
+  await expect(page.locator(`[data-day="${tomorrow}"]`)).toBeDisabled();
+  await page.locator(`[data-day="${picked.dataDay}"]`).click();
+  await expect(dates.getByRole("button", { name: /^Calendar/ })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  await page.getByLabel("Meal", { exact: true }).fill("Dated bowl");
+  await page.getByLabel("Calories (kcal)").fill("400");
+  await page.getByLabel("Protein (g)").fill("20");
+  await page.getByLabel("Carbs (g)").fill("40");
+  await page.getByLabel("Fat (g)").fill("10");
+  await page.getByRole("button", { name: "Save meal", exact: true }).click();
+  await expect(page.getByText("Meal saved", { exact: true })).toBeVisible();
+  await expect.poll(async () =>
+    (await meals(page)).filter((meal) => meal.name === "Dated bowl").map((meal) => meal.day),
+  ).toEqual([picked.day]);
+
+  await page.getByRole("button", { name: "Log", exact: true }).click();
+  await page.getByRole("listitem").filter({ hasText: "Dated bowl" }).getByLabel("Edit entry").click();
+  await expect(
+    page.getByRole("group", { name: "Date" }).getByRole("button", { name: /^Calendar/ }),
+  ).toHaveAttribute("aria-pressed", "true");
+});
+
 test("a new meal starts on the sitting that matches the time", async ({ page }) => {
   const sitting = mealForTime(new Date());
   const group = page.getByRole("group", { name: "Sitting" });
