@@ -78,6 +78,12 @@ export function gapLabel(
   return `${formatAmount(gap.amount)} ${unit} ${gap.state}`;
 }
 
+/** Share of the daily target, as a whole percent. Null when there is no target. Past 100 when over. */
+export function targetPercent(actual: number, target: number) {
+  if (!(target > 0)) return null;
+  return Math.round((actual / target) * 100);
+}
+
 export type AthleteFuel = {
   /** Sum of every meal in the span. */
   eaten: Macros;
