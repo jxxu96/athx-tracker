@@ -22,6 +22,9 @@ single SQLite file on a volume.
   nothing timed is still a session, and reads as a dash rather than as a time of
   zero. Pairs or solo follows the switch at the top unless you set it yourself,
   and Other takes a name of its own, which is what the log then calls it.
+  A lift is one weight for every set, or, under **Advanced**, a row for each set
+  with its own weight and reps. Sets that differ are listed one by one in the
+  log, every rep counts towards the burn, and Progress takes the heaviest.
   **Mixed** puts lifts, MetCon and endurance in one session: add the ATHX
   circuit, your own MetCon stations, or a run/erg, alongside lifts. MetCon
   stations take a load per athlete. On a new session the circuit's stations
@@ -35,11 +38,14 @@ single SQLite file on a volume.
   **Describe your workout** accepts typed text or browser dictation and uses the
   same subscription-backed estimator as meals to fill an editable draft. `1 x 2`
   means **1 set of 2 reps**. Include weights and units; an omitted unit follows
-  the form's lb/kg setting. Named results stay with that athlete, and missing
-  numbers stay blank for review. Lifts, workouts and MetCons are matched to the
-  names already in the list, including typos and loose phrasing. A name that is
-  not one of those is kept as typed and called out in the notes. AI replaces the workout fields but saves only
-  when you choose Save session. Unsupported browsers can use keyboard dictation.
+  the form's lb/kg setting. Sets that differ, such as `135x5, 185x3, 225x1` (a
+  weight, then its reps), open Advanced with a row for each. Named results stay
+  with that athlete, and missing numbers stay blank for review; a lift saves
+  only once its blanks, a set's reps included, are filled in. Lifts, workouts
+  and MetCons are matched to the names already in the list, including typos and
+  loose phrasing. A name that is not one of those is kept as typed and called
+  out in the notes. AI replaces the workout fields but saves only when you
+  choose Save session. Unsupported browsers can use keyboard dictation.
 - **Meal** — describe a meal and let Grok estimate the macros, or type them in
   yourself. Editing an estimated number saves the meal as your own figures.
   Calories keep the source's reported or estimated total, including in queued

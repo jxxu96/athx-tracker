@@ -8,8 +8,8 @@ const { estimate, PROVIDERS } = await import("./server.mjs");
 const whole = {
   title: "Deadlift", category: "Strength", customCategory: "", notes: "", assumptions: "",
   elapsed: { hippos: null, gators: null }, stations: [],
-  lifts: [{ name: "Deadlift", hippos: { kg: 83.91458845, sets: 1, reps: 2 },
-    gators: { kg: null, sets: null, reps: null } }],
+  lifts: [{ name: "Deadlift", hippos: { kg: 83.91458845, sets: 1, reps: 2, detail: [] },
+    gators: { kg: null, sets: null, reps: null, detail: [] } }],
 };
 
 test("workout requests reject a meal-shaped answer and fall back to a usable workout", async () => {

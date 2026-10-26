@@ -72,6 +72,42 @@ test("unknown weights stay empty and must be filled before saving", async ({ pag
   expect((await saved(page))[0].athlete).toBe("hippos");
 });
 
+test("sets that differ fill a row each, and reps never said are asked for", async ({ page }) => {
+  const lb = 0.45359237;
+  await page.route("**/api/workout-draft", route => route.fulfill({ json: { draft: {
+    ...draft, elapsed: { hippos: null, gators: null },
+    lifts: [{ name: "Back squat",
+      hippos: { kg: null, sets: null, reps: null,
+        detail: [{ kg: 135 * lb, reps: 5 }, { kg: 185 * lb, reps: 3 }, { kg: 225 * lb, reps: null }] },
+      gators: { kg: null, sets: null, reps: null,
+        detail: [{ kg: 95 * lb, reps: 8 }, { kg: 95 * lb, reps: 8 }, { kg: 95 * lb, reps: 8 }] } }],
+  } } }));
+  await page.getByLabel("Workout description").fill("Hippos squat 135x5, 185x3, then 225; Gators 3 x 8 at 95");
+  await fill(page).click();
+  const weight = (n: number) => page.getByLabel(`Hippos set ${n} weight`);
+  const reps = (n: number) => page.getByLabel(`Hippos set ${n} reps`);
+  await expect(page.getByRole("button", { name: "Hippos advanced sets" })).toHaveAttribute("aria-pressed", "true");
+  await expect(weight(1)).toHaveValue("135");
+  await expect(reps(2)).toHaveValue("3");
+  await expect(weight(3)).toHaveValue("225");
+  await expect(reps(3)).toHaveValue("");
+  // Sets that were all the same stay one line.
+  await expect(page.getByRole("button", { name: "Gators advanced sets" })).toHaveAttribute("aria-pressed", "false");
+  await expect(lifts(page).getByRole("textbox", { name: "lb", exact: true })).toHaveValue("95");
+  await expect(lifts(page).getByRole("textbox", { name: "Sets", exact: true })).toHaveValue("3");
+  await expect(lifts(page).getByRole("textbox", { name: "Reps", exact: true })).toHaveValue("8");
+  await page.getByRole("button", { name: "Save session", exact: true }).click();
+  await expect(page.locator("form").getByRole("alert")).toContainText("Back squat, set 3: fill in the missing reps");
+  expect(await saved(page)).toEqual([]);
+  await reps(3).fill("1");
+  await page.getByRole("button", { name: "Save session", exact: true }).click();
+  await expect.poll(async () => (await saved(page)).length).toBe(2);
+  const records = await saved(page);
+  expect(records.find(w => w.athlete === "hippos")?.lifts).toEqual([{ name: "Back squat", kg: 225 * lb, sets: 1, reps: 1,
+    detail: [{ kg: 135 * lb, reps: 5 }, { kg: 185 * lb, reps: 3 }, { kg: 225 * lb, reps: 1 }] }]);
+  expect(records.find(w => w.athlete === "gators")?.lifts).toEqual([{ name: "Back squat", kg: 95 * lb, sets: 3, reps: 8 }]);
+});
+
 test("AI failure preserves the description and existing workout fields", async ({ page }) => {
   await page.getByLabel("Session", { exact: true }).fill("My existing workout");
   await page.getByLabel("Hippos elapsed time").fill("25:00");

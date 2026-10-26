@@ -865,12 +865,23 @@ export function WorkoutForm({
             : { savedKg: station[side].kg ?? undefined }),
         };
       });
-      const nextLiftSide = (side: Side, lift: WorkoutDraft["lifts"][number]): LiftSide => columns.includes(side) ? ({
-        kg: load(lift[side].kg), sets: string(lift[side].sets), reps: string(lift[side].reps),
-        savedKg: lift[side].kg ?? undefined,
-        advanced: false,
-        detail: [],
-      }) : blankLiftSide();
+      const nextLiftSide = (side: Side, lift: WorkoutDraft["lifts"][number]): LiftSide => {
+        if (!columns.includes(side)) return blankLiftSide();
+        const { detail = [], ...whole } = lift[side];
+        // Sets that differed open a row each. Sets that were all the same are the one line.
+        const same = detail.every(set => set.kg === detail[0].kg && set.reps === detail[0].reps);
+        if (!same) return {
+          kg: "", sets: "", reps: "", advanced: true,
+          detail: detail.map(set => ({ kg: load(set.kg), reps: string(set.reps), savedKg: set.kg ?? undefined })),
+        };
+        const line = detail.length ? { kg: detail[0].kg, sets: detail.length, reps: detail[0].reps } : whole;
+        return {
+          kg: load(line.kg), sets: string(line.sets), reps: string(line.reps),
+          savedKg: line.kg ?? undefined,
+          advanced: false,
+          detail: [],
+        };
+      };
       // The Endurance panel labels its boxes as a run. Other endurance activities
       // use Mixed so their names and units remain visible and editable.
       setCategory(draft.category === "Endurance" && draft.stations.some(s => s.name !== "Run" || !isDistanceUnit(s.unit))
@@ -1277,6 +1288,10 @@ export function WorkoutForm({
             return `${where}: add the load in ${unit}.`;
           if (set.reps.trim() !== "" && !(num(set.reps) >= 1))
             return `${where}: reps must be at least 1.`;
+          // An empty rep box typed by hand is one rep. One the AI left empty was
+          // never said, so it is asked for rather than saved as one.
+          if (draftNotice && set.reps.trim() === "")
+            return `${where}: fill in the missing reps, or remove this set before saving.`;
         }
         continue;
       }
