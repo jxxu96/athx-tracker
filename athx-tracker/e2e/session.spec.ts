@@ -481,6 +481,68 @@ test("squats with no clock still show a burn", async ({ page }) => {
   await expect(page.getByText(/Strength · — · ~50 kcal/)).toBeVisible();
 });
 
+test("advanced sets keep their own weight and reps", async ({ page }) => {
+  // The set rows are the widest thing added to a column, so this is a phone.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await athlete(page, "Gators").click();
+  await openSession(page);
+  await typeSelect(page).selectOption("Strength");
+  await page
+    .locator("select")
+    .filter({ has: page.locator('option[value="Back squat"]') })
+    .first()
+    .selectOption("Back squat");
+  await page.getByRole("textbox", { name: "lb", exact: true }).fill("135");
+  await page.getByRole("textbox", { name: "Sets", exact: true }).fill("3");
+  await page.getByRole("textbox", { name: "Reps", exact: true }).fill("5");
+  await page.getByRole("button", { name: "Gators advanced sets" }).click();
+
+  const weight = (n: number) => page.getByLabel(`Gators set ${n} weight`);
+  const reps = (n: number) => page.getByLabel(`Gators set ${n} reps`);
+  await expect(weight(1)).toHaveValue("135");
+  await expect(weight(3)).toHaveValue("135");
+  await expect(reps(3)).toHaveValue("5");
+  await weight(2).fill("185");
+  await reps(2).fill("3");
+  await weight(3).fill("225");
+  await reps(3).fill("1");
+  await page.getByRole("button", { name: "Gators add set" }).click();
+  await expect(weight(4)).toHaveValue("225");
+  await expect(reps(4)).toHaveValue("1");
+  await page.getByRole("button", { name: "Gators remove set 4" }).click();
+  await expect(weight(4)).toHaveCount(0);
+  await expect(page.getByText("Heaviest 225 lb 1×1")).toBeVisible();
+  await page.getByRole("button", { name: "Save session" }).click();
+
+  const read = () =>
+    page.evaluate(async () => (await fetch("/api/records").then((r) => r.json())).records);
+  await expect.poll(async () => (await read()).length).toBe(1);
+  const [saved] = await read();
+  expect(saved.lifts[0].name).toBe("Back squat");
+  expect(saved.lifts[0].sets).toBe(1);
+  expect(saved.lifts[0].reps).toBe(1);
+  expect(saved.lifts[0].kg).toBeCloseTo(225 / 2.20462262, 1);
+  expect(saved.lifts[0].detail.map((set: { reps: number }) => set.reps)).toEqual([5, 3, 1]);
+
+  await openLog(page);
+  const entry = page.getByRole("listitem").filter({ hasText: "Back squat" });
+  await expect(entry.getByText("Back squat 135 lb×5, 185 lb×3, 225 lb×1")).toBeVisible();
+
+  await entry.getByLabel("Edit entry").click();
+  await expect(weight(1)).toHaveValue("135");
+  await expect(weight(2)).toHaveValue("185");
+  await expect(reps(3)).toHaveValue("1");
+  const unitSwitch = page.getByRole("group", { name: "Weight unit" });
+  await unitSwitch.getByRole("button", { name: "kg" }).click();
+  await expect(weight(1)).toHaveValue("61.2");
+  await expect(weight(3)).toHaveValue("102.1");
+  await unitSwitch.getByRole("button", { name: "lb" }).click();
+  await expect(weight(1)).toHaveValue("135");
+  await expect(weight(3)).toHaveValue("225");
+  await page.getByRole("button", { name: "Update session" }).click();
+  await expect.poll(async () => (await read())[0].lifts[0].kg).toBe(saved.lifts[0].kg);
+});
+
 test("one session holds lifts, a part-finished MetCon with loads, and a run", async ({ page }) => {
   await athlete(page, "Gators").click();
   await openSession(page);

@@ -2,6 +2,7 @@ import { matchMovement } from "./movement-match.ts";
 import {
   PROGRESS_LIFTS,
   displayLoad,
+  liftTop,
   type LiftTargets,
   type ProgressLift,
   type RecordItem,
@@ -74,7 +75,10 @@ export function liftProgress(
       const key = progressLift(lift.name);
       if (!key) continue;
       logged.add(key);
-      const set = { day: record.day, kg: lift.kg, sets: lift.sets ?? 1, reps: lift.reps };
+      // A varied lift counts as its heaviest sets, so a warm-up in the same
+      // entry never becomes the number for the day.
+      const top = lift.detail?.length ? liftTop(lift.detail) : { kg: lift.kg, sets: lift.sets ?? 1, reps: lift.reps };
+      const set = { day: record.day, ...top };
       const byDay = days.get(key) ?? new Map<string, TopSet>();
       const held = byDay.get(record.day);
       if (!held || heavier(set, held)) byDay.set(record.day, set);

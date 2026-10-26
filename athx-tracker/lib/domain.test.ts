@@ -10,7 +10,11 @@ import {
   presetTitle,
   PRESETS,
   estimateBurn,
+  formatLift,
   formatTime,
+  liftEffort,
+  liftTop,
+  untimedLiftSeconds,
   formatTimeOrDash,
   displayDistance,
   distanceLine,
@@ -125,6 +129,27 @@ test("a clock filled by stations still leaves the lifts their own burn", () => {
   // 305 s at 8 MET is 52.9. The squats are 12 reps and two rests, 45.3 at 6 MET.
   assert.equal(estimateBurn(metcon, kg), 50);
   assert.equal(estimateBurn(both, kg), 100);
+});
+
+test("a varied lift burns every rep, and its summary is the heaviest sets", () => {
+  const detail = [
+    { kg: 60, reps: 5 },
+    { kg: 80, reps: 5 },
+    { kg: 100, reps: 1 },
+    { kg: 100, reps: 1 },
+  ];
+  assert.deepEqual(liftTop(detail), { kg: 100, sets: 2, reps: 1 });
+  // Four sets, 12 reps: the one-line 2×1 would have counted two reps and one rest.
+  assert.deepEqual(liftEffort({ sets: 2, reps: 1, detail }), { sets: 4, reps: 12 });
+  assert.equal(untimedLiftSeconds([{ sets: 2, reps: 1, detail }]), 12 * 4 + 3 * 150);
+  assert.equal(
+    formatLift({ name: "Back squat", kg: 100, sets: 2, reps: 1, detail }, "kg"),
+    "Back squat 60 kg×5, 80 kg×5, 100 kg×1, 100 kg×1",
+  );
+  assert.equal(
+    formatLift({ name: "Back squat", kg: 100, sets: 3, reps: 5 }, "lb"),
+    "Back squat 220.5 lb 3×5",
+  );
 });
 
 test("burn follows MET x 3.5 x kg / 200 per minute", () => {

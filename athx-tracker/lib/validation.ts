@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { CONVERSATION_LIMIT, MAX_REPLIES, REPLY_LIMIT } from "./estimate-conversation.ts";
-import { DEFAULT_SETTINGS, VOLUME_UNITS } from "./domain.ts";
+import { DEFAULT_SETTINGS, VOLUME_UNITS, liftTop } from "./domain.ts";
 const finite = z.number().finite().nonnegative();
 export const macroSchema = z.object({
   calories: finite.max(20000), protein: finite.max(2000), carbs: finite.max(3000), fat: finite.max(2000),
@@ -46,7 +46,26 @@ export const workoutSchema = z.object({
     .refine(s => s.completed > 0 || s.seconds === 0, "A station time needs completed work with it")).max(30),
   fatigue: finite.max(50), transition: finite.max(3600), goal: finite.positive().max(86400).nullable(),
   context: z.enum(["solo", "pairs"]),
-  lifts: z.array(z.object({ name: z.string().min(1).max(80), kg: finite.positive().max(1000), sets: z.number().int().min(1).max(50), reps: z.number().int().min(1).max(100) }).strict()).max(30),
+  lifts: z.array(z.object({
+    name: z.string().min(1).max(80),
+    kg: finite.positive().max(1000),
+    sets: z.number().int().min(1).max(50),
+    reps: z.number().int().min(1).max(100),
+    // Omitted when every set was the same, so older sessions still parse.
+    detail: z.array(z.object({
+      kg: finite.positive().max(1000),
+      reps: z.number().int().min(1).max(100),
+    }).strict()).min(1).max(50).optional(),
+  }).strict().superRefine((lift, context) => {
+    if (!lift.detail) return;
+    const top = liftTop(lift.detail);
+    if (lift.kg !== top.kg || lift.sets !== top.sets || lift.reps !== top.reps) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "The lift summary has to be its heaviest sets.",
+      });
+    }
+  })).max(30),
   capHit: z.boolean().optional(),
 }).strict().refine(w => w.seconds === 0 || w.segments.reduce((n,s) => n+s.seconds,0) <= w.seconds + 1, "Station times exceed elapsed workout time");
 export const mealSchema = z.object({

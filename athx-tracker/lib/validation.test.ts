@@ -116,6 +116,26 @@ test("settings reject nonsense bodyweights", () => {
   assert.ok(!ok(settingsSchema, { ...base, bodyweight: { hippos: 0, gators: 900 } }));
 });
 
+test("a lift can list each set, and the summary has to be the heaviest", () => {
+  const varied = {
+    name: "Back squat", kg: 100, sets: 2, reps: 1,
+    detail: [{ kg: 60, reps: 5 }, { kg: 80, reps: 3 }, { kg: 100, reps: 1 }, { kg: 100, reps: 1 }],
+  };
+  assert.ok(ok(workoutSchema, workout({ category: "Strength", lifts: [varied] })));
+  assert.ok(ok(workoutSchema, workout({
+    category: "Strength",
+    lifts: [{ name: "Back squat", kg: 100, sets: 3, reps: 5 }],
+  })), "a lift from before sets could differ still parses");
+  assert.ok(!ok(workoutSchema, workout({
+    category: "Strength",
+    lifts: [{ ...varied, kg: 60, sets: 4, reps: 5 }],
+  })), "the summary cannot describe the warm-up");
+  assert.ok(!ok(workoutSchema, workout({
+    category: "Strength",
+    lifts: [{ ...varied, detail: [] }],
+  })));
+});
+
 test("the schema cannot permit a record the server would refuse to read", () => {
   // readBody stops at 64 KB. These two limits were set in different files on
   // different days and nothing connects them, so if a max length is raised
@@ -135,6 +155,7 @@ test("the schema cannot permit a record the server would refuse to read", () => 
     fatigue: 50, transition: 3600, goal: 86400, context: "pairs",
     lifts: Array.from({ length: 30 }, () => ({
       name: fill(80, "L"), kg: 1000, sets: 50, reps: 100,
+      detail: Array.from({ length: 50 }, () => ({ kg: 1000, reps: 100 })),
     })),
   };
 

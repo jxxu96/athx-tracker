@@ -41,7 +41,9 @@ import {
   parseTime,
   displayDistance,
   displayLoad,
+  formatWeight,
   fromMetres,
+  liftTop,
   isDistanceUnit,
   metconLoadText,
   parseLoad,
@@ -84,7 +86,16 @@ type Entry = {
   prefilled?: boolean;
 };
 
-type LiftSide = { kg: string; sets: string; reps: string; savedKg?: number };
+type SetDraft = { kg: string; reps: string; savedKg?: number };
+type LiftSide = {
+  kg: string;
+  sets: string;
+  reps: string;
+  savedKg?: number;
+  /** Each set has its own weight and reps. Off is one weight for every set. */
+  advanced: boolean;
+  detail: SetDraft[];
+};
 type LiftRow = {
   name: string;
   custom: string;
@@ -220,7 +231,10 @@ function ExercisePicker({
 }
 
 const blankEntry = (): Entry => ({ completed: "", time: "", load: "" });
-const blankLiftSide = (): LiftSide => ({ kg: "", sets: "", reps: "" });
+const blankSet = (): SetDraft => ({ kg: "", reps: "" });
+const blankLiftSide = (): LiftSide => ({
+  kg: "", sets: "", reps: "", advanced: false, detail: [],
+});
 const blankLift = (): LiftRow => ({
   name: "",
   custom: "",
@@ -269,6 +283,11 @@ const entriesForBoth = (stations: Station[], unit: WeightUnit) => ({
 });
 
 const num = (value: string) => (value.trim() === "" ? 0 : Number(value));
+/** How many set rows Advanced opens from the simple sets box. One, and never past the cap. */
+const seedCount = (sets: string) => {
+  const count = Math.round(num(sets));
+  return Math.min(50, count >= 1 ? count : 1);
+};
 const seconds = (value: string) => (value.trim() === "" ? 0 : parseTime(value));
 
 /** An untitled session is named after its date, which never goes stale. */
@@ -488,6 +507,134 @@ function Column({ side, children }: { side: Side; children: React.ReactNode }) {
   );
 }
 
+/** One athlete's sets: one weight for all of them, or a row for each. */
+function LiftSets({
+  side,
+  entry,
+  unit,
+  onToggle,
+  onSimple,
+  onSet,
+  onAdd,
+  onRemove,
+}: {
+  side: Side;
+  entry: LiftSide;
+  unit: WeightUnit;
+  onToggle: () => void;
+  onSimple: (patch: Partial<Pick<LiftSide, "kg" | "sets" | "reps">>) => void;
+  onSet: (index: number, patch: Partial<SetDraft>) => void;
+  onAdd: () => void;
+  onRemove: (index: number) => void;
+}) {
+  const who = ATHLETES[side].name;
+  const parsed = entry.detail.flatMap((set) => {
+    const kg = parseLoad(set.kg, unit, set.savedKg);
+    const reps = Math.round(num(set.reps) || 0);
+    return kg !== null && reps >= 1 ? [{ kg, reps }] : [];
+  });
+  const same = parsed.length > 0 && parsed.every((set) => set.kg === parsed[0].kg && set.reps === parsed[0].reps);
+  const top = parsed.length > 0 ? liftTop(parsed) : null;
+  return (
+    <Column side={side}>
+      <div>
+        <Button
+          type="button"
+          variant={entry.advanced ? "secondary" : "outline"}
+          size="xs"
+          aria-pressed={entry.advanced}
+          aria-label={`${who} advanced sets`}
+          onClick={onToggle}
+        >
+          Advanced
+        </Button>
+      </div>
+      {entry.advanced ? (
+        <>
+          <ul className="space-y-2">
+            {entry.detail.map((set, index) => (
+              <li key={index} className="flex items-end gap-2">
+                <Field label={unit} className="min-w-0 flex-1">
+                  <Input
+                    value={set.kg}
+                    inputMode="decimal"
+                    className="h-8"
+                    aria-label={`${who} set ${index + 1} weight`}
+                    onChange={(event) => onSet(index, { kg: event.target.value })}
+                  />
+                </Field>
+                <Field label="Reps" className="min-w-0 flex-1">
+                  <Input
+                    value={set.reps}
+                    inputMode="numeric"
+                    className="h-8"
+                    aria-label={`${who} set ${index + 1} reps`}
+                    onChange={(event) => onSet(index, { reps: event.target.value })}
+                  />
+                </Field>
+                {entry.detail.length > 1 ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`${who} remove set ${index + 1}`}
+                    onClick={() => onRemove(index)}
+                  >
+                    <X />
+                  </Button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+          {entry.detail.length < 50 ? (
+            <Button type="button" variant="outline" size="xs" aria-label={`${who} add set`} onClick={onAdd}>
+              <Plus /> Set
+            </Button>
+          ) : null}
+          {top ? (
+            <p className="text-[11px] text-muted-foreground">
+              {same
+                ? `${parsed.length}×${parsed[0].reps} at ${formatWeight(parsed[0].kg, unit)}`
+                : `Heaviest ${formatWeight(top.kg, unit)} ${top.sets}×${top.reps}`}
+            </p>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <Field label={unit}>
+            <Input
+              value={entry.kg}
+              inputMode="decimal"
+              className="h-8"
+              onChange={(event) => onSimple({ kg: event.target.value })}
+            />
+          </Field>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Sets">
+              <Input
+                value={entry.sets}
+                inputMode="numeric"
+                placeholder="3"
+                className="h-8"
+                onChange={(event) => onSimple({ sets: event.target.value })}
+              />
+            </Field>
+            <Field label="Reps">
+              <Input
+                value={entry.reps}
+                inputMode="numeric"
+                placeholder="5"
+                className="h-8"
+                onChange={(event) => onSimple({ reps: event.target.value })}
+              />
+            </Field>
+          </div>
+        </>
+      )}
+    </Column>
+  );
+}
+
 function Panel({
   title,
   note,
@@ -635,6 +782,12 @@ export function WorkoutForm({
         sets: String(lift.sets ?? 1),
         reps: String(lift.reps),
         savedKg: lift.kg,
+        advanced: Boolean(lift.detail?.length),
+        detail: (lift.detail ?? []).map((set) => ({
+          kg: displayLoad(set.kg, weightUnit),
+          reps: String(set.reps),
+          savedKg: set.kg,
+        })),
       },
     }));
   });
@@ -711,6 +864,8 @@ export function WorkoutForm({
       const nextLiftSide = (side: Side, lift: WorkoutDraft["lifts"][number]): LiftSide => columns.includes(side) ? ({
         kg: load(lift[side].kg), sets: string(lift[side].sets), reps: string(lift[side].reps),
         savedKg: lift[side].kg ?? undefined,
+        advanced: false,
+        detail: [],
       }) : blankLiftSide();
       // The Endurance panel labels its boxes as a run. Other endurance activities
       // use Mixed so their names and units remain visible and editable.
@@ -767,14 +922,26 @@ export function WorkoutForm({
     return { ...entry, load: reunitLoad(entry.load, unit, next, entry.savedKg) };
   }
 
+  /** A side's weights, including each advanced set, in the unit being switched to. */
+  function reunitSide(side: LiftSide, next: WeightUnit): LiftSide {
+    return {
+      ...side,
+      kg: reunitLoad(side.kg, unit, next, side.savedKg),
+      detail: side.detail.map((set) => ({
+        ...set,
+        kg: reunitLoad(set.kg, unit, next, set.savedKg),
+      })),
+    };
+  }
+
   /** Every weight box follows the switch, and the choice is remembered. */
   function changeUnit(next: WeightUnit) {
     if (next === unit) return;
     setLifts((current) =>
       current.map((lift) => ({
         ...lift,
-        hippos: { ...lift.hippos, kg: reunitLoad(lift.hippos.kg, unit, next, lift.hippos.savedKg) },
-        gators: { ...lift.gators, kg: reunitLoad(lift.gators.kg, unit, next, lift.gators.savedKg) },
+        hippos: reunitSide(lift.hippos, next),
+        gators: reunitSide(lift.gators, next),
       })),
     );
     setEntries((current) => ({
@@ -865,8 +1032,99 @@ export function WorkoutForm({
   function setLift(index: number, side: Side, patch: Partial<LiftSide>) {
     setLifts((current) =>
       current.map((lift, i) =>
-        i === index ? { ...lift, [side]: { ...lift[side], ...patch } } : lift,
+        // Editing the one-line boxes drops a breakdown, so Advanced rebuilds from them.
+        i === index ? { ...lift, [side]: { ...lift[side], ...patch, detail: [] } } : lift,
       ),
+    );
+  }
+
+  /** Open one row per set, or fold the rows back into the one-line boxes. */
+  function toggleAdvanced(index: number, side: Side) {
+    setLifts((current) =>
+      current.map((lift, i) => {
+        if (i !== index) return lift;
+        const entry = lift[side];
+        if (!entry.advanced) {
+          const detail = entry.detail.length > 0
+            ? entry.detail
+            : Array.from({ length: seedCount(entry.sets) }, () => ({
+                kg: entry.kg,
+                reps: entry.reps,
+                ...(entry.savedKg !== undefined ? { savedKg: entry.savedKg } : {}),
+              }));
+          return { ...lift, [side]: { ...entry, advanced: true, detail } };
+        }
+        const touched = entry.detail.some((set) => set.kg.trim() !== "" || set.reps.trim() !== "");
+        if (!touched) return { ...lift, [side]: { ...entry, advanced: false, detail: [] } };
+        const parsed = entry.detail.map((set) => ({
+          kg: parseLoad(set.kg, unit, set.savedKg),
+          // An empty rep box is one rep, the same as the one-line field.
+          reps: set.reps.trim() === "" ? 1 : Math.round(num(set.reps)),
+          text: set,
+        }));
+        // A half-filled breakdown stays open, so closing it cannot drop sets.
+        if (!parsed.every((set) => set.kg !== null && set.reps >= 1)) return lift;
+        const detail = parsed.map((set) => ({ kg: set.kg!, reps: set.reps }));
+        const same = detail.every((set) => set.kg === detail[0].kg && set.reps === detail[0].reps);
+        if (same) {
+          return {
+            ...lift,
+            [side]: {
+              ...entry,
+              advanced: false,
+              kg: entry.detail[0].kg,
+              sets: String(detail.length),
+              reps: String(detail[0].reps),
+              savedKg: entry.detail[0].savedKg,
+              detail: [],
+            },
+          };
+        }
+        const top = liftTop(detail);
+        const match = parsed.find((set) => set.kg === top.kg && set.reps === top.reps)!;
+        return {
+          ...lift,
+          [side]: {
+            ...entry,
+            advanced: false,
+            kg: match.text.kg,
+            sets: String(top.sets),
+            reps: String(top.reps),
+            savedKg: match.text.savedKg,
+            detail: [],
+          },
+        };
+      }),
+    );
+  }
+
+  function setDetail(index: number, side: Side, setIndex: number, patch: Partial<SetDraft>) {
+    setLifts((current) =>
+      current.map((lift, i) => {
+        if (i !== index) return lift;
+        const detail = lift[side].detail.map((set, n) => (n === setIndex ? { ...set, ...patch } : set));
+        return { ...lift, [side]: { ...lift[side], detail } };
+      }),
+    );
+  }
+
+  function addSet(index: number, side: Side) {
+    setLifts((current) =>
+      current.map((lift, i) => {
+        if (i !== index || lift[side].detail.length >= 50) return lift;
+        const last = lift[side].detail[lift[side].detail.length - 1] ?? blankSet();
+        return { ...lift, [side]: { ...lift[side], detail: [...lift[side].detail, { ...last }] } };
+      }),
+    );
+  }
+
+  function removeSet(index: number, side: Side, setIndex: number) {
+    setLifts((current) =>
+      current.map((lift, i) => {
+        if (i !== index) return lift;
+        const detail = lift[side].detail.filter((_, n) => n !== setIndex);
+        return { ...lift, [side]: { ...lift[side], detail: detail.length > 0 ? detail : [blankSet()] } };
+      }),
     );
   }
 
@@ -892,13 +1150,13 @@ export function WorkoutForm({
       )
     )
       return true;
-    return lifts.some(
-      (lift) =>
-        exerciseName(lift.name, lift.custom) !== "" &&
-        (lift[side].kg.trim() !== "" ||
-          lift[side].sets.trim() !== "" ||
-          lift[side].reps.trim() !== ""),
-    );
+    return lifts.some((lift) => {
+      if (exerciseName(lift.name, lift.custom) === "") return false;
+      const entry = lift[side];
+      if (entry.advanced)
+        return entry.detail.some((set) => set.kg.trim() !== "" || set.reps.trim() !== "");
+      return entry.kg.trim() !== "" || entry.sets.trim() !== "" || entry.reps.trim() !== "";
+    });
   }
 
   function segmentsFor(side: Side): Segment[] {
@@ -931,19 +1189,29 @@ export function WorkoutForm({
   }
 
   function liftsFor(side: Side) {
-    return lifts
-      .filter(
-        (lift) =>
-          exerciseName(lift.name, lift.custom) !== "" &&
-          lift[side].kg.trim() !== "",
-      )
-      .map((lift) => ({
-        name: exerciseName(lift.name, lift.custom),
+    return lifts.flatMap((lift) => {
+      const name = exerciseName(lift.name, lift.custom);
+      if (name === "") return [];
+      const entry = lift[side];
+      if (entry.advanced) {
+        if (!entry.detail.some((set) => set.kg.trim() !== "")) return [];
         // Entered in your unit, stored in kilograms. Validated before this runs.
-        kg: parseLoad(lift[side].kg, unit, lift[side].savedKg) ?? 0,
-        sets: Math.round(num(lift[side].sets) || 1),
-        reps: Math.round(num(lift[side].reps) || 1),
-      }));
+        const detail = entry.detail.map((set) => ({
+          kg: parseLoad(set.kg, unit, set.savedKg) ?? 0,
+          reps: Math.round(num(set.reps) || 1),
+        }));
+        const same = detail.every((set) => set.kg === detail[0].kg && set.reps === detail[0].reps);
+        if (same) return [{ name, kg: detail[0].kg, sets: detail.length, reps: detail[0].reps }];
+        return [{ name, ...liftTop(detail), detail }];
+      }
+      if (entry.kg.trim() === "") return [];
+      return [{
+        name,
+        kg: parseLoad(entry.kg, unit, entry.savedKg) ?? 0,
+        sets: Math.round(num(entry.sets) || 1),
+        reps: Math.round(num(entry.reps) || 1),
+      }];
+    });
   }
 
 
@@ -989,12 +1257,27 @@ export function WorkoutForm({
 
     for (const lift of lifts) {
       const entry = lift[side];
-      if (draftNotice && exerciseName(lift.name, lift.custom) !== "" &&
+      const liftName = exerciseName(lift.name, lift.custom);
+      if (entry.advanced) {
+        const touched = entry.detail.some((set) => set.kg.trim() !== "" || set.reps.trim() !== "");
+        if (!touched) continue;
+        if (liftName === "") return `${who}: choose or name the exercise.`;
+        for (const [index, set] of entry.detail.entries()) {
+          const where = `${who} · ${liftName}, set ${index + 1}`;
+          if (set.kg.trim() === "" && set.reps.trim() === "")
+            return `${where}: add the load in ${unit}, or remove this set.`;
+          if (parseLoad(set.kg, unit, set.savedKg) === null)
+            return `${where}: add the load in ${unit}.`;
+          if (set.reps.trim() !== "" && !(num(set.reps) >= 1))
+            return `${where}: reps must be at least 1.`;
+        }
+        continue;
+      }
+      if (draftNotice && liftName !== "" &&
         [entry.kg, entry.sets, entry.reps].some(value => value.trim() !== "") &&
         [entry.kg, entry.sets, entry.reps].some(value => value.trim() === ""))
-        return `${who} · ${exerciseName(lift.name, lift.custom)}: fill in the missing weight, sets and reps, or remove this lift before saving.`;
+        return `${who} · ${liftName}: fill in the missing weight, sets and reps, or remove this lift before saving.`;
       if (entry.kg.trim() === "") continue;
-      const liftName = exerciseName(lift.name, lift.custom);
       if (liftName === "") return `${who}: choose or name the exercise.`;
       if (parseLoad(entry.kg, unit, entry.savedKg) === null)
         return `${who} · ${liftName}: add the load in ${unit}.`;
@@ -1530,7 +1813,7 @@ export function WorkoutForm({
         <Panel
           outline={outline}
           title="Lifts"
-          note="Load, sets and reps for each of you."
+          note="One weight for every set, or Advanced when the sets differ."
           action={
             <Button
               type="button"
@@ -1583,42 +1866,17 @@ export function WorkoutForm({
                 </div>
                 <div className={`grid gap-2.5 ${columns.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
                   {columns.map((side) => (
-                    <Column key={side} side={side}>
-                      <Field label={unit}>
-                        <Input
-                          value={lift[side].kg}
-                          inputMode="decimal"
-                          className="h-8"
-                          onChange={(event) =>
-                            setLift(index, side, { kg: event.target.value })
-                          }
-                        />
-                      </Field>
-                      <div className="grid grid-cols-2 gap-2">
-                        <Field label="Sets">
-                          <Input
-                            value={lift[side].sets}
-                            inputMode="numeric"
-                            placeholder="3"
-                            className="h-8"
-                            onChange={(event) =>
-                              setLift(index, side, { sets: event.target.value })
-                            }
-                          />
-                        </Field>
-                        <Field label="Reps">
-                          <Input
-                            value={lift[side].reps}
-                            inputMode="numeric"
-                            placeholder="5"
-                            className="h-8"
-                            onChange={(event) =>
-                              setLift(index, side, { reps: event.target.value })
-                            }
-                          />
-                        </Field>
-                      </div>
-                    </Column>
+                    <LiftSets
+                      key={side}
+                      side={side}
+                      entry={lift[side]}
+                      unit={unit}
+                      onToggle={() => toggleAdvanced(index, side)}
+                      onSimple={(patch) => setLift(index, side, patch)}
+                      onSet={(setIndex, patch) => setDetail(index, side, setIndex, patch)}
+                      onAdd={() => addSet(index, side)}
+                      onRemove={(setIndex) => removeSet(index, side, setIndex)}
+                    />
                   ))}
                 </div>
               </li>
