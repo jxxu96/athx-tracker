@@ -4,36 +4,29 @@ import {
   DEFAULT_SETTINGS,
   RECENT_LIMIT,
   localDay,
-  type RecordItem,
-  type Settings,
 } from "@/lib/domain";
 import { signedIn } from "@/lib/auth";
-import { database, runtime } from "@/lib/server";
+import { readRecords, readSettings } from "@/lib/journal";
+import { runtime } from "@/lib/server";
+import { journalSummary } from "@/lib/summary";
 
 // The journal depends on the session cookie, so it is never statically rendered.
 export const dynamic = "force-dynamic";
 
-/** Hand the first screen straight to the device, with no client round-trip. */
-function readJournal() {
+/**
+ * Hand the first screen straight to the device, with no client round-trip:
+ * the recent slice, and the whole-journal figures worked out from the rest.
+ */
+function readJournal(today: string) {
   try {
-    const rows = database()
-      .prepare(
-        "SELECT payload FROM records ORDER BY day DESC, created_at DESC LIMIT ?",
-      )
-      .all(RECENT_LIMIT) as { payload: string }[];
-    const { total } = database()
-      .prepare("SELECT COUNT(*) AS total FROM records")
-      .get() as { total: number };
-    const saved = database()
-      .prepare("SELECT payload, revision FROM settings WHERE id = 'team'")
-      .get() as { payload: string; revision: number } | undefined;
+    const { records, all, total } = readRecords(RECENT_LIMIT);
+    const saved = readSettings();
     return {
-      records: rows.map((row) => JSON.parse(row.payload) as RecordItem),
+      records,
       total,
-      settings: saved
-        ? (JSON.parse(saved.payload) as Settings)
-        : DEFAULT_SETTINGS,
+      settings: saved?.settings ?? DEFAULT_SETTINGS,
       revision: saved?.revision ?? 0,
+      summary: journalSummary(all, saved?.settings, today),
     };
   } catch {
     return null;
@@ -44,11 +37,12 @@ export default async function Home() {
   if (!(await signedIn())) redirect("/login");
 
   const config = runtime();
-  const journal = readJournal();
+  const today = localDay();
+  const journal = readJournal(today);
 
   return (
     <Tracker
-      today={localDay()}
+      today={today}
       grokReady={Boolean(
         config.XAI_API_KEY ||
           (config.GROK_GATEWAY_URL && config.GROK_GATEWAY_TOKEN),
@@ -57,6 +51,8 @@ export default async function Home() {
       total={journal?.total ?? 0}
       settings={journal?.settings ?? DEFAULT_SETTINGS}
       revision={journal?.revision ?? 0}
+      summary={journal?.summary ?? null}
+      build={(process.env.BUILD_SHA ?? "unknown").slice(0, 12)}
       loadError={
         journal
           ? ""

@@ -1,9 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
-import { Button } from "@/components/ui/button";
-import { ATHLETES, METCON, formatDistance, formatTime, type RecordItem } from "@/lib/domain";
-import { FIELD, FIELD_LIFTS, strengthPlacing, type StrengthPlacing } from "@/lib/field";
+import { ATHLETES, METCON, formatDistance, formatTime } from "@/lib/domain";
+import { FIELD, FIELD_LIFTS, type StrengthPlacing } from "@/lib/field";
 import { formatAmount } from "@/lib/fuel";
 import {
   ENDURANCE,
@@ -338,23 +336,16 @@ function Metcon({ plan }: { plan: MetconPlan }) {
 
 /**
  * What the pair would score if the race were today. Every figure is worked
- * out from the journal as it stands, so logging a session moves it.
+ * out from the whole journal as it stands, so logging a session moves it:
+ * by the server while the phone holds only the recent slice.
  */
 export function RaceEstimate({
-  records,
-  journalTotal,
-  loadingAll = false,
-  onLoadAll,
+  estimate,
+  placing,
 }: {
-  records: RecordItem[];
-  /** Rows in the journal, which can be more than what is loaded. */
-  journalTotal: number;
-  loadingAll?: boolean;
-  /** Set when only the recent slice is loaded, which can leave out a best. */
-  onLoadAll?: () => void;
+  estimate: ReturnType<typeof raceEstimate>;
+  placing: StrengthPlacing;
 }) {
-  const estimate = useMemo(() => raceEstimate(records), [records]);
-  const placing = useMemo(() => strengthPlacing(records), [records]);
   return (
     <div className="mt-5 border-t pt-4">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3">
@@ -368,24 +359,6 @@ export function RaceEstimate({
         <Endurance plan={estimate.endurance} />
         <Metcon plan={estimate.metcon} />
       </div>
-      {records.length < journalTotal && onLoadAll ? (
-        <div className="mt-3 rounded-xl bg-muted/60 px-3 py-2.5 text-xs text-muted-foreground">
-          <p>
-            Using the latest {formatAmount(records.length)} of {formatAmount(journalTotal)}{" "}
-            entries, so an older session could raise a figure or fill a dash.
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="mt-2"
-            disabled={loadingAll}
-            onClick={onLoadAll}
-          >
-            {loadingAll ? "Loading…" : "Include the full journal"}
-          </Button>
-        </div>
-      ) : null}
       <details className="mt-3 text-xs text-muted-foreground">
         <summary className="cursor-pointer select-none font-medium">How these are worked out</summary>
         <div className="mt-2 space-y-2">

@@ -16,7 +16,15 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { DayButtons, Field } from "@/components/workout-form";
 import { athleteOutline, type AthleteOutline } from "@/lib/athlete-outline";
-import { ATHLETES, ESTIMATORS, type Estimator, type Macros, type Meal } from "@/lib/domain";
+import {
+  ATHLETES,
+  ESTIMATORS,
+  clockTime,
+  isClockTime,
+  type Estimator,
+  type Macros,
+  type Meal,
+} from "@/lib/domain";
 import { api, message, newId } from "@/lib/client";
 import { commonMeals, type CommonMeal } from "@/lib/common-meals";
 import {
@@ -52,6 +60,13 @@ type MacroDraft = Record<keyof Macros, string>;
 const emptyMacros: MacroDraft = { calories: "", protein: "", carbs: "", fat: "" };
 
 type EstimateTurn = { reply?: string; estimate: Estimate };
+
+/** Today at a time of day, for the sitting it falls in; now when there is none. */
+function atTime(time: string) {
+  const date = new Date();
+  if (isClockTime(time)) date.setHours(Number(time.slice(0, 2)), Number(time.slice(3)), 0, 0);
+  return date;
+}
 
 /** A saved or usual meal, as the estimate a reply can start from. */
 function savedEstimate(meal: Pick<Meal, "name" | "macros" | "assumptions">): Estimate {
@@ -129,10 +144,13 @@ export function MealForm({
   // An open edit stays on that record's athlete; the header keeps its own switch.
   const who: LoggingFor = editing ? editing.athlete : loggingFor;
   const [day, setDay] = useState(editing?.day ?? today);
-  // A new meal follows the clock. An edit, or a tap on a usual meal, keeps
-  // the sitting that was chosen. Null means "still the clock".
+  // A new meal starts at the clock; an older one without a time stays without.
+  const [time, setTime] = useState(editing ? editing.time ?? "" : clockTime());
+  // A new meal follows its time of day, or the clock when it has none. An
+  // edit, or a tap on a usual meal, keeps the sitting that was chosen. Null
+  // means "still the clock".
   const [picked, setSlot] = useState<Meal["meal"] | null>(editing?.meal ?? null);
-  const slot = picked ?? mealForTime(new Date());
+  const slot = picked ?? mealForTime(atTime(time));
   // A queued meal keeps what was typed in its assumptions; anything else saved
   // starts from its name, so it can be estimated again without retyping.
   const [description, setDescription] = useState(
@@ -379,6 +397,7 @@ export function MealForm({
       await saveDraft({
         kind: "meal",
         day,
+        ...(time && isClockTime(time) ? { time } : {}),
         name: name.trim() || text.slice(0, 60),
         meal: slot,
         macros: { calories: 0, protein: 0, carbs: 0, fat: 0, alcohol: 0, fiber: 0 },
@@ -395,6 +414,7 @@ export function MealForm({
   function validate() {
     if (!name.trim()) return "Name the meal, or run an estimate first.";
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return "Pick a valid date.";
+    if (time !== "" && !isClockTime(time)) return "Write the time of day as HH:MM, or leave it empty.";
     if (slot === "Alcohol" && !ethanolOk)
       return ethanolGrams > ETHANOL_LIMIT
         ? "Ethanol looks too high."
@@ -429,6 +449,7 @@ export function MealForm({
       await saveDraft({
         kind: "meal",
         day,
+        ...(time ? { time } : {}),
         name: name.trim(),
         meal: slot,
         macros: { ...parsedMacros, alcohol: alcoholGrams, fiber: fiberGrams },
@@ -531,7 +552,7 @@ export function MealForm({
           {!editing && picked === null ? (
             <p className="text-xs text-muted-foreground">Matched to the time.</p>
           ) : null}
-          <DayButtons today={today} day={day} onChange={setDay} />
+          <DayButtons today={today} day={day} onChange={setDay} time={time} onTimeChange={setTime} />
         </section>
 
         <section {...athleteOutline(who)} className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">

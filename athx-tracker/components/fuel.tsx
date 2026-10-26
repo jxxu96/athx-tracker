@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import { Flame } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { ATHLETES, type Macros, type RecordItem, type Settings } from "@/lib/domain";
+import type { BodyweightHistory } from "@/lib/bodyweight";
 import { addDays, dayToDate } from "@/lib/client";
 import {
   athleteFuel,
   calorieTracking,
+  energyBalance,
   formatAmount,
   fuelWindow,
   targetPercent,
@@ -16,6 +17,7 @@ import {
   type FuelAthlete,
   type FuelSpan,
 } from "@/lib/fuel";
+import type { JournalSummary } from "@/lib/summary";
 
 const SPANS = [
   { id: "today", label: "Today", name: "Fuel for today" },
@@ -52,7 +54,7 @@ function spanNote(span: FuelSpan, today: string) {
   if (span === "today") return "Today, against the daily target.";
   if (span === "yesterday") return "Yesterday, against the daily target.";
   if (span === "overall") {
-    return "Daily average across every day with a meal. The totals underneath are the whole stretch.";
+    return "Daily average across every day with a meal. The totals underneath are the whole stretch; spend is a day's average since the first entry.";
   }
   const window = fuelWindow("week", today);
   return `${shortDate(window!.start)} to ${shortDate(window!.end)}. Daily average of days with a meal.`;
@@ -97,6 +99,10 @@ function MacroRow({
     </div>
   );
 }
+
+/** Estimates to the nearest ten, which is all the methods are worth. */
+const tens = (kcal: number) => Math.round(kcal / 10) * 10;
+const signed = (kcal: number) => (kcal > 0 ? `+${formatAmount(kcal)}` : formatAmount(kcal));
 
 function WeekDots({
   today,
@@ -147,8 +153,8 @@ function AthleteFuelCard({
     span === "week"
       ? `${fuel.daysWithMeals} of 7 days`
       : `${fuel.daysWithMeals} day${fuel.daysWithMeals === 1 ? "" : "s"}`;
-  const showNet = fuel.burnKnown && (fuel.daysWithMeals > 0 || fuel.sessions > 0);
-
+  const balance = energyBalance(fuel);
+  const perDay = multi ? " a day" : "";
   return (
     <div role="group" aria-label={`${ATHLETES[athlete].name} fuel`} className="space-y-3">
       <div className="flex items-center gap-2">
@@ -192,24 +198,43 @@ function AthleteFuelCard({
         <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
           Expenditure
         </p>
-        {fuel.burnKnown ? (
-          <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">
-            ~{formatAmount(fuel.burned)}
-            <span className="ml-1 text-sm font-normal text-muted-foreground">kcal</span>
-          </p>
+        {fuel.expenditure !== null && fuel.resting !== null ? (
+          <>
+            <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">
+              ~{formatAmount(tens(fuel.expenditure))}
+              <span className="ml-1 text-sm font-normal text-muted-foreground">kcal{perDay}</span>
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Resting ~{formatAmount(tens(fuel.resting))} · training ~
+              {formatAmount(tens(fuel.burned / fuel.expenditureDays))}
+            </p>
+            {balance !== null ? (
+              <p className="mt-1 text-xs">
+                <span className="text-muted-foreground">Balance </span>
+                <span className="font-medium tabular-nums">
+                  {signed(tens(balance))} kcal{perDay}
+                </span>
+              </p>
+            ) : null}
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Everyday movement and digestion are not in this, so the real spend is higher.
+            </p>
+          </>
+        ) : fuel.burnKnown ? (
+          <>
+            <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">
+              ~{formatAmount(fuel.burned)}
+              <span className="ml-1 text-sm font-normal text-muted-foreground">kcal</span>
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Training only. Add a height and birth year in Setup to count resting energy too.
+            </p>
+          </>
         ) : (
           <p className="mt-1 text-xs text-muted-foreground">
             Add a bodyweight in Setup to estimate calories burned.
           </p>
         )}
-        {showNet ? (
-          <p className="mt-1 text-xs">
-            <span className="text-muted-foreground">Net </span>
-            <span className="font-medium tabular-nums">
-              {formatAmount(fuel.eaten.calories - fuel.burned)} kcal
-            </span>
-          </p>
-        ) : null}
         {fuel.untimed > 0 ? (
           <p className="mt-1 text-xs text-muted-foreground">
             {fuel.untimed} session{fuel.untimed === 1 ? "" : "s"} had no duration, so{" "}
@@ -224,33 +249,25 @@ function AthleteFuelCard({
 export function Fuel({
   records,
   settings,
+  history,
+  figures,
   today,
-  journalTotal,
-  loadingAll = false,
-  onLoadAll,
 }: {
   records: RecordItem[];
   settings: Settings;
+  history: BodyweightHistory;
+  /** Overall needs the whole journal; these are its figures. */
+  figures: JournalSummary;
   today: string;
-  /** Rows in the journal, which can be more than what is loaded. */
-  journalTotal: number;
-  loadingAll?: boolean;
-  /** Set when Overall would otherwise be only the recent slice. */
-  onLoadAll?: () => void;
 }) {
   const [span, setSpan] = useState<FuelSpan>("today");
   const multi = span === "week" || span === "overall";
-  const weight = settings.bodyweight ?? { hippos: 0, gators: 0 };
   const people = PEOPLE.map((athlete) => ({
     athlete,
-    fuel: athleteFuel(
-      records,
-      athlete,
-      span,
-      today,
-      settings.targets[athlete],
-      weight[athlete],
-    ),
+    fuel:
+      span === "overall"
+        ? figures.overall[athlete]
+        : athleteFuel(records, athlete, span, today, settings, history),
   }));
   const mealDays = (athlete: FuelAthlete) => {
     const window = fuelWindow(span, today);
@@ -265,8 +282,7 @@ export function Fuel({
         .map((record) => record.day),
     );
   };
-  const together = teamSessions(records, span, today);
-  const partial = span === "overall" && records.length < journalTotal;
+  const together = span === "overall" ? figures.togetherOverall : teamSessions(records, span, today);
   const story = people
     .map((person) =>
       calorieTracking(ATHLETES[person.athlete].name, person.fuel, multi),
@@ -301,24 +317,6 @@ export function Fuel({
       </div>
       <p className="mb-3 text-xs text-muted-foreground">{spanNote(span, today)}</p>
       <p className="mb-4 text-sm">{story}.</p>
-      {partial && onLoadAll ? (
-        <div className="mb-4 rounded-xl bg-muted/60 px-3 py-2.5 text-xs text-muted-foreground">
-          <p>
-            Overall is using the latest {formatAmount(records.length)} of{" "}
-            {formatAmount(journalTotal)} entries.
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="mt-2"
-            disabled={loadingAll}
-            onClick={onLoadAll}
-          >
-            {loadingAll ? "Loading…" : "Include the full journal"}
-          </Button>
-        </div>
-      ) : null}
       <div className="grid gap-5 sm:grid-cols-2">
         {people.map((person) => (
           <AthleteFuelCard

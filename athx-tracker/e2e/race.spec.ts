@@ -167,9 +167,9 @@ test("the first box estimates all three zones from what is logged", async ({ pag
   }
 });
 
-test("a best older than the loaded slice is offered, not silently left out", async ({ page }) => {
+test("a best older than the loaded slice is in the estimate without loading it", async ({ page }) => {
   // The app opens with the latest 400 entries. Hippos' deadlift sits behind
-  // them, so until the rest are loaded it is not in the estimate.
+  // them, and the server works the estimate out over the whole journal.
   await log(page, [
     { athlete: "hippos", category: "Strength", lifts: [{ name: "Deadlift", kg: 90, sets: 1, reps: 3 }] },
   ]);
@@ -191,10 +191,6 @@ test("a best older than the loaded slice is offered, not silently left out", asy
   await page.reload();
 
   const strength = page.getByRole("group", { name: "Strength estimate" });
-  await expect(page.getByText(/Using the latest 400 of 401 entries/)).toBeVisible();
-  await expect(strength).toContainText("Still to log: Hippos shoulder to overhead, back squat and deadlift;");
-
-  await page.getByRole("button", { name: "Include the full journal" }).click();
   await expect(strength.getByRole("row", { name: /^Hippos/ })).toHaveText(/Hippos\s*—\s*—\s*90\s*—/);
   await expect(strength).toContainText("Still to log: Hippos shoulder to overhead and back squat;");
   await expect(page.getByText(/Using the latest/)).toHaveCount(0);

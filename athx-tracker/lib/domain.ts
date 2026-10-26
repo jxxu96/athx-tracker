@@ -33,8 +33,15 @@ export type Lift = {
   reps: number;
   detail?: LiftSet[];
 };
+/**
+ * When on its day an entry happened, as the device's clock read it: "07:45".
+ * Optional, because only the day was ever asked for before, and a time
+ * nobody gave is not a time to invent.
+ */
+export type ClockTime = string;
 export type Workout = {
   id: string; kind: "workout"; athlete: Athlete; day: string;
+  time?: ClockTime;
   title: string; category: "Strength" | "Endurance" | "MetCon" | "Mixed" | "Solidcore" | "Tennis" | "YTW" | "Other";
   /** What "Other" actually was. Empty for every other category. */
   customCategory: string;
@@ -46,6 +53,7 @@ export type Workout = {
 };
 export type Meal = {
   id: string; kind: "meal"; athlete: Exclude<Athlete, "team">; day: string;
+  time?: ClockTime;
   name: string; meal: "Breakfast" | "Lunch" | "Dinner" | "Snack" | "Alcohol";
   /**
    * Alcohol grams are only meaningful on an Alcohol sitting. Fiber grams are
@@ -62,7 +70,18 @@ export const ESTIMATORS = {
   grok: "Grok",
 } as const;
 export type Estimator = keyof typeof ESTIMATORS;
-export type RecordItem = Workout | Meal;
+/**
+ * A weigh-in. Bodyweight moves over a season, and a session burned what it
+ * burned at the weight of its own day: one number in Setup, applied to every
+ * session ever logged, rewrote all of them whenever it changed.
+ */
+export type Bodyweight = {
+  id: string; kind: "bodyweight"; athlete: Exclude<Athlete, "team">; day: string;
+  time?: ClockTime;
+  /** Kilograms, like every other weight here. */
+  kg: number;
+};
+export type RecordItem = Workout | Meal | Bodyweight;
 /**
  * The lifts Progress follows, in the order it shows them. The name is the
  * picker's spelling; the key is what a target is stored under.
@@ -76,11 +95,27 @@ export const PROGRESS_LIFTS = [
 export type ProgressLift = (typeof PROGRESS_LIFTS)[number]["key"];
 /** Kilograms, like every other weight here. Zero means no target. */
 export type LiftTargets = Record<ProgressLift, number>;
+/** Daily targets that were replaced, and the last day they were the target. */
+export type PastTargets = { until: string; macros: Macros };
 export type Settings = {
   eventDate: string; eventName: string; weeklyTarget: number; weightUnit: WeightUnit;
+  /** The daily targets from the day they were last changed. */
   targets: { hippos: Macros; gators: Macros };
-  /** Kilograms, like every other weight here. Zero means not given yet. */
+  /**
+   * The targets they replaced, oldest first, so a past day is judged against
+   * the target it had rather than today's. Older settings omit it: their one
+   * set of targets is every day's.
+   */
+  targetHistory?: { hippos: PastTargets[]; gators: PastTargets[] };
+  /**
+   * Kilograms. Zero means not given yet. The weight from before weigh-ins
+   * were dated: it stands for every day before the first weigh-in.
+   */
   bodyweight: { hippos: number; gators: number };
+  /** Centimetres. Zero means not given yet. */
+  height?: { hippos: number; gators: number };
+  /** Zero means not given yet. A year either way moves resting energy by 5 kcal a day. */
+  birthYear?: { hippos: number; gators: number };
   liftTargets: { hippos: LiftTargets; gators: LiftTargets };
   /** Shared notes on foods eaten often, sent with every meal estimate. */
   foodNotes: string;
@@ -93,7 +128,10 @@ export const DEFAULT_SETTINGS: Settings = {
     hippos: { calories: 0, protein: 0, carbs: 0, fat: 0 },
     gators: { calories: 0, protein: 0, carbs: 0, fat: 0 },
   },
+  targetHistory: { hippos: [], gators: [] },
   bodyweight: { hippos: 0, gators: 0 },
+  height: { hippos: 0, gators: 0 },
+  birthYear: { hippos: 0, gators: 0 },
   liftTargets: {
     hippos: { splitJerk: 0, overheadPress: 0, backSquat: 0, deadlift: 0 },
     gators: {
@@ -123,6 +161,8 @@ export const ATHLETES = {
     color: "#6d28d9", ink: "var(--athlete-team-ink)",
   },
 };
+/** What resting energy's equation asks for, the same as each athlete's label above. */
+export const SEX = { hippos: "female", gators: "male" } as const;
 /**
  * The ATHX Lite circuit. Prescribed loads are kilograms per athlete, so they can
  * be shown in whichever unit Setup says and offered as the default load.
@@ -168,6 +208,15 @@ export function localDay(date = new Date()) {
     month: "2-digit",
     day: "2-digit",
   }).format(date);
+}
+
+/** The device's clock as an entry's time of day: "07:45". */
+export function clockTime(date = new Date()): ClockTime {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+export function isClockTime(text: string) {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(text);
 }
 
 /** Zero means the time was not recorded, which is not the same as no time. */
