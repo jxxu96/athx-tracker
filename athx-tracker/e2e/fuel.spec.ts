@@ -10,9 +10,12 @@ async function signIn(page: Page) {
 
 test("together is purple", async ({ page }) => {
   await signIn(page);
-  const week = page.locator("section").filter({ has: page.getByRole("heading", { name: "This week" }) });
-  const bar = week.locator("div.space-y-2").filter({ has: page.getByText("Together", { exact: true }) }).locator(".h-full");
-  await expect(bar).toHaveCSS("background-color", "rgb(109, 40, 217)");
+  const sessions = page.locator("section").filter({ has: page.getByRole("heading", { name: "Sessions" }) });
+  await expect(sessions.getByRole("columnheader", { name: "This week" })).toBeVisible();
+  await expect(sessions.getByRole("columnheader", { name: "Last 7 D" })).toBeVisible();
+  const bars = sessions.getByRole("row", { name: /^Together/ }).locator(".h-full");
+  await expect(bars).toHaveCount(2);
+  for (const bar of await bars.all()) await expect(bar).toHaveCSS("background-color", "rgb(109, 40, 217)");
 });
 
 test("fuel switches today, yesterday, the last week, and overall", async ({ page }) => {
