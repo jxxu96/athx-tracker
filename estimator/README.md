@@ -29,8 +29,12 @@ Workout drafts use the same authenticated service and provider fallback with
 `{"task":"workout","description":"Deadlift 1 x 2 at 185 lb","athletes":["hippos"],"weightUnit":"lb"}`.
 They return editable workout fields instead of meal macros. Sets precede reps in
 `sets x reps` shorthand, all returned weights are kg, and unreported numbers are
-null. No metered API fallback is used for workouts. Deploy the app and estimator
-images together; the estimator image includes `workout.mjs`.
+null. Each athlete's side of a lift has a `detail` list: every set in order when
+the sets differed, empty when they were all the same. No metered API fallback is
+used for workouts. Deploy the app and estimator images together; the estimator
+image includes `workout.mjs`. An app from before `detail` turns away every
+workout this estimator drafts, while the current app still reads an older
+estimator's drafts.
 
 ## Setup
 

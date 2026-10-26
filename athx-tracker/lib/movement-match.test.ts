@@ -9,9 +9,9 @@ const { WORKOUT_INSTRUCTIONS, cleanWorkout } = await import(
   new URL("../../estimator/workout.mjs", import.meta.url).href
 );
 
-const emptyLift = { kg: null, sets: null, reps: null };
+const emptyLift = { kg: null, sets: null, reps: null, detail: [] };
 const emptyStation = { completed: null, seconds: null, kg: null };
-const lift = (name: string, hippos = { kg: 100, sets: 3, reps: 5 }) => ({
+const lift = (name: string, hippos = { kg: 100, sets: 3, reps: 5, detail: [] }) => ({
   name, hippos, gators: emptyLift,
 });
 const station = (name: string, over: Record<string, unknown> = {}) => ({
@@ -32,6 +32,12 @@ function settled(draft: WorkoutDraft) {
   assert.ok(cleanWorkout(next), JSON.stringify(next));
   return next;
 }
+
+test("a renamed lift keeps every set", () => {
+  const hippos = { kg: null, sets: null, reps: null, detail: [{ kg: 60, reps: 5 }, { kg: 80, reps: 3 }] };
+  const next = settled({ ...base(), lifts: [{ name: "deadlifts", hippos, gators: emptyLift }] });
+  assert.deepEqual(next.lifts, [{ name: "Deadlift", hippos, gators: emptyLift }]);
+});
 
 test("typos, plurals and abbreviations use the list spelling", () => {
   const names = [
