@@ -1,4 +1,5 @@
-import { database, runtime } from "./server";
+import { database, runtime, storedFoodNotes } from "./server";
+import { estimatePrompt } from "./estimate-conversation";
 import { estimateSchema } from "./validation";
 import { type Estimator, type Meal } from "./domain";
 import {
@@ -31,7 +32,10 @@ async function estimate(description: string) {
       "Content-Type": "application/json",
       Authorization: `Bearer ${config.GROK_GATEWAY_TOKEN}`,
     },
-    body: JSON.stringify({ description, budgetMs: QUEUE_BUDGET_MS }),
+    body: JSON.stringify({
+      description: estimatePrompt(description, undefined, storedFoodNotes()),
+      budgetMs: QUEUE_BUDGET_MS,
+    }),
     signal: AbortSignal.timeout(QUEUE_BUDGET_MS + 15_000),
   });
   if (!response.ok) return null;

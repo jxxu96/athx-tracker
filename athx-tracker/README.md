@@ -72,7 +72,8 @@ single SQLite file on a volume.
   the rest when asked, and draws a hundred at a time however many are loaded, so a
   journal years deep neither crosses the network nor reaches the screen all at once.
 - **Setup** — event name and date, weekly session target, display units, each
-  athlete's bodyweight, their daily macro targets, and their lift targets. The
+  athlete's bodyweight, their daily macro targets, their lift targets, and food
+  notes. The
   bodyweight is what makes calories burned possible; without it that figure is
   withheld. Lift targets are stored in kilograms like every other weight. Gators'
   default to a 175 lb split jerk, 135 lb overhead press, 255 lb back squat and
@@ -250,6 +251,15 @@ Meal and Session drafts stay open when you switch sections, including while AI
 is processing. If an estimate finishes while you are elsewhere, a small popup
 offers to take you back to review it. Failed estimates also notify you and keep
 the description for retry. Nothing is saved until you choose to save the form.
+
+**Food notes** in Setup are a shared list of foods you eat often: a usual
+order, which product a word means ("yogurt" is Fage Total 0% plain), or its
+label figures. The server adds them to every meal estimate, first estimates,
+replies and queued meals alike, and the estimator uses a note only for an item
+the meal mentions, preferring it to a search or a reference value and naming it
+in the assumptions. They are capped at 2,000 characters so the largest reply
+still fits the estimator's request limit. An older estimator still receives
+the notes, but without the instruction that says how to use them.
 
 The conversation stays with the open draft. Saving keeps the final macros and
 assumptions; reopening a saved meal, or tapping a usual meal, lets you start

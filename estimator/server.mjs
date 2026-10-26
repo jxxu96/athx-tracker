@@ -141,6 +141,7 @@ const INSTRUCTIONS = [
   "Do not give dietary advice.",
   "Do not claim a lookup you did not do.",
   "When the description contains mealDescription, previousEstimate and replies, continue that meal conversation. Apply all user corrections in replies, with newer facts taking priority over older assumptions. Answer the latest question in assumptions and explain any changes. Keep the previous totals when the reply only asks a question without changing the food or portions.",
+  "When the description contains foodNotes, they are the household's own notes on foods they eat often: a usual order, which product a name means, or its label figures. Use a note only for an item in the meal that it matches, and prefer what it says over a search or a reference value. Label figures from a note count as the looked-up label. Still look up a named product when its note gives no figures. Name each note you relied on in assumptions. Corrections in replies outrank the notes.",
   "Output only the required JSON.",
 ].join(" ");
 

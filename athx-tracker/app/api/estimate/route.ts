@@ -1,4 +1,6 @@
-import { BodyTooLarge, database, guard, json, readBody, runtime, tooLarge } from "@/lib/server";
+import {
+  BodyTooLarge, database, guard, json, readBody, runtime, storedFoodNotes, tooLarge,
+} from "@/lib/server";
 import { grokRequest, extractEstimate } from "@/lib/grok";
 import { gatewayAllowed } from "@/lib/gateway";
 import { estimateRequestSchema, estimateSchema } from "@/lib/validation";
@@ -131,7 +133,7 @@ export async function POST(request: Request) {
     );
   try {
     const input = estimateRequestSchema.parse(await readBody(request));
-    const description = estimatePrompt(input.description, input.refinement);
+    const description = estimatePrompt(input.description, input.refinement, storedFoodNotes());
 
     const bucket = new Date().toISOString().slice(0, 10);
     if (!claimEstimate(bucket))
