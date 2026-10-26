@@ -6,9 +6,12 @@ single SQLite file on a volume.
 
 ## What it does
 
-- **Today** — countdown to the event, sessions logged this week against the weekly
-  target, and fuel for each athlete. Fuel switches between today, yesterday, the
-  last 7 days, and the whole journal. A single day is that day's macros against
+- **Today** — countdown to the event, with a race-day estimate under it: the
+  pair's Strength score in kilograms and each athlete's share of it, the 2.4 km run
+  times and SkiErg distance for Endurance, and the MetCon X time. Then fuel for
+  each athlete, and the sessions logged this week and over the last 7 days against
+  the weekly target. Fuel switches between today, yesterday, the last 7 days, and
+  the whole journal. A single day is that day's macros against
   the daily targets. A longer range is the daily average of days that have a meal,
   so a day you forgot to log is not treated as a day you ate nothing, with the
   totals written under the bars. Total expenditure is the training burn for the
@@ -112,6 +115,49 @@ estimated finish as a clock time, beside the time and the burn. A session with n
 stations, no elapsed time, unfinished work that has no pace, or station times that
 cannot fit the elapsed time shows nothing, not a zero. Logging still does not ask
 for it.
+
+### The race-day estimate
+
+`raceEstimate` in `lib/race.ts` works out what the pair would score in each zone if
+the race were today, from what is logged. The format is ATHX Lite pairs in the 2027
+season, which is the same at every event: see the 2027
+[workouts](https://athxgames.com/workouts/2027) and
+[movement standards](https://athxgames.com/movement-standards/2027). Each figure is
+the best the log has shown, carried to the race's reps, distance or time. Whatever
+the log cannot support shows a dash and says what to log, rather than a guess.
+
+- **Strength** is a 1RM shoulder to overhead, a 2RM back squat and a 3RM deadlift
+  for each of you, all six added. Each is the most any logged set of ten reps or
+  fewer predicts on Brzycki's line, where the most you can lift *r* times is
+  (37 − *r*)/36 of a 1RM. Past ten reps a set says little about a max, so it is not
+  used, and a working set that stopped short of failure makes the figure err low.
+  Shoulder to overhead counts the overhead press, push press, split jerk, a typed
+  push jerk, and the clean and jerk. Figures are whole kilograms and the totals add
+  what is shown; nothing is combined until all six lifts have one. The race averages
+  each athlete's two deadlift attempts, so the figure assumes both reach it.
+- **Endurance** has each of you run 2.4 km, then the pair skis on its one SkiErg
+  until 24:00: the first back starts alone, and once you are both there you take
+  turns, half the time each. Run times and SkiErg distances follow Riegel's curve,
+  where time grows with distance to the power 1.06, from the quickest run and the
+  farthest-reaching SkiErg piece of at least a kilometre. A shorter piece is a
+  sprint, not a race. Each athlete's metres come from their whole time on the erg,
+  which errs low for someone resting between turns. The score is the metres skied.
+- **MetCon X** gives each station to whichever of you has timed it quicker, at the
+  quickest pace you have shown there; with one pace logged, that athlete takes it.
+  It is a plan you can always carry out, and taking turns well can only beat it. An
+  even split at the paces you hold going solo came out slower than the quicker
+  athlete alone, which is why it is not used. The carry is 30 m each, so it needs
+  both of you. The opening and closing rows are one machine and lend each other a
+  pace; nothing else borrows one. An attempt logged lighter than race weight is not
+  race pace and is left out, though the rack's nearest load counts (Hippos' 7.5 kg
+  is offered as 15 lb, 6.8 kg), and one with no load recorded is taken as it
+  stands. Time between stations is what circuits logged on
+  their own with an elapsed time show beyond their splits, spread over the six
+  changes; without one, the estimate is the stations alone and says so.
+
+Together sessions count for neither athlete. While only the recent slice of the
+journal is loaded the estimate says so and offers the rest, as Progress does,
+because an older session can hold a best.
 
 ## Running it
 
