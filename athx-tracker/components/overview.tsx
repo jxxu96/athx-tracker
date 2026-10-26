@@ -111,7 +111,12 @@ export function Overview({
             timeZone: "UTC",
           }).format(dayToDate(settings.eventDate))}
         </p>
-        <RaceEstimate records={records} />
+        <RaceEstimate
+          records={records}
+          journalTotal={journalTotal}
+          loadingAll={loadingAll}
+          onLoadAll={onLoadAll}
+        />
       </section>
 
       <Fuel

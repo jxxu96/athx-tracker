@@ -10,6 +10,7 @@ import {
   pairStation,
   pieces,
   raceEstimate,
+  raceLoad,
   repMax,
   runSeconds,
   skiMetres,
@@ -232,6 +233,24 @@ test("a station's pace is the quickest timed attempt, and a row can stand in for
     stationPace([workout({ segments: [{ ...piece("Closing row", 500, "m", 100), block: "metcon" }] })], "gators", closing),
     null,
   );
+});
+
+test("an attempt lighter than race weight is not race pace, and the rack's nearest load is", () => {
+  const bench = METCON.find((station) => station.name === "DB bench press")!;
+  const set = (kg: number | undefined, seconds: number): Segment => ({
+    name: "DB bench press", unit: "reps", completed: 30, target: 30, seconds, block: "metcon",
+    ...(kg === undefined ? {} : { kg }),
+  });
+  // Gators races on 15 kg dumbbells: 1 kg is practice, not pace.
+  assert.equal(stationPace([workout({ segments: [set(1, 30), set(15, 60)] })], "gators", bench), 2);
+  assert.equal(stationPace([workout({ segments: [set(1, 30)] })], "gators", bench), null);
+  // Heavier counts, and so does an attempt with no load recorded.
+  assert.equal(stationPace([workout({ segments: [set(17.5, 45), set(15, 60)] })], "gators", bench), 1.5);
+  assert.equal(stationPace([workout({ segments: [set(undefined, 50)] })], "gators", bench), 50 / 30);
+  // Hippos' 7.5 kg is offered as 15 lb, which saves as 6.8 kg and is her race weight.
+  assert.ok(Math.abs(raceLoad(7.5) - 6.8039) < 1e-4);
+  assert.equal(stationPace([workout({ athlete: "hippos", segments: [set(6.8, 75)] })], "hippos", bench), 2.5);
+  assert.equal(stationPace([workout({ athlete: "hippos", segments: [set(5, 40)] })], "hippos", bench), null);
 });
 
 test("time between stations comes from circuits whose clock is longer than their splits", () => {

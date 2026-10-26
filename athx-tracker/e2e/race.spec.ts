@@ -161,3 +161,36 @@ test("the first box estimates all three zones from what is logged", async ({ pag
     await audit(page, `${theme} theme`);
   }
 });
+
+test("a best older than the loaded slice is offered, not silently left out", async ({ page }) => {
+  // The app opens with the latest 400 entries. Hippos' deadlift sits behind
+  // them, so until the rest are loaded it is not in the estimate.
+  await log(page, [
+    { athlete: "hippos", category: "Strength", lifts: [{ name: "Deadlift", kg: 90, sets: 1, reps: 3 }] },
+  ]);
+  await page.evaluate(async () => {
+    const meals = Array.from({ length: 400 }, () => ({
+      id: crypto.randomUUID(), kind: "meal", athlete: "hippos", day: "2026-10-25",
+      name: "Seeded meal", meal: "Lunch", source: "manual", assumptions: "",
+      macros: { calories: 400, protein: 30, carbs: 40, fat: 12 },
+    }));
+    for (let i = 0; i < meals.length; i += 25) {
+      await Promise.all(meals.slice(i, i + 25).map((meal) =>
+        fetch("/api/records", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(meal),
+        })));
+    }
+  });
+  await page.reload();
+
+  const strength = page.getByRole("group", { name: "Strength estimate" });
+  await expect(page.getByText(/Using the latest 400 of 401 entries/)).toBeVisible();
+  await expect(strength).toContainText("Still to log: Hippos shoulder to overhead, back squat and deadlift;");
+
+  await page.getByRole("button", { name: "Include the full journal" }).click();
+  await expect(strength.getByRole("row", { name: /^Hippos/ })).toHaveText(/Hippos\s*—\s*—\s*90\s*—/);
+  await expect(strength).toContainText("Still to log: Hippos shoulder to overhead and back squat;");
+  await expect(page.getByText(/Using the latest/)).toHaveCount(0);
+});

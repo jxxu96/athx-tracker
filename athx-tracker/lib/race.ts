@@ -2,6 +2,8 @@ import { matchMovement, normalize } from "./movement-match.ts";
 import {
   METCON,
   isDistanceUnit,
+  standardLoad,
+  toKilograms,
   toMetres,
   type RecordItem,
   type Workout,
@@ -299,16 +301,35 @@ const HALF_EACH = new Set(["Sandbag carry"]);
 const ROWS = new Set(["Opening row", "Closing row", "Row"]);
 
 /**
+ * The lightest load that is still the station's race weight: the prescribed
+ * load, or the rack's nearest to it in either unit, which is what the form
+ * fills in. Hippos' 7.5 kg is offered as 15 lb, which is 6.8 kg.
+ */
+export function raceLoad(kg: number) {
+  return Math.min(
+    kg,
+    toKilograms(Number(standardLoad(kg, "lb")), "lb"),
+    toKilograms(Number(standardLoad(kg, "kg")), "kg"),
+  );
+}
+
+/**
  * Seconds per unit at the quickest timed attempt at a station, in its own
  * unit. A row with nothing timed takes the quickest of the athlete's other
- * rows, since it is the same machine; nothing else borrows a pace.
+ * rows, since it is the same machine; nothing else borrows a pace. An attempt
+ * logged lighter than race weight is not race pace, so it is left out; one
+ * with no load recorded is taken as it stands.
  */
 export function stationPace(records: RecordItem[], athlete: RaceAthlete, station: Station) {
+  const prescribed = station.kg?.[athlete];
+  // Stored loads are rounded to a hundredth of a kilogram.
+  const lightest = prescribed ? raceLoad(prescribed) - 0.01 : 0;
   let own: number | null = null;
   let row: number | null = null;
   for (const workout of workoutsOf(records, athlete)) {
     for (const segment of workout.segments) {
       if (segment.unit !== station.unit || !(segment.completed > 0) || !(segment.seconds > 0)) continue;
+      if (segment.kg !== undefined && segment.kg < lightest) continue;
       const name = listedName(segment.name);
       const pace = segment.seconds / segment.completed;
       if (name === station.name) own = own === null ? pace : Math.min(own, pace);

@@ -148,11 +148,16 @@ the log cannot support shows a dash and says what to log, rather than a guess.
   even split at the paces you hold going solo came out slower than the quicker
   athlete alone, which is why it is not used. The carry is 30 m each, so it needs
   both of you. The opening and closing rows are one machine and lend each other a
-  pace; nothing else borrows one. Time between stations is what circuits logged on
+  pace; nothing else borrows one. An attempt logged lighter than race weight is not
+  race pace and is left out, though the rack's nearest load counts (Hippos' 7.5 kg
+  is offered as 15 lb, 6.8 kg), and one with no load recorded is taken as it
+  stands. Time between stations is what circuits logged on
   their own with an elapsed time show beyond their splits, spread over the six
   changes; without one, the estimate is the stations alone and says so.
 
-Together sessions count for neither athlete.
+Together sessions count for neither athlete. While only the recent slice of the
+journal is loaded the estimate says so and offers the rest, as Progress does,
+because an older session can hold a best.
 
 ## Running it
 

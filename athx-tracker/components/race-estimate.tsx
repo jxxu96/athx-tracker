@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { Button } from "@/components/ui/button";
 import { ATHLETES, METCON, formatDistance, formatTime, type RecordItem } from "@/lib/domain";
 import { formatAmount } from "@/lib/fuel";
 import {
@@ -289,7 +290,19 @@ function Metcon({ plan }: { plan: MetconPlan }) {
  * What the pair would score if the race were today. Every figure is worked
  * out from the journal as it stands, so logging a session moves it.
  */
-export function RaceEstimate({ records }: { records: RecordItem[] }) {
+export function RaceEstimate({
+  records,
+  journalTotal,
+  loadingAll = false,
+  onLoadAll,
+}: {
+  records: RecordItem[];
+  /** Rows in the journal, which can be more than what is loaded. */
+  journalTotal: number;
+  loadingAll?: boolean;
+  /** Set when only the recent slice is loaded, which can leave out a best. */
+  onLoadAll?: () => void;
+}) {
   const estimate = useMemo(() => raceEstimate(records), [records]);
   return (
     <div className="mt-5 border-t pt-4">
@@ -304,6 +317,24 @@ export function RaceEstimate({ records }: { records: RecordItem[] }) {
         <Endurance plan={estimate.endurance} />
         <Metcon plan={estimate.metcon} />
       </div>
+      {records.length < journalTotal && onLoadAll ? (
+        <div className="mt-3 rounded-xl bg-muted/60 px-3 py-2.5 text-xs text-muted-foreground">
+          <p>
+            Using the latest {formatAmount(records.length)} of {formatAmount(journalTotal)}{" "}
+            entries, so an older session could raise a figure or fill a dash.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-2"
+            disabled={loadingAll}
+            onClick={onLoadAll}
+          >
+            {loadingAll ? "Loading…" : "Include the full journal"}
+          </Button>
+        </div>
+      ) : null}
       <details className="mt-3 text-xs text-muted-foreground">
         <summary className="cursor-pointer select-none font-medium">How these are worked out</summary>
         <div className="mt-2 space-y-2">
