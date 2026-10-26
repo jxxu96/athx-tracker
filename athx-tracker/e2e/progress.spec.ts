@@ -202,6 +202,10 @@ test("a start older than the loaded slice is offered, not silently replaced", as
   await expect(page.getByText(/Using the latest 400 of 401 entries/)).toBeVisible();
   await expect(page.getByRole("group", { name: "Gators split jerk" })).toContainText("Not logged yet");
 
+  for (const view of ["ATHX benchmarks", "Weekly review", "Main lifts"]) {
+    await page.getByRole("button", { name: view, exact: true }).click();
+    await expect(page.getByText(/Using the latest 400 of 401 entries/)).toBeVisible();
+  }
   await page.getByRole("button", { name: "Include the full journal" }).click();
   await expect(page.getByRole("group", { name: "Gators split jerk" }).getByRole("definition").first())
     .toHaveText("115 lb");

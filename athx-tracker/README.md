@@ -67,6 +67,22 @@ single SQLite file on a volume.
   Together sessions count for neither athlete. While only the recent slice of the
   journal is loaded it says so and offers the rest, because an older session can
   hold the real start.
+  **ATHX benchmarks** compares actual circuit times and individual station splits,
+  with best, latest, previous and attempt history. Only matching work, loads and
+  solo/pairs context are compared; unknown loads stay separate from recorded
+  loads. A circuit needs all seven stations in race order, a dedicated MetCon
+  clock and no lifts. Mixed-session clocks are excluded, but their station
+  splits can count. Completed, capped and unfinished circuits stay separate;
+  capped/unfinished attempts compare the average station completion share only
+  when their elapsed times match. Nothing is projected to a finish.
+  **Weekly review** compares each athlete's sessions, training mix, timed work,
+  endurance distance, lift volume, benchmark improvements and daily macro
+  averages with the previous week. The current week compares the same weekdays
+  through today; earlier weeks run Monday to Sunday. Lift volume counts every
+  set's load times reps. Nutrition averages use days with known meal macros;
+  unlogged days and pending estimates are excluded, while partial days count.
+  There is no daily completion step. Older weeks and benchmarks can include
+  the full journal using the same load-history control as the lifts.
 - **Log** — everything logged, newest first, filterable, with edit and delete, each
   session showing what it burned. It opens with the most recent entries and fetches
   the rest when asked, and draws a hundred at a time however many are loaded, so a

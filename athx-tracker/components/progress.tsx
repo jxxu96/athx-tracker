@@ -1,6 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { TrendingUp } from "lucide-react";
+import { Benchmarks } from "@/components/benchmarks";
+import { WeeklyReview } from "@/components/weekly-review";
 import { Button } from "@/components/ui/button";
 import {
   ATHLETES,
@@ -401,6 +404,7 @@ export function Progress({
   /** Set when only the recent slice is loaded, which can hide a first session. */
   onLoadAll?: () => void;
 }) {
+  const [view, setView] = useState<"lifts" | "athx" | "weekly">("lifts");
   const unit = settings.weightUnit ?? "lb";
   // Settings saved before lift targets existed have none stored.
   const targets = settings.liftTargets ?? DEFAULT_SETTINGS.liftTargets;
@@ -408,6 +412,19 @@ export function Progress({
 
   return (
     <div className="space-y-4 pb-4">
+      <div role="group" aria-label="Progress view" className="flex flex-wrap gap-2">
+        {([{ key: "lifts", name: "Main lifts" }, { key: "athx", name: "Benchmarks" }, { key: "weekly", name: "Weekly review" }] as const).map(({ key, name }) => (
+          <Button key={key} type="button" size="sm" variant={view === key ? "default" : "outline"} aria-label={key === "athx" ? "ATHX benchmarks" : name} aria-pressed={view === key} onClick={() => setView(key)}>{name}</Button>
+        ))}
+      </div>
+      {records.length < journalTotal && onLoadAll ? (
+        <div className="rounded-xl bg-muted/60 px-3 py-2.5 text-xs text-muted-foreground">
+          <p>Using the latest {formatAmount(records.length)} of {formatAmount(journalTotal)} entries. Older entries could change a start, a best or a weekly comparison.</p>
+          <Button type="button" variant="outline" size="sm" className="mt-2" disabled={loadingAll} onClick={onLoadAll}>{loadingAll ? "Loading…" : "Include the full journal"}</Button>
+        </div>
+      ) : null}
+      {view === "athx" ? <Benchmarks records={records} today={today} unit={unit} />
+        : view === "weekly" ? <WeeklyReview records={records} today={today} unit={unit} /> : <>
       <section className="rounded-2xl border bg-card p-4 sm:p-5">
         <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold">
           <TrendingUp className="size-4 text-muted-foreground" />
@@ -419,25 +436,6 @@ export function Progress({
           shows in kilograms. The total adds press, squat and deadlift. Targets
           are set in Setup.
         </p>
-        {records.length < journalTotal && onLoadAll ? (
-          <div className="mt-3 rounded-xl bg-muted/60 px-3 py-2.5 text-xs text-muted-foreground">
-            <p>
-              Using the latest {formatAmount(records.length)} of{" "}
-              {formatAmount(journalTotal)} entries, so an older session could change
-              a start or a best.
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="mt-2"
-              disabled={loadingAll}
-              onClick={onLoadAll}
-            >
-              {loadingAll ? "Loading…" : "Include the full journal"}
-            </Button>
-          </div>
-        ) : null}
       </section>
 
       {PEOPLE.map((athlete) => {
@@ -475,6 +473,7 @@ export function Progress({
           single athlete.
         </p>
       ) : null}
+      </>}
     </div>
   );
 }
