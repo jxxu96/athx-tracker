@@ -78,6 +78,14 @@ test("typos, plurals and abbreviations use the list spelling", () => {
   }
 });
 
+test("a name that every object inherits, like constructor, is just a name", () => {
+  for (const heard of ["constructor", "toString", "hasOwnProperty", "__proto__", "valueOf push"]) {
+    const match = matchMovement(heard);
+    assert.equal(match.listed, false, heard);
+    assert.equal(match.name, heard, heard);
+  }
+});
+
 test("a different movement stays typed and the note says it is not in the list", () => {
   for (const heard of ["sumo deadlift", "dumbbell deadlift", "cable reverse fly"]) {
     const match = matchMovement(heard);

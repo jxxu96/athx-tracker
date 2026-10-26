@@ -80,6 +80,12 @@ const SESSION_PHRASES: { phrase: string; category: Workout["category"] }[] = [
 
 type CatalogItem = { name: string; tokens: string[]; compact: string };
 
+/**
+ * Own keys only. A typed "constructor" found the object's inherited function
+ * and threw, taking the screen reading the name with it.
+ */
+const alias = (word: string) => (Object.hasOwn(TOKEN_ALIAS, word) ? TOKEN_ALIAS[word] : [word]);
+
 function singular(word: string) {
   if (word.length <= 2) return word;
   if (/(?:ss|ch|sh|x|z|o)es$/.test(word) && word.length > 4) return word.slice(0, -2);
@@ -107,7 +113,7 @@ export function normalize(raw: string) {
   const tokens: string[] = [];
   for (const word of words) {
     const stem = singular(word);
-    const expanded = TOKEN_ALIAS[stem] ?? [stem];
+    const expanded = alias(stem);
     for (const token of expanded) {
       if (!token || FILLER.has(token) || isVolume(token)) continue;
       tokens.push(token);
@@ -118,7 +124,8 @@ export function normalize(raw: string) {
 
 function queryTokens(raw: string) {
   const tokens = normalize(raw);
-  const phrase = PHRASE[tokens.join(" ")];
+  const key = tokens.join(" ");
+  const phrase = Object.hasOwn(PHRASE, key) ? PHRASE[key] : undefined;
   return phrase ? normalize(phrase) : tokens;
 }
 
@@ -135,7 +142,7 @@ function spell(raw: string) {
     .filter(Boolean);
   const tokens: string[] = [];
   for (const word of words) {
-    const expanded = TOKEN_ALIAS[word] ?? [word];
+    const expanded = alias(word);
     for (const token of expanded) {
       if (!token || FILLER.has(token) || isVolume(token)) continue;
       tokens.push(token);

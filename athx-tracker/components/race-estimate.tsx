@@ -1,0 +1,330 @@
+"use client";
+
+import { useMemo } from "react";
+import { ATHLETES, METCON, formatDistance, formatTime, type RecordItem } from "@/lib/domain";
+import { formatAmount } from "@/lib/fuel";
+import {
+  ENDURANCE,
+  METCON_CAP_SECONDS,
+  MIN_PIECE_METRES,
+  RACE_ATHLETES,
+  STRENGTH_LIFTS,
+  raceEstimate,
+  type EndurancePlan,
+  type MetconPlan,
+  type RaceAthlete,
+  type StrengthLift,
+  type StrengthPlan,
+} from "@/lib/race";
+
+const who = (athlete: RaceAthlete) => ATHLETES[athlete].name;
+
+/** "Opening row" reads "opening row" mid-sentence; "DB bench press" keeps its capitals. */
+const lower = (name: string) => (/^[A-Z][a-z]/.test(name) ? name[0].toLowerCase() + name.slice(1) : name);
+
+const CARRY = METCON.find((station) => station.name === "Sandbag carry")!;
+
+/** "a, b and c", for the lines that say what is still missing. */
+function list(items: string[]) {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+function Dot({ athlete }: { athlete: RaceAthlete }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="size-2 shrink-0 rounded-full"
+      style={{ background: ATHLETES[athlete].color }}
+    />
+  );
+}
+
+function Zone({
+  title,
+  cap,
+  figure,
+  unit,
+  children,
+}: {
+  title: string;
+  cap: string;
+  /** Null shows a dash: nothing logged supports a figure yet. */
+  figure: string | null;
+  unit?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div role="group" aria-label={`${title} estimate`} className="py-3.5 first:pt-0 last:pb-0">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="text-sm font-medium">
+          {title}
+          <span className="ml-1.5 text-xs font-normal text-muted-foreground">{cap}</span>
+        </h3>
+        <p className="text-xl font-semibold tabular-nums tracking-tight">
+          {figure ?? "—"}
+          {figure !== null && unit ? (
+            <>
+              {" "}
+              <span className="text-xs font-normal text-muted-foreground">{unit}</span>
+            </>
+          ) : null}
+        </p>
+      </div>
+      <div className="mt-2 space-y-1.5 text-xs text-muted-foreground">{children}</div>
+    </div>
+  );
+}
+
+const kgCell = (kg: number | null | undefined) => (kg === null || kg === undefined ? "—" : formatAmount(kg));
+
+/** Each lift for each of you, and the pair's sum of each. */
+function LiftTable({ plan }: { plan: StrengthPlan }) {
+  const { athletes, combined } = plan;
+  const both = (key: StrengthLift) => {
+    const one = athletes.hippos.lifts[key];
+    const other = athletes.gators.lifts[key];
+    return one && other ? one.shown + other.shown : null;
+  };
+  return (
+    <table className="w-full table-fixed tabular-nums">
+      <caption className="sr-only">Estimated lifts in kilograms</caption>
+      <thead>
+        <tr className="text-[11px]">
+          <th scope="col" className="w-[30%] pb-1 text-left font-normal">
+            <span className="sr-only">Athlete</span>
+          </th>
+          {STRENGTH_LIFTS.map((lift) => (
+            <th key={lift.key} scope="col" className="pb-1 text-right font-normal">
+              {lift.short}
+              <span className="block">{lift.reps}RM</span>
+            </th>
+          ))}
+          <th scope="col" className="pb-1 text-right font-normal">
+            Total
+            <span className="block">kg</span>
+          </th>
+        </tr>
+      </thead>
+      <tbody className="text-foreground">
+        {RACE_ATHLETES.map((athlete) => (
+          <tr key={athlete}>
+            <th scope="row" className="py-0.5 text-left font-normal">
+              <span className="flex items-center gap-1.5">
+                <Dot athlete={athlete} />
+                {who(athlete)}
+              </span>
+            </th>
+            {STRENGTH_LIFTS.map((lift) => (
+              <td key={lift.key} className="py-0.5 text-right">
+                {kgCell(athletes[athlete].lifts[lift.key]?.shown)}
+              </td>
+            ))}
+            <td className="py-0.5 text-right font-medium">{kgCell(athletes[athlete].total)}</td>
+          </tr>
+        ))}
+        <tr className="border-t">
+          <th scope="row" className="pt-1 text-left font-medium">
+            Combined
+          </th>
+          {STRENGTH_LIFTS.map((lift) => (
+            <td key={lift.key} className="pt-1 text-right font-medium">
+              {kgCell(both(lift.key))}
+            </td>
+          ))}
+          <td className="pt-1 text-right font-semibold">{kgCell(combined)}</td>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
+function Strength({ plan }: { plan: StrengthPlan }) {
+  const { athletes, combined } = plan;
+  const hippos = athletes.hippos.total;
+  // Whole percents that add up to a hundred, so the two read as one split.
+  const share = combined && hippos !== null ? Math.round((hippos / combined) * 100) : null;
+  const overhead = RACE_ATHLETES.flatMap((athlete) => {
+    const lift = athletes[athlete].lifts.overhead;
+    // Both names end in s.
+    return lift ? [`${who(athlete)}' ${lower(lift.name)}`] : [];
+  });
+  const missing = RACE_ATHLETES.flatMap((athlete) => {
+    const lifts = STRENGTH_LIFTS.filter((lift) => !athletes[athlete].lifts[lift.key]);
+    return lifts.length
+      ? [`${who(athlete)} ${list(lifts.map((lift) => lower(lift.name)))}`]
+      : [];
+  });
+
+  return (
+    <Zone
+      title="Strength"
+      cap="20 min"
+      figure={combined === null ? null : formatAmount(combined)}
+      unit="kg"
+    >
+      {share !== null ? (
+        <div>
+          <div aria-hidden="true" className="flex h-1.5 overflow-hidden rounded-full bg-muted">
+            <div className="h-full" style={{ width: `${share}%`, background: ATHLETES.hippos.color }} />
+            <div className="h-full" style={{ width: `${100 - share}%`, background: ATHLETES.gators.color }} />
+          </div>
+          <p className="mt-1 flex justify-between tabular-nums">
+            <span>
+              {who("hippos")} {share}%
+            </span>
+            <span>
+              {who("gators")} {100 - share}%
+            </span>
+          </p>
+        </div>
+      ) : null}
+      {/* A table of dashes says less than the line underneath it. */}
+      {RACE_ATHLETES.some((athlete) => STRENGTH_LIFTS.some((lift) => athletes[athlete].lifts[lift.key])) ? (
+        <LiftTable plan={plan} />
+      ) : null}
+      {overhead.length ? <p>S2OH counts {list(overhead)}.</p> : null}
+      {missing.length ? <p>Still to log: {missing.join("; ")}.</p> : null}
+    </Zone>
+  );
+}
+
+function Endurance({ plan }: { plan: EndurancePlan }) {
+  const { run, ski } = plan;
+  const runs = RACE_ATHLETES.map((athlete) => {
+    const seconds = run[athlete];
+    return `${who(athlete)} ${seconds === null ? "—" : formatTime(seconds)}`;
+  });
+  const whose = (piece: "run" | "ski") =>
+    list(plan.missing.filter((gap) => gap.piece === piece).map((gap) => who(gap.athlete)));
+  const missing = [
+    whose("run") ? `a run for ${whose("run")}` : "",
+    whose("ski") ? `a SkiErg piece for ${whose("ski")}` : "",
+  ].filter(Boolean);
+
+  return (
+    <Zone
+      title="Endurance"
+      cap="24 min cap"
+      figure={plan.metres === null ? null : formatAmount(plan.metres)}
+      unit="m SkiErg"
+    >
+      {run.hippos !== null || run.gators !== null ? (
+        <p>
+          Run {formatDistance(ENDURANCE.runMetres / 1000, "km")} · {runs.join(" · ")}
+        </p>
+      ) : null}
+      {ski ? (
+        plan.skiFrom === null ? (
+          <p>No time left to ski before the cap.</p>
+        ) : (
+          <p>
+            SkiErg from {formatTime(plan.skiFrom)}
+            {RACE_ATHLETES.map((athlete) => {
+              const { seconds, metres } = ski[athlete];
+              // Non-breaking, so a figure never wraps away from its unit.
+              return ` · ${who(athlete)} ${metres === null ? "—" : `${formatAmount(metres)}\u00a0m`} in\u00a0${formatTime(seconds)}`;
+            }).join("")}
+          </p>
+        )
+      ) : null}
+      {missing.length ? (
+        <p>
+          Still to log: {missing.join("; ")}, each{" "}
+          {formatDistance(MIN_PIECE_METRES / 1000, "km")} or longer.
+        </p>
+      ) : null}
+    </Zone>
+  );
+}
+
+/** Who the plan gives the shared stations to: the one with fewer is named. */
+function takes(plan: MetconPlan) {
+  const by = (athlete: RaceAthlete) =>
+    plan.stations.filter((station) => station.by === athlete).map((station) => lower(station.name));
+  const [few, many] = by("hippos").length <= by("gators").length
+    ? (["hippos", "gators"] as const)
+    : (["gators", "hippos"] as const);
+  const each = `${formatAmount(CARRY.target / 2)}\u00a0m each`;
+  const carry = `the carry is ${each}`;
+  if (by(many).length === 0) return `Either of you can take each station; ${carry}.`;
+  if (by(few).length === 0) return `${who(many)} takes every station but the carry, which is ${each}.`;
+  return `${who(few)} takes ${list(by(few))}, ${who(many)} the rest; ${carry}.`;
+}
+
+function Metcon({ plan }: { plan: MetconPlan }) {
+  const untimed = plan.missing.map(({ station, athlete }) =>
+    athlete ? `${who(athlete)}' ${lower(station)}` : lower(station),
+  );
+  return (
+    <Zone
+      title="MetCon X"
+      cap="25 min cap"
+      figure={plan.seconds === null ? null : formatTime(plan.seconds)}
+    >
+      {plan.seconds === null ? (
+        plan.stations.every((station) => station.by === null) ? (
+          <p>Log the circuit with a split at each station to estimate it.</p>
+        ) : (
+          <p>Still to time: {list(untimed)}.</p>
+        )
+      ) : (
+        <>
+          {plan.seconds > METCON_CAP_SECONDS ? (
+            <p>Over the {formatTime(METCON_CAP_SECONDS)} cap.</p>
+          ) : null}
+          <p>{takes(plan)}</p>
+          <p>
+            {plan.changeoversKnown
+              ? `Includes ${formatTime(plan.changeovers)} moving between stations.`
+              : "Stations only. A circuit logged with its elapsed time adds the moves between them."}
+          </p>
+        </>
+      )}
+    </Zone>
+  );
+}
+
+/**
+ * What the pair would score if the race were today. Every figure is worked
+ * out from the journal as it stands, so logging a session moves it.
+ */
+export function RaceEstimate({ records }: { records: RecordItem[] }) {
+  const estimate = useMemo(() => raceEstimate(records), [records]);
+  return (
+    <div className="mt-5 border-t pt-4">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3">
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
+          Race-day estimate
+        </h2>
+        <p className="text-[11px] text-muted-foreground">Lite pairs · from your log</p>
+      </div>
+      <div className="divide-y">
+        <Strength plan={estimate.strength} />
+        <Endurance plan={estimate.endurance} />
+        <Metcon plan={estimate.metcon} />
+      </div>
+      <details className="mt-3 text-xs text-muted-foreground">
+        <summary className="cursor-pointer select-none font-medium">How these are worked out</summary>
+        <div className="mt-2 space-y-2">
+          <p>
+            Strength is the 2027 pairs score: each of you lifts a 1RM shoulder to overhead, a
+            2RM back squat and a 3RM deadlift, and all six are added. Each is the most your
+            logged sets of up to ten reps predict on Brzycki&apos;s rep-max line. Presses,
+            push presses, jerks and clean and jerks all count overhead.
+          </p>
+          <p>
+            Endurance: each of you runs 2.4 km, the first back starts on your SkiErg, and you
+            take turns once you are both there, until 24:00. Times and distances follow
+            Riegel&apos;s curve from your best run and SkiErg piece of a kilometre or more.
+          </p>
+          <p>
+            MetCon X gives each station to whichever of you has timed it quicker, at that
+            pace, with the carry 30 m each. Taking turns well should only beat it. Time
+            between stations comes from circuits logged with an elapsed time.
+          </p>
+        </div>
+      </details>
+    </div>
+  );
+}
