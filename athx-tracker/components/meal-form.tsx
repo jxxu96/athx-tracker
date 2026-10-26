@@ -42,9 +42,9 @@ const FIBER_LIMIT = 3000;
 
 /** What the estimator was told each level means, so the word is checkable. */
 const CONFIDENCE_MEANS = {
-  high: " · matched to label or published figures",
+  high: " · looked-up label or published figures",
   medium: " · standard reference values",
-  low: " · estimated by analogy",
+  low: " · product not found, or extrapolated",
 } as const;
 const LIMITS: Macros = { calories: 20000, protein: 2000, carbs: 3000, fat: 2000 };
 

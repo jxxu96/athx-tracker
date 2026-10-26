@@ -7,11 +7,12 @@ import { estimatePrompt } from "@/lib/estimate-conversation";
 const DAILY_LIMIT = 60;
 
 /**
- * Long enough for the first model to use its full cap, plus the reserve the
- * estimator holds for a fallback. A shorter budget was cutting that model off
- * while it was still working. The queue remains the path with no one waiting.
+ * Long enough for the first model to look a named product up, plus the reserve
+ * the estimator holds so a fallback can search too. These are MEAL_PROVIDER_MS
+ * and MEAL_RESERVE_MS in estimator/server.mjs. The queue remains the path with
+ * no one waiting.
  */
-const INTERACTIVE_BUDGET_MS = 49_000 + 12_600;
+const INTERACTIVE_BUDGET_MS = 90_000 + 40_000;
 
 const PROVIDERS = ["codex", "claude", "grok"] as const;
 function namedProvider(value: string | null) {
