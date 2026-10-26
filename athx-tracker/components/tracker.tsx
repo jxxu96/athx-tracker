@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState, useSyncExternalStore } from "react";
+import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import {
   CalendarDays,
   Dumbbell,
@@ -71,6 +71,31 @@ export function Tracker({
   );
 
   const [tab, setTab] = useState<Tab>("today");
+  // Zero means unopened; advancing a form's key starts a fresh draft after save.
+  const [formKeys, setFormKeys] = useState({ meal: 0, session: 0 });
+  const activeTab = useRef(tab);
+  const navigate = useCallback((next: Tab) => {
+    activeTab.current = next;
+    setTab(next);
+    if (next === "meal" || next === "session") {
+      setFormKeys((current) => ({ ...current, [next]: current[next] || 1 }));
+      toast.dismiss(`${next}-estimate`);
+    }
+    window.scrollTo(0, 0);
+  }, []);
+  const estimateFinished = useCallback((section: "meal" | "session", error?: string) => {
+    if (activeTab.current === section) return;
+    const label = section === "meal" ? "Meal" : "Session";
+    const options = {
+      id: `${section}-estimate`,
+      description: error ?? "Review the filled fields before saving.",
+      duration: Infinity,
+      closeButton: true,
+      action: { label: `View ${section}`, onClick: () => navigate(section) },
+    };
+    if (error) toast.error(`${label} estimate failed`, options);
+    else toast.success(`${label} estimate ready`, options);
+  }, [navigate]);
   // One switch drives both forms: which columns the session shows, and who a
   // new meal is saved for. The journal opens on Hippos. "both" writes both athletes.
   const [who, setWho] = useState<"hippos" | "gators" | "both">("hippos");
@@ -79,7 +104,9 @@ export function Tracker({
   const [settings, setSettings] = useState(initialSettings);
   const [revision, setRevision] = useState(initialRevision);
   const [problem, setProblem] = useState(loadError);
-  const [editing, setEditing] = useState<RecordItem | null>(null);
+  // Editing one kind must not remount the other kind's background estimate.
+  const [editingMeal, setEditingMeal] = useState<Meal | null>(null);
+  const [editingWorkout, setEditingWorkout] = useState<Workout | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   // How many entries exist, against how many are in hand. The app opens with a
   // recent slice; the Log offers the rest rather than making every load pay for
@@ -149,7 +176,7 @@ export function Tracker({
 
       keep(stored);
       toast.success(
-        editing
+        batch.some((record) => record.id === editingMeal?.id || record.id === editingWorkout?.id)
           ? "Entry updated"
           : batch[0]?.kind === "workout"
             ? batch.length > 1
@@ -159,11 +186,13 @@ export function Tracker({
               ? `Meals saved for ${batch.map((item) => ATHLETES[item.athlete].name).join(" and ")}`
               : "Meal saved",
       );
-      setEditing(null);
-      setTab("today");
-      window.scrollTo(0, 0);
+      if (batch[0]?.kind === "meal") setEditingMeal(null);
+      else setEditingWorkout(null);
+      const section = batch[0]?.kind === "meal" ? "meal" : "session";
+      setFormKeys((current) => ({ ...current, [section]: current[section] + 1 }));
+      navigate("today");
     },
-    [editing, keep],
+    [editingMeal, editingWorkout, keep, navigate],
   );
 
   const remove = useCallback(async (id: string) => {
@@ -202,7 +231,7 @@ export function Tracker({
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col">
-      <Toaster position="top-center" />
+      <Toaster position="top-center" expand />
 
       <header className="sticky top-0 z-20 border-b bg-background/95 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur">
         <div className="flex items-center justify-between gap-2">
@@ -270,38 +299,6 @@ export function Tracker({
             loadingAll={refreshing}
             onLoadAll={scope === "all" || records.length >= total ? undefined : loadAll}
           />
-        ) : tab === "session" ? (
-          <WorkoutForm
-            key={editing?.id ?? "new-session"}
-            today={today}
-            grokReady={grokReady}
-            sides={sides}
-            onLoggingFor={setWho}
-            weightUnit={settings.weightUnit ?? "lb"}
-            onWeightUnit={(weightUnit) =>
-              // The form already reads its boxes in the new unit; this only
-              // remembers the choice. A failure has said so in a toast.
-              void saveSettings(
-                { ...settings, weightUnit },
-                `Weights now in ${weightUnit}`,
-              ).catch(() => {})
-            }
-            editing={editing?.kind === "workout" ? editing : null}
-            onCancelEdit={() => setEditing(null)}
-            onSave={save}
-          />
-        ) : tab === "meal" ? (
-          <MealForm
-            key={editing?.id ?? "new-meal"}
-            loggingFor={editing?.kind === "meal" ? editing.athlete : who}
-            meals={records.filter(isMeal)}
-            today={today}
-            grokReady={grokReady}
-            editing={editing?.kind === "meal" ? editing : null}
-            onLoggingFor={setWho}
-            onCancelEdit={() => setEditing(null)}
-            onSave={save}
-          />
         ) : tab === "progress" ? (
           <Progress
             records={records}
@@ -322,13 +319,13 @@ export function Tracker({
             loadingAll={refreshing}
             onLoadAll={scope === "all" ? undefined : loadAll}
             onEdit={(record) => {
-              setEditing(record);
-              setTab(record.kind === "workout" ? "session" : "meal");
-              window.scrollTo(0, 0);
+              if (record.kind === "workout") setEditingWorkout(record);
+              else setEditingMeal(record);
+              navigate(record.kind === "workout" ? "session" : "meal");
             }}
             onDelete={remove}
           />
-        ) : (
+        ) : tab === "settings" ? (
           <SettingsForm
             key={revision}
             settings={settings}
@@ -336,7 +333,51 @@ export function Tracker({
             onRefresh={refresh}
             onSave={saveSettings}
           />
-        )}
+        ) : null}
+        {/* Keep visited forms mounted: hiding a section must not cancel its
+            request or discard its draft, even if a refresh reports an error. */}
+        <div hidden={Boolean(problem) || tab !== "session"}>
+        {formKeys.session > 0 ? (
+          <WorkoutForm
+            key={editingWorkout?.id ?? `new-session-${formKeys.session}`}
+            today={today}
+            grokReady={grokReady}
+            sides={sides}
+            onLoggingFor={setWho}
+            weightUnit={settings.weightUnit ?? "lb"}
+            onWeightUnit={(weightUnit) =>
+              // The form already reads its boxes in the new unit; this only
+              // remembers the choice. A failure has said so in a toast.
+              void saveSettings(
+                { ...settings, weightUnit },
+                `Weights now in ${weightUnit}`,
+              ).catch(() => {})
+            }
+            active={tab === "session" && !problem}
+            editing={editingWorkout}
+            onCancelEdit={() => setEditingWorkout(null)}
+            onEstimateComplete={(error) => estimateFinished("session", error)}
+            onSave={save}
+          />
+        ) : null}
+        </div>
+        <div hidden={Boolean(problem) || tab !== "meal"}>
+        {formKeys.meal > 0 ? (
+          <MealForm
+            key={editingMeal?.id ?? `new-meal-${formKeys.meal}`}
+            loggingFor={editingMeal?.athlete ?? who}
+            meals={records.filter(isMeal)}
+            today={today}
+            grokReady={grokReady}
+            active={tab === "meal" && !problem}
+            editing={editingMeal}
+            onLoggingFor={setWho}
+            onCancelEdit={() => setEditingMeal(null)}
+            onEstimateComplete={(error) => estimateFinished("meal", error)}
+            onSave={save}
+          />
+        ) : null}
+        </div>
       </main>
 
       <nav
@@ -347,10 +388,7 @@ export function Tracker({
           <button
             key={id}
             type="button"
-            onClick={() => {
-              setTab(id);
-              window.scrollTo(0, 0);
-            }}
+            onClick={() => navigate(id)}
             aria-current={tab === id ? "page" : undefined}
             className="flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium text-muted-foreground transition-colors aria-[current]:text-foreground"
           >
