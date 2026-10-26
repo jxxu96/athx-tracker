@@ -12,7 +12,9 @@ import {
   liftProgress,
   liftTotal,
   progressLift,
+  leaderLanes,
   progressMarks,
+  progressScale,
   shownGap,
   toGo,
   togetherLiftSessions,
@@ -134,37 +136,64 @@ test("the gaps are the subtraction of the numbers on screen", () => {
   assert.equal(shownGap(60, 62.5, "kg"), 2.5);
 });
 
-test("the bar places each mark by its share of the heaviest", () => {
+test("the bar fits its scale to the figures, in round steps", () => {
   const at = (kg: number) => ({ day: "2026-09-01", kg, sets: 1, reps: 1 });
-  const row = {
-    start: at(50),
-    latest: at(80),
-    best: at(120),
-    target: 100,
-  };
+  const bar = progressMarks({ start: at(50), latest: at(80), best: at(120), target: 100 }, "kg")!;
+  // 50 to 120 kg in steps of 20, not 0 to 120.
+  assert.deepEqual(bar.ticks.map((tick) => tick.value), [40, 60, 80, 100, 120]);
   assert.deepEqual(
-    progressMarks(row)?.map(({ key, at: place }) => [key, place]),
+    bar.marks.map(({ key, at: place }) => [key, place]),
     [
-      ["start", (50 / 120) * 100],
-      ["latest", (80 / 120) * 100],
+      ["start", 12.5],
+      ["latest", 50],
       ["best", 100],
-      ["target", (100 / 120) * 100],
+      ["target", 75],
     ],
   );
+  assert.deepEqual(bar.ticks.map((tick) => tick.at), [0, 25, 50, 75, 100]);
+
+  // The scale counts in the unit on screen.
+  // Stored to two places, 135 lb comes back as 134.99, which must not tip
+  // the step from 10 to 20.
+  const lb = (pounds: number) => at(Math.round((pounds / 2.20462262) * 100) / 100);
+  const pounds = progressMarks(
+    { start: lb(135), latest: lb(150), best: lb(160), target: 175 / 2.20462262 },
+    "lb",
+  )!;
+  assert.deepEqual(pounds.ticks.map((tick) => tick.value), [130, 140, 150, 160, 170, 180]);
+  assert.equal(pounds.marks[0].at, 10);
+
+  const alone = progressMarks({ start: at(50), latest: at(50), best: at(50), target: 0 }, "kg")!;
   assert.equal(
-    progressMarks({ start: at(50), latest: at(50), best: at(50), target: 0 })?.every(
-      (mark) => mark.at === 100,
-    ),
+    alone.marks.every((mark) => mark.at === 50),
     true,
-    "one weight and no target share the end of the line",
+    "one weight and no target sit mid-line",
   );
+  assert.deepEqual(alone.ticks.map((tick) => tick.value), [48, 50, 52]);
   assert.deepEqual(
-    progressMarks({ start: null, latest: null, best: null, target: 100 })?.map((mark) => mark.key),
+    progressMarks({ start: null, latest: null, best: null, target: 100 }, "kg")?.marks.map(
+      (mark) => mark.key,
+    ),
     ["target"],
   );
-  assert.equal(
-    progressMarks({ start: null, latest: null, best: null, target: 0 }),
-    null,
+  assert.equal(progressMarks({ start: null, latest: null, best: null, target: 0 }, "kg"), null);
+});
+
+test("progressScale never runs below zero", () => {
+  assert.equal(progressScale([1, 30]).from, 0);
+});
+
+test("leaders turn in the lanes that cross least", () => {
+  // In order, each a short step right: any lanes work, and none cross.
+  assert.deepEqual(leaderLanes([{ from: 10, to: 2 }, { from: 40, to: 27 }]), [0, 1]);
+  // Both run right; the one starting further left must turn lower, or its
+  // run cuts the other's first drop.
+  assert.deepEqual(
+    leaderLanes([
+      { from: 0, to: 50 },
+      { from: 30, to: 77 },
+    ]),
+    [1, 0],
   );
 });
 
