@@ -173,6 +173,9 @@ const OTHER = "Other";
 const exerciseName = (choice: string, custom: string) =>
   (choice === OTHER ? custom : choice).trim();
 
+const optionalTarget = (station: Station) =>
+  !station.fixed && exerciseName(station.name, station.custom) === "Row";
+
 const LISTED = new Set(EXERCISES.flatMap((group) => group.items));
 
 /** Reverse of exerciseName: put a saved name back into the picker. */
@@ -1202,8 +1205,9 @@ export function WorkoutForm({
       .map((station, index) => {
         const entry = entries[side][index];
         const completed = num(entry.completed);
-        // A run is measured, not chased: what you covered is the target.
-        const target = measured(station) ? completed : num(station.target);
+        // Runs and rows without a goal use the work actually completed.
+        const target = measured(station) || (optionalTarget(station) && station.target.trim() === "")
+          ? completed : num(station.target);
         // A standard weight left in the box of a station never reached was
         // not carried, so it is not recorded; one you typed always is.
         const offered = entry.prefilled && completed === 0;
@@ -1278,10 +1282,13 @@ export function WorkoutForm({
       const where = `${who} · ${segment.name}`;
       if (!Number.isFinite(segment.seconds))
         return `${where}: write the time as mm:ss.`;
-      if (!(segment.target > 0))
+      if (!(segment.target > 0)) {
+        if (segment.name === "Row" && segment.completed === 0)
+          return `${where}: add the work completed.`;
         return isRun || (isMixed && segment.block === "endurance")
           ? `${where}: add the distance covered.`
           : `${where}: set a target above zero.`;
+      }
       if (segment.completed > segment.target)
         return `${where}: completed work is above the target.`;
       if (segment.completed === 0 && segment.seconds > 0)
@@ -1716,7 +1723,7 @@ export function WorkoutForm({
                           </Field>
                         ) : null}
                         {measured(station) ? null : (
-                        <Field label="Target" className="w-20">
+                        <Field label="Target" hint={optionalTarget(station) ? "Optional" : undefined} className="w-20">
                           <Input
                             value={station.target}
                             inputMode="decimal"
