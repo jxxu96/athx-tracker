@@ -5,6 +5,16 @@ export function database() {
   return db();
 }
 
+/** Setup's food notes, or nothing when Setup has never been saved. */
+export function storedFoodNotes() {
+  const row = database()
+    .prepare("SELECT payload FROM settings WHERE id = 'team'")
+    .get() as { payload: string } | undefined;
+  if (!row) return "";
+  const notes = (JSON.parse(row.payload) as { foodNotes?: unknown }).foodNotes;
+  return typeof notes === "string" ? notes : "";
+}
+
 export function runtime() {
   return process.env as {
     XAI_API_KEY?: string;

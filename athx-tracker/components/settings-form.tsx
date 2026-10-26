@@ -5,9 +5,11 @@ import { Download, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Field } from "@/components/workout-form";
 import { toast } from "sonner";
 import { api, message } from "@/lib/client";
+import { FOOD_NOTES_LIMIT } from "@/lib/estimate-conversation";
 import {
   ATHLETES,
   DEFAULT_SETTINGS,
@@ -95,6 +97,7 @@ export function SettingsForm({
       return { hippos: show(savedLifts.hippos), gators: show(savedLifts.gators) };
     },
   );
+  const [foodNotes, setFoodNotes] = useState(settings.foodNotes ?? "");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -307,6 +310,7 @@ export function SettingsForm({
           hippos: liftsFor("hippos"),
           gators: liftsFor("gators"),
         },
+        foodNotes: foodNotes.trim(),
       });
     } finally {
       setSaving(false);
@@ -464,6 +468,26 @@ export function SettingsForm({
             </div>
           </fieldset>
         ))}
+      </section>
+
+      <section className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
+        <div>
+          <h3 className="text-sm font-semibold">Food notes</h3>
+          <p className="text-[11px] text-muted-foreground">
+            Foods you eat often: a usual order, which product you mean, or its
+            label. Every meal estimate reads these, and uses a note only when
+            the meal mentions that food. Shared by both of you.
+          </p>
+        </div>
+        <Field label="Notes" hint={`${foodNotes.length}/${FOOD_NOTES_LIMIT}`}>
+          <Textarea
+            value={foodNotes}
+            maxLength={FOOD_NOTES_LIMIT}
+            rows={6}
+            placeholder={"Yogurt means Fage Total 0% plain, 170 g cup\nCava: greens + grains bowl, chicken, hummus, no pita"}
+            onChange={(event) => setFoodNotes(event.target.value)}
+          />
+        </Field>
       </section>
 
       {error ? (

@@ -82,6 +82,8 @@ export type Settings = {
   /** Kilograms, like every other weight here. Zero means not given yet. */
   bodyweight: { hippos: number; gators: number };
   liftTargets: { hippos: LiftTargets; gators: LiftTargets };
+  /** Shared notes on foods eaten often, sent with every meal estimate. */
+  foodNotes: string;
 };
 /** Up here because the default lift targets below are given in pounds. */
 export const LB_PER_KG = 2.20462262;
@@ -101,6 +103,7 @@ export const DEFAULT_SETTINGS: Settings = {
       deadlift: 335 / LB_PER_KG,
     },
   },
+  foodNotes: "",
 };
 /**
  * color identifies the athlete on dots and bars. ink is the same colour made

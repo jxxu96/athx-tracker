@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { estimatePrompt } from "./estimate-conversation.ts";
-import { estimateRequestSchema } from "./validation.ts";
+import { FOOD_NOTES_LIMIT, estimatePrompt } from "./estimate-conversation.ts";
+import { estimateRequestSchema, settingsSchema } from "./validation.ts";
+import { DEFAULT_SETTINGS } from "./domain.ts";
 
 const previous = {
   name: "Chicken and rice", calories: 600, protein: 40, carbs: 65, fat: 20, fiber: 2, alcohol: 0,
@@ -43,7 +44,30 @@ test("the largest valid conversation fits the estimator transport", () => {
       replies: Array(6).fill("\\".repeat(1000)),
     },
   });
-  const prompt = estimatePrompt(input.description, input.refinement);
+  const prompt = estimatePrompt(input.description, input.refinement, "\\".repeat(FOOD_NOTES_LIMIT));
   assert.ok(prompt.length < 40000);
   assert.ok(JSON.stringify({ description: prompt, budgetMs: 25000 }).length < 64000);
+});
+
+test("food notes ride along with a first estimate and a follow-up", () => {
+  const notes = "Yogurt means Fage Total 0% plain, 170 g cup";
+  assert.deepEqual(JSON.parse(estimatePrompt("yogurt and berries", undefined, ` ${notes}\n`)), {
+    mealDescription: "yogurt and berries", foodNotes: notes,
+  });
+  const refinement = { previous, replies: ["no oil"] };
+  assert.deepEqual(JSON.parse(estimatePrompt("Chicken and rice", refinement, notes)), {
+    mealDescription: "Chicken and rice", previousEstimate: previous, replies: ["no oil"], foodNotes: notes,
+  });
+});
+
+test("blank notes leave the prompt as it was", () => {
+  assert.equal(estimatePrompt("chicken and rice", undefined, "  \n "), "chicken and rice");
+});
+
+test("settings saved before food notes still parse, and notes are bounded", () => {
+  const legacy: Partial<typeof DEFAULT_SETTINGS> = { ...DEFAULT_SETTINGS };
+  delete legacy.foodNotes;
+  assert.equal(settingsSchema.parse(legacy).foodNotes, "");
+  assert.equal(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, foodNotes: "x".repeat(FOOD_NOTES_LIMIT) }).success, true);
+  assert.equal(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, foodNotes: "x".repeat(FOOD_NOTES_LIMIT + 1) }).success, false);
 });

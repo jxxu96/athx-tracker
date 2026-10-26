@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CONVERSATION_LIMIT, MAX_REPLIES, REPLY_LIMIT } from "./estimate-conversation.ts";
+import { CONVERSATION_LIMIT, FOOD_NOTES_LIMIT, MAX_REPLIES, REPLY_LIMIT } from "./estimate-conversation.ts";
 import { DEFAULT_SETTINGS, VOLUME_UNITS, liftTop } from "./domain.ts";
 const finite = z.number().finite().nonnegative();
 export const macroSchema = z.object({
@@ -121,4 +121,6 @@ export const settingsSchema = z.object({
   // pick up the same targets the app shows for them.
   liftTargets: z.object({ hippos: liftTargetsSchema, gators: liftTargetsSchema })
     .strict().default(DEFAULT_SETTINGS.liftTargets),
+  // Defaulted, so settings stored before food notes existed still parse.
+  foodNotes: z.string().max(FOOD_NOTES_LIMIT).default(""),
 }).strict();
