@@ -165,19 +165,98 @@ export function toGo(lift: Pick<LiftProgress, "best" | "target">, unit: WeightUn
 
 export type ProgressMark = "start" | "latest" | "best" | "target";
 
+/** Round steps a scale can count in: 1, 2, 2.5 and 5 of each power of ten. */
+const STEPS = [1, 2, 2.5, 5, 10];
+
 /**
- * Where each figure sits on the bar, as a percent of the heaviest one.
- * The rightmost point is the biggest number. Null when there is nothing to place.
+ * A scale that just covers the given weights, counted in round steps. It does
+ * not start at zero, which squeezed a year of progress into the last tenth of
+ * the line. One weight alone gets a step either side, so it sits mid-line.
+ */
+export function progressScale(values: number[]) {
+  const low = Math.min(...values);
+  const high = Math.max(...values);
+  const span = high - low || Math.max(high * 0.1, 1);
+  const rough = span / 4;
+  const power = 10 ** Math.floor(Math.log10(rough));
+  const step = STEPS.find((s) => s * power >= rough * (1 - 1e-9))! * power;
+  let from = Math.floor(low / step + 1e-9) * step;
+  let to = Math.ceil(high / step - 1e-9) * step;
+  if (from === to) {
+    from -= step;
+    to += step;
+  }
+  from = Math.max(0, from);
+  const ticks: number[] = [];
+  for (let value = from; value <= to + step / 2; value += step) {
+    ticks.push(Math.round(value * 1000) / 1000);
+  }
+  return { from, to, ticks };
+}
+
+export type ProgressBar = {
+  marks: { key: ProgressMark; kg: number; at: number }[];
+  /** Scale labels in the unit on screen, placed like the marks. */
+  ticks: { value: number; at: number }[];
+};
+
+/**
+ * Where each figure and each scale label sits on the bar, as a percent of its
+ * length, on a scale fitted to the figures in the unit on screen. Null when
+ * there is nothing to place.
  */
 export function progressMarks(
   lift: Pick<LiftProgress, "start" | "latest" | "best" | "target">,
-): { key: ProgressMark; kg: number; at: number }[] | null {
+  unit: WeightUnit,
+): ProgressBar | null {
   const marks: { key: ProgressMark; kg: number }[] = [];
   if (lift.start && lift.start.kg > 0) marks.push({ key: "start", kg: lift.start.kg });
   if (lift.latest && lift.latest.kg > 0) marks.push({ key: "latest", kg: lift.latest.kg });
   if (lift.best && lift.best.kg > 0) marks.push({ key: "best", kg: lift.best.kg });
   if (lift.target > 0) marks.push({ key: "target", kg: lift.target });
   if (!marks.length) return null;
-  const heaviest = Math.max(...marks.map((mark) => mark.kg));
-  return marks.map((mark) => ({ ...mark, at: (mark.kg / heaviest) * 100 }));
+  // The figures as printed, so a mark sits where its number reads on the scale.
+  const shown = (kg: number) => Number(displayLoad(kg, unit));
+  const { from, to, ticks } = progressScale(marks.map((mark) => shown(mark.kg)));
+  const place = (value: number) => ((value - from) / (to - from)) * 100;
+  return {
+    marks: marks.map((mark) => ({ ...mark, at: place(shown(mark.kg)) })),
+    ticks: ticks.map((value) => ({ value, at: place(value) })),
+  };
+}
+
+/**
+ * Which lane each leader turns in, top lane first. A leader drops from its
+ * mark, runs across in its lane, and drops again to its figure; the lanes are
+ * the order with the fewest crossings, so a leader is easy to follow.
+ * Positions are percents of the width.
+ */
+export function leaderLanes(leaders: { from: number; to: number }[]) {
+  const crossings = (lanes: number[]) => {
+    let count = 0;
+    leaders.forEach((a, i) => {
+      const left = Math.min(a.from, a.to) + 0.5;
+      const right = Math.max(a.from, a.to) - 0.5;
+      const inside = (x: number) => x > left && x < right;
+      leaders.forEach((b, j) => {
+        if (i === j) return;
+        // Its first drop reaches past this lane, or its second starts above it.
+        if (inside(b.from) && lanes[j] > lanes[i]) count++;
+        if (inside(b.to) && lanes[j] < lanes[i]) count++;
+      });
+    });
+    return count;
+  };
+  let best = leaders.map((_, index) => index);
+  let fewest = crossings(best);
+  const order = (rest: number[], taken: number[]) => {
+    if (!rest.length) {
+      const count = crossings(taken);
+      if (count < fewest) [best, fewest] = [taken, count];
+      return;
+    }
+    for (const lane of rest) order(rest.filter((other) => other !== lane), [...taken, lane]);
+  };
+  order(best, []);
+  return best;
 }

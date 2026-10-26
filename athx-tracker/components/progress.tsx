@@ -21,7 +21,9 @@ import {
   togetherLiftSessions,
   type LiftProgress,
   type LiftTotal,
+  leaderLanes,
   type ProgressAthlete,
+  type ProgressBar,
   type ProgressMark,
   type TopSet,
 } from "@/lib/progress";
@@ -56,7 +58,7 @@ function Stat({
   swatch?: React.ReactNode;
 }) {
   return (
-    <div className="min-w-0">
+    <div className="min-w-0 pr-2">
       <dt className="flex items-center gap-1 text-[11px] text-muted-foreground">
         {swatch}
         {label}
@@ -109,20 +111,105 @@ function Mark({ kind, at, color }: { kind: ProgressMark; at: number; color: stri
   );
 }
 
-function Bar({
-  marks,
-  color,
-}: {
-  marks: { key: ProgressMark; at: number }[];
-  color: string;
-}) {
+/** Each mark's figure below the bar, in the order of the four columns. */
+const COLUMN: Record<ProgressMark, number> = { start: 0, latest: 1, best: 2, target: 3 };
+/** The line sits this far down the bar; leaders turn in lanes below it. */
+const LINE_Y = 10;
+const LANE_Y = (lane: number) => LINE_Y + 8 + lane * 5;
+const BAR_HEIGHT = LANE_Y(3) + 12;
+
+/** Along the line, which is inset 8px from each side so end marks stay whole. */
+const alongLine = (at: number) => `calc(8px + (100% - 16px) * ${at / 100})`;
+/** A column's swatch, at the left of each quarter of the row. */
+const atColumn = (column: number) => `calc(25% * ${column} + 4px)`;
+
+function Leader({ from, to, lane, color }: { from: string; to: string; lane: number; color: string }) {
+  const y = LANE_Y(lane);
+  const line = { borderColor: color, opacity: 0.6 };
   return (
-    <div aria-hidden="true" className="relative h-5">
-      <div className="absolute inset-x-2 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-muted" />
-      <div className="absolute inset-x-2 top-1/2 h-0">
-        {marks.map((mark) => (
-          <Mark key={mark.key} kind={mark.key} at={mark.at} color={color} />
+    <>
+      <span
+        className="absolute w-0 border-l"
+        style={{ ...line, left: from, top: LINE_Y, height: y - LINE_Y }}
+      />
+      <span
+        className="absolute h-0 border-t"
+        style={{
+          ...line,
+          left: `min(${from}, ${to})`,
+          width: `calc(max(${from}, ${to}) - min(${from}, ${to}))`,
+          top: y,
+        }}
+      />
+      <span
+        className="absolute w-0 border-l"
+        style={{ ...line, left: to, top: y, height: BAR_HEIGHT - y }}
+      />
+    </>
+  );
+}
+
+/**
+ * The figures on a scale fitted to them, with round weights marked along the
+ * line. With leaders, each mark has a line down to its figure in the row below.
+ */
+function Bar({
+  bar,
+  color,
+  unit,
+  leaders = false,
+}: {
+  bar: ProgressBar;
+  color: string;
+  unit: WeightUnit;
+  leaders?: boolean;
+}) {
+  const lanes = leaderLanes(
+    bar.marks.map((mark) => ({ from: mark.at, to: COLUMN[mark.key] * 25 + 2 })),
+  );
+  const last = bar.ticks.length - 1;
+  return (
+    <div aria-hidden="true">
+      <div className="relative h-4 text-[10px] leading-4 text-muted-foreground tabular-nums">
+        {bar.ticks.map((tick, index) => (
+          <span
+            key={tick.value}
+            className="absolute -translate-x-1/2 whitespace-nowrap"
+            style={{ left: alongLine(tick.at) }}
+          >
+            {index === last ? `${tick.value} ${unit}` : tick.value}
+          </span>
         ))}
+      </div>
+      <div className="relative" style={{ height: leaders ? BAR_HEIGHT : LINE_Y * 2 }}>
+        <div
+          className="absolute inset-x-2 h-0.5 -translate-y-1/2 rounded-full bg-muted"
+          style={{ top: LINE_Y }}
+        />
+        {bar.ticks.map((tick) => (
+          <span
+            key={tick.value}
+            data-progress-tick
+            className="absolute h-2 w-px -translate-x-1/2 -translate-y-1/2 bg-muted-foreground/40"
+            style={{ left: alongLine(tick.at), top: LINE_Y }}
+          />
+        ))}
+        {leaders
+          ? bar.marks.map((mark, index) => (
+              <Leader
+                key={mark.key}
+                from={alongLine(mark.at)}
+                to={atColumn(COLUMN[mark.key])}
+                lane={lanes[index]}
+                color={mark.key === "start" ? "var(--muted-foreground)" : color}
+              />
+            ))
+          : null}
+        <div className="absolute inset-x-2 h-0" style={{ top: LINE_Y }}>
+          {bar.marks.map((mark) => (
+            <Mark key={mark.key} kind={mark.key} at={mark.at} color={color} />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -166,12 +253,15 @@ function Total({
 }) {
   const color = ATHLETES[athlete].color;
   const total: LiftTotal = liftTotal(rows);
-  const marks = progressMarks({
-    start: asSet(total.start),
-    latest: asSet(total.latest),
-    best: asSet(total.best),
-    target: total.target ?? 0,
-  });
+  const marks = progressMarks(
+    {
+      start: asSet(total.start),
+      latest: asSet(total.latest),
+      best: asSet(total.best),
+      target: total.target ?? 0,
+    },
+    unit,
+  );
   const figure = (kg: number | null) => (kg !== null && kg > 0 ? formatWeight(kg, unit) : "—");
   return (
     <div role="group" aria-label={`${ATHLETES[athlete].name} total`} className="space-y-2.5 py-4">
@@ -181,28 +271,30 @@ function Total({
           Overhead press, back squat and deadlift
         </p>
       </div>
-      {marks ? <Bar marks={marks} color={color} /> : null}
-      <dl className="grid grid-cols-4 gap-2">
-        <Stat label="Start" value={figure(total.start)} notes={[]} swatch={total.start ? <Swatch /> : null} />
-        <Stat
-          label="Latest"
-          value={figure(total.latest)}
-          notes={[]}
-          swatch={total.latest ? <Swatch color={color} /> : null}
-        />
-        <Stat
-          label="Best"
-          value={figure(total.best)}
-          notes={[]}
-          swatch={total.best ? <Swatch color={color} /> : null}
-        />
-        <Stat
-          label="Target"
-          value={figure(total.target)}
-          notes={targetNotes(total.target ?? 0, total.best, unit)}
-          swatch={total.target ? <Swatch color={color} ring /> : null}
-        />
-      </dl>
+      <div>
+        {marks ? <Bar bar={marks} color={color} unit={unit} leaders /> : null}
+        <dl className="grid grid-cols-4">
+          <Stat label="Start" value={figure(total.start)} notes={[]} swatch={total.start ? <Swatch /> : null} />
+          <Stat
+            label="Latest"
+            value={figure(total.latest)}
+            notes={[]}
+            swatch={total.latest ? <Swatch color={color} /> : null}
+          />
+          <Stat
+            label="Best"
+            value={figure(total.best)}
+            notes={[]}
+            swatch={total.best ? <Swatch color={color} /> : null}
+          />
+          <Stat
+            label="Target"
+            value={figure(total.target)}
+            notes={targetNotes(total.target ?? 0, total.best, unit)}
+            swatch={total.target ? <Swatch color={color} ring /> : null}
+          />
+        </dl>
+      </div>
     </div>
   );
 }
@@ -221,7 +313,7 @@ function Lift({
   const color = ATHLETES[athlete].color;
   const label = `${ATHLETES[athlete].name} ${lift.name.toLowerCase()}`;
   const { start, latest, best } = lift;
-  const marks = progressMarks(lift);
+  const marks = progressMarks(lift, unit);
 
   // Four dashes say less than one line does.
   if (!start || !latest || !best)
@@ -240,7 +332,7 @@ function Lift({
               : "no target"}
           </p>
         </div>
-        {marks ? <Bar marks={marks} color={color} /> : null}
+        {marks ? <Bar bar={marks} color={color} unit={unit} /> : null}
       </div>
     );
 
@@ -258,33 +350,35 @@ function Lift({
   return (
     <div role="group" aria-label={label} className="space-y-2.5 py-4 first:pt-0 last:pb-0">
       <h3 className="text-sm font-medium">{lift.name}</h3>
-      {marks ? <Bar marks={marks} color={color} /> : null}
-      <dl className="grid grid-cols-4 gap-2">
-        <Stat
-          label="Start"
-          value={formatWeight(start.kg, unit)}
-          notes={notes(start)}
-          swatch={marks ? <Swatch /> : null}
-        />
-        <Stat
-          label="Latest"
-          value={formatWeight(latest.kg, unit)}
-          notes={notes(latest)}
-          swatch={marks ? <Swatch color={color} /> : null}
-        />
-        <Stat
-          label="Best"
-          value={formatWeight(best.kg, unit)}
-          notes={notes(best)}
-          swatch={marks ? <Swatch color={color} /> : null}
-        />
-        <Stat
-          label="Target"
-          value={lift.target > 0 ? formatWeight(lift.target, unit) : "—"}
-          notes={targetNotes(lift.target, best.kg, unit)}
-          swatch={marks && lift.target > 0 ? <Swatch color={color} ring /> : null}
-        />
-      </dl>
+      <div>
+        {marks ? <Bar bar={marks} color={color} unit={unit} leaders /> : null}
+        <dl className="grid grid-cols-4">
+          <Stat
+            label="Start"
+            value={formatWeight(start.kg, unit)}
+            notes={notes(start)}
+            swatch={marks ? <Swatch /> : null}
+          />
+          <Stat
+            label="Latest"
+            value={formatWeight(latest.kg, unit)}
+            notes={notes(latest)}
+            swatch={marks ? <Swatch color={color} /> : null}
+          />
+          <Stat
+            label="Best"
+            value={formatWeight(best.kg, unit)}
+            notes={notes(best)}
+            swatch={marks ? <Swatch color={color} /> : null}
+          />
+          <Stat
+            label="Target"
+            value={lift.target > 0 ? formatWeight(lift.target, unit) : "—"}
+            notes={targetNotes(lift.target, best.kg, unit)}
+            swatch={marks && lift.target > 0 ? <Swatch color={color} ring /> : null}
+          />
+        </dl>
+      </div>
       <p className="text-xs text-muted-foreground">{summary}</p>
     </div>
   );
@@ -321,7 +415,7 @@ export function Progress({
         </h2>
         <p className="text-xs text-muted-foreground">
           Each day counts as its heaviest set, in {unit}. The bar places start,
-          latest, best and the target along the heaviest of them. A target also
+          latest, best and the target on a scale fitted to them. A target also
           shows in kilograms. The total adds press, squat and deadlift. Targets
           are set in Setup.
         </p>
