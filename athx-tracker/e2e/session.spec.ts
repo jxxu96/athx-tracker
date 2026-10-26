@@ -546,7 +546,7 @@ test("advanced sets keep their own weight and reps", async ({ page }) => {
 test("one session holds lifts, a part-finished MetCon with loads, and a run", async ({ page }) => {
   await athlete(page, "Gators").click();
   await openSession(page);
-  await typeSelect(page).selectOption("Mixed");
+  await expect(typeSelect(page)).toHaveValue("Mixed");
 
   // Weights switched here are remembered, and the boxes read in the new unit.
   await page.getByRole("group", { name: "Weight unit" }).getByRole("button", { name: "kg" }).click();
@@ -630,7 +630,7 @@ test("circuit loads start at the standard weight, and reopening keeps it", async
   // just because the form filled its weights in.
   await athlete(page, "Both").click();
   await openSession(page);
-  await expect(typeSelect(page)).toHaveValue("MetCon");
+  await typeSelect(page).selectOption("MetCon");
   // Settings outlive each spec, so say which unit this one is in.
   const unitSwitch = page.getByRole("group", { name: "Weight unit" });
   await unitSwitch.getByRole("button", { name: "lb" }).click();
