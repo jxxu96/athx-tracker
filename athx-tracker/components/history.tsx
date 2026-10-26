@@ -14,6 +14,7 @@ import {
   completionLine,
   distanceLine,
   estimateBurn,
+  formatLift,
   formatTimeOrDash,
   formatWeight,
   scenarioLine,
@@ -210,10 +211,7 @@ export function History({
                           {record.lifts.length > 0 ? (
                             <p className="mt-0.5 text-xs text-muted-foreground">
                               {record.lifts
-                                .map(
-                                  (lift) =>
-                                    `${lift.name} ${formatWeight(lift.kg, weightUnit)} ${lift.sets ?? 1}×${lift.reps}`,
-                                )
+                                .map((lift) => formatLift(lift, weightUnit))
                                 .join(" · ")}
                             </p>
                           ) : null}

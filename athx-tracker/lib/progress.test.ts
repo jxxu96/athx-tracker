@@ -83,6 +83,27 @@ test("a day counts as its heaviest set, and a warm-up never stands in for it", (
   assert.equal(row.sessions, 2, "both sessions logged it");
 });
 
+test("a varied lift counts as its heaviest sets, warm-ups included", () => {
+  const row = jerkOf([
+    workout({
+      lifts: [{
+        name: "Split jerk",
+        kg: 40,
+        sets: 2,
+        reps: 3,
+        detail: [
+          { kg: 40, reps: 3 },
+          { kg: 40, reps: 3 },
+          { kg: 70, reps: 2 },
+          { kg: 70, reps: 2 },
+          { kg: 70, reps: 1 },
+        ],
+      }],
+    }),
+  ]);
+  assert.deepEqual(row.best, { day: "2026-09-01", kg: 70, sets: 2, reps: 2 });
+});
+
 test("equal weight goes to more reps, and a best belongs to the day it was first reached", () => {
   const sameDay = jerkOf([
     workout({ lifts: [lift("Split jerk", 60, 1, 1), lift("Split jerk", 60, 1, 3)] }),

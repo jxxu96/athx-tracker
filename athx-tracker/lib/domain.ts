@@ -19,6 +19,20 @@ export type Segment = {
   /** The load carried, in kilograms like every other weight. Omitted when unloaded or not recorded. */
   kg?: number;
 };
+/** One set of a lift, when the sets were not all the same. */
+export type LiftSet = { kg: number; reps: number };
+/**
+ * A lift as logged. kg, sets and reps are the heaviest work: more weight,
+ * then more reps, and sets is how many were done that way. detail is every
+ * set, in order, and only when they differ. Older lifts omit it.
+ */
+export type Lift = {
+  name: string;
+  kg: number;
+  sets: number;
+  reps: number;
+  detail?: LiftSet[];
+};
 export type Workout = {
   id: string; kind: "workout"; athlete: Athlete; day: string;
   title: string; category: "Strength" | "Endurance" | "MetCon" | "Mixed" | "Solidcore" | "Tennis" | "YTW" | "Other";
@@ -26,7 +40,7 @@ export type Workout = {
   customCategory: string;
   seconds: number; notes: string; segments: Segment[]; fatigue: number;
   transition: number; goal: number | null; context: "solo" | "pairs";
-  lifts: { name: string; kg: number; sets: number; reps: number }[];
+  lifts: Lift[];
   /** The MetCon stopped at its time cap. Older sessions omit it, which reads as no. */
   capHit?: boolean;
 };
@@ -305,13 +319,41 @@ export const MET_BY_CATEGORY: Record<Workout["category"], number> = {
 const LIFT_SECONDS_PER_REP = 4;
 const LIFT_REST_SECONDS = 150;
 
-export function untimedLiftSeconds(lifts: { sets: number; reps: number }[]) {
+/**
+ * The heaviest sets in a varied lift. More weight, then more reps. sets is
+ * how many of the list were done at that weight and those reps.
+ */
+export function liftTop(detail: readonly LiftSet[]) {
+  let kg = 0;
+  let reps = 0;
+  for (const set of detail) {
+    if (set.kg > kg || (set.kg === kg && set.reps > reps)) {
+      kg = set.kg;
+      reps = set.reps;
+    }
+  }
+  const sets = detail.filter((set) => set.kg === kg && set.reps === reps).length;
+  return { kg, sets, reps };
+}
+
+/** Reps under the bar, and how many sets they were spread across. */
+export function liftEffort(lift: { sets: number; reps: number; detail?: readonly { reps: number }[] }) {
+  if (lift.detail && lift.detail.length > 0) {
+    const sets = lift.detail.length;
+    const reps = lift.detail.reduce((sum, set) => sum + Math.max(0, Math.floor(set.reps)), 0);
+    return { sets, reps };
+  }
+  const sets = Math.max(0, Math.floor(lift.sets));
+  const repsEach = Math.max(0, Math.floor(lift.reps));
+  return { sets, reps: sets * repsEach };
+}
+
+export function untimedLiftSeconds(lifts: { sets: number; reps: number; detail?: readonly { reps: number }[] }[]) {
   let seconds = 0;
   for (const lift of lifts) {
-    const sets = Math.max(0, Math.floor(lift.sets));
-    const reps = Math.max(0, Math.floor(lift.reps));
+    const { sets, reps } = liftEffort(lift);
     if (sets < 1 || reps < 1) continue;
-    seconds += sets * reps * LIFT_SECONDS_PER_REP;
+    seconds += reps * LIFT_SECONDS_PER_REP;
     seconds += Math.max(0, sets - 1) * LIFT_REST_SECONDS;
   }
   return seconds;
@@ -558,6 +600,24 @@ export function presetElapsed(current: string, preset: (typeof PRESETS)[number])
 
 export function formatWeight(kg: number, unit: WeightUnit) {
   return `${displayLoad(kg, unit)} ${unit}`;
+}
+
+/**
+ * The log's one line for a lift. Identical sets stay "225 lb 3×5". A lift
+ * whose sets differed lists each one: "135 lb×5, 185 lb×3, 225 lb×1".
+ */
+export function formatLift(
+  lift: { name: string; kg: number; sets?: number; reps: number; detail?: readonly LiftSet[] },
+  unit: WeightUnit,
+) {
+  const detail = lift.detail;
+  if (detail && detail.length > 0) {
+    const same = detail.every((set) => set.kg === detail[0].kg && set.reps === detail[0].reps);
+    if (!same) {
+      return `${lift.name} ${detail.map((set) => `${formatWeight(set.kg, unit)}×${set.reps}`).join(", ")}`;
+    }
+  }
+  return `${lift.name} ${formatWeight(lift.kg, unit)} ${lift.sets ?? 1}×${lift.reps}`;
 }
 
 /** A stored load as the number a weight box shows, to a tenth. */
