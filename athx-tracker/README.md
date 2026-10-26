@@ -194,6 +194,11 @@ or ask how the figures were reached. Each reply includes your earlier
 clarifications and updates the meal's macros and assumptions. Failed replies
 keep the current estimate and the text you were typing.
 
+Meal and Session drafts stay open when you switch sections, including while AI
+is processing. If an estimate finishes while you are elsewhere, a small popup
+offers to take you back to review it. Failed estimates also notify you and keep
+the description for retry. Nothing is saved until you choose to save the form.
+
 The conversation stays with the open draft. Saving keeps the final macros and
 assumptions; reopening a saved meal, or tapping a usual meal, lets you start
 from those values. A fresh **Estimate macros** starts a new conversation. Each

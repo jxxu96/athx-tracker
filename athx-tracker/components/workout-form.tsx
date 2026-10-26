@@ -669,16 +669,19 @@ export function WorkoutForm({
   sides,
   weightUnit,
   grokReady,
+  active = true,
   onWeightUnit,
   onLoggingFor,
   editing,
   onCancelEdit,
   onSave,
+  onEstimateComplete,
 }: {
   today: string;
   sides: readonly Side[];
   weightUnit: WeightUnit;
   grokReady: boolean;
+  active?: boolean;
   /** Remembers a unit switched here, as Setup would. */
   onWeightUnit?: (unit: WeightUnit) => void;
   /** Hippos, Gators, or both. The header switch and these buttons are one choice. */
@@ -686,6 +689,7 @@ export function WorkoutForm({
   editing?: Workout | null;
   onCancelEdit?: () => void;
   onSave: (batch: Workout[]) => Promise<void>;
+  onEstimateComplete?: (error?: string) => void;
 }) {
   // The form's own copy: every box here is in this unit, whether or not the
   // switch has reached the server yet, so what is typed is read correctly.
@@ -888,10 +892,13 @@ export function WorkoutForm({
       setInvalidSide(null);
       setError("");
       setDraftNotice(`Workout filled. Review the fields below before saving.${draft.assumptions ? ` ${draft.assumptions}` : ""}`);
+      onEstimateComplete?.();
     } catch (problem) {
-      setDraftError(controller.signal.aborted
+      const error = controller.signal.aborted
         ? "The athlete selection changed. Fill the workout again for the selected athletes."
-        : message(problem));
+        : message(problem);
+      setDraftError(error);
+      onEstimateComplete?.(error);
     } finally {
       setDrafting(false);
       draftRequest.current = null;
@@ -1417,7 +1424,7 @@ export function WorkoutForm({
             onClick={() => void fillWorkout()}>
             <Sparkles /> {drafting ? "Filling workout…" : "Fill workout with AI"}
           </Button>
-          <WorkoutDictation value={description} onChange={setDescription} disabled={drafting || saving}
+          <WorkoutDictation active={active} value={description} onChange={setDescription} disabled={drafting || saving}
             listening={listening} onListening={setListening} />
         </div>
         <p className="text-xs text-muted-foreground">Fills the selected athletes and replaces the workout fields below. Nothing is saved until you choose {editing ? "Update session" : "Save session"}.</p>

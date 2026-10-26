@@ -21,13 +21,17 @@ const speechConstructor = () => {
   return browser.SpeechRecognition ?? browser.webkitSpeechRecognition;
 };
 
-export function WorkoutDictation({ value, onChange, disabled, listening, onListening }: {
+export function WorkoutDictation({ active = true, value, onChange, disabled, listening, onListening }: {
+  active?: boolean;
   value: string; onChange: (value: string) => void; disabled: boolean;
   listening: boolean; onListening: (value: boolean) => void;
 }) {
   const supported = useSyncExternalStore(subscribe, () => Boolean(speechConstructor()), () => false);
   const current = useRef<Recognition | null>(null);
   const [error, setError] = useState("");
+
+  // The form stays mounted for estimates; dictation still stops on navigation.
+  useEffect(() => { if (!active) current.current?.stop(); }, [active]);
 
   useEffect(() => () => {
     if (current.current) {

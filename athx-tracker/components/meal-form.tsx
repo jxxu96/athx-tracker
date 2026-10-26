@@ -107,19 +107,23 @@ export function MealForm({
   meals,
   today,
   grokReady,
+  active = true,
   editing,
   onLoggingFor,
   onCancelEdit,
   onSave,
+  onEstimateComplete,
 }: {
   loggingFor: LoggingFor;
   meals: Meal[];
   today: string;
   grokReady: boolean;
+  active?: boolean;
   editing?: Meal | null;
   onLoggingFor: (next: LoggingFor) => void;
   onCancelEdit?: () => void;
   onSave: (batch: Meal[]) => Promise<void>;
+  onEstimateComplete?: (error?: string) => void;
 }) {
   // Controlled by the switch in the header, so the two never disagree.
   // An open edit stays on that record's athlete; the header keeps its own switch.
@@ -284,7 +288,9 @@ export function MealForm({
         ? [...current, { reply: followUp, estimate }]
         : [{ estimate }]);
       setReply("");
+      onEstimateComplete?.();
     } catch (problem) {
+      onEstimateComplete?.(message(problem));
       if (refining) {
         setReplyError(`${message(problem)} Your current estimate and reply have been kept.`);
         return;
@@ -731,12 +737,12 @@ export function MealForm({
           {saving ? "Saving…" : editing ? "Update meal" : "Save meal"}
         </Button>
       </fieldset>
-      <Dialog open={refineOpen} onOpenChange={setRefineOpen}>
+      <Dialog open={active && refineOpen} onOpenChange={setRefineOpen}>
         <DialogContent
           className="flex max-h-[85dvh] flex-col p-4 sm:p-6"
           onCloseAutoFocus={(event) => {
             event.preventDefault();
-            replyButton.current?.focus();
+            if (active) replyButton.current?.focus();
           }}
         >
           <DialogHeader className="shrink-0 pr-6 text-left">
