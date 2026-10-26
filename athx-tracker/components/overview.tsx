@@ -15,7 +15,7 @@ import {
   type RecordItem,
   type Settings,
 } from "@/lib/domain";
-import { daysBetween, dayToDate, isWorkout, weekStart } from "@/lib/client";
+import { addDays, daysBetween, dayToDate, isWorkout, weekStart } from "@/lib/client";
 
 function Panel({
   title,
@@ -40,6 +40,17 @@ function Panel({
 const daysLogged = (workouts: { athlete: string; day: string }[], who: string) =>
   workouts.filter((w) => w.athlete === who).map((w) => w.day);
 
+// "Together" is the days you both logged something, not a third athlete.
+const sessionCount = (
+  workouts: { athlete: string; day: string }[],
+  key: "hippos" | "gators" | "team",
+) =>
+  key === "team"
+    ? [...new Set(daysLogged(workouts, "hippos"))].filter((day) =>
+        daysLogged(workouts, "gators").includes(day),
+      ).length
+    : workouts.filter((w) => w.athlete === key).length;
+
 export function Overview({
   records,
   settings,
@@ -58,7 +69,12 @@ export function Overview({
   const countdown = daysBetween(today, settings.eventDate);
   const thisWeek = weekStart(today);
   const workouts = records.filter(isWorkout);
-  const weekWorkouts = workouts.filter((w) => weekStart(w.day) === thisWeek);
+  const sevenDaysAgo = addDays(today, -6);
+  // This week runs from Monday; the last 7 days roll, so early in the week they differ.
+  const windows = [
+    { label: "This week", workouts: workouts.filter((w) => weekStart(w.day) === thisWeek) },
+    { label: "Last 7 D", workouts: workouts.filter((w) => w.day >= sevenDaysAgo && w.day <= today) },
+  ];
   const lastSession = workouts.find((w) => w.day <= today) ?? workouts[0];
   // The log shows every session's burn; the panel that puts one session in
   // front of you was the one place leaving it out.
@@ -96,47 +112,6 @@ export function Overview({
         </p>
       </section>
 
-      <Panel title="This week" icon={<Dumbbell className="size-4 text-muted-foreground" />}>
-        <div className="grid grid-cols-3 gap-3">
-          {(["hippos", "gators", "team"] as const).map((key) => {
-            // "Together" is the days you both logged something, not a third athlete.
-            const count =
-              key === "team"
-                ? [...new Set(daysLogged(weekWorkouts, "hippos"))].filter((day) =>
-                    daysLogged(weekWorkouts, "gators").includes(day),
-                  ).length
-                : weekWorkouts.filter((w) => w.athlete === key).length;
-            const pct = Math.min(
-              100,
-              Math.round((count / settings.weeklyTarget) * 100),
-            );
-            return (
-              <div key={key} className="space-y-2">
-                <p className="truncate text-xs text-muted-foreground">
-                  {ATHLETES[key].name}
-                </p>
-                <p className="text-2xl font-semibold tabular-nums leading-none">
-                  {count}
-                  <span className="text-sm font-normal text-muted-foreground">
-                    /{settings.weeklyTarget}
-                  </span>
-                </p>
-                <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full transition-[width]"
-                    style={{ width: `${pct}%`, background: ATHLETES[key].color }}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        <p className="mt-3 text-xs text-muted-foreground">
-          {weekWorkouts.length} session{weekWorkouts.length === 1 ? "" : "s"} logged
-          since Monday.
-        </p>
-      </Panel>
-
       <Fuel
         records={records}
         settings={settings}
@@ -145,6 +120,70 @@ export function Overview({
         loadingAll={loadingAll}
         onLoadAll={onLoadAll}
       />
+
+
+      <Panel title="Sessions" icon={<Dumbbell className="size-4 text-muted-foreground" />}>
+        <table className="w-full table-fixed text-left">
+          <thead>
+            <tr className="text-xs text-muted-foreground">
+              <th scope="col" className="w-1/4 pb-2 font-normal">
+                <span className="sr-only">Athlete</span>
+              </th>
+              {windows.map((window) => (
+                <th key={window.label} scope="col" className="pb-2 pl-3 font-normal">
+                  {window.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {(["hippos", "gators", "team"] as const).map((key) => (
+              <tr key={key}>
+                <th scope="row" className="truncate py-1.5 text-xs font-normal text-muted-foreground">
+                  {ATHLETES[key].name}
+                </th>
+                {windows.map((window) => {
+                  const count = sessionCount(window.workouts, key);
+                  const pct = Math.min(
+                    100,
+                    Math.round((count / settings.weeklyTarget) * 100),
+                  );
+                  return (
+                    <td key={window.label} className="py-1.5 pl-3">
+                      <div className="space-y-1.5">
+                        <p className="text-lg font-semibold tabular-nums leading-none">
+                          {count}
+                          <span className="text-xs font-normal text-muted-foreground">
+                            /{settings.weeklyTarget}
+                          </span>
+                        </p>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                          <div
+                            className="h-full rounded-full transition-[width]"
+                            style={{ width: `${pct}%`, background: ATHLETES[key].color }}
+                          />
+                        </div>
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="border-t text-xs text-muted-foreground">
+              <th scope="row" className="pt-2 font-normal">
+                Logged
+              </th>
+              {windows.map((window) => (
+                <td key={window.label} className="pt-2 pl-3 tabular-nums">
+                  {window.workouts.length} session{window.workouts.length === 1 ? "" : "s"}
+                </td>
+              ))}
+            </tr>
+          </tfoot>
+        </table>
+      </Panel>
 
       {lastSession ? (
         <Panel title="Last session" icon={<Target className="size-4 text-muted-foreground" />}>
