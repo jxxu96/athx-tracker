@@ -32,7 +32,9 @@ import {
   METCON,
   PRESETS,
   categoryShape,
+  clockTime,
   defaultContext,
+  isClockTime,
   localDay,
   presetElapsed,
   presetTitle,
@@ -379,10 +381,15 @@ export function DayButtons({
   today,
   day,
   onChange,
+  time,
+  onTimeChange,
 }: {
   today: string;
   day: string;
   onChange: (next: string) => void;
+  /** When given, the time of day sits under the date. Blank is not recorded. */
+  time?: string;
+  onTimeChange?: (next: string) => void;
 }) {
   const yesterday = addDays(today, -1);
   const custom = day !== today && day !== yesterday;
@@ -444,6 +451,16 @@ export function DayButtons({
           </Popover>
         </div>
       </div>
+      {onTimeChange ? (
+        <Field label="Time of day" hint="Optional. Orders the day in the log." className="mt-3">
+          <Input
+            type="time"
+            value={time ?? ""}
+            className="w-36"
+            onChange={(event) => onTimeChange(event.target.value)}
+          />
+        </Field>
+      ) : null}
     </div>
   );
 }
@@ -699,6 +716,8 @@ export function WorkoutForm({
   const editSide = editing ? sideOf(editing.athlete) : null;
 
   const [day, setDay] = useState(editing?.day ?? today);
+  // A new session starts at the clock; an older one without a time stays without.
+  const [time, setTime] = useState(editing ? editing.time ?? "" : clockTime());
   const [title, setTitle] = useState(editing?.title ?? "");
   const [category, setCategory] = useState<Workout["category"]>(
     editing?.category ?? "MetCon",
@@ -1358,6 +1377,8 @@ export function WorkoutForm({
     const active = columns.filter(used);
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return setError("Pick a valid date.");
+    if (time !== "" && !isClockTime(time))
+      return setError("Write the time of day as HH:MM, or leave it empty.");
     if (active.length === 0)
       return setError("Fill in at least one athlete before saving.");
 
@@ -1377,6 +1398,7 @@ export function WorkoutForm({
       kind: "workout",
       athlete: editing ? athleteForEdit : side,
       day,
+      ...(time ? { time } : {}),
       title: title.trim() || dateTitle(day),
       category,
       customCategory: category === "Other" ? customCategory.trim() : "",
@@ -1450,7 +1472,7 @@ export function WorkoutForm({
       </Panel>
       <fieldset disabled={drafting || listening || saving} className="min-w-0 space-y-4">
       <section {...athleteOutline(outline)} className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
-        <DayButtons today={today} day={day} onChange={setDay} />
+        <DayButtons today={today} day={day} onChange={setDay} time={time} onTimeChange={setTime} />
         <FormatButtons value={format} onChange={chooseFormat} />
         <Field label="Session" hint="Optional — the date is used if left blank">
           <Input

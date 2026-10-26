@@ -28,32 +28,38 @@ const count = (page: Page) =>
     return data.total as number;
   });
 
-test("a save that half fails does not duplicate on the retry", async ({ page }) => {
+test("a save that half fails sends the rest once the server answers, without a duplicate", async ({ page }) => {
   await signIn(page);
   await page.getByRole("group", { name: "Logging for" })
     .getByRole("button", { name: "Both" }).click();
   await page.getByRole("button", { name: "Session", exact: true }).click();
   await page.getByRole("button", { name: "Tennis 60m" }).click();
 
-  // The second athlete's save fails, the first having already landed.
+  // The first athlete's save lands; the connection drops before the second.
   let posts = 0;
   await page.route("**/api/records", async (route) => {
     if (route.request().method() === "POST") {
       posts += 1;
-      if (posts === 2) return route.abort("internetdisconnected");
+      if (posts >= 2) return route.abort("internetdisconnected");
     }
     await route.continue();
   });
   await page.getByRole("button", { name: "Save session" }).click();
+  await expect(page.getByText("Saved on this phone")).toBeVisible();
   await expect.poll(() => count(page)).toBe(1);
+  const waiting = page.getByRole("button", { name: "1 waiting to send. Send now" });
+  await expect(waiting).toBeVisible();
 
-  // Signal returns and you press save again, with the form still filled in.
+  // Still waiting after the app is closed and opened again.
+  await page.reload();
+  await expect(waiting).toBeVisible();
+  expect(await count(page)).toBe(1);
+
+  // Signal returns. Sending again is harmless: the first one is not repeated.
   await page.unroute("**/api/records");
-  await page.getByRole("button", { name: "Save session" }).click();
-  // Wait for the submit to finish before counting. Polling for a number the
-  // total passes through on its way somewhere worse proves nothing: a retry
-  // that duplicates reads 2 for a moment before it reads 3.
-  await expect(page.getByText("Sessions saved")).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(page.getByText("A waiting entry was sent")).toBeVisible();
+  await expect(waiting).toHaveCount(0);
   await page.waitForTimeout(500);
   expect(await count(page)).toBe(2);
 });
@@ -212,4 +218,39 @@ test("a body within the cap is judged on its contents", async ({ page }) => {
     }).then((r) => r.status),
   );
   expect(status).toBe(400);
+});
+
+test("coming back to the app brings in what the other phone logged, and leaves Setup's typing alone", async ({ page }) => {
+  await page.clock.install();
+  await signIn(page);
+  await page.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: "Setup", exact: true }).click();
+  await page.getByLabel("Name", { exact: true }).fill("ATHX Somewhere");
+
+  // The other phone logs a meal and saves a setting meanwhile.
+  await page.evaluate(async () => {
+    const day = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    await fetch("/api/records", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: crypto.randomUUID(), kind: "meal", athlete: "gators", day, name: "From the other phone",
+        meal: "Lunch", source: "manual", assumptions: "",
+        macros: { calories: 600, protein: 40, carbs: 60, fat: 20 },
+      }),
+    });
+    const current = await fetch("/api/settings").then((r) => r.json());
+    await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ revision: current.revision, settings: { ...current.settings, weeklyTarget: 5 } }),
+    });
+  });
+
+  // Away from the app for a while, then back.
+  await page.clock.fastForward(31_000);
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("ATHX Somewhere");
+
+  await page.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: "Log", exact: true }).click();
+  await expect(page.getByText("From the other phone")).toBeVisible();
 });

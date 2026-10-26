@@ -281,3 +281,55 @@ test("settings saved before lift targets existed parse with the same targets the
   assert.ok(bad({ deadlift: 1001 }));
   assert.ok(!bad({ deadlift: 0 }), "zero is no target");
 });
+
+test("the estimated max is the best any set of ten or fewer predicts, on the race's line", () => {
+  const records = [
+    workout({ id: "a", day: "2026-09-01", lifts: [lift("Deadlift", 101, 1, 1)] }),
+    workout({
+      id: "b",
+      day: "2026-09-03",
+      lifts: [{ name: "Deadlift", kg: 100, sets: 1, reps: 5, detail: [{ kg: 60, reps: 12 }, { kg: 100, reps: 5 }] }],
+    }),
+    // Twelve reps say little about a max, however heavy.
+    workout({ id: "c", day: "2026-09-05", lifts: [lift("Deadlift", 100, 1, 12)] }),
+  ];
+  const row = liftProgress(records, "gators", none).find((item) => item.key === "deadlift")!;
+  // The heaviest set is still the single; five at 100 predicts 100 x 36 / 32.
+  assert.equal(row.best?.kg, 101);
+  assert.deepEqual(row.estimated, { kg: 112.5, day: "2026-09-03", setKg: 100, reps: 5 });
+  assert.equal(liftProgress([], "gators", none)[0].estimated, null);
+});
+
+test("an estimate reached again later stays with the day it was first reached", () => {
+  const records = [
+    workout({ id: "late", day: "2026-09-10", lifts: [lift("Back squat", 100, 3, 5)] }),
+    workout({ id: "early", day: "2026-09-01", lifts: [lift("Back squat", 100, 1, 5)] }),
+  ];
+  const row = liftProgress(records, "gators", none).find((item) => item.key === "backSquat")!;
+  assert.equal(row.estimated?.day, "2026-09-01");
+});
+
+test("weekly volume is load times reps for every set, by Monday week, the current week last", () => {
+  const records = [
+    // Thursday 3 September 2026 is in the week of Monday 31 August.
+    workout({ id: "now", day: "2026-09-03", lifts: [lift("Deadlift", 100, 3, 5), lift("Back squat", 80, 1, 5)] }),
+    workout({
+      id: "varied",
+      day: "2026-08-31",
+      lifts: [{ name: "Deadlift", kg: 120, sets: 1, reps: 2, detail: [{ kg: 60, reps: 5 }, { kg: 120, reps: 2 }] }],
+    }),
+    workout({ id: "last", day: "2026-08-27", lifts: [lift("Deadlift", 90, 2, 5)] }),
+    // Eight weeks back is out of the window; a day after today is not counted yet.
+    workout({ id: "old", day: "2026-07-05", lifts: [lift("Deadlift", 90, 2, 5)] }),
+    workout({ id: "ahead", day: "2026-09-04", lifts: [lift("Deadlift", 90, 2, 5)] }),
+  ];
+  const rows = liftProgress(records, "gators", none, "2026-09-03");
+  const deadlift = rows.find((item) => item.key === "deadlift")!;
+  assert.equal(deadlift.weeks.length, 8);
+  assert.equal(deadlift.weeks[7], 1500 + 300 + 240);
+  assert.equal(deadlift.weeks[6], 900);
+  assert.deepEqual(deadlift.weeks.slice(0, 6), [0, 0, 0, 0, 0, 0]);
+  assert.equal(rows.find((item) => item.key === "backSquat")!.weeks[7], 400);
+  // Without a day to count from there are no weeks to show.
+  assert.deepEqual(liftProgress(records, "gators", none)[0].weeks, []);
+});

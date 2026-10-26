@@ -107,3 +107,10 @@ test("sorting does not disturb the caller's array", () => {
   sortRecords(input);
   assert.deepEqual(input.map((r) => r.day), ["2026-10-20", "2026-10-22"]);
 });
+
+test("inside a day the later time of day comes first, and untimed entries follow in arrival order", () => {
+  const at = (id: string, time?: string) =>
+    ({ id, day: "2026-10-22", kind: "meal", ...(time ? { time } : {}) }) as unknown as RecordItem;
+  const sorted = sortRecords([at("old-a"), at("breakfast", "07:30"), at("old-b"), at("dinner", "19:05"), at("lunch", "12:00")]);
+  assert.deepEqual(sorted.map((r) => r.id), ["dinner", "lunch", "breakfast", "old-a", "old-b"]);
+});

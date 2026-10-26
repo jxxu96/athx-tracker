@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Download, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,23 +8,40 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Field } from "@/components/workout-form";
 import { toast } from "sonner";
-import { api, message } from "@/lib/client";
+import { api, formatDay, message, newId } from "@/lib/client";
+import { currentBodyweight, type BodyweightHistory } from "@/lib/bodyweight";
+import { ageOn, restingEnergy } from "@/lib/energy";
+import { formatAmount } from "@/lib/fuel";
+import { recordTargetChange } from "@/lib/targets";
 import { FOOD_NOTES_LIMIT } from "@/lib/estimate-conversation";
 import {
   ATHLETES,
   DEFAULT_SETTINGS,
   PROGRESS_LIFTS,
+  SEX,
+  clockTime,
   displayLoad,
   fromKilograms,
   parseLoad,
   reunitLoad,
   toKilograms,
+  type Bodyweight,
   type LiftTargets,
   type Macros,
   type ProgressLift,
   type Settings,
   type WeightUnit,
 } from "@/lib/domain";
+
+const CM_PER_INCH = 2.54;
+/** Height follows the weights: inches beside pounds, centimetres beside kilograms. */
+const heightUnit = (unit: WeightUnit) => (unit === "lb" ? "in" : "cm");
+const showHeight = (cm: number, unit: WeightUnit) =>
+  cm > 0 ? String(Math.round((unit === "lb" ? cm / CM_PER_INCH : cm) * 10) / 10) : "";
+const readHeight = (text: string, unit: WeightUnit) => {
+  const value = Number(text.trim());
+  return unit === "lb" ? value * CM_PER_INCH : value;
+};
 
 /** Keeps a typed weight meaning the same number of kilograms across a unit switch. */
 function reunit(draft: string, from: WeightUnit, to: WeightUnit) {
@@ -58,15 +75,30 @@ const toDraft = (macros: Macros): MacroDraft => ({
 
 export function SettingsForm({
   settings,
+  history,
+  today,
   grokReady,
   onRefresh,
   onSave,
+  onDirty,
 }: {
   settings: Settings;
+  /** The weigh-ins, whose latest is the bodyweight shown here. */
+  history: BodyweightHistory;
+  today: string;
   grokReady: boolean;
   onRefresh: () => Promise<void>;
-  onSave: (next: Settings) => Promise<void>;
+  /** A changed bodyweight is a weigh-in today, saved with the settings. */
+  onSave: (next: Settings, notice?: string, weighIns?: Bodyweight[]) => Promise<void>;
+  /** Whether anything has been typed, so a refresh can leave the form alone. */
+  onDirty?: (dirty: boolean) => void;
 }) {
+  // A form keyed on the settings revision starts clean, and leaving it drops
+  // what was typed, so it is only dirty while it is open.
+  useEffect(() => () => onDirty?.(false), [onDirty]);
+  /** The weight shown for an athlete: the latest weigh-in, or Setup's undated one. */
+  const latestKg = (athlete: "hippos" | "gators") =>
+    currentBodyweight(history, athlete)?.kg ?? settings.bodyweight?.[athlete] ?? 0;
   const [eventName, setEventName] = useState(settings.eventName);
   const [eventDate, setEventDate] = useState(settings.eventDate);
   const [weeklyTarget, setWeeklyTarget] = useState(String(settings.weeklyTarget));
@@ -80,12 +112,22 @@ export function SettingsForm({
   const [bodyweight, setBodyweight] = useState<Record<"hippos" | "gators", string>>(
     () => {
       const unit = settings.weightUnit ?? "lb";
-      const stored = settings.bodyweight ?? { hippos: 0, gators: 0 };
       const show = (kg: number) =>
         kg > 0 ? String(Math.round(fromKilograms(kg, unit) * 10) / 10) : "";
-      return { hippos: show(stored.hippos), gators: show(stored.gators) };
+      return { hippos: show(latestKg("hippos")), gators: show(latestKg("gators")) };
     },
   );
+  const [height, setHeight] = useState<Record<"hippos" | "gators", string>>(() => {
+    const unit = settings.weightUnit ?? "lb";
+    return {
+      hippos: showHeight(settings.height?.hippos ?? 0, unit),
+      gators: showHeight(settings.height?.gators ?? 0, unit),
+    };
+  });
+  const [birthYear, setBirthYear] = useState<Record<"hippos" | "gators", string>>(() => ({
+    hippos: settings.birthYear?.hippos ? String(settings.birthYear.hippos) : "",
+    gators: settings.birthYear?.gators ? String(settings.birthYear.gators) : "",
+  }));
   // Settings saved before lift targets existed have none stored. Progress
   // shows the defaults for them, so this starts from the same numbers.
   const savedLifts = settings.liftTargets ?? DEFAULT_SETTINGS.liftTargets;
@@ -256,6 +298,16 @@ export function SettingsForm({
         if (!Number.isFinite(kg) || kg <= 0 || kg > 500)
           return `${ATHLETES[athlete].name} bodyweight needs a sensible number, or nothing at all.`;
       }
+      if (height[athlete].trim() !== "") {
+        const cm = readHeight(height[athlete], weightUnit);
+        if (!Number.isFinite(cm) || cm < 50 || cm > 300)
+          return `${ATHLETES[athlete].name} height needs a sensible number, or nothing at all.`;
+      }
+      if (birthYear[athlete].trim() !== "") {
+        const year = Number(birthYear[athlete].trim());
+        if (!Number.isInteger(year) || year < 1900 || year > Number(today.slice(0, 4)) - 5)
+          return `${ATHLETES[athlete].name} birth year needs four digits, or nothing at all.`;
+      }
       for (const { key, label } of MACRO_FIELDS) {
         const value = Number(targets[athlete][key].trim() || "0");
         if (!Number.isFinite(value) || value < 0)
@@ -286,39 +338,92 @@ export function SettingsForm({
         return out;
       }, {} as Macros);
 
-    const weightFor = (athlete: "hippos" | "gators") => {
-      const raw = bodyweight[athlete].trim();
-      return raw === "" ? 0 : toKilograms(Number(raw), weightUnit);
-    };
-
     const liftsFor = (athlete: "hippos" | "gators") =>
       eachLift((key) => liftKg(athlete, key) ?? 0);
 
+    /**
+     * A new bodyweight is a weigh-in today, so the sessions before it keep
+     * the weight they were done at. Setup's undated weight stays what it was
+     * for every day before the first weigh-in; only with no weigh-ins at all
+     * does clearing the box clear it.
+     */
+    const weighIns: Bodyweight[] = [];
+    const baseline = { ...(settings.bodyweight ?? { hippos: 0, gators: 0 }) };
+    for (const athlete of ["hippos", "gators"] as const) {
+      const raw = bodyweight[athlete].trim();
+      if (raw === "") {
+        if (!currentBodyweight(history, athlete)) baseline[athlete] = 0;
+        continue;
+      }
+      const kg = toKilograms(Number(raw), weightUnit);
+      // The box shows a weight rounded to a tenth; that is not a new weight.
+      if (Math.abs(kg - latestKg(athlete)) < 0.05) continue;
+      weighIns.push({
+        id: newId(),
+        kind: "bodyweight",
+        athlete,
+        day: today,
+        time: clockTime(),
+        kg: Math.round(kg * 100) / 100,
+      });
+    }
+
+    const nextTargets = { hippos: macrosFor("hippos"), gators: macrosFor("gators") };
+    const pastTargets = settings.targetHistory ?? { hippos: [], gators: [] };
+    const yearFor = (athlete: "hippos" | "gators") =>
+      birthYear[athlete].trim() === "" ? 0 : Number(birthYear[athlete].trim());
+    const heightFor = (athlete: "hippos" | "gators") =>
+      height[athlete].trim() === "" ? 0 : Math.round(readHeight(height[athlete], weightUnit) * 10) / 10;
+
     setSaving(true);
     try {
-      await onSave({
-        eventName: eventName.trim(),
-        eventDate,
-        weeklyTarget: Number(weeklyTarget),
-        weightUnit,
-        targets: { hippos: macrosFor("hippos"), gators: macrosFor("gators") },
-        bodyweight: {
-          hippos: weightFor("hippos"),
-          gators: weightFor("gators"),
+      await onSave(
+        {
+          eventName: eventName.trim(),
+          eventDate,
+          weeklyTarget: Number(weeklyTarget),
+          weightUnit,
+          targets: nextTargets,
+          // A day already passed keeps the targets it was judged against.
+          targetHistory: {
+            hippos: recordTargetChange(pastTargets.hippos, settings.targets.hippos, nextTargets.hippos, today),
+            gators: recordTargetChange(pastTargets.gators, settings.targets.gators, nextTargets.gators, today),
+          },
+          bodyweight: baseline,
+          height: { hippos: heightFor("hippos"), gators: heightFor("gators") },
+          birthYear: { hippos: yearFor("hippos"), gators: yearFor("gators") },
+          liftTargets: {
+            hippos: liftsFor("hippos"),
+            gators: liftsFor("gators"),
+          },
+          foodNotes: foodNotes.trim(),
         },
-        liftTargets: {
-          hippos: liftsFor("hippos"),
-          gators: liftsFor("gators"),
-        },
-        foodNotes: foodNotes.trim(),
-      });
+        undefined,
+        weighIns,
+      );
     } finally {
       setSaving(false);
     }
   }
 
+  /** Resting energy from what is in the boxes, so the figure answers as you type. */
+  function restingFor(athlete: "hippos" | "gators") {
+    const kg = bodyweight[athlete].trim() === "" ? 0 : toKilograms(Number(bodyweight[athlete]), weightUnit);
+    const cm = height[athlete].trim() === "" ? 0 : readHeight(height[athlete], weightUnit);
+    const year = Number(birthYear[athlete].trim() || 0);
+    if (![kg, cm, year].every(Number.isFinite)) return null;
+    return restingEnergy({ kg, cm, age: ageOn(year, today), sex: SEX[athlete] });
+  }
+
+  /** Where the bodyweight shown came from. */
+  function weightHint(athlete: "hippos" | "gators") {
+    const latest = currentBodyweight(history, athlete);
+    if (latest) return `Last weighed ${formatDay(latest.day, today)}. A new weight is logged as a weigh-in today.`;
+    return "A new weight is logged as a weigh-in today, so earlier sessions keep theirs.";
+  }
+
   return (
-    <form onSubmit={submit} className="space-y-4 pb-4">
+    <form onSubmit={submit} onChange={() => onDirty?.(true)} className="space-y-4 pb-4">
       <section className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
         <h3 className="text-sm font-semibold">The event</h3>
         <Field label="Name">
@@ -355,6 +460,11 @@ export function SettingsForm({
                 type="button"
                 onClick={() => {
                   if (unit === weightUnit) return;
+                  onDirty?.(true);
+                  setHeight((current) => ({
+                    hippos: current.hippos.trim() === "" ? "" : showHeight(readHeight(current.hippos, weightUnit), unit),
+                    gators: current.gators.trim() === "" ? "" : showHeight(readHeight(current.gators, weightUnit), unit),
+                  }));
                   setBodyweight((current) => ({
                     hippos: reunit(current.hippos, weightUnit, unit),
                     gators: reunit(current.gators, weightUnit, unit),
@@ -395,10 +505,7 @@ export function SettingsForm({
             />
             {ATHLETES[athlete].name} daily targets
           </h3>
-          <Field
-            label={`Bodyweight (${weightUnit})`}
-            hint="Used to estimate calories burned"
-          >
+          <Field label={`Bodyweight (${weightUnit})`} hint={weightHint(athlete)}>
             <Input
               value={bodyweight[athlete]}
               inputMode="decimal"
@@ -411,6 +518,34 @@ export function SettingsForm({
               }
             />
           </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={`Height (${heightUnit(weightUnit)})`}>
+              <Input
+                value={height[athlete]}
+                inputMode="decimal"
+                placeholder="Not set"
+                onChange={(event) =>
+                  setHeight((current) => ({ ...current, [athlete]: event.target.value }))
+                }
+              />
+            </Field>
+            <Field label="Birth year">
+              <Input
+                value={birthYear[athlete]}
+                inputMode="numeric"
+                placeholder="Not set"
+                maxLength={4}
+                onChange={(event) =>
+                  setBirthYear((current) => ({ ...current, [athlete]: event.target.value }))
+                }
+              />
+            </Field>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            {restingFor(athlete) !== null
+              ? `Resting energy ~${formatAmount(Math.round(restingFor(athlete)! / 10) * 10)} kcal a day (Mifflin–St Jeor, ${SEX[athlete]}). Fuel adds training to it.`
+              : "With bodyweight, height and birth year, Fuel counts resting energy as well as training."}
+          </p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {MACRO_FIELDS.map(({ key, label, unit }) => (
               <Field key={key} label={`${label} (${unit})`}>

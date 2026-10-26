@@ -1,24 +1,24 @@
 "use client";
 
 import { TrendingUp } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import {
   ATHLETES,
   DEFAULT_SETTINGS,
   formatWeight,
-  type RecordItem,
+  fromKilograms,
   type Settings,
   type WeightUnit,
 } from "@/lib/domain";
+import type { BodyweightHistory } from "@/lib/bodyweight";
 import { formatDay } from "@/lib/client";
 import { formatAmount, targetPercent } from "@/lib/fuel";
+import type { JournalSummary } from "@/lib/summary";
 import {
-  liftProgress,
   liftTotal,
   progressMarks,
   shownGap,
   toGo,
-  togetherLiftSessions,
+  VOLUME_WEEKS,
   type LiftProgress,
   type LiftTotal,
   leaderLanes,
@@ -380,31 +380,115 @@ function Lift({
         </dl>
       </div>
       <p className="text-xs text-muted-foreground">{summary}</p>
+      {lift.estimated ? (
+        <p className="text-xs text-muted-foreground">
+          Estimated max{" "}
+          <span className="font-medium text-foreground tabular-nums">
+            ~{Math.round(fromKilograms(lift.estimated.kg, unit))} {unit}
+          </span>
+          , from {formatWeight(lift.estimated.setKg, unit)} × {lift.estimated.reps} on{" "}
+          {formatDay(lift.estimated.day, today)}
+          {lift.target > 0 ? ` · ${targetPercent(lift.estimated.kg, lift.target)}% of target` : ""}
+        </p>
+      ) : null}
+      <Volume weeks={lift.weeks} unit={unit} color={color} name={label} />
     </div>
   );
 }
 
-export function Progress({
-  records,
-  settings,
-  today,
-  journalTotal,
-  loadingAll = false,
-  onLoadAll,
+/**
+ * Load times reps a week, the last eight with this one at the end. This week
+ * is not over, so its bar can only grow.
+ */
+function Volume({
+  weeks,
+  unit,
+  color,
+  name,
 }: {
-  records: RecordItem[];
-  settings: Settings;
+  weeks: number[];
+  unit: WeightUnit;
+  color: string;
+  name: string;
+}) {
+  if (!weeks.some((kg) => kg > 0)) return null;
+  const shown = weeks.map((kg) => Math.round(fromKilograms(kg, unit)));
+  const most = Math.max(...shown);
+  const now = shown[shown.length - 1];
+  const before = shown[shown.length - 2] ?? 0;
+  return (
+    <div className="space-y-1.5">
+      <div
+        role="img"
+        aria-label={`${name} weekly volume, oldest first: ${shown.map((value) => `${formatAmount(value)} ${unit}`).join(", ")}`}
+        className="flex h-8 items-end gap-1"
+      >
+        {shown.map((value, index) => (
+          <span
+            key={index}
+            className="flex-1 rounded-sm"
+            style={{
+              height: `${Math.max(value > 0 ? 8 : 2, (value / most) * 100)}%`,
+              background: value > 0 ? color : "var(--muted)",
+              opacity: index === shown.length - 1 || value === 0 ? 1 : 0.45,
+            }}
+          />
+        ))}
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        Volume, {unit} × reps · this week {formatAmount(now)} · last week {formatAmount(before)} ·{" "}
+        {VOLUME_WEEKS} weeks shown
+      </p>
+    </div>
+  );
+}
+
+/** The weigh-ins as a trend: where it started, where it is, and how far it has moved. */
+function BodyweightTrend({
+  athlete,
+  history,
+  unit,
+  today,
+}: {
+  athlete: ProgressAthlete;
+  history: BodyweightHistory;
+  unit: WeightUnit;
   today: string;
-  /** Rows in the journal, which can be more than what is loaded. */
-  journalTotal: number;
-  loadingAll?: boolean;
-  /** Set when only the recent slice is loaded, which can hide a first session. */
-  onLoadAll?: () => void;
+}) {
+  const weighIns = history.weighIns[athlete];
+  if (!weighIns.length) return null;
+  const first = weighIns[0];
+  const last = weighIns[weighIns.length - 1];
+  const change = shownGap(first.kg, last.kg, unit);
+  return (
+    <p className="mb-4 text-xs text-muted-foreground">
+      Bodyweight{" "}
+      <span className="font-medium text-foreground tabular-nums">{formatWeight(last.kg, unit)}</span>{" "}
+      on {formatDay(last.day, today)}
+      {weighIns.length > 1
+        ? ` · ${change > 0 ? "+" : ""}${change} ${unit} since ${formatDay(first.day, today)} · ${weighIns.length} weigh-ins`
+        : ""}
+    </p>
+  );
+}
+
+export function Progress({
+  settings,
+  history,
+  figures,
+  today,
+}: {
+  settings: Settings;
+  history: BodyweightHistory;
+  /** Starts and bests can be anywhere in the journal; these are worked out over all of it. */
+  figures: JournalSummary;
+  today: string;
 }) {
   const unit = settings.weightUnit ?? "lb";
-  // Settings saved before lift targets existed have none stored.
+  // Settings saved before lift targets existed have none stored. Read here,
+  // not from the figures, so a target just saved shows before they refresh.
   const targets = settings.liftTargets ?? DEFAULT_SETTINGS.liftTargets;
-  const together = togetherLiftSessions(records);
+  const together = figures.togetherLifts;
 
   return (
     <div className="space-y-4 pb-4">
@@ -416,32 +500,17 @@ export function Progress({
         <p className="text-xs text-muted-foreground">
           Each day counts as its heaviest set, in {unit}. The bar places start,
           latest, best and the target on a scale fitted to them. A target also
-          shows in kilograms. The total adds press, squat and deadlift. Targets
-          are set in Setup.
+          shows in kilograms. The estimated max is what your best set of ten
+          reps or fewer predicts for a single, as the race estimate reckons it.
+          The total adds press, squat and deadlift. Targets are set in Setup.
         </p>
-        {records.length < journalTotal && onLoadAll ? (
-          <div className="mt-3 rounded-xl bg-muted/60 px-3 py-2.5 text-xs text-muted-foreground">
-            <p>
-              Using the latest {formatAmount(records.length)} of{" "}
-              {formatAmount(journalTotal)} entries, so an older session could change
-              a start or a best.
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="mt-2"
-              disabled={loadingAll}
-              onClick={onLoadAll}
-            >
-              {loadingAll ? "Loading…" : "Include the full journal"}
-            </Button>
-          </div>
-        ) : null}
       </section>
 
       {PEOPLE.map((athlete) => {
-        const rows = liftProgress(records, athlete, targets[athlete]);
+        const rows = figures.lifts[athlete].map((row) => ({
+          ...row,
+          target: targets[athlete][row.key] ?? 0,
+        }));
         return (
           <section
             key={athlete}
@@ -458,6 +527,7 @@ export function Progress({
               />
               {ATHLETES[athlete].name}
             </h2>
+            <BodyweightTrend athlete={athlete} history={history} unit={unit} today={today} />
             <div className="divide-y">
               {rows.map((lift) => (
                 <Lift key={lift.key} athlete={athlete} lift={lift} unit={unit} today={today} />

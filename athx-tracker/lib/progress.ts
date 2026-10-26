@@ -1,8 +1,11 @@
+import { addDays, daysBetween, weekStart } from "./client.ts";
 import { matchMovement } from "./movement-match.ts";
+import { MAX_REPS, repMax } from "./race.ts";
 import {
   PROGRESS_LIFTS,
   displayLoad,
   liftTop,
+  type Lift,
   type LiftTargets,
   type ProgressLift,
   type RecordItem,
@@ -13,6 +16,17 @@ export type ProgressAthlete = "hippos" | "gators";
 
 /** One day's heaviest set of a lift. Kilograms, like every load. */
 export type TopSet = { day: string; kg: number; sets: number; reps: number };
+
+/**
+ * The heaviest single the logged sets predict, on the same line the race
+ * estimate uses, and the set it came from. The heaviest set is what was on
+ * the bar; this is what that set says about a max, so 100 kg for five reads
+ * as more than 101 kg for one.
+ */
+export type EstimatedMax = { kg: number; day: string; setKg: number; reps: number };
+
+/** Weeks of volume Progress shows, the current one last. */
+export const VOLUME_WEEKS = 8;
 
 export type LiftProgress = {
   key: ProgressLift;
@@ -27,6 +41,13 @@ export type LiftProgress = {
   sessions: number;
   /** Kilograms. Zero is no target. */
   target: number;
+  /** Null until a set of ten reps or fewer has been logged. */
+  estimated: EstimatedMax | null;
+  /**
+   * Kilograms times reps for each Monday week, oldest first, the current
+   * week, which may not be over, last. Empty without a day to count from.
+   */
+  weeks: number[];
 };
 
 const BY_NAME = new Map<string, ProgressLift>(
@@ -56,25 +77,73 @@ function heavier(a: TopSet, b: TopSet) {
   return a.sets > b.sets;
 }
 
+/** Every set of a lift: each one when they differed, otherwise the one line. */
+function setsOf(lift: Pick<Lift, "kg" | "sets" | "reps" | "detail">) {
+  return lift.detail?.length
+    ? lift.detail
+    : Array.from({ length: Math.max(1, Math.floor(lift.sets ?? 1)) }, () => ({ kg: lift.kg, reps: lift.reps }));
+}
+
+/** Load times reps across every set: what the lift moved. */
+export function liftVolume(lift: Pick<Lift, "kg" | "sets" | "reps" | "detail">) {
+  return setsOf(lift).reduce((sum, set) => sum + set.kg * Math.max(0, Math.floor(set.reps)), 0);
+}
+
+/**
+ * The most any set of ten reps or fewer predicts for a single. Past ten, a
+ * set says little about a max, which is the race estimate's rule too.
+ */
+export function estimatedMax(
+  lift: Pick<Lift, "kg" | "sets" | "reps" | "detail">,
+  day: string,
+): EstimatedMax | null {
+  let best: EstimatedMax | null = null;
+  for (const set of setsOf(lift)) {
+    const reps = Math.floor(set.reps);
+    if (!(set.kg > 0) || !(reps >= 1 && reps <= MAX_REPS)) continue;
+    const kg = repMax(set.kg, reps, 1);
+    if (!best || kg > best.kg) best = { kg, day, setKg: set.kg, reps };
+  }
+  return best;
+}
+
 /**
  * Start, latest and best of each followed lift for one athlete. A day counts
  * as its heaviest set, so a warm-up never reads as the figure for the day, and
- * a best is credited to the first day it was reached.
+ * a best is credited to the first day it was reached. With today, the volume
+ * of each of the last eight weeks as well.
  */
 export function liftProgress(
   records: RecordItem[],
   athlete: ProgressAthlete,
   targets: LiftTargets,
+  today?: string,
 ): LiftProgress[] {
   const days = new Map<ProgressLift, Map<string, TopSet>>();
   const sessions = new Map<ProgressLift, number>();
+  const estimates = new Map<ProgressLift, EstimatedMax>();
+  const firstWeek = today ? addDays(weekStart(today), -7 * (VOLUME_WEEKS - 1)) : "";
+  const volume = new Map<ProgressLift, number[]>();
   for (const record of records) {
     if (record.kind !== "workout" || record.athlete !== athlete) continue;
     const logged = new Set<ProgressLift>();
+    const week = today && record.day >= firstWeek && record.day <= today
+      ? Math.floor(daysBetween(firstWeek, weekStart(record.day)) / 7)
+      : -1;
     for (const lift of record.lifts) {
       const key = progressLift(lift.name);
       if (!key) continue;
       logged.add(key);
+      const estimate = estimatedMax(lift, record.day);
+      const known = estimates.get(key);
+      // The first day a figure was reached keeps it, as a best does.
+      if (estimate && (!known || estimate.kg > known.kg || (estimate.kg === known.kg && estimate.day < known.day)))
+        estimates.set(key, estimate);
+      if (week >= 0) {
+        const weeks = volume.get(key) ?? Array.from({ length: VOLUME_WEEKS }, () => 0);
+        weeks[week] += liftVolume(lift);
+        volume.set(key, weeks);
+      }
       // A varied lift counts as its heaviest sets, so a warm-up in the same
       // entry never becomes the number for the day.
       const top = lift.detail?.length ? liftTop(lift.detail) : { kg: lift.kg, sets: lift.sets ?? 1, reps: lift.reps };
@@ -100,6 +169,8 @@ export function liftProgress(
       best,
       sessions: sessions.get(key) ?? 0,
       target: targets[key] ?? 0,
+      estimated: estimates.get(key) ?? null,
+      weeks: today ? volume.get(key) ?? Array.from({ length: VOLUME_WEEKS }, () => 0) : [],
     };
   });
 }
