@@ -7,8 +7,9 @@ single SQLite file on a volume.
 ## What it does
 
 - **Today** — countdown to the event, with a race-day estimate under it: the
-  pair's Strength score in kilograms and each athlete's share of it, the 2.4 km run
-  times and SkiErg distance for Endurance, and the MetCon X time. Then fuel for
+  pair's Strength score in kilograms, each athlete's share of it, and where it would
+  have placed among last season's mixed Lite pairs; the 2.4 km run times and SkiErg
+  distance for Endurance; and the MetCon X time. Then fuel for
   each athlete, and the sessions logged this week and over the last 7 days against
   the weekly target. Fuel switches between today, yesterday, the last 7 days, and
   the whole journal. A single day is that day's macros against
@@ -159,6 +160,17 @@ the log cannot support shows a dash and says what to log, rather than a guess.
 Together sessions count for neither athlete. While only the recent slice of the
 journal is loaded the estimate says so and offers the rest, as Progress does,
 because an older session can hold a best.
+
+**The Strength percentile** places the pair among every mixed ATHX Lite pair from
+the 2026 season, 264 pairs at 15 events on the
+[ATHX team leaderboard](https://athxgames.com/team-leaderboards), as the share of
+them it would have beaten. 2026 scored a strict press for one, a squat for three
+and a deadlift for five, so the pair is placed on those lifts, carried from the
+logged sets the same way, and not on 2027's, which would flatter it. Until each of
+you has a strict press logged, a jerk alone places nobody, and the estimate says
+so. Endurance and MetCon X changed format for 2027, so they are not placed until
+2027 results exist. The field lives in `lib/field-data.ts`, and
+`node scripts/pull-field.mjs 2026` rebuilds it from the leaderboard.
 
 ## Running it
 
