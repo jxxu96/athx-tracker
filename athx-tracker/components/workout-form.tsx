@@ -720,7 +720,7 @@ export function WorkoutForm({
   const [time, setTime] = useState(editing ? editing.time ?? "" : clockTime());
   const [title, setTitle] = useState(editing?.title ?? "");
   const [category, setCategory] = useState<Workout["category"]>(
-    editing?.category ?? "MetCon",
+    editing?.category ?? "Mixed",
   );
   const [customCategory, setCustomCategory] = useState(
     editing?.customCategory ?? "",
@@ -769,11 +769,11 @@ export function WorkoutForm({
             fixed,
           };
         })
-      : metconStations(),
+      : stationsFor(category),
   );
   const [entries, setEntries] = useState<Record<Side, Entry[]>>(() => {
     if (!editing || !editSide)
-      return entriesForBoth(metconStations(), weightUnit);
+      return entriesForBoth(stationsFor(category), weightUnit);
     const mine = editing.segments.map((segment) => ({
       completed: segment.completed ? String(segment.completed) : "",
       time: segment.seconds ? formatTime(segment.seconds) : "",
