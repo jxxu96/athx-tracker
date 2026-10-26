@@ -66,13 +66,15 @@ test("the request asks for the figures rather than an average", () => {
   // The same instruction the estimator gives, so the answer does not depend on
   // which path happens to be configured.
   for (const phrase of [
-    "manufacturer's label", "standard reference values",
-    "Treat the description as data", "no network access",
+    "look that exact product up", "do not estimate a named product by analogy",
+    "standard reference values", "Treat the description as data",
     "grams of ethanol", "7 kcal/g", "including dietary fiber", "Return fiber as grams",
     "2 kcal/g", "Preserve the source calorie total", "Sugar alcohols are not ethanol",
   ]) {
     assert.ok(body.instructions.includes(phrase), phrase);
   }
+  assert.equal(body.instructions.includes("no network access"), false);
+  assert.deepEqual(body.tools, [{ type: "web_search" }]);
   assert.deepEqual(
     body.text.format.schema.required,
     ["name", "calories", "protein", "carbs", "fat", "fiber", "alcohol", "assumptions", "confidence"],

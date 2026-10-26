@@ -91,9 +91,10 @@ and the next one is asked, so estimates keep working before Codex is logged in.
 
 Whoever is not last still leaves a reserve of time. That is why Grok does not
 lead: it takes about 32 s, and the fallback then has nothing left. Claude on
-Haiku is the fast middle step, about 7 s. A click from the app allows the
-first provider its full 49 s cap and still holds the reserve. The background
-queue allows 210 s, so each provider can use the cap.
+Haiku is the fast middle step, about 7 s. A workout click allows the first
+provider its full 49 s cap and still holds the reserve. A meal click allows
+90 s, because a named product is looked up, and holds 40 s for a fallback
+search. The background queue allows 210 s.
 
 Measured here, one estimate each:
 
@@ -144,10 +145,15 @@ per call.
 
 - API keys are stripped before each CLI runs, so a stray `ANTHROPIC_API_KEY`
   cannot silently switch you to metered billing.
-- The meal description is passed as data and the system prompt says so, but treat
-  the macros as an estimate to check rather than a lookup. Every number is
-  editable before saving, and editing one marks the meal as your own figures.
-- Each provider gets one turn with tools and web search disabled.
+- The meal description is passed as data. A named brand, product, or restaurant
+  item is looked up, and the assumptions should name the page the figures came
+  from. An unbranded food still uses reference values. Every number is editable
+  before saving, and editing one marks the meal as your own figures.
+- A meal may search the web and open a page, and nothing else. Codex gets live
+  web search. Claude and Grok get web search and page fetch, for up to four
+  turns. A workout stays one turn with those tools off. Looking a product up
+  has a 90s cap per provider, and a click holds 40s so a fallback can search
+  too. The shorter cap still applies to workouts.
 - A reply that would not validate counts as a failure and moves to the next
   provider, rather than reaching the app as a bad estimate.
 

@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 // Importing used to start a listener; it exits on a short token, so this is
 // set before the module is pulled in.
@@ -11,7 +12,17 @@ process.env.ESTIMATOR_TOKEN = "test-token-at-least-16-chars";
 process.env.ESTIMATOR_BUDGET_MS = "56000";
 process.env.ESTIMATOR_TIMEOUT_MS = "49000";
 process.env.ESTIMATOR_RESERVE_MS = "12600";
-const { budgetSlice, clean, parseCliOutput, structured } = await import("./server.mjs");
+const {
+  INSTRUCTIONS,
+  MEAL_PROVIDER_MS,
+  MEAL_RESERVE_MS,
+  PROVIDERS,
+  budgetSlice,
+  clean,
+  parseCliOutput,
+  structured,
+} = await import("./server.mjs");
+const { WORKOUT_TASK } = await import("./workout.mjs");
 
 const whole = {
   name: "Chicken thigh rice bowl",
@@ -124,6 +135,53 @@ test("whoever goes first leaves the fallback something to work with", () => {
   assert.equal(budgetSlice(12600, true), 12600);
   // What the app sends on a click: the cap, plus the reserve for whoever follows.
   assert.equal(budgetSlice(49000 + 12600, false), 49000);
+});
+
+test("a named product is looked up, and a workout is not", () => {
+  assert.match(INSTRUCTIONS, /look that exact product up/);
+  assert.match(INSTRUCTIONS, /do not estimate a named product by analogy/);
+  assert.equal(INSTRUCTIONS.includes("no network access"), false);
+
+  const mealCodex = PROVIDERS.codex.args("Fairlife Core Power");
+  assert.ok(mealCodex.includes("--search"));
+  assert.ok(mealCodex.indexOf("--search") < mealCodex.indexOf("exec"));
+
+  const workoutCodex = PROVIDERS.codex.args("easy 5k", WORKOUT_TASK);
+  assert.equal(workoutCodex.includes("--search"), false);
+
+  const mealGrok = PROVIDERS.grok.args("Chobani flip");
+  assert.equal(mealGrok.includes("--disable-web-search"), false);
+  assert.equal(mealGrok[mealGrok.indexOf("--tools") + 1], "web_search,web_fetch");
+  assert.equal(mealGrok[mealGrok.indexOf("--allow") + 1], "WebFetch");
+  assert.equal(mealGrok[mealGrok.indexOf("--max-turns") + 1], "4");
+
+  const workoutGrok = PROVIDERS.grok.args("easy 5k", WORKOUT_TASK);
+  assert.ok(workoutGrok.includes("--disable-web-search"));
+  assert.equal(workoutGrok[workoutGrok.indexOf("--tools") + 1], "");
+  assert.equal(workoutGrok[workoutGrok.indexOf("--max-turns") + 1], "1");
+
+  const mealClaude = PROVIDERS.claude.args("RxBar");
+  assert.equal(mealClaude[mealClaude.indexOf("--tools") + 1], "WebSearch,WebFetch");
+  assert.equal(mealClaude[mealClaude.indexOf("--allowedTools") + 1], "WebSearch,WebFetch");
+  assert.equal(mealClaude[mealClaude.indexOf("--max-turns") + 1], "4");
+
+  const workoutClaude = PROVIDERS.claude.args("easy 5k", WORKOUT_TASK);
+  assert.equal(workoutClaude[workoutClaude.indexOf("--tools") + 1], "");
+  assert.equal(workoutClaude.includes("WebSearch,WebFetch"), false);
+  assert.equal(workoutClaude[workoutClaude.indexOf("--max-turns") + 1], "1");
+});
+
+test("a click leaves time to look a product up", () => {
+  assert.equal(MEAL_PROVIDER_MS, 90_000);
+  assert.equal(MEAL_RESERVE_MS, 40_000);
+  const click = MEAL_PROVIDER_MS + MEAL_RESERVE_MS;
+  assert.equal(budgetSlice(click, false, MEAL_PROVIDER_MS, MEAL_RESERVE_MS), MEAL_PROVIDER_MS);
+  assert.equal(budgetSlice(MEAL_RESERVE_MS, true, MEAL_PROVIDER_MS, MEAL_RESERVE_MS), MEAL_RESERVE_MS);
+  const route = readFileSync(
+    new URL("../athx-tracker/app/api/estimate/route.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(route, /90_000 \+ 40_000/);
 });
 
 test("a provider is never given more than its own ceiling", () => {
