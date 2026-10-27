@@ -342,7 +342,7 @@ export function Fuel({
         ))}
         <button
           type="button"
-          aria-label="Fuel for a specific day"
+          aria-label="Pick day for fuel"
           aria-pressed={span === "day"}
           onClick={() => {
             setSpan("day");
