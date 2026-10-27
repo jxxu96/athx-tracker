@@ -199,6 +199,15 @@ test("a start older than the loaded slice is in the figures without loading it",
   await page.reload();
   await openProgress(page);
 
+  // Main lifts come from the server over the whole journal, so no banner there.
+  await expect(page.getByText(/Using the latest/)).toHaveCount(0);
+  for (const view of ["ATHX benchmarks", "Weekly review"]) {
+    await page.getByRole("button", { name: view, exact: true }).click();
+    await expect(page.getByText(/Using the latest 400 of 401 entries/)).toBeVisible();
+  }
+  await page.getByRole("button", { name: "Include the full journal" }).click();
+  await expect(page.getByText(/Using the latest/)).toHaveCount(0);
+  await page.getByRole("button", { name: "Main lifts", exact: true }).click();
   await expect(page.getByRole("group", { name: "Gators split jerk" }).getByRole("definition").first())
     .toHaveText("115 lb");
   await expect(page.getByText(/Using the latest/)).toHaveCount(0);

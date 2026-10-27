@@ -598,10 +598,14 @@ export function Tracker({
           />
         ) : tab === "progress" ? (
           <Progress
+            records={shown}
             settings={settings}
             history={history}
             figures={figures}
             today={today}
+            journalTotal={total}
+            loadingAll={refreshing}
+            onLoadAll={scope === "all" || shown.length >= total ? undefined : loadAll}
           />
         ) : tab === "log" ? (
           <History
