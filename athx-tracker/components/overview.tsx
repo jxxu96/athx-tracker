@@ -60,6 +60,8 @@ export function Overview({
   history,
   figures,
   today,
+  onLoadFuelDay,
+  fuelRefresh,
 }: {
   records: RecordItem[];
   settings: Settings;
@@ -67,6 +69,8 @@ export function Overview({
   /** The whole-journal figures, which the recent slice alone cannot give. */
   figures: JournalSummary;
   today: string;
+  onLoadFuelDay: (day: string) => Promise<void>;
+  fuelRefresh: number;
 }) {
   const countdown = daysBetween(today, settings.eventDate);
   const thisWeek = weekStart(today);
@@ -118,6 +122,8 @@ export function Overview({
         history={history}
         figures={figures}
         today={today}
+        onLoadDay={onLoadFuelDay}
+        refresh={fuelRefresh}
       />
 
 

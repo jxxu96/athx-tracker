@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Flame } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { ATHLETES, type Macros, type RecordItem, type Settings } from "@/lib/domain";
 import type { BodyweightHistory } from "@/lib/bodyweight";
 import { addDays, dayToDate } from "@/lib/client";
@@ -34,6 +35,7 @@ const MACRO_KEYS = [
 ] as const satisfies readonly { key: keyof Macros; label: string; unit: string }[];
 
 const PEOPLE = ["hippos", "gators"] as const;
+type FuelView = FuelSpan | "day";
 
 function shortDate(day: string) {
   return new Intl.DateTimeFormat("en-GB", {
@@ -252,6 +254,8 @@ export function Fuel({
   history,
   figures,
   today,
+  onLoadDay,
+  refresh,
 }: {
   records: RecordItem[];
   settings: Settings;
@@ -259,18 +263,40 @@ export function Fuel({
   /** Overall needs the whole journal; these are its figures. */
   figures: JournalSummary;
   today: string;
+  onLoadDay: (day: string) => Promise<void>;
+  refresh: number;
 }) {
-  const [span, setSpan] = useState<FuelSpan>("today");
+  const [span, setSpan] = useState<FuelView>("today");
+  const [day, setDay] = useState(today);
+  const [loaded, setLoaded] = useState({ day: "", refresh });
+  const [dayError, setDayError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (span !== "day") return;
+    let active = true;
+    onLoadDay(day).then(() => {
+      if (active) {
+        setLoaded({ day, refresh });
+        setDayError(null);
+      }
+    }).catch(() => {
+      if (active) setDayError("Could not load this day. Check your connection and try again.");
+    });
+    return () => { active = false; };
+  }, [span, day, onLoadDay, attempt, refresh]);
+  const loadingDay = span === "day" && (loaded.day !== day || loaded.refresh !== refresh);
+  const period = span === "day" ? "today" : span;
+  const referenceDay = span === "day" ? day : today;
   const multi = span === "week" || span === "overall";
   const people = PEOPLE.map((athlete) => ({
     athlete,
     fuel:
       span === "overall"
         ? figures.overall[athlete]
-        : athleteFuel(records, athlete, span, today, settings, history),
+        : athleteFuel(records, athlete, period, referenceDay, settings, history),
   }));
   const mealDays = (athlete: FuelAthlete) => {
-    const window = fuelWindow(span, today);
+    const window = fuelWindow(period, referenceDay);
     return new Set(
       records
         .filter(
@@ -282,7 +308,7 @@ export function Fuel({
         .map((record) => record.day),
     );
   };
-  const together = span === "overall" ? figures.togetherOverall : teamSessions(records, span, today);
+  const together = span === "overall" ? figures.togetherOverall : teamSessions(records, period, referenceDay);
   const story = people
     .map((person) =>
       calorieTracking(ATHLETES[person.athlete].name, person.fuel, multi),
@@ -300,7 +326,7 @@ export function Fuel({
       <div
         role="group"
         aria-label="Fuel range"
-        className="mb-3 grid grid-cols-4 rounded-full bg-muted p-0.5"
+        className="mb-3 grid grid-cols-5 rounded-full bg-muted p-0.5"
       >
         {SPANS.map((item) => (
           <button
@@ -314,27 +340,80 @@ export function Fuel({
             {item.label}
           </button>
         ))}
+        <button
+          type="button"
+          aria-label="Fuel for a specific day"
+          aria-pressed={span === "day"}
+          onClick={() => {
+            setSpan("day");
+            setLoaded({ day: "", refresh });
+            setDayError(null);
+            setAttempt((current) => current + 1);
+          }}
+          className="rounded-full px-1 py-1.5 text-[11px] font-medium transition-colors aria-pressed:bg-background aria-pressed:shadow-sm sm:text-xs"
+        >
+          Pick day
+        </button>
       </div>
-      <p className="mb-3 text-xs text-muted-foreground">{spanNote(span, today)}</p>
-      <p className="mb-4 text-sm">{story}.</p>
-      <div className="grid gap-5 sm:grid-cols-2">
-        {people.map((person) => (
-          <AthleteFuelCard
-            key={person.athlete}
-            athlete={person.athlete}
-            fuel={person.fuel}
-            span={span}
-            today={today}
-            mealDays={mealDays(person.athlete)}
+      {span === "day" ? (
+        <div className="mb-3 flex items-center gap-3">
+          <label htmlFor="fuel-day" className="shrink-0 text-xs font-medium">Day</label>
+          <Input
+            id="fuel-day"
+            aria-label="Fuel day"
+            type="date"
+            min="0001-01-01"
+            max={today}
+            value={day}
+            onChange={(event) => {
+              if (!event.target.value || !event.target.validity.valid) return;
+              setDay(event.target.value);
+              setLoaded({ day: "", refresh });
+              setDayError(null);
+            }}
+            className="w-auto max-w-full"
           />
-        ))}
-      </div>
-      {together > 0 ? (
-        <p className="mt-4 text-xs text-muted-foreground">
-          {together} together session{together === 1 ? "" : "s"} not included.
-          A shared session has no single bodyweight.
-        </p>
+        </div>
       ) : null}
+      <p className="mb-3 text-xs text-muted-foreground">
+        {span === "day"
+          ? `${new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(dayToDate(day))}, against that day's targets.`
+          : spanNote(span, today)}
+      </p>
+      {span === "day" && dayError ? (
+        <div role="alert" className="text-sm">
+          <p>{dayError}</p>
+          <button
+            type="button"
+            className="mt-2 text-xs font-medium underline"
+            onClick={() => { setDayError(null); setLoaded({ day: "", refresh }); setAttempt((current) => current + 1); }}
+          >Try again</button>
+        </div>
+      ) : loadingDay ? (
+        <p role="status" className="text-sm text-muted-foreground">Loading this day…</p>
+      ) : (
+        <>
+          <p className="mb-4 text-sm">{story}.</p>
+          <div className="grid gap-5 sm:grid-cols-2">
+            {people.map((person) => (
+              <AthleteFuelCard
+                key={person.athlete}
+                athlete={person.athlete}
+                fuel={person.fuel}
+                span={period}
+                today={today}
+                mealDays={mealDays(person.athlete)}
+              />
+            ))}
+          </div>
+          {together > 0 ? (
+            <p className="mt-4 text-xs text-muted-foreground">
+              {together} together session{together === 1 ? "" : "s"} not included.
+              A shared session has no single bodyweight.
+            </p>
+          ) : null}
+        </>
+      )}
     </section>
   );
 }

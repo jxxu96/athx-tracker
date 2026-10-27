@@ -12,7 +12,8 @@ single SQLite file on a volume.
   distance for Endurance; and the MetCon X time. Then fuel for
   each athlete, and the sessions logged this week and over the last 7 days against
   the weekly target. Fuel switches between today, yesterday, the last 7 days, and
-  the whole journal. A single day is that day's macros against
+  the whole journal. **Pick day**, beside Overall, shows any past date, including
+  entries older than the phone's recent slice. A single day is that day's macros against
   the daily targets. A longer range is the daily average of days that have a meal,
   so a day you forgot to log is not treated as a day you ate nothing, with the
   totals written under the bars. Under each athlete's food is their

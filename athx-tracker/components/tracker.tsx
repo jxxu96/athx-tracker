@@ -182,6 +182,7 @@ export function Tracker({
   // The whole-journal figures the server worked out, for while only the
   // recent slice is in hand.
   const [summary, setSummary] = useState(initialSummary);
+  const [fuelRefresh, setFuelRefresh] = useState(0);
   const unit = settings.weightUnit ?? "lb";
 
   /** What this phone has not sent yet, shown as if it had been. */
@@ -251,6 +252,7 @@ export function Tracker({
         setRevision(config.revision);
       }
       setSummary(figures.summary);
+      setFuelRefresh((current) => current + 1);
       setProblem("");
       lastFetch.current = Date.now();
     } catch (error) {
@@ -270,6 +272,19 @@ export function Tracker({
   // whole journal once, it should not silently shrink back on the next tap.
   const refresh = useCallback(() => reload(scope), [reload, scope]);
   const loadAll = useCallback(() => reload("all"), [reload]);
+
+  const loadFuelDay = useCallback(async (day: string) => {
+    if (complete) return;
+    const { records: entries } = await api<{ records: RecordItem[] }>(
+      `/api/records?day=${day}`,
+      { signal: timeout(SAVE_TIMEOUT_MS) },
+    );
+    // Pending edits and deletes are still applied by the outbox over this copy.
+    setRecords((current) => sortRecords([
+      ...current.filter((record) => record.day !== day),
+      ...entries,
+    ]));
+  }, [complete]);
 
   /**
    * A submit, not a record. Logging for both used to save one athlete, succeed,
@@ -595,6 +610,8 @@ export function Tracker({
             history={history}
             figures={figures}
             today={today}
+            onLoadFuelDay={loadFuelDay}
+            fuelRefresh={fuelRefresh}
           />
         ) : tab === "progress" ? (
           <Progress

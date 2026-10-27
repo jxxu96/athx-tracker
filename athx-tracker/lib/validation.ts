@@ -25,11 +25,11 @@ function rejectFiberAboveCarbs(
     });
   }
 }
-const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v => {
+export const daySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v => {
   const d = new Date(`${v}T12:00:00Z`);
   return Number.isFinite(d.getTime()) && d.toISOString().slice(0,10) === v;
 }, "Invalid calendar date");
-const base = { id: z.string().uuid(), day };
+const base = { id: z.string().uuid(), day: daySchema };
 /** Optional, so entries saved before times of day existed still parse. */
 const time = z.string().refine(isClockTime, "Write the time as HH:MM").optional();
 export const workoutSchema = z.object({
@@ -116,7 +116,7 @@ export const bodyweightSchema = z.object({
   kg: finite.positive().max(500),
 }).strict();
 export const recordSchema = z.union([workoutSchema, mealSchema, bodyweightSchema]);
-const pastTargetsSchema = z.array(z.object({ until: day, macros: macroSchema }).strict())
+const pastTargetsSchema = z.array(z.object({ until: daySchema, macros: macroSchema }).strict())
   .max(TARGET_HISTORY_LIMIT);
 const birthYear = z.union([z.literal(0), z.number().int().min(1900).max(2100)]);
 /** Kilograms, like every load. Zero is no target. */
@@ -125,7 +125,7 @@ const liftTargetsSchema = z.object({
   splitJerk: liftTarget, overheadPress: liftTarget, backSquat: liftTarget, deadlift: liftTarget,
 }).strict();
 export const settingsSchema = z.object({
-  eventDate: day, eventName: z.string().trim().min(1).max(100),
+  eventDate: daySchema, eventName: z.string().trim().min(1).max(100),
   weeklyTarget: z.number().int().min(1).max(21), weightUnit: z.enum(["kg","lb"]).default("lb"),
   targets: z.object({ hippos: macroSchema, gators: macroSchema }).strict(),
   // Defaulted, so settings stored before bodyweight existed still parse.
