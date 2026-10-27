@@ -1,16 +1,24 @@
 import { BodyTooLarge, database, guard, json, readBody, tooLarge } from "@/lib/server";
 import { newBests } from "@/lib/bests";
 import type { Workout } from "@/lib/domain";
-import { readRecords } from "@/lib/journal";
-import { recordSchema } from "@/lib/validation";
+import { readRecords, readRecordsOn } from "@/lib/journal";
+import { daySchema, recordSchema } from "@/lib/validation";
 import { ZodError } from "zod";
 
 export async function GET(request: Request) {
   const rejected = await guard(request);
   if (rejected) return rejected;
+  const params = new URL(request.url).searchParams;
+  const day = params.get("day");
+  if (day !== null) {
+    if (!daySchema.safeParse(day).success)
+      return json({ error: "Choose a valid calendar date." }, 400);
+    const records = readRecordsOn(day);
+    return json({ records, total: records.length });
+  }
   // Omitting the limit returns the whole journal, which is what the backup job
   // asks for and must keep getting.
-  const asked = Number(new URL(request.url).searchParams.get("limit"));
+  const asked = Number(params.get("limit"));
   const limit = Number.isInteger(asked) && asked > 0 ? asked : null;
   const { records, total } = readRecords(limit);
   return json({ records, total });

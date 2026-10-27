@@ -38,3 +38,11 @@ export function readSettings() {
     .get() as { payload: string; revision: number } | undefined;
   return row ? { settings: JSON.parse(row.payload) as Settings, revision: row.revision } : null;
 }
+
+/** A selected day's entries, including ones outside the phone's recent slice. */
+export function readRecordsOn(day: string): RecordItem[] {
+  const rows = database()
+    .prepare("SELECT payload FROM records WHERE day = ? ORDER BY created_at DESC")
+    .all(day) as { payload: string }[];
+  return rows.map((row) => JSON.parse(row.payload) as RecordItem);
+}
