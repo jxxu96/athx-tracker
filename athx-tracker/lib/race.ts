@@ -465,3 +465,69 @@ export function raceEstimate(records: RecordItem[]) {
     metcon: metconPlan(records),
   };
 }
+
+export type RaceZone = "strength" | "endurance" | "metcon";
+/** What a zone scores: kilograms and metres count up, MetCon X's seconds count down. */
+export const RACE_ZONES = [
+  { key: "strength", name: "Strength", lower: false },
+  { key: "endurance", name: "Endurance", lower: false },
+  { key: "metcon", name: "MetCon X", lower: true },
+] as const;
+
+/** Each zone's score from an estimate, null where the log cannot support one. */
+export function zoneScores(estimate: ReturnType<typeof raceEstimate>): Record<RaceZone, number | null> {
+  return {
+    strength: estimate.strength.combined,
+    endurance: estimate.endurance.metres,
+    metcon: estimate.metcon.seconds,
+  };
+}
+
+const ZONE_SCORE: Record<RaceZone, (records: RecordItem[]) => number | null> = {
+  strength: (records) => strengthPlan(records).combined,
+  endurance: (records) => endurancePlan(records).metres,
+  metcon: (records) => metconPlan(records).seconds,
+};
+
+export type ZoneStart = { score: number; day: string };
+
+/**
+ * Each zone's first estimate: the score as of the first day the log could
+ * support one, counting everything logged up to the end of that day. A score
+ * can come and go: two runs past the cap ski nothing, which scores, until a
+ * quicker run leaves time on an erg nobody has used. So every day is tried
+ * in order, rather than halving on the assumption that a score once there stays.
+ */
+export function raceStart(records: RecordItem[]): Record<RaceZone, ZoneStart | null> {
+  const days = [
+    ...new Set(
+      records
+        .filter((record) => record.kind === "workout" && record.athlete !== "team")
+        .map((record) => record.day),
+    ),
+  ].sort();
+  const found: Record<RaceZone, ZoneStart | null> = { strength: null, endurance: null, metcon: null };
+  for (const day of days) {
+    const upTo = records.filter((record) => record.day <= day);
+    for (const { key } of RACE_ZONES) {
+      if (found[key]) continue;
+      const score = ZONE_SCORE[key](upTo);
+      if (score !== null) found[key] = { score, day };
+    }
+    if (RACE_ZONES.every(({ key }) => found[key])) break;
+  }
+  return found;
+}
+
+/**
+ * How far from the start to the goal the current score has come, as a
+ * percent from 0 to 100. Null without a goal, or when the start was already
+ * at it, which leaves no distance to cover.
+ */
+export function zoneProgress(start: number, current: number, goal: number, lower: boolean) {
+  if (!(goal > 0)) return null;
+  const span = lower ? start - goal : goal - start;
+  if (!(span > 0)) return null;
+  const covered = lower ? start - current : current - start;
+  return Math.min(100, Math.max(0, (covered / span) * 100));
+}

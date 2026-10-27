@@ -95,6 +95,12 @@ export const PROGRESS_LIFTS = [
 export type ProgressLift = (typeof PROGRESS_LIFTS)[number]["key"];
 /** Kilograms, like every other weight here. Zero means no target. */
 export type LiftTargets = Record<ProgressLift, number>;
+/**
+ * What the pair is aiming for in each zone on race day: Strength's combined
+ * kilograms, Endurance's SkiErg metres, and MetCon X's time in seconds.
+ * Zero means no goal yet.
+ */
+export type RaceGoals = { strength: number; endurance: number; metcon: number };
 /** Daily targets that were replaced, and the last day they were the target. */
 export type PastTargets = { until: string; macros: Macros };
 export type Settings = {
@@ -117,6 +123,8 @@ export type Settings = {
   /** Zero means not given yet. A year either way moves resting energy by 5 kcal a day. */
   birthYear?: { hippos: number; gators: number };
   liftTargets: { hippos: LiftTargets; gators: LiftTargets };
+  /** Older settings omit it: no goals. */
+  raceGoals?: RaceGoals;
   /** Shared notes on foods eaten often, sent with every meal estimate. */
   foodNotes: string;
 };
@@ -141,6 +149,7 @@ export const DEFAULT_SETTINGS: Settings = {
       deadlift: 335 / LB_PER_KG,
     },
   },
+  raceGoals: { strength: 0, endurance: 0, metcon: 0 },
   foodNotes: "",
 };
 /**

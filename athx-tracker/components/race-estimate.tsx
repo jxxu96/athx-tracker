@@ -1,6 +1,7 @@
 "use client";
 
-import { ATHLETES, METCON, formatDistance, formatTime } from "@/lib/domain";
+import { formatDay } from "@/lib/client";
+import { ATHLETES, METCON, formatDistance, formatTime, type RaceGoals } from "@/lib/domain";
 import { FIELD, FIELD_LIFTS, type StrengthPlacing } from "@/lib/field";
 import { formatAmount } from "@/lib/fuel";
 import {
@@ -8,10 +9,15 @@ import {
   METCON_CAP_SECONDS,
   MIN_PIECE_METRES,
   RACE_ATHLETES,
+  RACE_ZONES,
   STRENGTH_2027,
   STRENGTH_LIFTS,
   raceEstimate,
+  raceStart,
+  zoneProgress,
+  zoneScores,
   type EndurancePlan,
+  type RaceZone,
   type MetconPlan,
   type RaceAthlete,
   type StrengthLift,
@@ -331,6 +337,83 @@ function Metcon({ plan }: { plan: MetconPlan }) {
         </>
       )}
     </Zone>
+  );
+}
+
+const SCORE: Record<RaceZone, (score: number) => string> = {
+  strength: (kg) => `${formatAmount(kg)}\u00a0kg`,
+  endurance: (metres) => `${formatAmount(metres)}\u00a0m`,
+  metcon: (seconds) => formatTime(seconds),
+};
+
+/**
+ * Each zone from its first estimate to the goal set in Setup, with where the
+ * pair is now. The bar is the share of that distance covered, so falling back
+ * below the start reads as nothing covered rather than running off the end.
+ */
+export function RaceProgress({
+  estimate,
+  start,
+  goals,
+  today,
+}: {
+  estimate: ReturnType<typeof raceEstimate>;
+  /** Missing from a summary worked out before starts were. */
+  start: ReturnType<typeof raceStart> | undefined;
+  goals: RaceGoals | undefined;
+  today: string;
+}) {
+  const current = zoneScores(estimate);
+  return (
+    <div className="mt-5 border-t pt-4">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3">
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
+          Progress
+        </h2>
+        <p className="text-[11px] text-muted-foreground">Start · now · goal</p>
+      </div>
+      <div className="space-y-3.5">
+        {RACE_ZONES.map(({ key, name, lower }) => {
+          const now = current[key];
+          const from = start?.[key] ?? null;
+          const goal = goals?.[key] ?? 0;
+          const pct = from && now !== null ? zoneProgress(from.score, now, goal, lower) : null;
+          const reached = goal > 0 && now !== null && (lower ? now <= goal : now >= goal);
+          return (
+            <div key={key} role="group" aria-label={`${name} progress`}>
+              <div className="flex items-baseline justify-between gap-3">
+                <h3 className="text-sm font-medium">{name}</h3>
+                <p className="text-sm font-semibold tabular-nums">
+                  {now === null ? "—" : SCORE[key](now)}
+                  {pct !== null && !reached ? (
+                    <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                      {Math.round(pct)}%
+                    </span>
+                  ) : null}
+                </p>
+              </div>
+              <div
+                aria-hidden="true"
+                className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted"
+              >
+                <div
+                  className="h-full rounded-full transition-[width]"
+                  style={{ width: `${reached ? 100 : pct ?? 0}%`, background: ATHLETES.team.color }}
+                />
+              </div>
+              <p className="mt-1 flex justify-between gap-3 text-xs tabular-nums text-muted-foreground">
+                <span>
+                  {from ? `Start ${SCORE[key](from.score)} · ${formatDay(from.day, today)}` : "No estimate yet"}
+                </span>
+                <span>
+                  {goal > 0 ? `${reached ? "Reached" : "Goal"} ${SCORE[key](goal)}` : "No goal in Setup"}
+                </span>
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

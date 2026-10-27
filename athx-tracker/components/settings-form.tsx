@@ -21,8 +21,10 @@ import {
   SEX,
   clockTime,
   displayLoad,
+  formatTime,
   fromKilograms,
   parseLoad,
+  parseTime,
   reunitLoad,
   toKilograms,
   type Bodyweight,
@@ -139,6 +141,15 @@ export function SettingsForm({
       return { hippos: show(savedLifts.hippos), gators: show(savedLifts.gators) };
     },
   );
+  // Strength is in kilograms whatever the unit, as the race estimate shows it.
+  const [raceGoals, setRaceGoals] = useState(() => {
+    const goals = settings.raceGoals ?? DEFAULT_SETTINGS.raceGoals!;
+    return {
+      strength: goals.strength > 0 ? String(goals.strength) : "",
+      endurance: goals.endurance > 0 ? String(goals.endurance) : "",
+      metcon: goals.metcon > 0 ? formatTime(goals.metcon) : "",
+    };
+  });
   const [foodNotes, setFoodNotes] = useState(settings.foodNotes ?? "");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -285,6 +296,17 @@ export function SettingsForm({
     return parseLoad(raw, weightUnit, savedLifts[athlete][key]);
   }
 
+  /** Race goals as stored: kilograms, metres and seconds, zero for none, NaN when unreadable. */
+  function goalsFrom() {
+    const amount = (text: string) => (text.trim() === "" ? 0 : Number(text.trim().replace(/,/g, "")));
+    const time = raceGoals.metcon.trim();
+    return {
+      strength: amount(raceGoals.strength),
+      endurance: amount(raceGoals.endurance),
+      metcon: time === "" ? 0 : parseTime(time),
+    };
+  }
+
   function validate() {
     if (!eventName.trim()) return "Name the event.";
     if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) return "Pick a valid event date.";
@@ -323,6 +345,13 @@ export function SettingsForm({
           return `${ATHLETES[athlete].name} ${name.toLowerCase()} target looks too high.`;
       }
     }
+    const goals = goalsFrom();
+    if (!Number.isFinite(goals.strength) || goals.strength < 0 || goals.strength > 2000)
+      return "Strength goal needs kilograms, or nothing at all.";
+    if (!Number.isFinite(goals.endurance) || goals.endurance < 0 || goals.endurance > 20000)
+      return "Endurance goal needs metres, or nothing at all.";
+    if (!Number.isFinite(goals.metcon) || goals.metcon > 3600)
+      return "MetCon X goal needs a time like 14:30, or nothing at all.";
     return "";
   }
 
@@ -396,6 +425,7 @@ export function SettingsForm({
             hippos: liftsFor("hippos"),
             gators: liftsFor("gators"),
           },
+          raceGoals: goalsFrom(),
           foodNotes: foodNotes.trim(),
         },
         undefined,
@@ -603,6 +633,36 @@ export function SettingsForm({
             </div>
           </fieldset>
         ))}
+      </section>
+
+      <section className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
+        <div>
+          <h3 className="text-sm font-semibold">Race goals</h3>
+          <p className="text-[11px] text-muted-foreground">
+            What the pair is aiming for in each zone. Today measures progress from your first
+            estimate to these. Leave one blank for no goal.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {(
+            [
+              { key: "strength", label: "Strength (kg, combined)", mode: "decimal", placeholder: "Not set" },
+              { key: "endurance", label: "Endurance (m SkiErg)", mode: "numeric", placeholder: "Not set" },
+              { key: "metcon", label: "MetCon X (m:ss)", mode: "text", placeholder: "Not set" },
+            ] as const
+          ).map(({ key, label, mode, placeholder }) => (
+            <Field key={key} label={label}>
+              <Input
+                value={raceGoals[key]}
+                inputMode={mode}
+                placeholder={placeholder}
+                onChange={(event) =>
+                  setRaceGoals((current) => ({ ...current, [key]: event.target.value }))
+                }
+              />
+            </Field>
+          ))}
+        </div>
       </section>
 
       <section className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">

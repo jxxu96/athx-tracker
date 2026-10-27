@@ -135,6 +135,9 @@ export const settingsSchema = z.object({
   // pick up the same targets the app shows for them.
   liftTargets: z.object({ hippos: liftTargetsSchema, gators: liftTargetsSchema })
     .strict().default(DEFAULT_SETTINGS.liftTargets),
+  // Kilograms, metres and seconds, zero for none. Defaulted for older settings.
+  raceGoals: z.object({ strength: finite.max(2000), endurance: finite.max(20000), metcon: finite.max(3600) })
+    .strict().default({ strength: 0, endurance: 0, metcon: 0 }),
   // Defaulted, so settings stored before food notes existed still parse.
   foodNotes: z.string().max(FOOD_NOTES_LIMIT).default(""),
   // Defaulted, so settings stored before targets were dated still parse.
