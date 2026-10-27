@@ -7,15 +7,20 @@ single SQLite file on a volume.
 ## What it does
 
 - **Today** — countdown to the event, with a race-day estimate under it: the
-  pair's Strength score in kilograms and each athlete's share of it, the 2.4 km run
-  times and SkiErg distance for Endurance, and the MetCon X time. Then fuel for
+  pair's Strength score in kilograms, each athlete's share of it, and where it would
+  have placed among last season's mixed Lite pairs; the 2.4 km run times and SkiErg
+  distance for Endurance; and the MetCon X time. Then fuel for
   each athlete, and the sessions logged this week and over the last 7 days against
   the weekly target. Fuel switches between today, yesterday, the last 7 days, and
   the whole journal. A single day is that day's macros against
   the daily targets. A longer range is the daily average of days that have a meal,
   so a day you forgot to log is not treated as a day you ate nothing, with the
-  totals written under the bars. Total expenditure is the training burn for the
-  same range, summed across both athletes. The last session stays underneath,
+  totals written under the bars. Under each athlete's food is their
+  expenditure, resting energy and training together, and the balance of eating
+  against it: for a day, that day's; for a longer range, a day's average. See
+  *Resting energy and the balance* below. The race-day estimate, Progress and
+  Fuel over the whole journal are worked out on the server from every entry,
+  so an old best counts however much has been logged since. The last session stays underneath,
   with its time, what it burned, and the whole-session estimate when the
   stations support one, and so does the ATHX Lite running order.
 - **Session** — log a workout as MetCon, Strength, Endurance, Solidcore, Tennis, YTW or
@@ -49,13 +54,20 @@ single SQLite file on a volume.
   loose phrasing. A name that is not one of those is kept as typed and called
   out in the notes. AI replaces the workout fields but saves only when you
   choose Save session. Unsupported browsers can use keyboard dictation.
+  A session takes a time of day, which starts at the clock and can be cleared.
+  Saving a lift heavier than any of that athlete's earlier sessions, or a set
+  whose estimated max is, says so: "New best: Back squat 195 lb × 5, up from
+  185 lb × 5". The server checks every earlier session, the session's own
+  earlier version included, so saving an edit announces nothing it already held.
 - **Meal** — describe a meal and let Grok estimate the macros, or type them in
   yourself. Editing an estimated number saves the meal as your own figures.
   Calories keep the source's reported or estimated total, including in queued
   meals. A rough 4/4/9 comparison (plus ethanol at 7 kcal/g on Alcohol) is
   advisory: differences never block saving or rewrite calories. Total carbs
   include fiber; fiber, sugar alcohols, food-specific factors and rounding can
-  make the simple calculation differ from a label's calorie total.
+  make the simple calculation differ from a label's calorie total. A meal takes
+  a time of day, which starts at the clock; a new meal's sitting follows it until
+  you pick one.
 - **Progress** — the main lifts for each athlete: split jerk, overhead press,
   back squat and deadlift. Each shows its start, latest, best and target, how far
   is left, and a bar towards the target: grey up to the start, the athlete's
@@ -64,9 +76,13 @@ single SQLite file on a volume.
   lift was logged, and a best belongs to the first day it was reached. Names are
   matched the way a described workout's are, so "OHP" typed under Other counts,
   while push press, front squat and Romanian deadlift stay lifts of their own.
-  Together sessions count for neither athlete. While only the recent slice of the
-  journal is loaded it says so and offers the rest, because an older session can
-  hold the real start.
+  Together sessions count for neither athlete. Beside the heaviest set is the
+  estimated max: the most any set of ten reps or fewer predicts for a single, on
+  the race estimate's line, so 100 kg for five reads as more than 101 kg for one.
+  Under each lift, the volume of the last eight Monday weeks, load times reps
+  across every set, this week's growing as it is logged. Each athlete's card opens
+  with their bodyweight from the weigh-ins and how far it has moved. All of it is
+  worked out over the whole journal, not the slice the phone holds.
   **ATHX benchmarks** compares actual circuit times and individual station splits,
   with best, latest, previous and attempt history. Only matching work, loads and
   solo/pairs context are compared; unknown loads stay separate from recorded
@@ -81,17 +97,26 @@ single SQLite file on a volume.
   through today; earlier weeks run Monday to Sunday. Lift volume counts every
   set's load times reps. Nutrition averages use days with known meal macros;
   unlogged days and pending estimates are excluded, while partial days count.
-  There is no daily completion step. Older weeks and benchmarks can include
-  the full journal using the same load-history control as the lifts.
-- **Log** — everything logged, newest first, filterable, with edit and delete, each
-  session showing what it burned. It opens with the most recent entries and fetches
-  the rest when asked, and draws a hundred at a time however many are loaded, so a
-  journal years deep neither crosses the network nor reaches the screen all at once.
+  There is no daily completion step. Benchmarks and the weekly review read the
+  entries the phone holds; while only the recent slice is loaded they say so
+  and offer the rest.
+- **Log** — everything logged, newest first and, inside a day, latest time of day
+  first, filterable, with edit and delete, each session showing what it burned.
+  Weigh-ins are entries too, corrected where they stand. It opens with the most
+  recent entries and fetches the rest when asked, and draws a hundred at a time
+  however many are loaded, so a journal years deep neither crosses the network
+  nor reaches the screen all at once. What this phone has not sent yet is marked
+  as waiting; see *Without a connection*.
 - **Setup** — event name and date, weekly session target, display units, each
-  athlete's bodyweight, their daily macro targets, their lift targets, and food
-  notes. The
-  bodyweight is what makes calories burned possible; without it that figure is
-  withheld. Lift targets are stored in kilograms like every other weight. Gators'
+  athlete's bodyweight, height and birth year, their daily macro targets, their
+  lift targets, and food notes. The bodyweight is what makes calories burned
+  possible; without it that figure is withheld. A new bodyweight saved here is a
+  weigh-in dated today, not a change to every day: see *Calories burned*. Height
+  and birth year add resting energy, and the box under them shows it as you type.
+  Height is in inches beside pounds and centimetres beside kilograms, and stored
+  in centimetres. Changing a daily target keeps the old one as the target for
+  every day up to yesterday, so a past day is judged against what it had.
+  Lift targets are stored in kilograms like every other weight. Gators'
   default to a 175 lb split jerk, 135 lb overhead press, 255 lb back squat and
   335 lb deadlift; Hippos has none until set, and a blank target is no target.
 
@@ -102,15 +127,25 @@ lb/kg never rewrites a record. Opening an entry and saving it again keeps the
 stored load exactly, rather than re-reading it from its rounded display.
 Stations saved before sessions could mix carry no part or load: their part is
 taken from the session's category (Endurance is endurance, anything else is
-MetCon), and a missing time-cap flag reads as no. No migration is needed.
+MetCon), and a missing time-cap flag reads as no. Entries from before times of
+day have none and sort after the timed ones on their day; settings from before
+dated targets, heights and birth years read as one set of targets for every day
+and nothing given. No migration is needed.
 
 ### Calories burned
 
 `estimateBurn` in `lib/domain.ts` uses the compendium formula, MET x 3.5 x kg / 200 per
-minute, with METs for vigorous effort. It needs a bodyweight, which Setup holds per
-athlete, and a duration, which a session logged without a time does not have. Either
-missing and the figure is withheld rather than guessed, because a number that looks
-measured and is not is worse than no number.
+minute, with METs for vigorous effort. It needs a bodyweight and a duration, which a
+session logged without a time does not have. Either missing and the figure is withheld
+rather than guessed, because a number that looks measured and is not is worse than no
+number.
+
+The bodyweight is the one in force on the session's day (`bodyweightOn` in
+`lib/bodyweight.ts`): the latest weigh-in on or before it. A day before the first
+weigh-in takes the weight Setup held before weigh-ins were dated, which is what every
+burn used until then, so none of those burns moves; with no such weight, the first
+weigh-in, the nearest one known. Weigh-ins are journal entries, so the phone always
+holds all of them, however small the slice of everything else.
 
 A Mixed session has no single MET, so `sessionMet` weights it by where the time
 went: timed MetCon stations at 8, timed endurance at 9, and the untimed rest at
@@ -172,9 +207,62 @@ the log cannot support shows a dash and says what to log, rather than a guess.
   their own with an elapsed time show beyond their splits, spread over the six
   changes; without one, the estimate is the stations alone and says so.
 
-Together sessions count for neither athlete. While only the recent slice of the
-journal is loaded the estimate says so and offers the rest, as Progress does,
-because an older session can hold a best.
+Together sessions count for neither athlete. The phone holds only the recent
+slice of the journal, so the server works the estimate out over all of it
+(`journalSummary` in `lib/summary.ts`, the same functions the phone runs) and
+sends the figures; with the whole journal loaded the phone works them out itself.
+
+**The Strength percentile** places the pair among every mixed ATHX Lite pair from
+the 2026 season, 264 pairs at 15 events on the
+[ATHX team leaderboard](https://athxgames.com/team-leaderboards), as the share of
+them it would have beaten. 2026 scored a strict press for one, a squat for three
+and a deadlift for five, so the pair is placed on those lifts, carried from the
+logged sets the same way, and not on 2027's, which would flatter it. Until each of
+you has a strict press logged, a jerk alone places nobody, and the estimate says
+so. Endurance and MetCon X changed format for 2027, so they are not placed until
+2027 results exist. The field lives in `lib/field-data.ts`, and
+`node scripts/pull-field.mjs 2026` rebuilds it from the leaderboard.
+
+### Resting energy and the balance
+
+Resting energy is Mifflin and St Jeor's equation
+([Am J Clin Nutr 1990;51:241-7](https://doi.org/10.1093/ajcn/51.2.241)):
+10 x kg + 6.25 x cm - 5 x age, plus 5 for a man or minus 161 for a woman, with
+Gators a man and Hippos a woman. The weight is the one in force that day, and the
+age is that day's year less the birth year. Expenditure is resting energy and
+training together. It is still short of a day's whole spend, because everyday
+movement and digesting food are in neither figure, and Fuel says so. Without a
+height and a birth year it is withheld, and Fuel shows training on its own, named
+as such, rather than a figure that would read as a whole day's spend.
+
+For a day, the balance is that day's food less its expenditure. For a longer
+range, food is averaged over the days with a meal, as the bars are, and
+expenditure over every day of the range, since a day is spent whether or not it
+was logged; the whole journal starts at the athlete's first entry. The balance is
+the one less the other, a day's worth. Estimates show to the nearest ten.
+
+### Without a connection
+
+A save that gets no answer within 15 seconds, or that meets a server or proxy
+failure, or a lapsed sign-in, waits on the phone instead of failing: the session
+or meal is shown as saved, marked as waiting in the Log and counted beside the
+refresh button, and sent by itself when the app comes back into view, when the
+phone comes back online, every minute while anything waits, and the next time the
+app opens. Records carry ids made on the phone and the server upserts on them, so
+sending one twice is harmless. A delete waits the same way. One the server turns
+down for good is set aside, marked with the reason, for an edit or a delete. What
+waits is kept in browser storage; a phone that refuses storage keeps it until the
+app closes. The whole-journal figures catch up once it is sent.
+
+The app also opens with no connection, once it has been opened with one: a
+service worker (`public/sw.js`) keeps the last copy of the journal page and the
+built files it needs, and serves them only when the network does not answer. Each
+deploy brings a new worker and drops the old copy. Signing out deletes the copy;
+anything still waiting stays, and sends after the next sign-in.
+
+Coming back to the app fetches what the other phone logged, at most every 30
+seconds. While Setup holds unsaved typing, the settings are left alone and only the
+entries are fetched.
 
 ## Running it
 

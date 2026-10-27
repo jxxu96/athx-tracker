@@ -2,6 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { PASSPHRASE } from "../playwright.config.ts";
 import { DEFAULT_SETTINGS, METCON } from "../lib/domain.ts";
+import { FIELD_DATA } from "../lib/field-data.ts";
 
 type Lift = { name: string; kg: number; sets: number; reps: number };
 type Segment = {
@@ -141,6 +142,10 @@ test("the first box estimates all three zones from what is logged", async ({ pag
   await expect(strength).toContainText("Hippos 38%");
   await expect(strength).toContainText("Gators 62%");
   await expect(strength).toContainText("S2OH counts Hippos' overhead press and Gators' split jerk.");
+  // 2026 allowed no jerks, so Gators has nothing to be placed on yet.
+  await expect(strength).toContainText(
+    "A percentile against 2026's 264 mixed Lite pairs needs a strict press for Gators: that season allowed no jerks.",
+  );
   await expect(strength).not.toContainText("Still to log");
 
   const endurance = page.getByRole("group", { name: "Endurance estimate" });
@@ -162,9 +167,9 @@ test("the first box estimates all three zones from what is logged", async ({ pag
   }
 });
 
-test("a best older than the loaded slice is offered, not silently left out", async ({ page }) => {
+test("a best older than the loaded slice is in the estimate without loading it", async ({ page }) => {
   // The app opens with the latest 400 entries. Hippos' deadlift sits behind
-  // them, so until the rest are loaded it is not in the estimate.
+  // them, and the server works the estimate out over the whole journal.
   await log(page, [
     { athlete: "hippos", category: "Strength", lifts: [{ name: "Deadlift", kg: 90, sets: 1, reps: 3 }] },
   ]);
@@ -186,11 +191,46 @@ test("a best older than the loaded slice is offered, not silently left out", asy
   await page.reload();
 
   const strength = page.getByRole("group", { name: "Strength estimate" });
-  await expect(page.getByText(/Using the latest 400 of 401 entries/)).toBeVisible();
-  await expect(strength).toContainText("Still to log: Hippos shoulder to overhead, back squat and deadlift;");
-
-  await page.getByRole("button", { name: "Include the full journal" }).click();
   await expect(strength.getByRole("row", { name: /^Hippos/ })).toHaveText(/Hippos\s*—\s*—\s*90\s*—/);
   await expect(strength).toContainText("Still to log: Hippos shoulder to overhead and back squat;");
   await expect(page.getByText(/Using the latest/)).toHaveCount(0);
+});
+
+test("the pair's Strength is placed among 2026's mixed Lite pairs, live", async ({ page }) => {
+  await log(page, [
+    {
+      athlete: "gators", category: "Strength",
+      lifts: [
+        { name: "Overhead press", kg: 54.43, sets: 1, reps: 1 },
+        { name: "Split jerk", kg: 57, sets: 1, reps: 1 },
+        { name: "Back squat", kg: 65, sets: 1, reps: 2 },
+        { name: "Deadlift", kg: 102, sets: 1, reps: 3 },
+      ],
+    },
+    {
+      athlete: "hippos", category: "Strength",
+      lifts: [
+        { name: "Overhead press", kg: 32, sets: 1, reps: 1 },
+        { name: "Back squat", kg: 41, sets: 1, reps: 2 },
+        { name: "Deadlift", kg: 71, sets: 1, reps: 3 },
+      ],
+    },
+  ]);
+  await page.reload();
+
+  // On 2026's lifts: Hippos 32 + 40 + 67, Gators 54 + 63 + 96.
+  const field = FIELD_DATA.strength;
+  const ahead = field.filter((kg) => kg < 352).length;
+  const share = Math.round((100 * (ahead + field.filter((kg) => kg === 352).length / 2)) / field.length);
+  const strength = page.getByRole("group", { name: "Strength estimate" });
+  await expect(strength).toContainText(
+    new RegExp(`${share}(st|nd|rd|th) percentile · ahead of ${ahead} of 2026's ${field.length} mixed Lite pairs`),
+  );
+  await expect(strength).toContainText("352 kg on that season's lifts (strict press, 3RM squat, 5RM deadlift)");
+  await expect(strength).not.toContainText("needs a strict press");
+
+  for (const theme of ["Light", "Dark"]) {
+    await page.getByRole("button", { name: theme, exact: true }).click();
+    await audit(page, `${theme} theme`);
+  }
 });

@@ -175,9 +175,9 @@ test("a target set in Setup is what Progress measures against", async ({ page })
     .toHaveValue("79.4");
 });
 
-test("a start older than the loaded slice is offered, not silently replaced", async ({ page }) => {
+test("a start older than the loaded slice is in the figures without loading it", async ({ page }) => {
   // The app opens with the latest 400 entries. The first split jerk sits
-  // behind them, so until the rest are loaded it is not in the figures.
+  // behind them, and the server works Progress out over the whole journal.
   await logLifts(page, [
     { athlete: "gators", day: "2025-01-06", lifts: [{ name: "Split jerk", kg: kg(115), sets: 3, reps: 3 }] },
   ]);
@@ -199,15 +199,59 @@ test("a start older than the loaded slice is offered, not silently replaced", as
   await page.reload();
   await openProgress(page);
 
-  await expect(page.getByText(/Using the latest 400 of 401 entries/)).toBeVisible();
-  await expect(page.getByRole("group", { name: "Gators split jerk" })).toContainText("Not logged yet");
-
-  for (const view of ["ATHX benchmarks", "Weekly review", "Main lifts"]) {
+  // Main lifts come from the server over the whole journal, so no banner there.
+  await expect(page.getByText(/Using the latest/)).toHaveCount(0);
+  for (const view of ["ATHX benchmarks", "Weekly review"]) {
     await page.getByRole("button", { name: view, exact: true }).click();
     await expect(page.getByText(/Using the latest 400 of 401 entries/)).toBeVisible();
   }
   await page.getByRole("button", { name: "Include the full journal" }).click();
+  await expect(page.getByText(/Using the latest/)).toHaveCount(0);
+  await page.getByRole("button", { name: "Main lifts", exact: true }).click();
   await expect(page.getByRole("group", { name: "Gators split jerk" }).getByRole("definition").first())
     .toHaveText("115 lb");
   await expect(page.getByText(/Using the latest/)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Include the full journal" })).toHaveCount(0);
+});
+
+test("each lift shows the max its sets predict and the volume of each week", async ({ page }) => {
+  const today = await page.evaluate(() =>
+    new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()));
+  await logLifts(page, [
+    { athlete: "gators", day: today, lifts: [{ name: "Deadlift", kg: kg(225), sets: 3, reps: 5 }] },
+  ]);
+  await page.reload();
+  await openProgress(page);
+  const deadlift = page.getByRole("group", { name: "Gators deadlift" });
+  // Five at 225 predicts 225 x 36 / 32 for one, the race estimate's line.
+  await expect(deadlift).toContainText("Estimated max ~253 lb, from 225 lb × 5");
+  // Three sets of five at 225 lb.
+  await expect(deadlift).toContainText("this week 3,375");
+  await expect(deadlift.getByRole("img", { name: /^Gators deadlift weekly volume/ })).toBeVisible();
+});
+
+test("a session that beats a lift's best says so when it is saved", async ({ page }) => {
+  const yesterday = await page.evaluate(() => {
+    const date = new Date();
+    date.setDate(date.getDate() - 1);
+    return new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+  });
+  await logLifts(page, [
+    { athlete: "gators", day: yesterday, lifts: [{ name: "Back squat", kg: kg(185), sets: 3, reps: 5 }] },
+  ]);
+  await page.reload();
+  await page.getByRole("group", { name: "Logging for" }).getByRole("button", { name: "Gators" }).click();
+  await page.getByRole("button", { name: "Session", exact: true }).click();
+  await page.locator("select").filter({ has: page.locator('option[value="Tennis"]') }).selectOption("Strength");
+  await page
+    .locator("select")
+    .filter({ has: page.locator('option[value="Back squat"]') })
+    .first()
+    .selectOption("Back squat");
+  await page.getByRole("textbox", { name: "lb", exact: true }).fill("195");
+  await page.getByRole("textbox", { name: "Sets", exact: true }).fill("3");
+  await page.getByRole("textbox", { name: "Reps", exact: true }).fill("5");
+  await page.getByRole("button", { name: "Save session" }).click();
+  await expect(page.getByText("New best", { exact: true })).toBeVisible();
+  await expect(page.getByText("Back squat 195 lb × 5, up from 185 lb × 5")).toBeVisible();
 });

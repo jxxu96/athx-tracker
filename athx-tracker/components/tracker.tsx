@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   CalendarDays,
+  CloudOff,
   Dumbbell,
   RotateCw,
   Settings as SettingsIcon,
@@ -23,13 +24,29 @@ import {
   ATHLETES,
   localDay,
   RECENT_LIMIT,
+  type Bodyweight,
   type Meal,
   type RecordItem,
   type Settings,
   type Workout,
 } from "@/lib/domain";
 import { athleteOutline } from "@/lib/athlete-outline";
+import { bodyweightHistory } from "@/lib/bodyweight";
+import { bestLine, type NewBest } from "@/lib/bests";
 import { api, isMeal, message, sortRecords } from "@/lib/client";
+import {
+  applyOutbox,
+  changeOutbox,
+  enqueueDelete,
+  enqueueSave,
+  outboxSnapshot,
+  refuse,
+  retryable,
+  serverOutbox,
+  settle,
+  subscribeOutbox,
+} from "@/lib/outbox";
+import { journalSummary, type JournalSummary } from "@/lib/summary";
 
 type Tab = "today" | "session" | "meal" | "progress" | "log" | "settings";
 
@@ -45,6 +62,44 @@ const TABS = [
 /** Nothing to subscribe to: the device's day is read once, after hydration. */
 const noSubscription = () => () => {};
 
+/**
+ * How long a save may hang on a poor connection before it waits on the phone
+ * instead. The server may have it after all; sending it again is harmless.
+ */
+const SAVE_TIMEOUT_MS = 15_000;
+/** Coming back to the app catches up at most this often. */
+const CATCH_UP_MS = 30_000;
+/** While something waits to be sent, it is tried again this often as well. */
+const RESEND_MS = 60_000;
+
+const timeout = (ms: number) =>
+  typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+    ? AbortSignal.timeout(ms)
+    : undefined;
+
+function postRecord(record: RecordItem) {
+  return api<{ record: RecordItem; newBests?: NewBest[] }>("/api/records", {
+    method: "POST",
+    body: JSON.stringify(record),
+    signal: timeout(SAVE_TIMEOUT_MS),
+  });
+}
+
+function deleteRecord(id: string) {
+  return api<{ ok: true }>("/api/records", {
+    method: "DELETE",
+    body: JSON.stringify({ id }),
+    signal: timeout(SAVE_TIMEOUT_MS),
+  });
+}
+
+/** Why something is waiting, in words: no answer, or a sign-in that lapsed. */
+function waitingReason(error: unknown) {
+  return (error as { status?: number }).status === 401
+    ? "You are signed out on this phone. Sign in again and it sends itself."
+    : "The server could not be reached. It stays on this phone and sends itself when the server answers.";
+}
+
 export function Tracker({
   today: serverToday,
   grokReady,
@@ -52,6 +107,8 @@ export function Tracker({
   total: initialTotal,
   settings: initialSettings,
   revision: initialRevision,
+  summary: initialSummary = null,
+  build = "unknown",
   loadError = "",
 }: {
   today: string;
@@ -60,6 +117,8 @@ export function Tracker({
   total: number;
   settings: Settings;
   revision: number;
+  summary?: JournalSummary | null;
+  build?: string;
   loadError?: string;
 }) {
   // The server rendered with its own clock. Once this is running on the phone,
@@ -69,6 +128,10 @@ export function Tracker({
     () => localDay(),
     () => serverToday,
   );
+  const todayRef = useRef(today);
+  useEffect(() => {
+    todayRef.current = today;
+  }, [today]);
 
   const [tab, setTab] = useState<Tab>("today");
   // Zero means unopened; advancing a form's key starts a fresh draft after save.
@@ -113,28 +176,95 @@ export function Tracker({
   // years of history nothing on the first screen reads.
   const [total, setTotal] = useState(initialTotal);
   const [scope, setScope] = useState<"recent" | "all">("recent");
+  // Whether what is in hand is the whole journal, as of the last fetch. Saving
+  // here adds to both, so it stays true or false until the next one.
+  const [complete, setComplete] = useState(initialRecords.length >= initialTotal);
+  // The whole-journal figures the server worked out, for while only the
+  // recent slice is in hand.
+  const [summary, setSummary] = useState(initialSummary);
+  const unit = settings.weightUnit ?? "lb";
 
-  const reload = useCallback(async (next: "recent" | "all") => {
+  /** What this phone has not sent yet, shown as if it had been. */
+  const outbox = useSyncExternalStore(subscribeOutbox, outboxSnapshot, serverOutbox);
+  const shown = useMemo(() => sortRecords(applyOutbox(records, outbox)), [records, outbox]);
+  // Leaving Setup with edits in it discards them, but a refresh while it is
+  // open must not: the form is keyed on the settings revision.
+  const setupDirty = useRef(false);
+  const markSetupDirty = useCallback((dirty: boolean) => {
+    setupDirty.current = dirty;
+  }, []);
+  const lastFetch = useRef(0);
+
+  const announceBests = useCallback((bests: NewBest[]) => {
+    if (!bests.length) return;
+    const named = new Set(bests.map((best) => best.athlete)).size > 1;
+    toast.success(bests.length > 1 ? "New bests" : "New best", {
+      description: (
+        <>
+          {bests.map((best) => (
+            <span key={`${best.athlete}-${best.name}`} className="block">
+              {named ? `${ATHLETES[best.athlete].name}: ` : ""}
+              {bestLine(best, unit)}
+            </span>
+          ))}
+        </>
+      ),
+      duration: 10_000,
+    });
+  }, [unit]);
+
+  const refreshSummary = useCallback(async () => {
+    try {
+      const { summary: next } = await api<{ summary: JournalSummary }>(
+        `/api/summary?today=${todayRef.current}`,
+      );
+      setSummary(next);
+    } catch {
+      // The figures on screen stay until the next refresh answers.
+    }
+  }, []);
+
+  /**
+   * Fetches the journal again. A failure on a phone already showing it is a
+   * notice, not a screen in the way: the app works without a connection now,
+   * and the forms must stay reachable. quiet is a refresh nobody asked for.
+   */
+  const reload = useCallback(async (
+    next: "recent" | "all",
+    { quiet = false, keepSettings = false } = {},
+  ) => {
     setRefreshing(true);
     try {
-      const [entries, config] = await Promise.all([
+      const [entries, config, figures] = await Promise.all([
         api<{ records: RecordItem[]; total: number }>(
           next === "all" ? "/api/records" : `/api/records?limit=${RECENT_LIMIT}`,
         ),
-        api<{ settings: Settings; revision: number }>("/api/settings"),
+        keepSettings ? null : api<{ settings: Settings; revision: number }>("/api/settings"),
+        api<{ summary: JournalSummary }>(`/api/summary?today=${todayRef.current}`),
       ]);
       setRecords(sortRecords(entries.records));
       setTotal(entries.total);
+      setComplete(entries.records.length >= entries.total);
       setScope(next);
-      setSettings(config.settings);
-      setRevision(config.revision);
+      if (config) {
+        setSettings(config.settings);
+        setRevision(config.revision);
+      }
+      setSummary(figures.summary);
       setProblem("");
+      lastFetch.current = Date.now();
     } catch (error) {
-      setProblem(message(error));
+      if (problem) setProblem(message(error));
+      else if (!quiet)
+        toast.error(
+          (error as { status?: number }).status === undefined
+            ? "No connection. This phone is showing what it already has."
+            : message(error),
+        );
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [problem]);
 
   // Refreshing keeps whatever the Log is already showing: having asked for the
   // whole journal once, it should not silently shrink back on the next tap.
@@ -155,70 +285,214 @@ export function Tracker({
     );
   }, []);
 
+  /**
+   * Sends records in order. When the server cannot be reached, that record
+   * and the ones after it wait on the phone and the save still goes through;
+   * a refusal, which waiting would not cure, is thrown for the form to show.
+   */
+  const persist = useCallback(async (batch: RecordItem[]) => {
+    const stored: RecordItem[] = [];
+    const bests: NewBest[] = [];
+    let reason = "";
+    for (const record of batch) {
+      if (!reason) {
+        try {
+          // Sequential: the second must not race the first through SQLite.
+          const saved = await postRecord(record);
+          bests.push(...(saved.newBests ?? []));
+          stored.push(record);
+          // An older version may still be waiting; the server has a newer one now.
+          if (outboxSnapshot().some((entry) => entry.op === "save" && entry.record.id === record.id))
+            changeOutbox((entries) => entries.filter((entry) => entry.op !== "save" || entry.record.id !== record.id));
+          continue;
+        } catch (error) {
+          if (!retryable(error)) {
+            // Whatever did land is kept on screen, so a retry shows what is left.
+            if (stored.length) keep(stored);
+            throw error;
+          }
+          reason = waitingReason(error);
+        }
+      }
+      changeOutbox((entries) => enqueueSave(entries, record));
+      stored.push(record);
+    }
+    keep(stored);
+    return { reason, bests };
+  }, [keep]);
+
   const save = useCallback(
     async (batch: (Workout | Meal)[]) => {
-      const stored: RecordItem[] = [];
+      let result: Awaited<ReturnType<typeof persist>>;
       try {
-        // Sequential: the second must not race the first through SQLite.
-        for (const record of batch) {
-          await api<{ record: RecordItem }>("/api/records", {
-            method: "POST",
-            body: JSON.stringify(record),
-          });
-          stored.push(record);
-        }
+        result = await persist(batch);
       } catch (error) {
-        // Whatever did land is kept on screen, so a retry shows what is left.
-        if (stored.length) keep(stored);
         toast.error(message(error));
         throw error;
       }
 
-      keep(stored);
-      toast.success(
-        batch.some((record) => record.id === editingMeal?.id || record.id === editingWorkout?.id)
-          ? "Entry updated"
-          : batch[0]?.kind === "workout"
-            ? batch.length > 1
-              ? "Sessions saved"
-              : "Session saved"
-            : batch.length > 1
-              ? `Meals saved for ${batch.map((item) => ATHLETES[item.athlete].name).join(" and ")}`
-              : "Meal saved",
-      );
+      const label = batch.some((record) => record.id === editingMeal?.id || record.id === editingWorkout?.id)
+        ? "Entry updated"
+        : batch[0]?.kind === "workout"
+          ? batch.length > 1
+            ? "Sessions saved"
+            : "Session saved"
+          : batch.length > 1
+            ? `Meals saved for ${batch.map((item) => ATHLETES[item.athlete].name).join(" and ")}`
+            : "Meal saved";
+      if (result.reason) toast("Saved on this phone", { description: result.reason, icon: <CloudOff className="size-4" /> });
+      else toast.success(label);
+      announceBests(result.bests);
       if (batch[0]?.kind === "meal") setEditingMeal(null);
       else setEditingWorkout(null);
       const section = batch[0]?.kind === "meal" ? "meal" : "session";
       setFormKeys((current) => ({ ...current, [section]: current[section] + 1 }));
       navigate("today");
+      if (!result.reason) void refreshSummary();
     },
-    [editingMeal, editingWorkout, keep, navigate],
+    [announceBests, editingMeal, editingWorkout, navigate, persist, refreshSummary],
   );
 
-  const remove = useCallback(async (id: string) => {
+  /** A weigh-in edited in the Log: saved where it stands, without leaving it. */
+  const update = useCallback(async (record: Bodyweight) => {
     try {
-      await api<{ ok: true }>("/api/records", {
-        method: "DELETE",
-        body: JSON.stringify({ id }),
-      });
-      setRecords((current) => current.filter((item) => item.id !== id));
-      toast.success("Entry deleted");
+      const result = await persist([record]);
+      if (result.reason) toast("Saved on this phone", { description: result.reason, icon: <CloudOff className="size-4" /> });
+      else {
+        toast.success("Entry updated");
+        void refreshSummary();
+      }
     } catch (error) {
       toast.error(message(error));
       throw error;
     }
+  }, [persist, refreshSummary]);
+
+  const remove = useCallback(async (id: string) => {
+    try {
+      // Whether or not the server ever had it, deleting it there is harmless.
+      await deleteRecord(id);
+      changeOutbox((entries) =>
+        entries.filter((entry) => (entry.op === "save" ? entry.record.id : entry.id) !== id),
+      );
+      toast.success("Entry deleted");
+      void refreshSummary();
+    } catch (error) {
+      if (!retryable(error)) {
+        toast.error(message(error));
+        throw error;
+      }
+      changeOutbox((entries) => enqueueDelete(entries, id));
+      toast("Deleted on this phone", { description: waitingReason(error), icon: <CloudOff className="size-4" /> });
+    }
+    setRecords((current) => current.filter((item) => item.id !== id));
+  }, [refreshSummary]);
+
+  /**
+   * Sends what is waiting, oldest first. It stops at the first that still
+   * gets no answer, since the rest would fare the same, and sets aside one
+   * the server refuses, to wait for an edit or a delete rather than be
+   * retried forever.
+   */
+  const flushing = useRef(false);
+  const flush = useCallback(async () => {
+    if (flushing.current || !outboxSnapshot().some((entry) => !entry.error)) return 0;
+    flushing.current = true;
+    let sent = 0;
+    const bests: NewBest[] = [];
+    try {
+      for (const entry of [...outboxSnapshot()]) {
+        if (entry.error) continue;
+        try {
+          if (entry.op === "save") bests.push(...((await postRecord(entry.record)).newBests ?? []));
+          else await deleteRecord(entry.id);
+          changeOutbox((entries) => settle(entries, entry.seq));
+          sent += 1;
+        } catch (error) {
+          if (retryable(error)) break;
+          changeOutbox((entries) => refuse(entries, entry.seq, message(error)));
+        }
+      }
+    } finally {
+      flushing.current = false;
+    }
+    if (sent) {
+      toast.success(sent === 1 ? "A waiting entry was sent" : `${sent} waiting entries were sent`);
+      announceBests(bests);
+    }
+    return sent;
+  }, [announceBests]);
+
+  /** Back to the app, or back online: send what waits, then fetch what the other phone logged. */
+  const catchUp = useCallback(async (force = false) => {
+    await flush();
+    if (!force && Date.now() - lastFetch.current < CATCH_UP_MS) return;
+    await reload(scope, { quiet: true, keepSettings: setupDirty.current });
+  }, [flush, reload, scope]);
+
+  // Whatever was waiting when the app last closed is on screen already; send it.
+  useEffect(() => {
+    lastFetch.current = Date.now();
+    if (outboxSnapshot().length) void flush().then((sent) => (sent ? refresh() : undefined));
+    // Mount only: what arrives later is handled by the listeners below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const wake = () => {
+      if (document.visibilityState === "visible") void catchUp();
+    };
+    const online = () => void catchUp(true);
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("online", online);
+    const timer = window.setInterval(() => {
+      if (outboxSnapshot().some((entry) => !entry.error)) void catchUp();
+    }, RESEND_MS);
+    return () => {
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("online", online);
+      window.clearInterval(timer);
+    };
+  }, [catchUp]);
+
+  // The app opens without a connection once it has been opened with one. The
+  // files this visit loaded before the worker ran are handed to it to keep.
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production" || !("serviceWorker" in navigator)) return;
+    navigator.serviceWorker
+      .register(`/sw.js?v=${encodeURIComponent(build)}`)
+      .then(() => navigator.serviceWorker.ready)
+      .then((registration) => {
+        const urls = performance
+          .getEntriesByType("resource")
+          .map((entry) => entry.name)
+          .filter((name) => name.includes("/_next/static/"));
+        registration.active?.postMessage({ type: "keep", urls: ["/", ...urls] });
+      })
+      .catch(() => {});
+  }, [build]);
+
+  // A day that has turned since the figures were worked out has a new week.
+  useEffect(() => {
+    if (summary && summary.today !== today && !complete) void refreshSummary();
+  }, [complete, refreshSummary, summary, today]);
+
   const saveSettings = useCallback(
-    async (next: Settings, notice = "Settings saved") => {
+    async (next: Settings, notice = "Settings saved", weighIns: Bodyweight[] = []) => {
       try {
+        // Weigh-ins are journal entries, so they wait on the phone like any other.
+        const logged = weighIns.length ? await persist(weighIns) : null;
         const saved = await api<{ settings: Settings; revision: number }>(
           "/api/settings",
           { method: "PUT", body: JSON.stringify({ settings: next, revision }) },
         );
+        setupDirty.current = false;
         setSettings(saved.settings);
         setRevision(saved.revision);
         toast.success(notice);
+        if (logged?.reason)
+          toast("Weigh-in saved on this phone", { description: logged.reason, icon: <CloudOff className="size-4" /> });
+        void refreshSummary();
       } catch (error) {
         toast.error(message(error));
         // Someone saved from the other phone: pull their version back in.
@@ -226,8 +500,20 @@ export function Tracker({
         throw error;
       }
     },
-    [revision, refresh],
+    [persist, revision, refresh, refreshSummary],
   );
+
+  const history = useMemo(
+    () => bodyweightHistory(shown, settings.bodyweight),
+    [shown, settings.bodyweight],
+  );
+  // The phone's own figures when it holds the whole journal, so what it saved
+  // shows at once and without a connection; the server's while it does not.
+  const figures = useMemo(
+    () => (complete || !summary ? journalSummary(shown, settings, today) : summary),
+    [complete, shown, settings, summary, today],
+  );
+  const waiting = outbox.length;
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col">
@@ -260,6 +546,18 @@ export function Tracker({
               </button>
             ))}
           </div>
+          {waiting ? (
+            <button
+              type="button"
+              onClick={() => void catchUp(true)}
+              aria-label={`${waiting} waiting to send. Send now`}
+              title="Waiting to send"
+              className="flex items-center gap-1 rounded-full px-1.5 py-1 text-xs font-medium tabular-nums text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <CloudOff className="size-4" />
+              {waiting}
+            </button>
+          ) : null}
           {/* Two people on two phones: one logs, the other wants it without
               hunting for the browser's own reload. */}
           <button
@@ -292,46 +590,54 @@ export function Tracker({
           </div>
         ) : tab === "today" ? (
           <Overview
-            records={records}
+            records={shown}
             settings={settings}
+            history={history}
+            figures={figures}
             today={today}
-            journalTotal={total}
-            loadingAll={refreshing}
-            onLoadAll={scope === "all" || records.length >= total ? undefined : loadAll}
           />
         ) : tab === "progress" ? (
           <Progress
-            records={records}
+            records={shown}
             settings={settings}
+            history={history}
+            figures={figures}
             today={today}
             journalTotal={total}
             loadingAll={refreshing}
-            onLoadAll={scope === "all" || records.length >= total ? undefined : loadAll}
+            onLoadAll={scope === "all" || shown.length >= total ? undefined : loadAll}
           />
         ) : tab === "log" ? (
           <History
-            records={records}
+            records={shown}
             today={today}
             athlete="all"
-            weightUnit={settings.weightUnit ?? "lb"}
-            bodyweight={settings.bodyweight ?? { hippos: 0, gators: 0 }}
+            weightUnit={unit}
+            history={history}
+            outbox={outbox}
             total={total}
             loadingAll={refreshing}
             onLoadAll={scope === "all" ? undefined : loadAll}
+            onSendNow={() => void catchUp(true)}
             onEdit={(record) => {
+              if (record.kind === "bodyweight") return;
               if (record.kind === "workout") setEditingWorkout(record);
               else setEditingMeal(record);
               navigate(record.kind === "workout" ? "session" : "meal");
             }}
+            onUpdate={update}
             onDelete={remove}
           />
         ) : tab === "settings" ? (
           <SettingsForm
             key={revision}
             settings={settings}
+            history={history}
+            today={today}
             grokReady={grokReady}
             onRefresh={refresh}
             onSave={saveSettings}
+            onDirty={markSetupDirty}
           />
         ) : null}
         {/* Keep visited forms mounted: hiding a section must not cancel its
@@ -344,7 +650,7 @@ export function Tracker({
             grokReady={grokReady}
             sides={sides}
             onLoggingFor={setWho}
-            weightUnit={settings.weightUnit ?? "lb"}
+            weightUnit={unit}
             onWeightUnit={(weightUnit) =>
               // The form already reads its boxes in the new unit; this only
               // remembers the choice. A failure has said so in a toast.
@@ -366,7 +672,7 @@ export function Tracker({
           <MealForm
             key={editingMeal?.id ?? `new-meal-${formKeys.meal}`}
             loggingFor={editingMeal?.athlete ?? who}
-            meals={records.filter(isMeal)}
+            meals={shown.filter(isMeal)}
             today={today}
             grokReady={grokReady}
             active={tab === "meal" && !problem}

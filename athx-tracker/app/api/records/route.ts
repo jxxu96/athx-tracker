@@ -1,4 +1,7 @@
 import { BodyTooLarge, database, guard, json, readBody, tooLarge } from "@/lib/server";
+import { newBests } from "@/lib/bests";
+import type { Workout } from "@/lib/domain";
+import { readRecords } from "@/lib/journal";
 import { recordSchema } from "@/lib/validation";
 import { ZodError } from "zod";
 
@@ -9,16 +12,27 @@ export async function GET(request: Request) {
   // asks for and must keep getting.
   const asked = Number(new URL(request.url).searchParams.get("limit"));
   const limit = Number.isInteger(asked) && asked > 0 ? asked : null;
-  const order = "SELECT payload FROM records ORDER BY day DESC, created_at DESC";
-  const rows = (
-    limit
-      ? database().prepare(`${order} LIMIT ?`).all(limit)
-      : database().prepare(order).all()
-  ) as { payload: string }[];
-  const { total } = database()
-    .prepare("SELECT COUNT(*) AS total FROM records")
-    .get() as { total: number };
-  return json({ records: rows.map((row) => JSON.parse(row.payload)), total });
+  const { records, total } = readRecords(limit);
+  return json({ records, total });
+}
+
+/**
+ * The lifts a session beats, against the athlete's sessions already saved,
+ * the earlier version of this one included, so saving an edit announces
+ * nothing it already held. Worked out here because only the server has the
+ * whole journal.
+ */
+function bestsFor(record: Workout) {
+  if (record.athlete === "team" || record.lifts.length === 0) return [];
+  // A notice is a courtesy, and must never be the reason a save fails.
+  try {
+    const rows = database()
+      .prepare("SELECT payload FROM records WHERE kind = 'workout' AND athlete = ?")
+      .all(record.athlete) as { payload: string }[];
+    return newBests(record, rows.map((row) => JSON.parse(row.payload) as Workout));
+  } catch {
+    return [];
+  }
 }
 
 export async function POST(request: Request) {
@@ -26,6 +40,7 @@ export async function POST(request: Request) {
   if (rejected) return rejected;
   try {
     const record = recordSchema.parse(await readBody(request));
+    const bests = record.kind === "workout" ? bestsFor(record) : [];
     database()
       .prepare(
         "INSERT INTO records (id, kind, athlete, day, payload, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET athlete=excluded.athlete, day=excluded.day, payload=excluded.payload WHERE records.kind=excluded.kind",
@@ -38,7 +53,7 @@ export async function POST(request: Request) {
         JSON.stringify(record),
         new Date().toISOString(),
       );
-    return json({ record });
+    return json({ record, ...(bests.length ? { newBests: bests } : {}) });
   } catch (error) {
     if (error instanceof BodyTooLarge) return tooLarge();
     if (error instanceof ZodError) {

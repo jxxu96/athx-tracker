@@ -13,6 +13,10 @@ export default defineConfig({
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
     trace: "retain-on-failure",
+    // The app registers a service worker so it opens offline, and requests a
+    // worker handles are out of page.route's reach, which nearly every spec
+    // relies on. The offline spec allows it for itself.
+    serviceWorkers: "block",
   },
   webServer: {
     // A fresh database each run. Leaving the old one behind made a spec pass

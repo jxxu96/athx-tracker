@@ -16,7 +16,9 @@ import {
   type RecordItem,
   type Settings,
 } from "@/lib/domain";
+import { bodyweightOn, type BodyweightHistory } from "@/lib/bodyweight";
 import { addDays, daysBetween, dayToDate, isWorkout, weekStart } from "@/lib/client";
+import type { JournalSummary } from "@/lib/summary";
 
 function Panel({
   title,
@@ -55,17 +57,16 @@ const sessionCount = (
 export function Overview({
   records,
   settings,
+  history,
+  figures,
   today,
-  journalTotal,
-  loadingAll,
-  onLoadAll,
 }: {
   records: RecordItem[];
   settings: Settings;
+  history: BodyweightHistory;
+  /** The whole-journal figures, which the recent slice alone cannot give. */
+  figures: JournalSummary;
   today: string;
-  journalTotal: number;
-  loadingAll?: boolean;
-  onLoadAll?: () => void;
 }) {
   const countdown = daysBetween(today, settings.eventDate);
   const thisWeek = weekStart(today);
@@ -81,10 +82,7 @@ export function Overview({
   // front of you was the one place leaving it out.
   const lastBurn =
     lastSession && lastSession.athlete !== "team"
-      ? estimateBurn(
-          lastSession,
-          (settings.bodyweight ?? { hippos: 0, gators: 0 })[lastSession.athlete],
-        )
+      ? estimateBurn(lastSession, bodyweightOn(history, lastSession.athlete, lastSession.day))
       : null;
   const lastScenario = lastSession ? scenarioLine(lastSession) : null;
 
@@ -111,21 +109,15 @@ export function Overview({
             timeZone: "UTC",
           }).format(dayToDate(settings.eventDate))}
         </p>
-        <RaceEstimate
-          records={records}
-          journalTotal={journalTotal}
-          loadingAll={loadingAll}
-          onLoadAll={onLoadAll}
-        />
+        <RaceEstimate estimate={figures.race} placing={figures.placing} />
       </section>
 
       <Fuel
         records={records}
         settings={settings}
+        history={history}
+        figures={figures}
         today={today}
-        journalTotal={journalTotal}
-        loadingAll={loadingAll}
-        onLoadAll={onLoadAll}
       />
 
 
@@ -217,6 +209,7 @@ export function Overview({
           <p className="mt-1 text-xs text-muted-foreground">
             {ATHLETES[lastSession.athlete].name} · {categoryName(lastSession)} ·{" "}
             {lastSession.context === "pairs" ? "Pairs" : "Solo"} · {lastSession.day}
+            {lastSession.time ? ` ${lastSession.time}` : ""}
           </p>
           {lastSession.notes ? (
             <p className="mt-3 whitespace-pre-wrap text-xs text-muted-foreground">

@@ -306,3 +306,47 @@ test("the app and the estimator describe an estimate the same way", async () => 
     "fiber above total carbs must be refused",
   );
 });
+
+test("a time of day is optional, and only a real clock time is kept", () => {
+  assert.ok(ok(workoutSchema, workout()));
+  assert.ok(ok(workoutSchema, workout({ time: "07:45" })));
+  assert.ok(ok(workoutSchema, workout({ time: "23:59" })));
+  for (const time of ["24:00", "7:45", "07:60", "", "noon"])
+    assert.ok(!ok(workoutSchema, workout({ time })), time);
+});
+
+test("a weigh-in is a journal entry with a sensible weight for one athlete", () => {
+  const weighIn = (over: Record<string, unknown> = {}) => ({
+    id: "3f1a5f2e-9c4b-4d7a-8e21-6b0c9d5a1234", kind: "bodyweight", athlete: "gators",
+    day: "2026-10-22", kg: 83.9, ...over,
+  });
+  assert.ok(ok(recordSchema, weighIn()));
+  assert.ok(ok(recordSchema, weighIn({ time: "06:30" })));
+  assert.ok(!ok(recordSchema, weighIn({ athlete: "team" })));
+  assert.ok(!ok(recordSchema, weighIn({ kg: 0 })));
+  assert.ok(!ok(recordSchema, weighIn({ kg: 900 })));
+  assert.ok(!ok(recordSchema, weighIn({ note: "after coffee" })));
+});
+
+test("settings from before dated targets, heights and birth years parse with nothing given", () => {
+  const parsed = settingsSchema.parse({
+    eventDate: "2027-08-28", eventName: "ATHX", weeklyTarget: 4, weightUnit: "lb",
+    targets: {
+      hippos: { calories: 0, protein: 0, carbs: 0, fat: 0 },
+      gators: { calories: 0, protein: 0, carbs: 0, fat: 0 },
+    },
+  });
+  assert.deepEqual(parsed.targetHistory, { hippos: [], gators: [] });
+  assert.deepEqual(parsed.height, { hippos: 0, gators: 0 });
+  assert.deepEqual(parsed.birthYear, { hippos: 0, gators: 0 });
+  const macros = { calories: 2000, protein: 140, carbs: 200, fat: 70 };
+  assert.ok(ok(settingsSchema, {
+    ...parsed,
+    height: { hippos: 165, gators: 180 },
+    birthYear: { hippos: 1996, gators: 0 },
+    targetHistory: { hippos: [{ until: "2026-10-21", macros }], gators: [] },
+  }));
+  assert.ok(!ok(settingsSchema, { ...parsed, birthYear: { hippos: 96, gators: 0 } }));
+  assert.ok(!ok(settingsSchema, { ...parsed, height: { hippos: 400, gators: 0 } }));
+  assert.ok(!ok(settingsSchema, { ...parsed, targetHistory: { hippos: [{ until: "yesterday", macros }], gators: [] } }));
+});

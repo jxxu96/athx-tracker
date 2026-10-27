@@ -32,7 +32,9 @@ import {
   METCON,
   PRESETS,
   categoryShape,
+  clockTime,
   defaultContext,
+  isClockTime,
   localDay,
   presetElapsed,
   presetTitle,
@@ -170,6 +172,9 @@ const OTHER = "Other";
 /** The typed name only counts when Other is the choice. */
 const exerciseName = (choice: string, custom: string) =>
   (choice === OTHER ? custom : choice).trim();
+
+const optionalTarget = (station: Station) =>
+  !station.fixed && exerciseName(station.name, station.custom) === "Row";
 
 const LISTED = new Set(EXERCISES.flatMap((group) => group.items));
 
@@ -379,10 +384,15 @@ export function DayButtons({
   today,
   day,
   onChange,
+  time,
+  onTimeChange,
 }: {
   today: string;
   day: string;
   onChange: (next: string) => void;
+  /** When given, the time of day sits under the date. Blank is not recorded. */
+  time?: string;
+  onTimeChange?: (next: string) => void;
 }) {
   const yesterday = addDays(today, -1);
   const custom = day !== today && day !== yesterday;
@@ -444,6 +454,16 @@ export function DayButtons({
           </Popover>
         </div>
       </div>
+      {onTimeChange ? (
+        <Field label="Time of day" hint="Optional. Orders the day in the log." className="mt-3">
+          <Input
+            type="time"
+            value={time ?? ""}
+            className="w-36"
+            onChange={(event) => onTimeChange(event.target.value)}
+          />
+        </Field>
+      ) : null}
     </div>
   );
 }
@@ -699,9 +719,11 @@ export function WorkoutForm({
   const editSide = editing ? sideOf(editing.athlete) : null;
 
   const [day, setDay] = useState(editing?.day ?? today);
+  // A new session starts at the clock; an older one without a time stays without.
+  const [time, setTime] = useState(editing ? editing.time ?? "" : clockTime());
   const [title, setTitle] = useState(editing?.title ?? "");
   const [category, setCategory] = useState<Workout["category"]>(
-    editing?.category ?? "MetCon",
+    editing?.category ?? "Mixed",
   );
   const [customCategory, setCustomCategory] = useState(
     editing?.customCategory ?? "",
@@ -750,11 +772,11 @@ export function WorkoutForm({
             fixed,
           };
         })
-      : metconStations(),
+      : stationsFor(category),
   );
   const [entries, setEntries] = useState<Record<Side, Entry[]>>(() => {
     if (!editing || !editSide)
-      return entriesForBoth(metconStations(), weightUnit);
+      return entriesForBoth(stationsFor(category), weightUnit);
     const mine = editing.segments.map((segment) => ({
       completed: segment.completed ? String(segment.completed) : "",
       time: segment.seconds ? formatTime(segment.seconds) : "",
@@ -1183,8 +1205,9 @@ export function WorkoutForm({
       .map((station, index) => {
         const entry = entries[side][index];
         const completed = num(entry.completed);
-        // A run is measured, not chased: what you covered is the target.
-        const target = measured(station) ? completed : num(station.target);
+        // Runs and rows without a goal use the work actually completed.
+        const target = measured(station) || (optionalTarget(station) && station.target.trim() === "")
+          ? completed : num(station.target);
         // A standard weight left in the box of a station never reached was
         // not carried, so it is not recorded; one you typed always is.
         const offered = entry.prefilled && completed === 0;
@@ -1259,10 +1282,13 @@ export function WorkoutForm({
       const where = `${who} · ${segment.name}`;
       if (!Number.isFinite(segment.seconds))
         return `${where}: write the time as mm:ss.`;
-      if (!(segment.target > 0))
+      if (!(segment.target > 0)) {
+        if (segment.name === "Row" && segment.completed === 0)
+          return `${where}: add the work completed.`;
         return isRun || (isMixed && segment.block === "endurance")
           ? `${where}: add the distance covered.`
           : `${where}: set a target above zero.`;
+      }
       if (segment.completed > segment.target)
         return `${where}: completed work is above the target.`;
       if (segment.completed === 0 && segment.seconds > 0)
@@ -1358,6 +1384,8 @@ export function WorkoutForm({
     const active = columns.filter(used);
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return setError("Pick a valid date.");
+    if (time !== "" && !isClockTime(time))
+      return setError("Write the time of day as HH:MM, or leave it empty.");
     if (active.length === 0)
       return setError("Fill in at least one athlete before saving.");
 
@@ -1377,6 +1405,7 @@ export function WorkoutForm({
       kind: "workout",
       athlete: editing ? athleteForEdit : side,
       day,
+      ...(time ? { time } : {}),
       title: title.trim() || dateTitle(day),
       category,
       customCategory: category === "Other" ? customCategory.trim() : "",
@@ -1450,7 +1479,7 @@ export function WorkoutForm({
       </Panel>
       <fieldset disabled={drafting || listening || saving} className="min-w-0 space-y-4">
       <section {...athleteOutline(outline)} className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
-        <DayButtons today={today} day={day} onChange={setDay} />
+        <DayButtons today={today} day={day} onChange={setDay} time={time} onTimeChange={setTime} />
         <FormatButtons value={format} onChange={chooseFormat} />
         <Field label="Session" hint="Optional — the date is used if left blank">
           <Input
@@ -1694,7 +1723,7 @@ export function WorkoutForm({
                           </Field>
                         ) : null}
                         {measured(station) ? null : (
-                        <Field label="Target" className="w-20">
+                        <Field label="Target" hint={optionalTarget(station) ? "Optional" : undefined} className="w-20">
                           <Input
                             value={station.target}
                             inputMode="decimal"

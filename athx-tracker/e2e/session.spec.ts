@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { DEFAULT_SETTINGS, formatTime, projectWorkout } from "../lib/domain.ts";
+import { DEFAULT_SETTINGS, formatTime, projectWorkout, type Workout } from "../lib/domain.ts";
 import { PASSPHRASE } from "../playwright.config.ts";
 
 // These cover the paths that have actually broken. Every bug that reached the
@@ -546,7 +546,7 @@ test("advanced sets keep their own weight and reps", async ({ page }) => {
 test("one session holds lifts, a part-finished MetCon with loads, and a run", async ({ page }) => {
   await athlete(page, "Gators").click();
   await openSession(page);
-  await typeSelect(page).selectOption("Mixed");
+  await expect(typeSelect(page)).toHaveValue("Mixed");
 
   // Weights switched here are remembered, and the boxes read in the new unit.
   await page.getByRole("group", { name: "Weight unit" }).getByRole("button", { name: "kg" }).click();
@@ -591,6 +591,37 @@ test("one session holds lifts, a part-finished MetCon with loads, and a run", as
   await expect(entry.getByText(/DB ground to overhead 12\.5 kg/)).toBeVisible();
 });
 
+test("a row saves each athlete's completed work without a target, including on edit", async ({ page }) => {
+  await athlete(page, "Both").click();
+  await openSession(page);
+  await page.getByRole("button", { name: "Station", exact: true }).click();
+  await page.getByLabel("Station", { exact: true }).selectOption("Row");
+  await page.getByLabel("Unit", { exact: true }).selectOption("cal");
+  await expect(page.getByLabel("Target")).toHaveValue("");
+  await page.getByLabel("Done (cal)").first().fill("40");
+  await page.getByLabel("Done (cal)").last().fill("30");
+  await page.getByLabel("Time", { exact: true }).first().fill("2:00");
+  await page.getByLabel("Time", { exact: true }).last().fill("1:30");
+  await page.getByRole("button", { name: "Save session" }).click();
+  await expect(page.getByText("Sessions saved", { exact: true })).toBeVisible();
+
+  const read = (): Promise<Workout[]> => page.evaluate(async () =>
+    (await fetch("/api/records").then((r) => r.json())).records);
+  const saved = await read();
+  expect(saved).toHaveLength(2);
+  expect(saved.find((record) => record.athlete === "hippos")?.segments[0])
+    .toMatchObject({ name: "Row", unit: "cal", completed: 40, target: 40, seconds: 120 });
+  expect(saved.find((record) => record.athlete === "gators")?.segments[0])
+    .toMatchObject({ name: "Row", unit: "cal", completed: 30, target: 30, seconds: 90 });
+
+  await openLog(page);
+  await page.getByLabel("Edit entry").first().click();
+  await page.getByLabel("Target").fill("");
+  await page.getByRole("button", { name: "Update session" }).click();
+  await expect(page.getByText("Entry updated", { exact: true })).toBeVisible();
+  expect(await read()).toEqual(saved);
+});
+
 test("a run can be logged in metres, kilometres, or miles", async ({ page }) => {
   await athlete(page, "Gators").click();
   await openSession(page);
@@ -630,7 +661,7 @@ test("circuit loads start at the standard weight, and reopening keeps it", async
   // just because the form filled its weights in.
   await athlete(page, "Both").click();
   await openSession(page);
-  await expect(typeSelect(page)).toHaveValue("MetCon");
+  await typeSelect(page).selectOption("MetCon");
   // Settings outlive each spec, so say which unit this one is in.
   const unitSwitch = page.getByRole("group", { name: "Weight unit" });
   await unitSwitch.getByRole("button", { name: "lb" }).click();

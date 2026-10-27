@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { CONVERSATION_LIMIT, FOOD_NOTES_LIMIT, MAX_REPLIES, REPLY_LIMIT } from "./estimate-conversation.ts";
-import { DEFAULT_SETTINGS, VOLUME_UNITS, liftTop } from "./domain.ts";
+import { DEFAULT_SETTINGS, VOLUME_UNITS, isClockTime, liftTop } from "./domain.ts";
+import { TARGET_HISTORY_LIMIT } from "./targets.ts";
 const finite = z.number().finite().nonnegative();
 export const macroSchema = z.object({
   calories: finite.max(20000), protein: finite.max(2000), carbs: finite.max(3000), fat: finite.max(2000),
@@ -29,8 +30,11 @@ const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v => {
   return Number.isFinite(d.getTime()) && d.toISOString().slice(0,10) === v;
 }, "Invalid calendar date");
 const base = { id: z.string().uuid(), day };
+/** Optional, so entries saved before times of day existed still parse. */
+const time = z.string().refine(isClockTime, "Write the time as HH:MM").optional();
 export const workoutSchema = z.object({
   ...base, kind: z.literal("workout"), athlete: z.enum(["hippos", "gators", "team"]),
+  time,
   title: z.string().trim().min(1).max(120),
   category: z.enum(["Strength", "Endurance", "MetCon", "Mixed", "Solidcore", "Tennis", "YTW", "Other"]),
   // Defaulted, so sessions written before Other could be named still parse.
@@ -70,6 +74,7 @@ export const workoutSchema = z.object({
 }).strict().refine(w => w.seconds === 0 || w.segments.reduce((n,s) => n+s.seconds,0) <= w.seconds + 1, "Station times exceed elapsed workout time");
 export const mealSchema = z.object({
   ...base, kind: z.literal("meal"), athlete: z.enum(["hippos", "gators"]),
+  time,
   name: z.string().trim().min(1).max(300),
   meal: z.enum(["Breakfast","Lunch","Dinner","Snack","Alcohol"]),
   macros: mealMacroSchema,
@@ -104,7 +109,16 @@ export const estimateRequestSchema = z.object({
       .refine((replies) => replies.join("").length <= CONVERSATION_LIMIT, "Conversation is too long."),
   }).strict().optional(),
 }).strict();
-export const recordSchema = z.union([workoutSchema, mealSchema]);
+/** A weigh-in. The same bounds as the weight Setup held before weigh-ins were dated. */
+export const bodyweightSchema = z.object({
+  ...base, kind: z.literal("bodyweight"), athlete: z.enum(["hippos", "gators"]),
+  time,
+  kg: finite.positive().max(500),
+}).strict();
+export const recordSchema = z.union([workoutSchema, mealSchema, bodyweightSchema]);
+const pastTargetsSchema = z.array(z.object({ until: day, macros: macroSchema }).strict())
+  .max(TARGET_HISTORY_LIMIT);
+const birthYear = z.union([z.literal(0), z.number().int().min(1900).max(2100)]);
 /** Kilograms, like every load. Zero is no target. */
 const liftTarget = finite.max(1000);
 const liftTargetsSchema = z.object({
@@ -123,4 +137,12 @@ export const settingsSchema = z.object({
     .strict().default(DEFAULT_SETTINGS.liftTargets),
   // Defaulted, so settings stored before food notes existed still parse.
   foodNotes: z.string().max(FOOD_NOTES_LIMIT).default(""),
+  // Defaulted, so settings stored before targets were dated still parse.
+  targetHistory: z.object({ hippos: pastTargetsSchema, gators: pastTargetsSchema })
+    .strict().default({ hippos: [], gators: [] }),
+  // Centimetres and a year, zero for not given. Defaulted for older settings.
+  height: z.object({ hippos: finite.max(300), gators: finite.max(300) })
+    .strict().default({ hippos: 0, gators: 0 }),
+  birthYear: z.object({ hippos: birthYear, gators: birthYear })
+    .strict().default({ hippos: 0, gators: 0 }),
 }).strict();

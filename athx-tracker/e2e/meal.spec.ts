@@ -457,7 +457,7 @@ test("logging for both saves one meal for each athlete, and one athlete saves on
   expect((await meals(page)).filter((meal) => meal.name === "Shared oats")).toHaveLength(2);
 });
 
-test("a both meal that fails halfway is not duplicated on retry", async ({ page }) => {
+test("a both meal that fails halfway sends the rest later, not twice", async ({ page }) => {
   await loggingFor(page, "Both").click();
   await page.getByRole("group", { name: "Sitting" }).getByRole("button", { name: "Snack" }).click();
   await page.getByLabel("Meal", { exact: true }).fill("Retry oats");
@@ -470,11 +470,12 @@ test("a both meal that fails halfway is not duplicated on retry", async ({ page 
   await page.route("**/api/records", async (route) => {
     if (route.request().method() === "POST") {
       posts += 1;
-      if (posts === 2) return route.abort("internetdisconnected");
+      if (posts >= 2) return route.abort("internetdisconnected");
     }
     await route.continue();
   });
   await page.getByRole("button", { name: "Save meal", exact: true }).click();
+  await expect(page.getByText("Saved on this phone")).toBeVisible();
 
   let landed = "";
   await expect.poll(async () => {
@@ -482,11 +483,10 @@ test("a both meal that fails halfway is not duplicated on retry", async ({ page 
     landed = saved.length === 1 ? saved[0].id : "";
     return saved.map((meal) => meal.athlete);
   }).toEqual(["hippos"]);
-  await expect(page.getByRole("button", { name: "Save meal", exact: true })).toBeEnabled();
 
   await page.unroute("**/api/records");
-  await page.getByRole("button", { name: "Save meal", exact: true }).click();
-  await expect(page.getByText("Meals saved for Hippos and Gators", { exact: true })).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(page.getByText("A waiting entry was sent")).toBeVisible();
   await expect.poll(async () => {
     const saved = (await meals(page)).filter((meal) => meal.name === "Retry oats");
     return {
@@ -499,4 +499,30 @@ test("a both meal that fails halfway is not duplicated on retry", async ({ page 
     hippos: [landed],
     gators: 1,
   });
+});
+
+test("a meal keeps the time of day it was eaten, and the log orders the day by it", async ({ page }) => {
+  await loggingFor(page, "Hippos").click();
+  const sitting = page.getByRole("group", { name: "Sitting" });
+  const save = async (name: string, time: string) => {
+    await page.getByLabel("Time of day").fill(time);
+    await page.getByLabel("Meal", { exact: true }).fill(name);
+    await page.getByLabel("Calories (kcal)").fill("300");
+    await page.getByLabel("Protein (g)").fill("20");
+    await page.getByRole("button", { name: "Save meal", exact: true }).click();
+    await expect(page.getByText("Meal saved", { exact: true }).first()).toBeVisible();
+    await page.getByRole("button", { name: "Meal", exact: true }).click();
+  };
+  // The sitting follows the time typed, as it follows the clock.
+  await page.getByLabel("Time of day").fill("07:45");
+  await expect(sitting.getByRole("button", { name: "Breakfast" })).toHaveAttribute("aria-pressed", "true");
+  await save("Timed oats", "07:45");
+  await save("Timed bowl", "12:30");
+
+  await page.getByRole("button", { name: "Log", exact: true }).click();
+  const entries = page.getByRole("listitem").filter({ hasText: /^Timed/ });
+  await expect(entries).toHaveCount(2);
+  await expect(entries.nth(0)).toContainText("Timed bowl");
+  await expect(entries.nth(0)).toContainText("12:30 · Hippos · Lunch");
+  await expect(entries.nth(1)).toContainText("07:45 · Hippos · Breakfast");
 });

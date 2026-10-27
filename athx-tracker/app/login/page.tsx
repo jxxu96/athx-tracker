@@ -1,5 +1,6 @@
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { ForgetJournal } from "@/components/forget-journal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -60,6 +61,7 @@ export default async function LoginPage({
 
   return (
     <main className="flex min-h-dvh items-center justify-center p-6">
+      <ForgetJournal />
       <div className="w-full max-w-sm">
         <h1 className="text-xl font-semibold tracking-tight">
           Hippos &amp; Gators

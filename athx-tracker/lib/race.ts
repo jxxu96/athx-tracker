@@ -58,11 +58,11 @@ function median(values: number[]) {
 
 // Strength
 
-/** The zone's three windows, in the order they are lifted. reps is the rep max each asks for. */
+/** The zone's three windows, in the order they are lifted. */
 export const STRENGTH_LIFTS = [
-  { key: "overhead", name: "Shoulder to overhead", short: "S2OH", reps: 1 },
-  { key: "squat", name: "Back squat", short: "Squat", reps: 2 },
-  { key: "deadlift", name: "Deadlift", short: "Deadlift", reps: 3 },
+  { key: "overhead", name: "Shoulder to overhead", short: "S2OH" },
+  { key: "squat", name: "Back squat", short: "Squat" },
+  { key: "deadlift", name: "Deadlift", short: "Deadlift" },
 ] as const;
 export type StrengthLift = (typeof STRENGTH_LIFTS)[number]["key"];
 
@@ -85,8 +85,27 @@ const TYPED_OVERHEAD = new Set([
   "push jerk", "power jerk", "squat jerk", "jerk", "shoulder to overhead", "s2oh", "stoh",
 ]);
 
-export function strengthLift(name: string): StrengthLift | null {
-  return LIFT_OF.get(listedName(name)) ?? (TYPED_OVERHEAD.has(normalize(name).join(" ")) ? "overhead" : null);
+/**
+ * How a season scores Strength: the rep max each window asks for, and whether
+ * the overhead lift has to be strict. 2027 takes any press or jerk for one,
+ * with a 2RM squat and 3RM deadlift. 2026 took a strict press, a 3RM squat
+ * and a 5RM deadlift, which is what its results are totals of.
+ */
+export type StrengthFormat = { reps: Record<StrengthLift, number>; strict: boolean };
+export const STRENGTH_2027: StrengthFormat = {
+  reps: { overhead: 1, squat: 2, deadlift: 3 },
+  strict: false,
+};
+export const STRENGTH_2026: StrengthFormat = {
+  reps: { overhead: 1, squat: 3, deadlift: 5 },
+  strict: true,
+};
+
+/** A strict window takes the overhead press alone: no leg drive, so no push press or jerk. */
+export function strengthLift(name: string, strict = false): StrengthLift | null {
+  const listed = listedName(name);
+  const lift = LIFT_OF.get(listed) ?? (TYPED_OVERHEAD.has(normalize(name).join(" ")) ? "overhead" : null);
+  return lift === "overhead" && strict && listed !== "Overhead press" ? null : lift;
 }
 
 /** Past ten reps a set is endurance as much as strength, and says little about a max. */
@@ -121,13 +140,17 @@ export type AthleteStrength = {
 };
 
 /** Each lift at the most any logged set predicts for the window's reps. */
-export function athleteStrength(records: RecordItem[], athlete: RaceAthlete): AthleteStrength {
+export function athleteStrength(
+  records: RecordItem[],
+  athlete: RaceAthlete,
+  format: StrengthFormat = STRENGTH_2027,
+): AthleteStrength {
   const lifts: Record<StrengthLift, LiftEstimate | null> = { overhead: null, squat: null, deadlift: null };
   for (const workout of workoutsOf(records, athlete)) {
     for (const lift of workout.lifts) {
-      const key = strengthLift(lift.name);
+      const key = strengthLift(lift.name, format.strict);
       if (!key) continue;
-      const target = STRENGTH_LIFTS.find((window) => window.key === key)!.reps;
+      const target = format.reps[key];
       // A varied lift has every set; one that was the same throughout is its one line.
       const sets = lift.detail?.length ? lift.detail : [{ kg: lift.kg, reps: lift.reps }];
       for (const set of sets) {
@@ -160,10 +183,10 @@ export type StrengthPlan = {
   combined: number | null;
 };
 
-export function strengthPlan(records: RecordItem[]): StrengthPlan {
+export function strengthPlan(records: RecordItem[], format: StrengthFormat = STRENGTH_2027): StrengthPlan {
   const athletes = {
-    hippos: athleteStrength(records, "hippos"),
-    gators: athleteStrength(records, "gators"),
+    hippos: athleteStrength(records, "hippos", format),
+    gators: athleteStrength(records, "gators", format),
   };
   const { hippos, gators } = athletes;
   return {
