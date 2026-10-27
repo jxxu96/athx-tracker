@@ -349,6 +349,22 @@ test("each zone starts from the first day the log could estimate it", () => {
   assert.deepEqual(raceStart([]), { strength: null, endurance: null, metcon: null });
 });
 
+test("a start is the first score even when a later day has none", () => {
+  const run = (athlete: "hippos" | "gators", day: string, seconds: number) =>
+    workout({
+      id: `${athlete}${day}`, athlete, day, category: "Endurance",
+      segments: [piece("Run", 2.4, "km", seconds)],
+    });
+  // Both past the cap ski nothing, which scores 0 m; a quicker run then needs a SkiErg piece.
+  const records = [
+    run("hippos", "2026-09-01", 1500),
+    run("gators", "2026-09-01", 1500),
+    run("gators", "2026-09-02", 600),
+  ];
+  assert.equal(endurancePlan(records).metres, null);
+  assert.deepEqual(raceStart(records).endurance, { score: 0, day: "2026-09-01" });
+});
+
 test("progress is the share of the way from start to goal, either direction", () => {
   assert.equal(zoneProgress(300, 360, 400, false), 60);
   assert.equal(zoneProgress(900, 840, 780, true), 50, "a time counts down");

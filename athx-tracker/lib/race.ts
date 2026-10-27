@@ -494,8 +494,9 @@ export type ZoneStart = { score: number; day: string };
 /**
  * Each zone's first estimate: the score as of the first day the log could
  * support one, counting everything logged up to the end of that day. A score
- * comes from the best of each piece, so once a zone has one it keeps one, and
- * the first such day is found by halving rather than trying every day.
+ * can come and go: two runs past the cap ski nothing, which scores, until a
+ * quicker run leaves time on an erg nobody has used. So every day is tried
+ * in order, rather than halving on the assumption that a score once there stays.
  */
 export function raceStart(records: RecordItem[]): Record<RaceZone, ZoneStart | null> {
   const days = [
@@ -505,20 +506,17 @@ export function raceStart(records: RecordItem[]): Record<RaceZone, ZoneStart | n
         .map((record) => record.day),
     ),
   ].sort();
-  const upTo = (day: string) => records.filter((record) => record.day <= day);
-  const start = (zone: RaceZone): ZoneStart | null => {
-    const score = ZONE_SCORE[zone];
-    if (!days.length || score(upTo(days[days.length - 1])) === null) return null;
-    let low = 0;
-    let high = days.length - 1;
-    while (low < high) {
-      const middle = Math.floor((low + high) / 2);
-      if (score(upTo(days[middle])) === null) low = middle + 1;
-      else high = middle;
+  const found: Record<RaceZone, ZoneStart | null> = { strength: null, endurance: null, metcon: null };
+  for (const day of days) {
+    const upTo = records.filter((record) => record.day <= day);
+    for (const { key } of RACE_ZONES) {
+      if (found[key]) continue;
+      const score = ZONE_SCORE[key](upTo);
+      if (score !== null) found[key] = { score, day };
     }
-    return { score: score(upTo(days[low]))!, day: days[low] };
-  };
-  return { strength: start("strength"), endurance: start("endurance"), metcon: start("metcon") };
+    if (RACE_ZONES.every(({ key }) => found[key])) break;
+  }
+  return found;
 }
 
 /**
