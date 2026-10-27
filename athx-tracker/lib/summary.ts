@@ -3,7 +3,7 @@ import { DEFAULT_SETTINGS, type RecordItem, type Settings } from "./domain.ts";
 import { strengthPlacing, type StrengthPlacing } from "./field.ts";
 import { athleteFuel, teamSessions, type AthleteFuel } from "./fuel.ts";
 import { liftProgress, togetherLiftSessions, type LiftProgress } from "./progress.ts";
-import { raceEstimate } from "./race.ts";
+import { raceEstimate, raceStart } from "./race.ts";
 
 /**
  * The figures that need the whole journal: the race-day estimate, Progress,
@@ -17,6 +17,8 @@ export type JournalSummary = {
   /** The day they were worked out for, which is the phone's day when it asked. */
   today: string;
   race: ReturnType<typeof raceEstimate>;
+  /** Each zone's first estimate, which the top box measures progress from. */
+  raceStart: ReturnType<typeof raceStart>;
   placing: StrengthPlacing;
   lifts: Record<"hippos" | "gators", LiftProgress[]>;
   togetherLifts: number;
@@ -35,6 +37,7 @@ export function journalSummary(
   return {
     today,
     race: raceEstimate(records),
+    raceStart: raceStart(records),
     placing: strengthPlacing(records),
     lifts: {
       hippos: liftProgress(records, "hippos", targets.hippos, today),

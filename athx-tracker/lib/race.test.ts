@@ -10,6 +10,7 @@ import {
   pairStation,
   pieces,
   raceEstimate,
+  raceStart,
   raceLoad,
   repMax,
   runSeconds,
@@ -17,6 +18,7 @@ import {
   stationPace,
   strengthLift,
   strengthPlan,
+  zoneProgress,
 } from "./race.ts";
 
 const workout = (over: Partial<Workout> = {}): Workout => ({
@@ -324,4 +326,34 @@ test("an empty journal estimates nothing and says what each part needs", () => {
   assert.equal(empty.metcon.seconds, null);
   assert.equal(empty.metcon.missing.length, METCON.length + 1);
   assert.equal(empty.metcon.changeoversKnown, false);
+});
+
+test("each zone starts from the first day the log could estimate it", () => {
+  const lifts = (kg: number): Lift[] => [
+    { name: "Overhead press", kg, sets: 1, reps: 1 },
+    { name: "Back squat", kg, sets: 1, reps: 2 },
+    { name: "Deadlift", kg, sets: 1, reps: 3 },
+  ];
+  const records = [
+    workout({ id: "a", athlete: "hippos", day: "2026-09-01", lifts: lifts(40) }),
+    // Together counts for neither, so it cannot start anything.
+    workout({ id: "t", athlete: "team", day: "2026-09-02", lifts: lifts(200) }),
+    workout({ id: "b", athlete: "gators", day: "2026-09-05", lifts: lifts(60) }),
+    workout({ id: "c", athlete: "gators", day: "2026-09-20", lifts: lifts(80) }),
+  ];
+  const start = raceStart(records);
+  assert.deepEqual(start.strength, { score: 300, day: "2026-09-05" });
+  assert.equal(start.endurance, null);
+  assert.equal(start.metcon, null);
+  assert.equal(strengthPlan(records).combined, 360, "now is still the best logged");
+  assert.deepEqual(raceStart([]), { strength: null, endurance: null, metcon: null });
+});
+
+test("progress is the share of the way from start to goal, either direction", () => {
+  assert.equal(zoneProgress(300, 360, 400, false), 60);
+  assert.equal(zoneProgress(900, 840, 780, true), 50, "a time counts down");
+  assert.equal(zoneProgress(300, 280, 400, false), 0, "below the start is nothing covered");
+  assert.equal(zoneProgress(300, 450, 400, false), 100);
+  assert.equal(zoneProgress(300, 360, 0, false), null, "no goal");
+  assert.equal(zoneProgress(400, 420, 400, false), null, "started at the goal");
 });

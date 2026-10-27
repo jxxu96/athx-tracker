@@ -2,7 +2,7 @@
 
 import { Dumbbell, Target } from "lucide-react";
 import { Fuel } from "@/components/fuel";
-import { RaceEstimate } from "@/components/race-estimate";
+import { RaceEstimate, RaceProgress } from "@/components/race-estimate";
 import {
   ATHLETES,
   METCON,
@@ -109,6 +109,12 @@ export function Overview({
             timeZone: "UTC",
           }).format(dayToDate(settings.eventDate))}
         </p>
+        <RaceProgress
+          estimate={figures.race}
+          start={figures.raceStart}
+          goals={settings.raceGoals}
+          today={today}
+        />
         <RaceEstimate estimate={figures.race} placing={figures.placing} />
       </section>
 

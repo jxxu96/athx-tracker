@@ -11,6 +11,7 @@ type Segment = {
 };
 type Session = {
   athlete: "hippos" | "gators";
+  day?: string;
   category: string;
   seconds?: number;
   lifts?: Lift[];
@@ -31,7 +32,7 @@ async function log(page: Page, sessions: Session[]) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: crypto.randomUUID(), kind: "workout", athlete: session.athlete, day: "2026-10-20",
+          id: crypto.randomUUID(), kind: "workout", athlete: session.athlete, day: session.day ?? "2026-10-20",
           title: session.category, category: session.category, customCategory: "",
           seconds: session.seconds ?? 0, notes: "", segments: session.segments ?? [],
           fatigue: 10, transition: 0, goal: null, context: "solo", lifts: session.lifts ?? [],
@@ -228,6 +229,50 @@ test("the pair's Strength is placed among 2026's mixed Lite pairs, live", async 
   );
   await expect(strength).toContainText("352 kg on that season's lifts (strict press, 3RM squat, 5RM deadlift)");
   await expect(strength).not.toContainText("needs a strict press");
+
+  for (const theme of ["Light", "Dark"]) {
+    await page.getByRole("button", { name: theme, exact: true }).click();
+    await audit(page, `${theme} theme`);
+  }
+});
+
+test("the top box measures each zone from its first estimate to the goal in Setup", async ({ page }) => {
+  const lifts = (kg: number) => [
+    { name: "Overhead press", kg, sets: 1, reps: 1 },
+    { name: "Back squat", kg, sets: 1, reps: 2 },
+    { name: "Deadlift", kg, sets: 1, reps: 3 },
+  ];
+  await log(page, [
+    { athlete: "hippos", category: "Strength", day: "2026-10-01", lifts: lifts(40) },
+    { athlete: "gators", category: "Strength", day: "2026-10-05", lifts: lifts(60) },
+    { athlete: "gators", category: "Strength", day: "2026-10-20", lifts: lifts(80) },
+  ]);
+  await page.evaluate(async () => {
+    const { settings, revision } = await fetch("/api/settings").then((r) => r.json());
+    await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        settings: { ...settings, raceGoals: { strength: 400, endurance: 0, metcon: 900 } },
+        revision,
+      }),
+    });
+  });
+  await page.reload();
+
+  // 120 + 180 on 5 Oct, 120 + 240 now: 60 of the 100 kg to the goal.
+  const strength = page.getByRole("group", { name: "Strength progress" });
+  await expect(strength).toContainText("360\u00a0kg");
+  await expect(strength).toContainText("60%");
+  await expect(strength).toContainText("Start 300\u00a0kg · Mon 5 Oct");
+  await expect(strength).toContainText("Goal 400\u00a0kg");
+  await expect(page.getByRole("group", { name: "Endurance progress" })).toContainText(
+    "No estimate yet",
+  );
+  await expect(page.getByRole("group", { name: "Endurance progress" })).toContainText(
+    "No goal in Setup",
+  );
+  await expect(page.getByRole("group", { name: "MetCon X progress" })).toContainText("Goal 15:00");
 
   for (const theme of ["Light", "Dark"]) {
     await page.getByRole("button", { name: theme, exact: true }).click();

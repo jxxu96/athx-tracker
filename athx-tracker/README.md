@@ -6,7 +6,8 @@ single SQLite file on a volume.
 
 ## What it does
 
-- **Today** — countdown to the event, with a race-day estimate under it: the
+- **Today** — countdown to the event, then each zone's progress from its first
+  estimate to the race goal set in Setup, then a race-day estimate: the
   pair's Strength score in kilograms, each athlete's share of it, and where it would
   have placed among last season's mixed Lite pairs; the 2.4 km run times and SkiErg
   distance for Endurance; and the MetCon X time. Then fuel for
@@ -194,6 +195,13 @@ Together sessions count for neither athlete. The phone holds only the recent
 slice of the journal, so the server works the estimate out over all of it
 (`journalSummary` in `lib/summary.ts`, the same functions the phone runs) and
 sends the figures; with the whole journal loaded the phone works them out itself.
+
+**Progress** on Today measures each zone from its start to its goal. The start is
+the zone's estimate as of the first day the log could give one, counting only what
+was logged up to then (`raceStart` in `lib/race.ts`); now is today's estimate; the
+goal is Setup's race goal for that zone (combined kilograms, SkiErg metres, or a
+MetCon X time, which counts down). The bar is the share of start-to-goal covered,
+clamped to 0-100%. A zone with no goal shows start and now only.
 
 **The Strength percentile** places the pair among every mixed ATHX Lite pair from
 the 2026 season, 264 pairs at 15 events on the

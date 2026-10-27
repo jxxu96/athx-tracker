@@ -465,3 +465,71 @@ export function raceEstimate(records: RecordItem[]) {
     metcon: metconPlan(records),
   };
 }
+
+export type RaceZone = "strength" | "endurance" | "metcon";
+/** What a zone scores: kilograms and metres count up, MetCon X's seconds count down. */
+export const RACE_ZONES = [
+  { key: "strength", name: "Strength", lower: false },
+  { key: "endurance", name: "Endurance", lower: false },
+  { key: "metcon", name: "MetCon X", lower: true },
+] as const;
+
+/** Each zone's score from an estimate, null where the log cannot support one. */
+export function zoneScores(estimate: ReturnType<typeof raceEstimate>): Record<RaceZone, number | null> {
+  return {
+    strength: estimate.strength.combined,
+    endurance: estimate.endurance.metres,
+    metcon: estimate.metcon.seconds,
+  };
+}
+
+const ZONE_SCORE: Record<RaceZone, (records: RecordItem[]) => number | null> = {
+  strength: (records) => strengthPlan(records).combined,
+  endurance: (records) => endurancePlan(records).metres,
+  metcon: (records) => metconPlan(records).seconds,
+};
+
+export type ZoneStart = { score: number; day: string };
+
+/**
+ * Each zone's first estimate: the score as of the first day the log could
+ * support one, counting everything logged up to the end of that day. A score
+ * comes from the best of each piece, so once a zone has one it keeps one, and
+ * the first such day is found by halving rather than trying every day.
+ */
+export function raceStart(records: RecordItem[]): Record<RaceZone, ZoneStart | null> {
+  const days = [
+    ...new Set(
+      records
+        .filter((record) => record.kind === "workout" && record.athlete !== "team")
+        .map((record) => record.day),
+    ),
+  ].sort();
+  const upTo = (day: string) => records.filter((record) => record.day <= day);
+  const start = (zone: RaceZone): ZoneStart | null => {
+    const score = ZONE_SCORE[zone];
+    if (!days.length || score(upTo(days[days.length - 1])) === null) return null;
+    let low = 0;
+    let high = days.length - 1;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if (score(upTo(days[middle])) === null) low = middle + 1;
+      else high = middle;
+    }
+    return { score: score(upTo(days[low]))!, day: days[low] };
+  };
+  return { strength: start("strength"), endurance: start("endurance"), metcon: start("metcon") };
+}
+
+/**
+ * How far from the start to the goal the current score has come, as a
+ * percent from 0 to 100. Null without a goal, or when the start was already
+ * at it, which leaves no distance to cover.
+ */
+export function zoneProgress(start: number, current: number, goal: number, lower: boolean) {
+  if (!(goal > 0)) return null;
+  const span = lower ? start - goal : goal - start;
+  if (!(span > 0)) return null;
+  const covered = lower ? start - current : current - start;
+  return Math.min(100, Math.max(0, (covered / span) * 100));
+}
