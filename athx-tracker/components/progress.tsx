@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { TrendingUp } from "lucide-react";
 import { Benchmarks } from "@/components/benchmarks";
+import { Creature, RUNNER_SIZE } from "@/components/creatures";
 import { WeeklyReview } from "@/components/weekly-review";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,6 +18,7 @@ import {
 import type { BodyweightHistory } from "@/lib/bodyweight";
 import { formatDay } from "@/lib/client";
 import { formatAmount, targetPercent } from "@/lib/fuel";
+import { wearsProteinBagel } from "@/lib/protein-week";
 import type { JournalSummary } from "@/lib/summary";
 import {
   liftTotal,
@@ -128,14 +130,28 @@ const alongLine = (at: number) => `calc(8px + (100% - 16px) * ${at / 100})`;
 /** A column's swatch, at the left of each quarter of the row. */
 const atColumn = (column: number) => `calc(25% * ${column} + 4px)`;
 
-function Leader({ from, to, lane, color }: { from: string; to: string; lane: number; color: string }) {
-  const y = LANE_Y(lane);
+function Leader({
+  from,
+  to,
+  lane,
+  color,
+  origin = LINE_Y,
+}: {
+  from: string;
+  to: string;
+  lane: number;
+  color: string;
+  /** Where the bar line sits. Leaders keep their drop below it. */
+  origin?: number;
+}) {
+  const drop = origin - LINE_Y;
+  const y = LANE_Y(lane) + drop;
   const line = { borderColor: color, opacity: 0.6 };
   return (
     <>
       <span
         className="absolute w-0 border-l"
-        style={{ ...line, left: from, top: LINE_Y, height: y - LINE_Y }}
+        style={{ ...line, left: from, top: origin, height: y - origin }}
       />
       <span
         className="absolute h-0 border-t"
@@ -148,7 +164,7 @@ function Leader({ from, to, lane, color }: { from: string; to: string; lane: num
       />
       <span
         className="absolute w-0 border-l"
-        style={{ ...line, left: to, top: y, height: BAR_HEIGHT - y }}
+        style={{ ...line, left: to, top: y, height: BAR_HEIGHT + drop - y }}
       />
     </>
   );
@@ -163,16 +179,25 @@ function Bar({
   color,
   unit,
   leaders = false,
+  runner,
+  bagel = false,
 }: {
   bar: ProgressBar;
   color: string;
   unit: WeightUnit;
   leaders?: boolean;
+  /** Whose creature runs this line. Omitted, the line is only the marks. */
+  runner?: ProgressAthlete;
+  /** Bagel on the head. Only set after a missed protein week, and only Mon–Wed. */
+  bagel?: boolean;
 }) {
   const lanes = leaderLanes(
     bar.marks.map((mark) => ({ from: mark.at, to: COLUMN[mark.key] * 25 + 2 })),
   );
   const last = bar.ticks.length - 1;
+  // The creature stands on the line, so the line moves down to make room.
+  const origin = runner ? RUNNER_SIZE : LINE_Y;
+  const height = (leaders ? BAR_HEIGHT : LINE_Y * 2) + (origin - LINE_Y);
   return (
     <div aria-hidden="true">
       <div className="relative h-4 text-[10px] leading-4 text-muted-foreground tabular-nums">
@@ -186,17 +211,27 @@ function Bar({
           </span>
         ))}
       </div>
-      <div className="relative" style={{ height: leaders ? BAR_HEIGHT : LINE_Y * 2 }}>
+      <div className="relative" style={{ height }}>
+        {runner ? (
+          <div
+            className="athx-runner-track pointer-events-none absolute inset-x-2 overflow-hidden"
+            style={{ top: origin - RUNNER_SIZE - 2, height: RUNNER_SIZE + 2 }}
+            data-runner={runner}
+            data-bagel={bagel ? "true" : "false"}
+          >
+            <Creature kind={runner} bagel={bagel} />
+          </div>
+        ) : null}
         <div
           className="absolute inset-x-2 h-0.5 -translate-y-1/2 rounded-full bg-muted"
-          style={{ top: LINE_Y }}
+          style={{ top: origin }}
         />
         {bar.ticks.map((tick) => (
           <span
             key={tick.value}
             data-progress-tick
             className="absolute h-2 w-px -translate-x-1/2 -translate-y-1/2 bg-muted-foreground/40"
-            style={{ left: alongLine(tick.at), top: LINE_Y }}
+            style={{ left: alongLine(tick.at), top: origin }}
           />
         ))}
         {leaders
@@ -207,10 +242,11 @@ function Bar({
                 to={atColumn(COLUMN[mark.key])}
                 lane={lanes[index]}
                 color={mark.key === "start" ? "var(--muted-foreground)" : color}
+                origin={origin}
               />
             ))
           : null}
-        <div className="absolute inset-x-2 h-0" style={{ top: LINE_Y }}>
+        <div className="absolute inset-x-2 h-0" style={{ top: origin }}>
           {bar.marks.map((mark) => (
             <Mark key={mark.key} kind={mark.key} at={mark.at} color={color} />
           ))}
@@ -251,10 +287,12 @@ function Total({
   athlete,
   rows,
   unit,
+  bagel,
 }: {
   athlete: ProgressAthlete;
   rows: LiftProgress[];
   unit: WeightUnit;
+  bagel: boolean;
 }) {
   const color = ATHLETES[athlete].color;
   const total: LiftTotal = liftTotal(rows);
@@ -277,7 +315,7 @@ function Total({
         </p>
       </div>
       <div>
-        {marks ? <Bar bar={marks} color={color} unit={unit} leaders /> : null}
+        {marks ? <Bar bar={marks} color={color} unit={unit} leaders runner={athlete} bagel={bagel} /> : null}
         <dl className="grid grid-cols-4">
           <Stat label="Start" value={figure(total.start)} notes={[]} swatch={total.start ? <Swatch /> : null} />
           <Stat
@@ -309,11 +347,13 @@ function Lift({
   lift,
   unit,
   today,
+  bagel,
 }: {
   athlete: ProgressAthlete;
   lift: LiftProgress;
   unit: WeightUnit;
   today: string;
+  bagel: boolean;
 }) {
   const color = ATHLETES[athlete].color;
   const label = `${ATHLETES[athlete].name} ${lift.name.toLowerCase()}`;
@@ -337,7 +377,7 @@ function Lift({
               : "no target"}
           </p>
         </div>
-        {marks ? <Bar bar={marks} color={color} unit={unit} /> : null}
+        {marks ? <Bar bar={marks} color={color} unit={unit} runner={athlete} bagel={bagel} /> : null}
       </div>
     );
 
@@ -356,7 +396,7 @@ function Lift({
     <div role="group" aria-label={label} className="space-y-2.5 py-4 first:pt-0 last:pb-0">
       <h3 className="text-sm font-medium">{lift.name}</h3>
       <div>
-        {marks ? <Bar bar={marks} color={color} unit={unit} leaders /> : null}
+        {marks ? <Bar bar={marks} color={color} unit={unit} leaders runner={athlete} bagel={bagel} /> : null}
         <dl className="grid grid-cols-4">
           <Stat
             label="Start"
@@ -541,6 +581,7 @@ export function Progress({
           ...row,
           target: targets[athlete][row.key] ?? 0,
         }));
+        const bagel = wearsProteinBagel(records, settings, athlete, today);
         return (
           <section
             key={athlete}
@@ -560,9 +601,9 @@ export function Progress({
             <BodyweightTrend athlete={athlete} history={history} unit={unit} today={today} />
             <div className="divide-y">
               {rows.map((lift) => (
-                <Lift key={lift.key} athlete={athlete} lift={lift} unit={unit} today={today} />
+                <Lift key={lift.key} athlete={athlete} lift={lift} unit={unit} today={today} bagel={bagel} />
               ))}
-              <Total athlete={athlete} rows={rows} unit={unit} />
+              <Total athlete={athlete} rows={rows} unit={unit} bagel={bagel} />
             </div>
           </section>
         );

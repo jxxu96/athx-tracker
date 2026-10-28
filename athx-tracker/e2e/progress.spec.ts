@@ -1,7 +1,9 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { PASSPHRASE } from "../playwright.config.ts";
+import { addDays } from "../lib/client.ts";
 import { DEFAULT_SETTINGS } from "../lib/domain.ts";
+import { previousWeek } from "../lib/protein-week.ts";
 
 /** Pounds as the session form stores them. */
 const kg = (lb: number) => Math.round((lb / 2.20462262) * 100) / 100;
@@ -228,6 +230,88 @@ test("each lift shows the max its sets predict and the volume of each week", asy
   // Three sets of five at 225 lb.
   await expect(deadlift).toContainText("this week 3,375");
   await expect(deadlift.getByRole("img", { name: /^Gators deadlift weekly volume/ })).toBeVisible();
+});
+
+test("the hippo and the gator run their bars, with a bagel only through Wednesday", async ({ page }) => {
+  // Wednesday and Thursday of a fixed week, so the bagel does not depend on
+  // whichever day the suite happens to run.
+  const wednesday = new Date(2026, 9, 28, 15, 0, 0);
+  const thursday = new Date(2026, 9, 29, 15, 0, 0);
+  await page.clock.install({ time: wednesday });
+  const week = previousWeek("2026-10-28");
+  const days = Array.from({ length: 7 }, (_, index) => addDays(week.start, index));
+  await page.evaluate(async (days) => {
+    const current = await fetch("/api/settings").then((response) => response.json());
+    const saved = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        revision: current.revision,
+        settings: {
+          ...current.settings,
+          targets: {
+            hippos: { calories: 2000, protein: 140, carbs: 200, fat: 70 },
+            gators: { calories: 2200, protein: 160, carbs: 220, fat: 80 },
+          },
+          liftTargets: {
+            ...current.settings.liftTargets,
+            hippos: { ...current.settings.liftTargets.hippos, overheadPress: 40 },
+          },
+        },
+      }),
+    });
+    if (!saved.ok) throw new Error("settings");
+    for (const day of days) {
+      for (const meal of [
+        { athlete: "hippos", protein: 40 },
+        { athlete: "gators", protein: 160 },
+      ]) {
+        const response = await fetch("/api/records", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: crypto.randomUUID(), kind: "meal", athlete: meal.athlete, day,
+            name: "Week protein", meal: "Lunch", source: "manual", assumptions: "",
+            macros: { calories: 500, protein: meal.protein, carbs: 40, fat: 12 },
+          }),
+        });
+        if (!response.ok) throw new Error(await response.text());
+      }
+    }
+  }, days);
+
+  await page.reload();
+  await openProgress(page);
+
+  const bagels = (name: "hippos" | "gators") =>
+    page.locator(`[data-runner='${name}']`).evaluateAll((nodes) =>
+      nodes.map((node) => node.getAttribute("data-bagel")),
+    );
+  const hippos = await bagels("hippos");
+  const gators = await bagels("gators");
+  expect(hippos.length).toBeGreaterThan(0);
+  expect(gators.length).toBeGreaterThan(0);
+  expect(hippos.every((value) => value === "true")).toBe(true);
+  expect(gators.every((value) => value === "false")).toBe(true);
+  await expect(page.locator("[data-bagel='true'] [data-bagel-crown]")).not.toHaveCount(0);
+  await expect(page.locator("[data-bagel='false'] [data-bagel-crown]")).toHaveCount(0);
+
+  const moving = page.locator("[data-runner='hippos']").first().locator(".athx-runner");
+  await expect.poll(async () => moving.evaluate((element) => getComputedStyle(element).animationName)).toBe("athx-runner-slide");
+  const start = await moving.boundingBox();
+  await page.waitForTimeout(700);
+  const later = await moving.boundingBox();
+  expect(start).not.toBeNull();
+  expect(later!.x).not.toBe(start!.x);
+  // The trip is clipped to the line. A runner past the end must not widen the page.
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+
+  await page.clock.setFixedTime(thursday);
+  await page.reload();
+  await openProgress(page);
+  await expect(page.locator("[data-runner='hippos']")).not.toHaveCount(0);
+  await expect(page.locator("[data-runner='gators']")).not.toHaveCount(0);
+  await expect(page.locator("[data-bagel='true']")).toHaveCount(0);
 });
 
 test("a session that beats a lift's best says so when it is saved", async ({ page }) => {
