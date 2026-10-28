@@ -14,7 +14,7 @@ async function signIn(page: Page) {
   await page.goto("/login");
   await page.getByLabel("Passphrase").fill(PASSPHRASE);
   await page.getByRole("button", { name: "Open journal" }).click();
-  await expect(page.getByRole("button", { name: "Session" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Session", exact: true })).toBeVisible();
 }
 
 const openSession = async (page: Page) => {
