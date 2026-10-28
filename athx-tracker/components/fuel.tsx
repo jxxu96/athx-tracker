@@ -53,12 +53,9 @@ function weekdayLetter(day: string) {
 }
 
 function spanNote(span: FuelSpan, today: string) {
-  if (span === "today" || span === "yesterday") return null;
-  if (span === "overall") {
-    return "Daily average across every day with a meal. The totals underneath are the whole stretch; spend is a day's average since the first entry.";
-  }
+  if (span !== "week") return null;
   const window = fuelWindow("week", today);
-  return `${shortDate(window!.start)} to ${shortDate(window!.end)}. Daily average of days with a meal.`;
+  return `${shortDate(window!.start)} to ${shortDate(window!.end)}`;
 }
 
 function dayCaption(day: string) {
@@ -234,9 +231,6 @@ function AthleteFuelCard({
                 </span>
               </p>
             ) : null}
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              Everyday movement and digestion are not in this, so the real spend is higher.
-            </p>
           </>
         ) : fuel.burnKnown ? (
           <>

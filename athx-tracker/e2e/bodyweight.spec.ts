@@ -159,5 +159,4 @@ test("expenditure counts resting energy once there is a height and a birth year"
   await nav(page, "Today");
   await expect(gators).toContainText(`~${shown}kcal`);
   await expect(gators).toContainText(`Resting ~${shown} · training ~0`);
-  await expect(gators).toContainText("Everyday movement and digestion are not in this");
 });

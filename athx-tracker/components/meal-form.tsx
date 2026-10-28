@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -59,12 +58,6 @@ const MEALS = ["Breakfast", "Lunch", "Dinner", "Snack", "Alcohol"] as const;
 const ETHANOL_LIMIT = 500;
 const FIBER_LIMIT = 3000;
 
-/** What the estimator was told each level means, so the word is checkable. */
-const CONFIDENCE_MEANS = {
-  high: " · looked-up label or published figures",
-  medium: " · standard reference values",
-  low: " · product not found, or extrapolated",
-} as const;
 const LIMITS: Macros = { calories: 20000, protein: 2000, carbs: 3000, fat: 2000 };
 
 type MacroDraft = Record<keyof Macros, string>;
@@ -604,8 +597,7 @@ export function MealForm({
             </Button>
           </div>
         ) : dirty || draft ? (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border bg-muted/50 p-3">
-            <p className="text-xs text-muted-foreground">Kept as a draft on this phone as you type.</p>
+          <div className="flex flex-wrap items-center justify-end gap-2 rounded-2xl border bg-muted/50 p-3">
             <div className="flex gap-1.5">
               <Button
                 type="button"
@@ -667,11 +659,6 @@ export function MealForm({
               outline: key,
             }))}
           />
-          {!editing && loggingFor === "both" ? (
-            <p className="text-xs text-muted-foreground">
-              One save writes this meal for Hippos and for Gators.
-            </p>
-          ) : null}
           <Choice
             label="Sitting"
             value={slot}
@@ -709,24 +696,16 @@ export function MealForm({
             {estimating ? "Estimating…" : "Estimate macros"}
           </Button>
           {offline ? (
-            <div className="rounded-xl bg-muted/60 p-3">
-              <p className="text-xs text-muted-foreground">
-                No estimate came back. Save the meal with your description and it
-                will be filled in by itself once the estimator answers — it keeps
-                trying in the background, so nothing here needs typing twice.
-              </p>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="mt-2 w-full"
-                disabled={saving}
-                onClick={queueForLater}
-              >
-                <Clock />
-                {saving ? "Saving…" : "Save and estimate later"}
-              </Button>
-            </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              disabled={saving}
+              onClick={queueForLater}
+            >
+              <Clock />
+              {saving ? "Saving…" : "Save and estimate later"}
+            </Button>
           ) : null}
         </section>
 
@@ -736,12 +715,7 @@ export function MealForm({
             aria-label="Review estimate"
             className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5"
           >
-            <div>
-              <h3 className="text-sm font-semibold">Review the assumptions</h3>
-              <p className="text-[11px] text-muted-foreground">
-                Different portion, ingredient or preparation? Tell the estimator below.
-              </p>
-            </div>
+            <h3 className="text-sm font-semibold">Review the assumptions</h3>
             <Field label="Assumptions">
               <Textarea
                 value={assumptions}
@@ -843,15 +817,6 @@ export function MealForm({
                     : `Your calorie total is ${formatCalories(Math.abs(parsedMacros.calories - breakdown.total))} kcal ${parsedMacros.calories > breakdown.total ? "above" : "below"} this rough estimate.`}
                 </p>
               </div>
-              <p className="text-[11px] text-muted-foreground">
-                {slot === "Alcohol"
-                  ? "Protein: 4 kcal/g · Carbs other than fiber: 4 kcal/g · Fiber: 2 kcal/g · Fat: 9 kcal/g · Ethanol: 7 kcal/g. Food with the drinks goes in the other three."
-                  : "Protein: 4 kcal/g · Carbs other than fiber: 4 kcal/g · Fiber: 2 kcal/g · Fat: 9 kcal/g."}
-              </p>
-              <p className="text-[11px] text-muted-foreground">
-                Fiber is already inside total carbs. Sugar alcohols and food-specific factors can still change the total.
-                Your calorie total is kept; matching is optional.
-              </p>
             </div>
           ) : null}
 
@@ -866,7 +831,6 @@ export function MealForm({
                 <>
                   {answeredBy ? " · " : null}
                   Confidence: <span className="font-medium">{confidence}</span>
-                  {CONFIDENCE_MEANS[confidence]}
                 </>
               ) : null}
               {adjusted ? " · saved as your own numbers after your edit" : null}
@@ -894,9 +858,6 @@ export function MealForm({
         >
           <DialogHeader className="shrink-0 pr-6 text-left">
             <DialogTitle>Refine estimate</DialogTitle>
-            <DialogDescription>
-              Add a detail or ask a question. Each reply updates the meal below; save it when you’re happy.
-            </DialogDescription>
           </DialogHeader>
           <div
             ref={conversationLog}
@@ -956,11 +917,11 @@ export function MealForm({
                 setReplyError("");
               }}
             />
-            <p className="text-xs text-muted-foreground">
-              {conversationFull
-                ? "This conversation is full. Add the final details to the meal description and estimate again."
-                : "Earlier replies are included. A successful reply uses one estimate."}
-            </p>
+            {conversationFull ? (
+              <p className="text-xs text-muted-foreground">
+                This conversation is full. Add the final details to the meal description and estimate again.
+              </p>
+            ) : null}
             {replyError ? (
               <p role="alert" className="text-sm text-destructive">
                 {replyError}

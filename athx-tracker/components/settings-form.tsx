@@ -444,8 +444,8 @@ export function SettingsForm({
   /** Where the bodyweight shown came from. */
   function weightHint(athlete: "hippos" | "gators") {
     const latest = currentBodyweight(history, athlete);
-    if (latest) return `Last weighed ${formatDay(latest.day, today)}. A new weight is logged as a weigh-in today.`;
-    return "A new weight is logged as a weigh-in today, so earlier sessions keep theirs.";
+    if (latest) return `Last weighed ${formatDay(latest.day, today)}.`;
+    return undefined;
   }
 
   return (
@@ -467,7 +467,7 @@ export function SettingsForm({
               onChange={(event) => setEventDate(event.target.value)}
             />
           </Field>
-          <Field label="Sessions a week" hint="Per athlete">
+          <Field label="Sessions a week">
             <Input
               value={weeklyTarget}
               inputMode="numeric"
@@ -512,10 +512,6 @@ export function SettingsForm({
               </button>
             ))}
           </div>
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            Loads are always stored in kilograms, so switching never changes a
-            recorded lift.
-          </p>
         </div>
       </section>
 
@@ -569,7 +565,7 @@ export function SettingsForm({
           </div>
           <p className="text-[11px] text-muted-foreground">
             {restingFor(athlete) !== null
-              ? `Resting energy ~${formatAmount(Math.round(restingFor(athlete)! / 10) * 10)} kcal a day (Mifflin–St Jeor, ${SEX[athlete]}). Fuel adds training to it.`
+              ? `Resting energy ~${formatAmount(Math.round(restingFor(athlete)! / 10) * 10)} kcal a day`
               : "With bodyweight, height and birth year, Fuel counts resting energy as well as training."}
           </p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -588,19 +584,11 @@ export function SettingsForm({
               </Field>
             ))}
           </div>
-          <p className="text-[11px] text-muted-foreground">
-            Leave a target at zero to hide its progress bar.
-          </p>
         </section>
       ))}
 
       <section className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
-        <div>
-          <h3 className="text-sm font-semibold">Lift targets</h3>
-          <p className="text-[11px] text-muted-foreground">
-            What Progress measures each lift against. Leave one blank for no target.
-          </p>
-        </div>
+        <h3 className="text-sm font-semibold">Lift targets</h3>
         {(["hippos", "gators"] as const).map((athlete) => (
           <fieldset key={athlete} className="space-y-3">
             <legend className="flex items-center gap-2 text-xs font-semibold">
@@ -632,14 +620,7 @@ export function SettingsForm({
       </section>
 
       <section className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
-        <div>
-          <h3 className="text-sm font-semibold">Race goals</h3>
-          <p className="text-[11px] text-muted-foreground">
-            What the pair is aiming for in Endurance and MetCon X. Today measures progress from
-            your first estimate to these. Strength&apos;s goal is your lift targets above, carried
-            to the race&apos;s reps. Leave one blank for no goal.
-          </p>
-        </div>
+        <h3 className="text-sm font-semibold">Race goals</h3>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {(
             [
@@ -662,14 +643,7 @@ export function SettingsForm({
       </section>
 
       <section className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
-        <div>
-          <h3 className="text-sm font-semibold">Food notes</h3>
-          <p className="text-[11px] text-muted-foreground">
-            Foods you eat often: a usual order, which product you mean, or its
-            label. Every meal estimate reads these, and uses a note only when
-            the meal mentions that food. Shared by both of you.
-          </p>
-        </div>
+        <h3 className="text-sm font-semibold">Food notes</h3>
         <Field label="Notes" hint={`${foodNotes.length}/${FOOD_NOTES_LIMIT}`}>
           <Textarea
             value={foodNotes}
@@ -692,13 +666,7 @@ export function SettingsForm({
       </Button>
 
       <section className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
-        <div>
-          <h3 className="text-sm font-semibold">Your data</h3>
-          <p className="text-[11px] text-muted-foreground">
-            The journal is a single file on the server. Keep a copy somewhere you
-            control — restoring the same file twice is harmless.
-          </p>
-        </div>
+        <h3 className="text-sm font-semibold">Your data</h3>
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
@@ -742,7 +710,6 @@ export function SettingsForm({
             <span className="font-medium text-foreground">
               {grokReady ? "configured" : "not configured"}
             </span>
-            {grokReady ? "" : ". Macros are entered by hand."}
           </p>
           {grokReady ? (
             <Button

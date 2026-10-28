@@ -35,9 +35,6 @@ test("a control inside a box does its job without folding it", async ({ page }) 
     "true",
   );
   await expect(fuel.getByRole("button", { name: "Collapse Fuel" })).toBeVisible();
-
-  await page.getByText("How these are worked out").click();
-  await expect(page.getByText(/Strength is the 2027 pairs score/)).toBeVisible();
 });
 
 test("the countdown box folds to the days left", async ({ page }) => {

@@ -36,7 +36,7 @@ function AttemptCard({ series, unit, today }: { series: BenchmarkSeries; unit: W
         <p className="text-xs text-muted-foreground">{series.context === "pairs" ? "Pairs" : "Solo"} · {statusName[series.status]}</p>
       </div>
       <p className="mt-1 text-xs text-muted-foreground">{workLabel}</p>
-      {!byTime ? <p className="mt-1 text-xs text-muted-foreground">Work completed in {formatTime(latest.seconds)}. Only attempts with this same elapsed time are compared. Work percentage averages each station’s completed share.</p> : null}
+      {!byTime ? <p className="mt-1 text-xs text-muted-foreground">Work completed in {formatTime(latest.seconds)}.</p> : null}
       <dl className="mt-4 grid grid-cols-3 gap-3">
         {[{ label: "Best", attempt: best }, { label: "Latest", attempt: latest }, { label: "Previous", attempt: previous }].map(({ label, attempt }) => (
           <div key={label}>
@@ -83,7 +83,6 @@ export function Benchmarks({ records, today, unit }: { records: RecordItem[]; to
     <div className="space-y-4">
       <section className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
         <h2 className="text-sm font-semibold">ATHX benchmarks</h2>
-        <p className="text-xs text-muted-foreground">Actual circuit times and station splits. Comparisons keep work, loads and solo/pairs context the same. Completed circuits, time caps and unfinished attempts stay separate; an unknown load only matches another unknown load.</p>
         <div role="group" aria-label="Benchmark athlete" className="flex flex-wrap gap-2">
           {(["hippos", "gators", "team"] as const).map((who) => <Button key={who} type="button" size="sm" variant={athlete === who ? "default" : "outline"} aria-pressed={athlete === who} onClick={() => setAthlete(who)}>{ATHLETES[who].name}</Button>)}
         </div>
@@ -94,7 +93,7 @@ export function Benchmarks({ records, today, unit }: { records: RecordItem[]; to
         {kind === "station" ? <NativeSelect aria-label="ATHX station" value={station} onChange={(event) => setStation(event.target.value)}>{METCON.map((item) => <NativeSelectOption key={item.name} value={item.name}>{item.name}</NativeSelectOption>)}</NativeSelect> : null}
       </section>
       {matching.length ? matching.map((group) => <AttemptCard key={`${athlete}-${group.key}`} series={group} unit={unit} today={today} />)
-        : <p className="rounded-2xl border bg-card p-5 text-sm text-muted-foreground">{kind === "circuit" ? "No timed ATHX circuits for this athlete yet. Log the seven stations in order as a MetCon with an elapsed time. Mixed-session clocks are excluded because they also include other work." : "No timed attempts at this station yet. Add completed work and a station split to a session."}</p>}
+        : <p className="rounded-2xl border bg-card p-5 text-sm text-muted-foreground">{kind === "circuit" ? "No timed circuits yet." : "No timed attempts yet."}</p>}
     </div>
   );
 }

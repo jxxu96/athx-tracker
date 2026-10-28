@@ -288,8 +288,6 @@ test("the macro comparison is advisory when creating and editing a meal", async 
   await expect(page.getByRole("status").filter({ hasText: "Rough macro estimate:" })).toContainText("455 kcal");
   await expect(page.getByText("Protein 120 + carbs 200 + fat 135 kcal")).toBeVisible();
   await expect(page.getByText(/Your calorie total is 445 kcal above/)).toBeVisible();
-  await expect(page.getByText(/Fiber is already inside total carbs/)).toBeVisible();
-  await expect(page.getByText(/Fiber: 2 kcal\/g/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Use macro total" })).toHaveCount(0);
   const { violations } = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
@@ -435,7 +433,6 @@ test("logging for both saves one meal for each athlete, and one athlete saves on
   await expect(athletes.getByRole("button", { name: "Both" })).toHaveAttribute("aria-pressed", "true");
   await expect(athletes.getByRole("button", { name: "Hippos" })).toHaveAttribute("aria-pressed", "false");
   await expect(athletes.getByRole("button")).toHaveCount(3);
-  await expect(page.getByText("One save writes this meal for Hippos and for Gators.")).toBeVisible();
 
   await page.getByRole("group", { name: "Sitting" }).getByRole("button", { name: "Dinner" }).click();
   await page.getByLabel("Meal", { exact: true }).fill("Shared oats");
@@ -469,7 +466,6 @@ test("logging for both saves one meal for each athlete, and one athlete saves on
 
   await page.getByRole("button", { name: "Meal", exact: true }).click();
   await loggingFor(page, "Gators").click();
-  await expect(page.getByText("One save writes this meal for Hippos and for Gators.")).toHaveCount(0);
   await expect(page.getByRole("group", { name: "Athlete" }).getByRole("button", { name: "Gators" })).toHaveAttribute("aria-pressed", "true");
   await page.getByLabel("Meal", { exact: true }).fill("Gators only");
   await page.getByLabel("Calories (kcal)").fill("455");

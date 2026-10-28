@@ -38,7 +38,7 @@ test("a meal typed and left is there when the app opens again", async ({ page })
   await tab(page, "Meal");
   await mealName(page).fill("Half typed bowl");
   await page.getByLabel("Calories (kcal)").fill("450");
-  await expect(page.getByText("Kept as a draft on this phone as you type.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Discard draft" })).toBeVisible();
 
   await page.reload();
   await tab(page, "Meal");
