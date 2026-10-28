@@ -1,6 +1,5 @@
 import { addDays, dayToDate, isMeal, weekStart } from "./client.ts";
 import { sumMacros, type RecordItem, type Settings } from "./domain.ts";
-import { targetGap } from "./fuel.ts";
 import { targetsOn } from "./targets.ts";
 
 export type ProteinAthlete = "hippos" | "gators";
@@ -18,10 +17,10 @@ export function isBagelWeekday(day: string) {
 }
 
 /**
- * Whether last week's protein fell short of the daily targets in force then.
- * The week is all seven days. A day with no meal counts as nothing eaten.
- * Queued meals are still waiting on their macros, so they stay out. Within 5%
- * counts as met, the same band as a single day. No protein target means there
+ * Whether last week's protein fell short of 90% of the goal.
+ * Only days with a known meal count. A blank day is left out, so it counts as
+ * met. Queued meals are still waiting on their macros, so they stay out and do
+ * not mark the day as logged. No protein target on the logged days means there
  * was nothing to miss.
  */
 export function missedProteinLastWeek(
@@ -31,11 +30,6 @@ export function missedProteinLastWeek(
   today: string,
 ) {
   const week = previousWeek(today);
-  let target = 0;
-  for (let i = 0; i < 7; i += 1) {
-    target += targetsOn(settings, athlete, addDays(week.start, i)).protein;
-  }
-  if (!(target > 0)) return false;
   const meals = records.filter(isMeal).filter(
     (meal) =>
       meal.athlete === athlete &&
@@ -43,7 +37,16 @@ export function missedProteinLastWeek(
       meal.day >= week.start &&
       meal.day <= week.end,
   );
-  return targetGap(sumMacros(meals).protein, target)?.state === "under";
+  const logged = new Set(meals.map((meal) => meal.day));
+  let target = 0;
+  for (let i = 0; i < 7; i += 1) {
+    const day = addDays(week.start, i);
+    if (!logged.has(day)) continue;
+    target += targetsOn(settings, athlete, day).protein;
+  }
+  if (!(target > 0)) return false;
+  // 90% exactly counts as met. Compare in tenths so 0.9 does not round a hit down.
+  return sumMacros(meals).protein * 10 < target * 9;
 }
 
 /** The bagel rides Mon–Wed after a missed protein week, and only then. */

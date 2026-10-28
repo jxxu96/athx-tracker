@@ -67,8 +67,6 @@ test("a short protein week is a miss, and the bagel only stays on through Wednes
   const short = weekOf(today, 50);
   const settings = withProtein(100);
   assert.equal(missedProteinLastWeek(short, settings, "hippos", today), true);
-  // Nothing logged for Gators, against a real target, is a miss too.
-  assert.equal(missedProteinLastWeek(short, settings, "gators", today), true);
   const monday = weekStart(today);
   assert.equal(wearsProteinBagel(short, settings, "hippos", monday), true);
   assert.equal(wearsProteinBagel(short, settings, "hippos", addDays(monday, 2)), true);
@@ -82,9 +80,9 @@ test("meeting the target, or having none, wears no bagel", () => {
   const hit = weekOf(today, 100);
   assert.equal(missedProteinLastWeek(hit, settings, "hippos", today), false);
   assert.equal(wearsProteinBagel(hit, settings, "hippos", today), false);
-  // 5% of 700 g is 35 g, so 665 g still meets it and 658 g does not.
-  assert.equal(missedProteinLastWeek(weekOf(today, 95), settings, "hippos", today), false);
-  assert.equal(missedProteinLastWeek(weekOf(today, 94), settings, "hippos", today), true);
+  // 90% of 700 g is 630 g. 90 g a day meets it and 89 g a day does not.
+  assert.equal(missedProteinLastWeek(weekOf(today, 90), settings, "hippos", today), false);
+  assert.equal(missedProteinLastWeek(weekOf(today, 89), settings, "hippos", today), true);
   assert.equal(missedProteinLastWeek(weekOf(today, 20), withProtein(0), "hippos", today), false);
   assert.equal(wearsProteinBagel(weekOf(today, 20), withProtein(0), "hippos", today), false);
 });
@@ -105,12 +103,37 @@ test("queued meals and meals outside last week do not count", () => {
   ];
   assert.equal(missedProteinLastWeek(hippos, settings, "hippos", today), false);
 
-  const gators = weekOf(today, 160, "gators").map((entry, index) =>
+  const gators = weekOf(today, 100, "gators").map((entry, index) =>
     index === 0 ? { ...entry, athlete: "hippos" as const } : entry,
   );
-  // Six days at 160 g is 960 g, against 160 × 7 = 1120. The Monday meal was Hippos'.
+  // Monday has no Gators meal, so that day is out. Six days at 100 g against 160 g is under 90%.
   assert.equal(missedProteinLastWeek(gators, settings, "gators", today), true);
-  assert.equal(missedProteinLastWeek(gators, settings, "hippos", today), true);
+  // Hippos logged only Monday, at 100 g against a 100 g target, so that day is met.
+  assert.equal(missedProteinLastWeek(gators, settings, "hippos", today), false);
+});
+
+test("a blank day is left out, and 90% of the logged days is enough", () => {
+  const today = "2026-10-28";
+  const settings = withProtein(100);
+  const week = previousWeek(today);
+  const logged = weekOf(today, 90).filter((entry) => entry.day !== week.start);
+  // Six days at 90 g is exactly 90% of those days. Monday was blank.
+  assert.equal(missedProteinLastWeek(logged, settings, "hippos", today), false);
+  const short = logged.map((entry) =>
+    entry.day === addDays(week.start, 1)
+      ? { ...entry, macros: { ...entry.macros, protein: 84 } }
+      : entry,
+  );
+  // 84 g plus five days at 90 g is 534 g against 600 g.
+  assert.equal(missedProteinLastWeek(short, settings, "hippos", today), true);
+  assert.equal(missedProteinLastWeek([], settings, "hippos", today), false);
+  assert.equal(missedProteinLastWeek([
+    meal({
+      day: week.start,
+      source: "queued",
+      macros: { calories: 0, protein: 0, carbs: 0, fat: 0 },
+    }),
+  ], settings, "hippos", today), false);
 });
 
 test("each day of last week keeps the protein target that was in force then", () => {
@@ -130,6 +153,7 @@ test("each day of last week keeps the protein target that was in force then", ()
   };
   // Three days at 200 g and four at 100 g is 1000 g. Eating 100 g a day misses it.
   assert.equal(missedProteinLastWeek(weekOf(today, 100), settings, "hippos", today), true);
-  // 143 g a day is 1001 g, inside 5% of 1000.
-  assert.equal(missedProteinLastWeek(weekOf(today, 143), settings, "hippos", today), false);
+  // 90% of 1000 g is 900 g. 129 g a day clears it and 128 g a day does not.
+  assert.equal(missedProteinLastWeek(weekOf(today, 129), settings, "hippos", today), false);
+  assert.equal(missedProteinLastWeek(weekOf(today, 128), settings, "hippos", today), true);
 });
