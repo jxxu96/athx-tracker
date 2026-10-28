@@ -1502,8 +1502,7 @@ export function WorkoutForm({
           </Button>
         </div>
       ) : dirty || resumed ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border bg-muted/50 p-3">
-          <p className="text-xs text-muted-foreground">Kept as a draft on this phone as you type.</p>
+        <div className="flex flex-wrap items-center justify-end gap-2 rounded-2xl border bg-muted/50 p-3">
           <div className="flex gap-1.5">
             <Button
               type="button"
@@ -1531,7 +1530,7 @@ export function WorkoutForm({
         </div>
       ) : null}
       <Panel outline={outline} title="Describe your workout">
-        <Field label="Workout description" hint="Sets × reps: 1 x 2 means 1 set of 2 reps. Include weights and units when you know them.">
+        <Field label="Workout description">
           <Textarea value={description} maxLength={4000} rows={4} disabled={drafting || listening || saving}
             placeholder="Hippos: deadlift 3 x 5 at 185 lb, back squat 1 x 2 at 135 lb. Gators: deadlift 3 x 5 at 95 lb."
             onChange={event => setDescription(event.target.value)} />
@@ -1544,7 +1543,6 @@ export function WorkoutForm({
           <WorkoutDictation active={active} value={description} onChange={setDescription} disabled={drafting || saving}
             listening={listening} onListening={setListening} />
         </div>
-        <p className="text-xs text-muted-foreground">Fills the selected athletes and replaces the workout fields below. Nothing is saved until you choose {editing ? "Update session" : "Save session"}.</p>
         {!grokReady ? <p className="text-xs text-muted-foreground">Connect the estimator in Setup to fill workouts with AI.</p> : null}
         {drafting ? <p role="status" className="text-xs text-muted-foreground">AI is reading your workout. This can take about a minute.</p> : null}
         {draftNotice ? <p role="status" className="text-xs text-muted-foreground">{draftNotice}</p> : null}
@@ -1613,7 +1611,7 @@ export function WorkoutForm({
           </Field>
         </div>
         {category === "Other" ? (
-          <Field label="What was it?" hint="Shown instead of “Other” in the log">
+          <Field label="What was it?">
             <Input
               value={customCategory}
               maxLength={60}
@@ -1648,11 +1646,7 @@ export function WorkoutForm({
         ) : null}
       </section>
 
-      <Panel
-        outline={outline}
-        title="Elapsed time"
-        note="Left blank, the station times are added up instead."
-      >
+      <Panel outline={outline} title="Elapsed time">
         <div className={`grid gap-2.5 ${columns.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
           {columns.map((side) => (
             <Column key={side} side={side}>
@@ -1681,13 +1675,6 @@ export function WorkoutForm({
         <Panel
           outline={outline}
           title={isRun ? "Run" : isMixed ? "MetCon and endurance" : "Stations"}
-          note={
-            isRun
-              ? "Distance covered and the time it took."
-              : isMixed
-                ? "Add whichever parts you did. Lifts go in their own panel below."
-                : "What each of you actually completed, station by station. Stopping short is fine: log what you did."
-          }
           action={
             isMixed ? (
               <div className="flex flex-wrap gap-1.5">
@@ -1720,7 +1707,7 @@ export function WorkoutForm({
         >
           {stations.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              No stations yet — add one to record what you did.
+              No stations yet.
             </p>
           ) : (
             <ul className="space-y-3">
@@ -1937,7 +1924,6 @@ export function WorkoutForm({
         <Panel
           outline={outline}
           title="Lifts"
-          note="One weight for every set, or Advanced when the sets differ."
           action={
             <Button
               type="button"

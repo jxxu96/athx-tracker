@@ -41,12 +41,19 @@ test("fuel switches today, yesterday, the last week, and overall", async ({ page
   await expect(page.getByText("against the daily target")).toHaveCount(0);
 
   await fuel.getByRole("button", { name: "Fuel for the last 7 days" }).click();
-  await expect(page.getByText(/Daily average of days with a meal/)).toBeVisible();
+  await expect(fuel.getByRole("button", { name: "Fuel for the last 7 days" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.getByText(/Daily average of days with a meal/)).toHaveCount(0);
+  await expect(page.getByText(/\d{1,2} [A-Za-z]{3,4} to \d{1,2} [A-Za-z]{3,4}/)).toBeVisible();
 
   await fuel.getByRole("button", { name: "Fuel overall" }).click();
-  await expect(
-    page.getByText(/Daily average across every day with a meal/),
-  ).toBeVisible();
+  await expect(fuel.getByRole("button", { name: "Fuel overall" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.getByText(/Daily average across every day with a meal/)).toHaveCount(0);
 
   // The section tab stays the only control named exactly Today.
   await expect(page.getByRole("button", { name: "Today", exact: true })).toHaveCount(1);

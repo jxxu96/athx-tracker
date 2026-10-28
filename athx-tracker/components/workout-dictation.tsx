@@ -84,7 +84,7 @@ export function WorkoutDictation({ active = true, value, onChange, disabled, lis
           {listening ? "Stop dictation" : "Dictate workout"}
         </Button>
       ) : <p className="text-xs text-muted-foreground">To dictate, use the microphone on your phone or computer keyboard.</p>}
-      {listening ? <p role="status" className="text-xs text-muted-foreground">Listening… Stop dictation to review your words and fill the workout.</p> : null}
+      {listening ? <p role="status" className="text-xs text-muted-foreground">Listening…</p> : null}
       {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
     </div>
   );

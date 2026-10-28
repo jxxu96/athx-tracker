@@ -56,7 +56,7 @@ test("benchmarks compare matching circuits and station splits, keeping capped an
   await page.getByLabel("ATHX station").selectOption("DB ground to overhead");
   await expect(page.getByRole("region", { name: "DB ground to overhead · pairs · Completed" }).filter({ hasText: "1:22" })).toContainText("1:40");
   await page.getByRole("group", { name: "Benchmark athlete" }).getByRole("button", { name: "Gators" }).click();
-  await expect(page.getByText("No timed attempts at this station yet.", { exact: false })).toBeVisible();
+  await expect(page.getByText("No timed attempts yet.", { exact: true })).toBeVisible();
 });
 
 test("weekly review compares equal weekdays and supports historical weeks with nutrition and training", async ({ page }) => {
@@ -78,11 +78,14 @@ test("weekly review compares equal weekdays and supports historical weeks with n
   await expect(hippos).toContainText("1:40 faster (15:00)");
   await expect(hippos.getByRole("row", { name: "Calories kcal/day 1,200 600 +600", exact: true })).toBeVisible();
   await expect(hippos).toContainText("Estimates pending: 1 selected, 0 previous");
-  await expect(page.getByText(/comparison uses the same weekdays/)).toBeVisible();
+  await expect(page.getByText(/Compared with /)).toBeVisible();
+  await expect(page.getByText(/comparison uses the same weekdays/)).toHaveCount(0);
+  await expect(page.getByText(/This week runs through today/)).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Next week", exact: true })).toBeDisabled();
   await expect(page.getByRole("button", { name: /done logging/i })).toHaveCount(0);
   await page.getByRole("button", { name: "Previous week", exact: true }).click();
-  await expect(page.getByText("Weeks run Monday to Sunday.", { exact: false })).toBeVisible();
+  await expect(page.getByText("Weeks run Monday to Sunday.")).toHaveCount(0);
+  await expect(page.getByText(/Compared with /)).toBeVisible();
   await page.getByRole("button", { name: "This week", exact: true }).click();
   await expect(hippos.getByRole("row", { name: "Sessions 2 1", exact: true })).toBeVisible();
 });

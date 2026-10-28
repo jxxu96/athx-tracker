@@ -446,45 +446,14 @@ export function RaceEstimate({
 }) {
   return (
     <div className="mt-5 border-t pt-4">
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3">
-        <h2 className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
-          Race-day estimate
-        </h2>
-        <p className="text-[11px] text-muted-foreground">Lite pairs · from your log</p>
-      </div>
+      <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
+        Race-day estimate
+      </h2>
       <div className="divide-y">
         <Strength plan={estimate.strength} placing={placing} />
         <Endurance plan={estimate.endurance} />
         <Metcon plan={estimate.metcon} />
       </div>
-      <details className="mt-3 text-xs text-muted-foreground">
-        <summary className="cursor-pointer select-none font-medium">How these are worked out</summary>
-        <div className="mt-2 space-y-2">
-          <p>
-            Strength is the 2027 pairs score: each of you lifts a 1RM shoulder to overhead, a
-            2RM back squat and a 3RM deadlift, and all six are added. Each is the most your
-            logged sets of up to ten reps predict on Brzycki&apos;s rep-max line. Presses,
-            push presses, jerks and clean and jerks all count overhead.
-          </p>
-          <p>
-            Endurance: each of you runs 2.4 km, the first back starts on your SkiErg, and you
-            take turns once you are both there, until 24:00. Times and distances follow
-            Riegel&apos;s curve from your best run and SkiErg piece of a kilometre or more.
-          </p>
-          <p>
-            MetCon X gives each station to whichever of you has timed it quicker, at that
-            pace, with the carry 30 m each. Taking turns well should only beat it. Time
-            between stations comes from circuits logged with an elapsed time.
-          </p>
-          <p>
-            The percentile places your Strength among {FIELD.season}&apos;s mixed Lite pairs on
-            the ATHX leaderboard. That season scored a strict press for one, a squat for three
-            and a deadlift for five, so your lifts are carried to those reps the same way; a
-            2027 total set against it would flatter you. Endurance and MetCon X changed format
-            for 2027, so they wait for 2027 results.
-          </p>
-        </div>
-      </details>
     </div>
   );
 }

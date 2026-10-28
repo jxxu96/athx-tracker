@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { TrendingUp } from "lucide-react";
 import { Benchmarks } from "@/components/benchmarks";
 import { Creature, RUNNER_BOX, RUNNER_GAP } from "@/components/creatures";
 import { WeeklyReview } from "@/components/weekly-review";
@@ -567,20 +566,6 @@ export function Progress({
       ) : null}
       {view === "athx" ? <Benchmarks records={records} today={today} unit={unit} />
         : view === "weekly" ? <WeeklyReview records={records} today={today} unit={unit} /> : <>
-      <section className="rounded-2xl border bg-card p-4 sm:p-5">
-        <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold">
-          <TrendingUp className="size-4 text-muted-foreground" />
-          Main lifts
-        </h2>
-        <p className="text-xs text-muted-foreground">
-          Each day counts as its heaviest set, in {unit}. The bar places start,
-          latest, best and the target on a scale fitted to them. A target also
-          shows in kilograms. The estimated max is what your best set of ten
-          reps or fewer predicts for a single, as the race estimate reckons it.
-          The total adds press, squat and deadlift. Targets are set in Setup.
-        </p>
-      </section>
-
       {PEOPLE.map((athlete) => {
         const rows = figures.lifts[athlete].map((row) => ({
           ...row,

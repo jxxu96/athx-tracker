@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -300,13 +299,7 @@ export function MealTemplateList({
       {...athleteOutline(loggingFor)}
       className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5"
     >
-      <div>
-        <h3 className="text-sm font-semibold">Meal templates</h3>
-        <p className="text-[11px] text-muted-foreground">
-          Save a meal, or use one you log more than once. Tap to fill it in.
-          Edit the name, the items, or the grams.
-        </p>
-      </div>
+      <h3 className="text-sm font-semibold">Meal templates</h3>
       <Button
         type="button"
         variant="outline"
@@ -386,10 +379,6 @@ export function MealTemplateList({
             <>
               <DialogHeader className="shrink-0 pr-6 text-left">
                 <DialogTitle>Edit {ATHLETES[editor.athlete].name} template</DialogTitle>
-                <DialogDescription>
-                  Rename it, or change the foods and the grams. The saved macros stay
-                  until you estimate again.
-                </DialogDescription>
               </DialogHeader>
               <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
                 <Field label="Template name">
