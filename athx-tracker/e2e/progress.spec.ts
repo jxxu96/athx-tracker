@@ -295,6 +295,12 @@ test("the hippo and the gator run their bars, with a bagel only through Wednesda
   expect(gators.every((value) => value === "false")).toBe(true);
   await expect(page.locator("[data-bagel='true'] [data-bagel-crown]")).not.toHaveCount(0);
   await expect(page.locator("[data-bagel='false'] [data-bagel-crown]")).toHaveCount(0);
+  // The crown sits clear of the track's top edge, bounce included.
+  const crownRoom = await page.locator("[data-bagel='true'] [data-bagel-crown]").first().evaluate((crown) => {
+    const track = crown.closest("[data-runner]")!.getBoundingClientRect();
+    return crown.getBoundingClientRect().top - track.top;
+  });
+  expect(crownRoom).toBeGreaterThan(4);
 
   const moving = page.locator("[data-runner='hippos']").first().locator(".athx-runner");
   await expect.poll(async () => moving.evaluate((element) => getComputedStyle(element).animationName)).toBe("athx-runner-slide");

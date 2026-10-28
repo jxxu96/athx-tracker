@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { TrendingUp } from "lucide-react";
 import { Benchmarks } from "@/components/benchmarks";
-import { Creature, RUNNER_SIZE } from "@/components/creatures";
+import { Creature, RUNNER_BOX, RUNNER_GAP } from "@/components/creatures";
 import { WeeklyReview } from "@/components/weekly-review";
 import { Button } from "@/components/ui/button";
 import {
@@ -195,8 +195,8 @@ function Bar({
     bar.marks.map((mark) => ({ from: mark.at, to: COLUMN[mark.key] * 25 + 2 })),
   );
   const last = bar.ticks.length - 1;
-  // The creature stands on the line, so the line moves down to make room.
-  const origin = runner ? RUNNER_SIZE : LINE_Y;
+  // The creature stands on the line. The gap above it keeps the bagel off the clip.
+  const origin = runner ? RUNNER_BOX + RUNNER_GAP : LINE_Y;
   const height = (leaders ? BAR_HEIGHT : LINE_Y * 2) + (origin - LINE_Y);
   return (
     <div aria-hidden="true">
@@ -215,7 +215,7 @@ function Bar({
         {runner ? (
           <div
             className="athx-runner-track pointer-events-none absolute inset-x-2 overflow-hidden"
-            style={{ top: origin - RUNNER_SIZE - 2, height: RUNNER_SIZE + 2 }}
+            style={{ top: origin - RUNNER_BOX - RUNNER_GAP, height: RUNNER_BOX + RUNNER_GAP }}
             data-runner={runner}
             data-bagel={bagel ? "true" : "false"}
           >
