@@ -236,7 +236,7 @@ test("the pair's Strength is placed among 2026's mixed Lite pairs, live", async 
   }
 });
 
-test("the top box measures each zone from its first estimate to the goal in Setup", async ({ page }) => {
+test("the top box measures each zone from its first estimate to its goal, Strength's from the lift targets", async ({ page }) => {
   const lifts = (kg: number) => [
     { name: "Overhead press", kg, sets: 1, reps: 1 },
     { name: "Back squat", kg, sets: 1, reps: 2 },
@@ -253,19 +253,28 @@ test("the top box measures each zone from its first estimate to the goal in Setu
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        settings: { ...settings, raceGoals: { strength: 400, endurance: 0, metcon: 900 } },
+        settings: {
+          ...settings,
+          // One-rep maxes. Gators' split jerk is the higher, so it is the S2OH goal.
+          liftTargets: {
+            hippos: { splitJerk: 0, overheadPress: 40, backSquat: 72, deadlift: 90 },
+            gators: { splitJerk: 80, overheadPress: 60, backSquat: 108, deadlift: 144 },
+          },
+          raceGoals: { endurance: 0, metcon: 900 },
+        },
         revision,
       }),
     });
   });
   await page.reload();
 
-  // 120 + 180 on 5 Oct, 120 + 240 now: 60 of the 100 kg to the goal.
+  // 120 + 180 on 5 Oct, 120 + 240 now. The goal at race reps is 40 + 70 + 85
+  // and 80 + 105 + 136: 60 of the 216 kg from start to goal.
   const strength = page.getByRole("group", { name: "Strength progress" });
   await expect(strength).toContainText("360\u00a0kg");
-  await expect(strength).toContainText("60%");
+  await expect(strength).toContainText("28%");
   await expect(strength).toContainText("Start 300\u00a0kg · Mon 5 Oct");
-  await expect(strength).toContainText("Goal 400\u00a0kg");
+  await expect(strength).toContainText("Goal 516\u00a0kg");
   await expect(page.getByRole("group", { name: "Endurance progress" })).toContainText(
     "No estimate yet",
   );

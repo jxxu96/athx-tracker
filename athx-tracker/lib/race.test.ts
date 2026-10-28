@@ -17,6 +17,7 @@ import {
   skiMetres,
   stationPace,
   strengthLift,
+  strengthGoal,
   strengthPlan,
   zoneProgress,
 } from "./race.ts";
@@ -372,4 +373,13 @@ test("progress is the share of the way from start to goal, either direction", ()
   assert.equal(zoneProgress(300, 450, 400, false), 100);
   assert.equal(zoneProgress(300, 360, 0, false), null, "no goal");
   assert.equal(zoneProgress(400, 420, 400, false), null, "started at the goal");
+});
+
+test("Strength's goal is the lift targets carried to the race's reps", () => {
+  const none = { splitJerk: 0, overheadPress: 0, backSquat: 0, deadlift: 0 };
+  const hippos = { ...none, overheadPress: 40, backSquat: 72, deadlift: 90 };
+  const gators = { splitJerk: 80, overheadPress: 60, backSquat: 108, deadlift: 144 };
+  // 40 + 70 + 85, and the split jerk over the press: 80 + 105 + 136.
+  assert.equal(strengthGoal({ hippos, gators }), 516);
+  assert.equal(strengthGoal({ hippos: { ...hippos, deadlift: 0 }, gators }), null, "needs all six");
 });
