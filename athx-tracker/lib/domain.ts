@@ -64,6 +64,29 @@ export type Meal = {
   /** Which CLI produced an estimate. Older meals, and anything typed by hand, omit it. */
   estimator?: Estimator;
 };
+/** How many meals one person can keep, and how large one of those meals can be. */
+export const MEAL_TEMPLATE_LIMIT = 24;
+export const MEAL_TEMPLATE_ITEMS = 30;
+export const MEAL_TEMPLATE_NAME_LIMIT = 80;
+export const MEAL_TEMPLATE_ITEM_LIMIT = 80;
+export const MEAL_TEMPLATE_GRAMS_LIMIT = 5000;
+/** One food in a saved meal. Zero grams means the amount lives in the name, as with "2 eggs". */
+export type MealTemplateItem = { name: string; grams: number };
+/**
+ * A meal kept so it can be logged again. The name is only the label.
+ * The items hold the foods and the grams, so either can change on its own.
+ * sourceKey is the repeated-meal key this was kept from. A rename leaves it,
+ * so that suggestion does not come back beside the new name.
+ */
+export type MealTemplate = {
+  id: string;
+  name: string;
+  meal: Meal["meal"];
+  items: MealTemplateItem[];
+  macros: Macros & { alcohol?: number; fiber?: number };
+  assumptions: string;
+  sourceKey: string;
+};
 export const ESTIMATORS = {
   codex: "Codex",
   claude: "Claude",
@@ -127,6 +150,8 @@ export type Settings = {
   raceGoals?: RaceGoals;
   /** Shared notes on foods eaten often, sent with every meal estimate. */
   foodNotes: string;
+  /** Meals kept for each person. Older settings omit it; repeated meals still show from the log. */
+  mealTemplates: { hippos: MealTemplate[]; gators: MealTemplate[] };
 };
 /** Up here because the default lift targets below are given in pounds. */
 export const LB_PER_KG = 2.20462262;
@@ -151,6 +176,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   raceGoals: { strength: 0, endurance: 0, metcon: 0 },
   foodNotes: "",
+  mealTemplates: { hippos: [], gators: [] },
 };
 /**
  * color identifies the athlete on dots and bars. ink is the same colour made

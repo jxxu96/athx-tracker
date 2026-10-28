@@ -69,7 +69,9 @@ single SQLite file on a volume.
   include fiber; fiber, sugar alcohols, food-specific factors and rounding can
   make the simple calculation differ from a label's calorie total. A meal takes
   a time of day, which starts at the clock; a new meal's sitting follows it until
-  you pick one.
+  you pick one. A meal logged on more than one day is offered again. Save it as
+  a template to keep your own name, items and grams; tapping one fills the form,
+  and the saved macros stay until you estimate again.
 - **Progress** — the main lifts for each athlete: split jerk, overhead press,
   back squat and deadlift. Each shows its start, latest, best and target, how far
   is left, and a bar towards the target: grey up to the start, the athlete's
@@ -375,8 +377,10 @@ still fits the estimator's request limit. An older estimator still receives
 the notes, but without the instruction that says how to use them.
 
 The conversation stays with the open draft. Saving keeps the final macros and
-assumptions; reopening a saved meal, or tapping a usual meal, lets you start
-from those values. A fresh **Estimate macros** starts a new conversation. Each
+assumptions; reopening a saved meal, or tapping a template or a repeated meal,
+lets you start from those values. Edit a template to rename it or to change
+the foods and the grams. Those portions are what the next estimate reads.
+Saving Setup keeps the templates. A fresh **Estimate macros** starts a new conversation. Each
 successful reply counts toward the daily estimate limit. Replies carry more
 context than a first estimate, so an estimator running on your own machine has
 to be updated along with the app; an older one turns replies away.

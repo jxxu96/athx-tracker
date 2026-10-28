@@ -26,7 +26,16 @@ import {
   type Meal,
 } from "@/lib/domain";
 import { api, message, newId } from "@/lib/client";
-import { commonMeals, type CommonMeal } from "@/lib/common-meals";
+import { MealTemplateList } from "@/components/meal-templates";
+import { mealKey } from "@/lib/common-meals";
+import {
+  buildTemplate,
+  itemsFromText,
+  templateDescription,
+  upsertTemplate,
+  type MealOffer,
+  type MealTemplates,
+} from "@/lib/meal-templates";
 import {
   CONVERSATION_LIMIT,
   MAX_REPLIES,
@@ -120,6 +129,7 @@ function Choice<T extends string>({
 export function MealForm({
   loggingFor,
   meals,
+  templates,
   today,
   grokReady,
   active = true,
@@ -127,10 +137,12 @@ export function MealForm({
   onLoggingFor,
   onCancelEdit,
   onSave,
+  onSaveTemplates,
   onEstimateComplete,
 }: {
   loggingFor: LoggingFor;
   meals: Meal[];
+  templates: MealTemplates | undefined;
   today: string;
   grokReady: boolean;
   active?: boolean;
@@ -138,6 +150,7 @@ export function MealForm({
   onLoggingFor: (next: LoggingFor) => void;
   onCancelEdit?: () => void;
   onSave: (batch: Meal[]) => Promise<void>;
+  onSaveTemplates: (next: MealTemplates, notice: string) => Promise<void>;
   onEstimateComplete?: (error?: string) => void;
 }) {
   // Controlled by the switch in the header, so the two never disagree.
@@ -188,6 +201,14 @@ export function MealForm({
   const [reply, setReply] = useState("");
   const [replyError, setReplyError] = useState("");
   const [refineOpen, setRefineOpen] = useState(false);
+  // The template this draft was filled from, so a later save updates that one
+  // rather than adding a second copy. Null is a new template.
+  const [kept, setKept] = useState<{
+    id: string;
+    athlete: "hippos" | "gators";
+    sourceKey: string;
+  } | null>(null);
+  const [templateSaving, setTemplateSaving] = useState(false);
   const conversationLog = useRef<HTMLDivElement>(null);
   const replyButton = useRef<HTMLButtonElement>(null);
   const replies = conversation.flatMap((turn) => (turn.reply ? [turn.reply] : []));
@@ -247,6 +268,7 @@ export function MealForm({
     setReplyError("");
     setRefineOpen(false);
     setOffline(false);
+    setKept(null);
   }
 
   function markManual() {
@@ -325,44 +347,84 @@ export function MealForm({
     }
   }
 
-  const suggestionSides = editing
-    ? []
-    : loggingFor === "both"
-      ? (["hippos", "gators"] as const)
-      : ([loggingFor] as const);
-  const suggestionGroups = suggestionSides
-    .map((athlete) => ({
-      athlete,
-      items: commonMeals(
-        meals.filter((meal) => meal.athlete === athlete),
-        today,
-      ),
-    }))
-    .filter((group) => group.items.length > 0);
-
-  function applyCommon(athlete: "hippos" | "gators", suggestion: CommonMeal) {
+  function applyOffer(athlete: "hippos" | "gators", offer: MealOffer) {
     if (loggingFor !== athlete) onLoggingFor(athlete);
-    setDescription(suggestion.name);
-    setConversation([{ estimate: savedEstimate(suggestion) }]);
+    setDescription(templateDescription(offer.items) || offer.name);
+    setConversation([{ estimate: savedEstimate(offer) }]);
     setReply("");
     setReplyError("");
     setOffline(false);
-    setName(suggestion.name);
-    setSlot(suggestion.meal);
+    setName(offer.name);
+    setSlot(offer.meal);
     setMacros({
-      calories: String(suggestion.macros.calories),
-      protein: String(suggestion.macros.protein),
-      carbs: String(suggestion.macros.carbs),
-      fat: String(suggestion.macros.fat),
+      calories: String(offer.macros.calories),
+      protein: String(offer.macros.protein),
+      carbs: String(offer.macros.carbs),
+      fat: String(offer.macros.fat),
     });
-    setEthanol(suggestion.macros.alcohol ? String(suggestion.macros.alcohol) : "");
-    setFiber(suggestion.macros.fiber ? String(suggestion.macros.fiber) : "");
-    setAssumptions(suggestion.assumptions);
+    setEthanol(offer.macros.alcohol ? String(offer.macros.alcohol) : "");
+    setFiber(offer.macros.fiber ? String(offer.macros.fiber) : "");
+    setAssumptions(offer.assumptions);
     setSource("manual");
     setAdjusted(false);
     setConfidence(null);
     setAnsweredBy(null);
     setError("");
+    setKept(offer.saved ? { id: offer.id, athlete, sourceKey: offer.sourceKey } : null);
+  }
+
+  /** Keep the meal on the form, portions and all, without logging it. */
+  async function saveAsTemplate() {
+    if (estimating || saving || templateSaving) return;
+    const problem = validate();
+    setError(problem);
+    if (problem) return;
+    const athletes = who === "both" ? (["hippos", "gators"] as const) : ([who] as const);
+    const reuse = athletes.length === 1 && kept?.athlete === athletes[0] ? kept : null;
+    let next: MealTemplates = {
+      hippos: templates?.hippos ?? [],
+      gators: templates?.gators ?? [],
+    };
+    let keptId: string | null = null;
+    for (const athlete of athletes) {
+      const built = buildTemplate({
+        id: reuse && athlete === reuse.athlete ? reuse.id : newId(),
+        name,
+        meal: slot,
+        items: itemsFromText(description.trim() || name.trim(), name.trim()),
+        macros: counted,
+        assumptions,
+        sourceKey: reuse && athlete === reuse.athlete && reuse.sourceKey
+          ? reuse.sourceKey
+          : mealKey(name),
+      });
+      if (!built.ok) {
+        setError(built.error);
+        return;
+      }
+      const written = upsertTemplate(next[athlete], built.template);
+      if (!written.ok) {
+        setError(written.error);
+        return;
+      }
+      next = { ...next, [athlete]: written.templates };
+      if (athletes.length === 1) keptId = written.id;
+    }
+    setTemplateSaving(true);
+    try {
+      await onSaveTemplates(
+        next,
+        athletes.length > 1 ? "Templates saved" : reuse ? "Template updated" : "Template saved",
+      );
+      if (keptId && athletes.length === 1) {
+        const saved = next[athletes[0]].find((item) => item.id === keptId);
+        setKept(saved ? { id: saved.id, athlete: athletes[0], sourceKey: saved.sourceKey } : null);
+      }
+    } catch (problem) {
+      setError(message(problem));
+    } finally {
+      setTemplateSaving(false);
+    }
   }
 
   function setMacro(key: keyof Macros, value: string) {
@@ -465,7 +527,7 @@ export function MealForm({
 
   return (
     <form onSubmit={submit} className="space-y-4 pb-4">
-      <fieldset disabled={estimating || saving} className="min-w-0 space-y-4">
+      <fieldset disabled={estimating || saving || templateSaving} className="min-w-0 space-y-4">
         {editing ? (
           <div
             {...athleteOutline(who, "muted")}
@@ -479,47 +541,23 @@ export function MealForm({
             </Button>
           </div>
         ) : null}
-        {suggestionGroups.length > 0 ? (
-          <section
-            {...athleteOutline(who)}
-            className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5"
-          >
-            <div>
-              <h3 className="text-sm font-semibold">Usual meals</h3>
-              <p className="text-[11px] text-muted-foreground">
-                From what each of you logs more than once. One tap fills this meal.
-              </p>
-            </div>
-            {suggestionGroups.map((group) => (
-              <div key={group.athlete}>
-                {suggestionGroups.length > 1 ? (
-                  <p
-                    className="mb-1.5 text-xs font-medium"
-                    style={{ color: ATHLETES[group.athlete].ink }}
-                  >
-                    {ATHLETES[group.athlete].name}
-                  </p>
-                ) : null}
-                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
-                  {group.items.map((suggestion) => (
-                    <button
-                      key={`${group.athlete}-${suggestion.name}`}
-                      type="button"
-                      aria-label={`${ATHLETES[group.athlete].name}: ${suggestion.name}`}
-                      onClick={() => applyCommon(group.athlete, suggestion)}
-                      className="rounded-lg border px-2 py-2 text-left text-xs font-medium transition-colors hover:bg-accent"
-                    >
-                      <span className="block truncate">{suggestion.name}</span>
-                      <span className="block text-[10px] font-normal text-muted-foreground">
-                        {suggestion.meal}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </section>
-        ) : null}
+        <MealTemplateList
+          loggingFor={who}
+          templates={templates}
+          meals={meals}
+          today={today}
+          grokReady={grokReady}
+          disabled={estimating || saving || templateSaving}
+          showOffers={!editing}
+          formLabel={
+            who !== "both" && kept?.athlete === who
+              ? "Update this template"
+              : "Save this meal as a template"
+          }
+          onApply={applyOffer}
+          onSaveForm={() => void saveAsTemplate()}
+          onSaveTemplates={onSaveTemplates}
+        />
         <section {...athleteOutline(who)} className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
           <Choice
             label="Athlete"
