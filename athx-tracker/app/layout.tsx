@@ -22,18 +22,17 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
-  ],
+  // The page defaults to dark, including on a light device, so the browser
+  // chrome matches that instead of the operating system.
+  themeColor: "#0a0a0a",
 };
 
 /**
  * Runs before anything paints, so the page never shows one theme and then
- * swaps. Reads the stored choice, falls back to the device, and writes the
- * resolved answer where the stylesheet can see it.
+ * swaps. A missing choice is dark. "system" follows the device. Light and
+ * dark are used as stored.
  */
-const THEME_SCRIPT = `try{var s=localStorage.getItem('athx-theme');var d=s==='dark'||(s!=='light'&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=d?'dark':'light'}catch(e){}`;
+const THEME_SCRIPT = `try{var s=localStorage.getItem('athx-theme');var d=s==='light'?false:s==='system'?window.matchMedia('(prefers-color-scheme: dark)').matches:true;document.documentElement.dataset.theme=d?'dark':'light'}catch(e){document.documentElement.dataset.theme='dark'}`;
 
 export default function RootLayout({
   children,

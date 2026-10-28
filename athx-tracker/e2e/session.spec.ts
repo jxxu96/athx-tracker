@@ -148,6 +148,34 @@ test("a session with nothing timed can still be saved", async ({ page }) => {
   await expect(page.getByText(/Strength · —/)).toBeVisible();
 });
 
+test.describe("a first visit", () => {
+  test.use({ colorScheme: "light" });
+
+  test("is dark even when the device is light", async ({ page, context }) => {
+    await context.clearCookies();
+    await page.evaluate(() => localStorage.removeItem("athx-theme"));
+    await page.goto("/login");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect(page.locator("body")).toHaveCSS("background-color", "rgb(10, 10, 10)");
+    await page.getByLabel("Passphrase").fill(PASSPHRASE);
+    await page.getByRole("button", { name: "Open journal" }).click();
+    await expect(page.getByRole("button", { name: "Dark" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("body")).toHaveCSS("background-color", "rgb(10, 10, 10)");
+  });
+
+  test("follows the device only after Device is chosen", async ({ page }) => {
+    await expect(page.locator("body")).toHaveCSS("background-color", "rgb(10, 10, 10)");
+    await expect(page.getByRole("button", { name: "Dark" })).toHaveAttribute("aria-pressed", "true");
+    await page.getByRole("button", { name: "Device" }).click();
+    await expect(page.locator("body")).toHaveCSS("background-color", "rgb(255, 255, 255)");
+    await expect(page.getByRole("button", { name: "Device" })).toHaveAttribute("aria-pressed", "true");
+    await page.reload();
+    await expect(page.locator("body")).toHaveCSS("background-color", "rgb(255, 255, 255)");
+    await expect(page.getByRole("button", { name: "Device" })).toHaveAttribute("aria-pressed", "true");
+    expect(await page.evaluate(() => localStorage.getItem("athx-theme"))).toBe("system");
+  });
+});
+
 test("the theme buttons change the page, not just themselves", async ({ page }) => {
   const body = page.locator("body");
   await page.getByRole("button", { name: "Light" }).click();

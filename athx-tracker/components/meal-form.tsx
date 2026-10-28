@@ -697,7 +697,7 @@ export function MealForm({
               />
             </Field>
           ) : null}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-3 gap-3">
             {MACRO_FIELDS.slice(0, 3).map(({ key, label, unit }) => (
               <Field key={key} label={`${label} (${unit})`}>
                 <Input
