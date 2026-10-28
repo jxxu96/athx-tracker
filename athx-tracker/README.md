@@ -6,13 +6,13 @@ single SQLite file on a volume.
 
 ## What it does
 
-- **Today** — countdown to the event, then each zone's progress from its first
-  estimate to its goal (Strength's from the lift targets), then a race-day estimate: the
-  pair's Strength score in kilograms, each athlete's share of it, and where it would
-  have placed among last season's mixed Lite pairs; the 2.4 km run times and SkiErg
-  distance for Endurance; and the MetCon X time. Then fuel for
-  each athlete, and the sessions logged this week and over the last 7 days against
-  the weekly target. Fuel switches between today, yesterday, the last 7 days, and
+- **Today** — countdown to the event, then fuel for each athlete, then each
+  zone's progress from its first estimate to its goal (Strength's from the lift
+  targets), then a race-day estimate: the pair's Strength score in kilograms, each athlete's share
+  of it, and where it would have placed among last season's mixed Lite pairs; the
+  2.4 km run times and SkiErg distance for Endurance; and the MetCon X time. Then
+  the sessions logged this week and over the last 7 days against the weekly
+  target. Fuel switches between today, yesterday, the last 7 days, and
   the whole journal. **Pick day**, beside Overall, shows any past date, including
   entries older than the phone's recent slice. A single day is that day's macros against
   the daily targets. A longer range is the daily average of days that have a meal,
