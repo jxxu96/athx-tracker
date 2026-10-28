@@ -26,14 +26,19 @@ test("fuel switches today, yesterday, the last week, and overall", async ({ page
     "aria-pressed",
     "true",
   );
-  await expect(page.getByText("Today, against the daily target.")).toBeVisible();
+  await expect(page.getByText("against the daily target")).toHaveCount(0);
+  await expect(page.getByText(/kcal under target/)).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Fuel" })).toBeVisible();
   await expect(page.getByRole("group", { name: "Hippos fuel" }).getByText("Expenditure", { exact: true })).toBeVisible();
   await expect(page.getByRole("group", { name: "Gators fuel" }).getByText("Expenditure", { exact: true })).toBeVisible();
   await expect(page.getByText("Add a bodyweight in Setup to estimate calories burned.")).toHaveCount(2);
 
   await fuel.getByRole("button", { name: "Fuel for yesterday" }).click();
-  await expect(page.getByText("Yesterday, against the daily target.")).toBeVisible();
+  await expect(fuel.getByRole("button", { name: "Fuel for yesterday" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.getByText("against the daily target")).toHaveCount(0);
 
   await fuel.getByRole("button", { name: "Fuel for the last 7 days" }).click();
   await expect(page.getByText(/Daily average of days with a meal/)).toBeVisible();
@@ -188,7 +193,8 @@ test("pick day includes older meals, that day's targets, empty days and a retry"
     await expect(hippos.getByText("900 / 1,800 kcal · 50%")).toBeVisible();
     await expect(hippos.getByText("60 / 120 g · 50%")).toBeVisible();
     await expect(gators.getByText("1,100 / 2,200 kcal · 50%")).toBeVisible();
-    await expect(page.getByText("2 Jan 2020, against that day's targets.")).toBeVisible();
+    await expect(page.getByText("2 Jan 2020", { exact: true })).toBeVisible();
+    await expect(page.getByText("against that day's targets")).toHaveCount(0);
     await expect(ranges.getByRole("button", { name: "Pick day for fuel" })).toHaveAttribute("aria-pressed", "true");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: test.info().outputPath("fuel-day-mobile.png"), fullPage: true });
@@ -212,7 +218,11 @@ test("pick day includes older meals, that day's targets, empty days and a retry"
     await expect(hippos.getByText("No meals logged.")).toBeVisible();
     await expect(gators.getByText("No meals logged.")).toBeVisible();
     await ranges.getByRole("button", { name: "Fuel for today" }).click();
-    await expect(page.getByText("Today, against the daily target.")).toBeVisible();
+    await expect(ranges.getByRole("button", { name: "Fuel for today" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.getByText("against the daily target")).toHaveCount(0);
   } finally {
     for (const id of seeded) {
       await page.request.delete("/api/records", { data: { id } });

@@ -455,7 +455,7 @@ export function DayButtons({
         </div>
       </div>
       {onTimeChange ? (
-        <Field label="Time of day" hint="Optional. Orders the day in the log." className="mt-3">
+        <Field label="Time of day" className="mt-3">
           <Input
             type="time"
             value={time ?? ""}
@@ -1457,7 +1457,7 @@ export function WorkoutForm({
           </Button>
         </div>
       ) : null}
-      <Panel outline={outline} title="Describe your workout" note="Type it or dictate it, then let AI fill the form.">
+      <Panel outline={outline} title="Describe your workout">
         <Field label="Workout description" hint="Sets × reps: 1 x 2 means 1 set of 2 reps. Include weights and units when you know them.">
           <Textarea value={description} maxLength={4000} rows={4} disabled={drafting || listening || saving}
             placeholder="Hippos: deadlift 3 x 5 at 185 lb, back squat 1 x 2 at 135 lb. Gators: deadlift 3 x 5 at 95 lb."
@@ -1481,7 +1481,7 @@ export function WorkoutForm({
       <section {...athleteOutline(outline)} className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
         <DayButtons today={today} day={day} onChange={setDay} time={time} onTimeChange={setTime} />
         <FormatButtons value={format} onChange={chooseFormat} />
-        <Field label="Session" hint="Optional — the date is used if left blank">
+        <Field label="Session">
           <Input
             value={title}
             maxLength={120}
@@ -1530,7 +1530,7 @@ export function WorkoutForm({
               ))}
             </NativeSelect>
           </Field>
-          <Field label="Goal time" hint="Optional">
+          <Field label="Goal time">
             <Input
               value={goal}
               inputMode="numeric"
@@ -1578,7 +1578,7 @@ export function WorkoutForm({
       <Panel
         outline={outline}
         title="Elapsed time"
-        note="Optional. Left blank, the station times are added up instead."
+        note="Left blank, the station times are added up instead."
       >
         <div className={`grid gap-2.5 ${columns.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
           {columns.map((side) => (
@@ -1723,7 +1723,7 @@ export function WorkoutForm({
                           </Field>
                         ) : null}
                         {measured(station) ? null : (
-                        <Field label="Target" hint={optionalTarget(station) ? "Optional" : undefined} className="w-20">
+                        <Field label="Target" className="w-20">
                           <Input
                             value={station.target}
                             inputMode="decimal"
@@ -1811,7 +1811,7 @@ export function WorkoutForm({
                           />
                         </Field>
                         {loadable(category, station) ? (
-                          <Field label={`Load (${unit})`} hint="Optional">
+                          <Field label={`Load (${unit})`}>
                             <Input
                               value={entries[side][index]?.load ?? ""}
                               inputMode="decimal"
