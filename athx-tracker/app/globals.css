@@ -95,9 +95,10 @@
 }
 
 /*
- * Applied by the script at the top of <body>, which resolves "system" to one of
- * these before anything paints, so a stored choice never flashes the other theme
- * on load. color-scheme keeps form controls and scrollbars in step.
+ * Applied by the script at the top of <body> before anything paints. A missing
+ * choice is dark. "system" follows the device, and a stored light or dark
+ * choice is used as written, so it never flashes the other theme on load.
+ * color-scheme keeps form controls and scrollbars in step.
  */
 :root {
   /*

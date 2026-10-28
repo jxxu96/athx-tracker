@@ -24,6 +24,32 @@ test.beforeEach(async ({ page }) => {
   await page.getByRole("button", { name: "Meal", exact: true }).click();
 });
 
+test("the meal macros sit three across and two down", async ({ page }) => {
+  const places = await page.evaluate(() => {
+    const names = ["Calories (kcal)", "Protein (g)", "Carbs (g)", "Fiber (g)", "Fat (g)"];
+    return names.map((name) => {
+      const label = [...document.querySelectorAll("label")].find((node) => node.textContent === name);
+      const field = label?.parentElement;
+      const grid = field?.parentElement;
+      const rect = field?.getBoundingClientRect();
+      return {
+        x: rect?.x ?? -1,
+        y: rect?.y ?? -1,
+        columns: grid ? getComputedStyle(grid).gridTemplateColumns : "",
+      };
+    });
+  });
+  for (const place of places) expect(place.columns.split(" ").filter(Boolean)).toHaveLength(3);
+  const sameRow = (a: number, b: number) => Math.abs(places[a].y - places[b].y) < 2;
+  expect(sameRow(0, 1)).toBe(true);
+  expect(sameRow(1, 2)).toBe(true);
+  expect(sameRow(3, 4)).toBe(true);
+  expect(places[3].y).toBeGreaterThan(places[0].y);
+  expect(places[0].x).toBeLessThan(places[1].x);
+  expect(places[1].x).toBeLessThan(places[2].x);
+  expect(places[3].x).toBeLessThan(places[4].x);
+});
+
 test("the meal date is today, yesterday, or a day from the calendar", async ({ page }) => {
   await loggingFor(page, "Hippos").click();
   const dates = page.getByRole("group", { name: "Date" });

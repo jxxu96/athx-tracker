@@ -36,15 +36,17 @@ function subscribe(callback: () => void) {
 function storedPreference(): Preference {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
-    return stored === "light" || stored === "dark" ? stored : "system";
+    if (stored === "light" || stored === "dark" || stored === "system") return stored;
+    // No choice yet. Dark is the default, so a first visit does not follow a light device.
+    return "dark";
   } catch {
-    // Private browsing can refuse storage. The device setting still applies.
-    return "system";
+    // Private browsing can refuse storage. Dark is still the default.
+    return "dark";
   }
 }
 
-/** The server cannot know the choice, so it renders the neutral one. */
-const serverPreference = (): Preference => "system";
+/** The server cannot know a stored choice. Dark is what a first visit gets. */
+const serverPreference = (): Preference => "dark";
 
 /** What the device is asking for right now, when told to follow it. */
 function resolve(preference: Preference) {
@@ -66,8 +68,9 @@ function applyTheme(preference: Preference) {
 function choose(next: Preference) {
   applyTheme(next);
   try {
-    if (next === "system") localStorage.removeItem(STORAGE_KEY);
-    else localStorage.setItem(STORAGE_KEY, next);
+    // Device has to be stored. Removing the key would look like "never chosen",
+    // which is dark, and the device choice could not be told apart from it.
+    localStorage.setItem(STORAGE_KEY, next);
   } catch {
     // Not remembering it is survivable; the page is still themed.
   }
@@ -83,10 +86,11 @@ export function ThemeToggle() {
 
   // The subscription moves the button when another tab changes the choice, but
   // nothing applied it here, so the control claimed dark while the page stayed
-  // light. Applying on every change fixes that and is a no-op the rest of the
-  // time, since choose has already applied it.
+  // light. Read storage rather than the hook value: the server snapshot is
+  // dark, and applying that would paint over a stored light or device choice
+  // for a frame. choose has already applied a click, so this is a no-op then.
   useEffect(() => {
-    applyTheme(preference);
+    applyTheme(storedPreference());
   }, [preference]);
 
   // Only while following the device. A deliberate choice should not move
