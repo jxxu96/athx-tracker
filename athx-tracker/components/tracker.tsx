@@ -197,12 +197,17 @@ export function Tracker({
     formOpened.current[kind] = true;
     const left = draftFor(draftsSnapshot(), record.id);
     if (left) openDraftOnForm(left);
-    else if (record.kind === "meal") {
-      setEditingMeal(record);
-      setMealDraft(null);
-    } else {
-      setEditingWorkout(record);
-      setSessionDraft(null);
+    else {
+      // Whatever draft the form had open is set aside for the edit, so it is
+      // listed in Drafts rather than hidden as if it were still on the form.
+      changeDrafts((book) => openDraft(book, kind, null));
+      if (record.kind === "meal") {
+        setEditingMeal(record);
+        setMealDraft(null);
+      } else {
+        setEditingWorkout(record);
+        setSessionDraft(null);
+      }
     }
     navigate(kind);
   }, [navigate, openDraftOnForm]);

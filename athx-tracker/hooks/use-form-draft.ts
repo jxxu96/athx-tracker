@@ -8,9 +8,10 @@ import { changeDrafts, dropDraft, keepDraft, type Draft, type DraftKind, type Dr
  *
  * A new form keeps nothing until something is typed, and keeps no draft once
  * it is back to how it opened, so an untouched form never clutters Drafts.
- * A form opened from a draft writes it again only once it is changed. finish
- * stops the writing for good, and drops the draft when the work is saved or
- * thrown away; a form set aside leaves its draft in Drafts.
+ * A form opened from a draft writes it again only once it is changed, or the
+ * athlete it is for is. finish stops the writing for good, and drops the
+ * draft when the work is saved or thrown away; a form set aside leaves its
+ * draft in Drafts.
  */
 export function useFormDraft({
   kind,
@@ -37,6 +38,9 @@ export function useFormDraft({
   useEffect(() => {
     if (finished.current) return;
     if (snapshot !== opened) touched.current = true;
+    // Who it is for lives outside the fields, and a draft opened here follows
+    // a change of it too. A new form does not: switching athlete is not typing.
+    if (draft && who !== draft.who) touched.current = true;
     if (!touched.current) return;
     if (snapshot === opened && !draft) {
       changeDrafts((book) => dropDraft(book, draftId));

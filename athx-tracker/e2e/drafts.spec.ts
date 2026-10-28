@@ -159,3 +159,46 @@ test("a draft the form cannot open is removed instead of breaking the app", asyn
   await tab(page, "Today");
   await expect(page.getByRole("heading", { name: "Sessions" })).toBeVisible();
 });
+
+test("a draft open when an entry is edited from the Log stays listed, and comes back after Cancel", async ({ page }) => {
+  await page.evaluate(async () => {
+    const day = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    await fetch("/api/records", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: crypto.randomUUID(), kind: "meal", athlete: "hippos", day, name: "Already logged",
+        meal: "Lunch", source: "manual", assumptions: "",
+        macros: { calories: 400, protein: 20, carbs: 40, fat: 10 },
+      }),
+    });
+  });
+  await page.reload();
+  await tab(page, "Meal");
+  await mealName(page).fill("Set aside by an edit");
+
+  await tab(page, "Log");
+  await page.getByRole("listitem").filter({ hasText: "Already logged" }).getByRole("button", { name: "Edit entry" }).click();
+  await expect(drafts(page).getByRole("button", { name: "Open draft: Set aside by an edit" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await drafts(page).getByRole("button", { name: "Open draft: Set aside by an edit" }).click();
+  await expect(mealName(page)).toHaveValue("Set aside by an edit");
+});
+
+test("changing who a reopened draft is for is kept too", async ({ page }) => {
+  const header = page.getByRole("group", { name: "Logging for" });
+  await tab(page, "Meal");
+  await mealName(page).fill("Whose meal");
+  await page.reload();
+  await tab(page, "Meal");
+  await expect(mealName(page)).toHaveValue("Whose meal");
+  await expect(header.getByRole("button", { name: "Hippos" })).toHaveAttribute("aria-pressed", "true");
+
+  // Only the athlete changes, nothing typed.
+  await header.getByRole("button", { name: "Gators" }).click();
+  await page.reload();
+  await tab(page, "Meal");
+  await expect(mealName(page)).toHaveValue("Whose meal");
+  await expect(header.getByRole("button", { name: "Gators" })).toHaveAttribute("aria-pressed", "true");
+});
