@@ -20,6 +20,8 @@ import { History } from "@/components/history";
 import { Progress } from "@/components/progress";
 import { SettingsForm } from "@/components/settings-form";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { DraftBoundary } from "@/components/draft-boundary";
+import { Drafts } from "@/components/drafts";
 import {
   ATHLETES,
   localDay,
@@ -47,6 +49,17 @@ import {
   subscribeOutbox,
 } from "@/lib/outbox";
 import { journalSummary, type JournalSummary } from "@/lib/summary";
+import {
+  changeDrafts,
+  draftFor,
+  draftsSnapshot,
+  dropDraft,
+  dropDraftsFor,
+  openDraft,
+  openedDraft,
+  type Draft,
+  type DraftKind,
+} from "@/lib/drafts";
 
 type Tab = "today" | "session" | "meal" | "progress" | "log" | "settings";
 
@@ -137,14 +150,87 @@ export function Tracker({
   // Zero means unopened; advancing a form's key starts a fresh draft after save.
   const [formKeys, setFormKeys] = useState({ meal: 0, session: 0 });
   const activeTab = useRef(tab);
+  // One switch drives both forms: which columns the session shows, and who a
+  // new meal is saved for. The journal opens on Hippos. "both" writes both athletes.
+  const [who, setWho] = useState<"hippos" | "gators" | "both">("hippos");
+  // Editing one kind must not remount the other kind's background estimate.
+  const [editingMeal, setEditingMeal] = useState<Meal | null>(null);
+  const [editingWorkout, setEditingWorkout] = useState<Workout | null>(null);
+  // The draft each form opened with, when it opened with one.
+  const [mealDraft, setMealDraft] = useState<Draft | null>(null);
+  const [sessionDraft, setSessionDraft] = useState<Draft | null>(null);
+  const formOpened = useRef({ meal: false, session: false });
+
+  /** Opens a draft on its form, as it was left: an edit as that edit. */
+  const openDraftOnForm = useCallback((draft: Draft) => {
+    changeDrafts((book) => openDraft(book, draft.kind, draft.id));
+    if (draft.kind === "meal") {
+      setEditingMeal(draft.editing as Meal | null);
+      setMealDraft(draft);
+    } else {
+      setEditingWorkout(draft.editing as Workout | null);
+      setSessionDraft(draft);
+    }
+    if (!draft.editing) setWho(draft.who);
+  }, []);
+
   const navigate = useCallback((next: Tab) => {
     activeTab.current = next;
     setTab(next);
     if (next === "meal" || next === "session") {
+      // The first time a form opens, it opens on whatever was left typed in
+      // it, so closing the app mid-meal loses nothing.
+      if (!formOpened.current[next]) {
+        formOpened.current[next] = true;
+        const left = openedDraft(draftsSnapshot(), next);
+        if (left) openDraftOnForm(left);
+      }
       setFormKeys((current) => ({ ...current, [next]: current[next] || 1 }));
       toast.dismiss(`${next}-estimate`);
     }
     window.scrollTo(0, 0);
+  }, [openDraftOnForm]);
+
+  /** An entry from the Log, picking up any unsaved edit of it. */
+  const openEdit = useCallback((record: Meal | Workout) => {
+    const kind: DraftKind = record.kind === "meal" ? "meal" : "session";
+    formOpened.current[kind] = true;
+    const left = draftFor(draftsSnapshot(), record.id);
+    if (left) openDraftOnForm(left);
+    else {
+      // Whatever draft the form had open is set aside for the edit, so it is
+      // listed in Drafts rather than hidden as if it were still on the form.
+      changeDrafts((book) => openDraft(book, kind, null));
+      if (record.kind === "meal") {
+        setEditingMeal(record);
+        setMealDraft(null);
+      } else {
+        setEditingWorkout(record);
+        setSessionDraft(null);
+      }
+    }
+    navigate(kind);
+  }, [navigate, openDraftOnForm]);
+
+  /** A fresh form; whatever was on it stays in Drafts unless it was discarded. */
+  const startNew = useCallback((kind: DraftKind) => {
+    changeDrafts((book) => openDraft(book, kind, null));
+    if (kind === "meal") {
+      setEditingMeal(null);
+      setMealDraft(null);
+    } else {
+      setEditingWorkout(null);
+      setSessionDraft(null);
+    }
+    setFormKeys((current) => ({ ...current, [kind]: current[kind] + 1 }));
+    window.scrollTo(0, 0);
+  }, []);
+
+  /** A draft the form could not draw is set aside, so it cannot fail again. */
+  const draftFailed = useCallback((draft: Draft | null) => {
+    if (!draft) return;
+    changeDrafts((book) => dropDraft(book, draft.id));
+    toast.error("A draft could not be opened, so it was removed.");
   }, []);
   const estimateFinished = useCallback((section: "meal" | "session", error?: string) => {
     if (activeTab.current === section) return;
@@ -159,17 +245,11 @@ export function Tracker({
     if (error) toast.error(`${label} estimate failed`, options);
     else toast.success(`${label} estimate ready`, options);
   }, [navigate]);
-  // One switch drives both forms: which columns the session shows, and who a
-  // new meal is saved for. The journal opens on Hippos. "both" writes both athletes.
-  const [who, setWho] = useState<"hippos" | "gators" | "both">("hippos");
   const sides = who === "both" ? (["hippos", "gators"] as const) : ([who] as const);
   const [records, setRecords] = useState(() => sortRecords(initialRecords));
   const [settings, setSettings] = useState(initialSettings);
   const [revision, setRevision] = useState(initialRevision);
   const [problem, setProblem] = useState(loadError);
-  // Editing one kind must not remount the other kind's background estimate.
-  const [editingMeal, setEditingMeal] = useState<Meal | null>(null);
-  const [editingWorkout, setEditingWorkout] = useState<Workout | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   // How many entries exist, against how many are in hand. The app opens with a
   // recent slice; the Log offers the rest rather than making every load pay for
@@ -358,8 +438,13 @@ export function Tracker({
       if (result.reason) toast("Saved on this phone", { description: result.reason, icon: <CloudOff className="size-4" /> });
       else toast.success(label);
       announceBests(result.bests);
-      if (batch[0]?.kind === "meal") setEditingMeal(null);
-      else setEditingWorkout(null);
+      if (batch[0]?.kind === "meal") {
+        setEditingMeal(null);
+        setMealDraft(null);
+      } else {
+        setEditingWorkout(null);
+        setSessionDraft(null);
+      }
       const section = batch[0]?.kind === "meal" ? "meal" : "session";
       setFormKeys((current) => ({ ...current, [section]: current[section] + 1 }));
       navigate("today");
@@ -400,6 +485,8 @@ export function Tracker({
       changeOutbox((entries) => enqueueDelete(entries, id));
       toast("Deleted on this phone", { description: waitingReason(error), icon: <CloudOff className="size-4" /> });
     }
+    // An unsaved edit of it would bring it back if it were ever saved.
+    changeDrafts((book) => dropDraftsFor(book, id));
     setRecords((current) => current.filter((item) => item.id !== id));
   }, [refreshSummary]);
 
@@ -637,10 +724,7 @@ export function Tracker({
             onLoadAll={scope === "all" ? undefined : loadAll}
             onSendNow={() => void catchUp(true)}
             onEdit={(record) => {
-              if (record.kind === "bodyweight") return;
-              if (record.kind === "workout") setEditingWorkout(record);
-              else setEditingMeal(record);
-              navigate(record.kind === "workout" ? "session" : "meal");
+              if (record.kind !== "bodyweight") openEdit(record);
             }}
             onUpdate={update}
             onDelete={remove}
@@ -660,9 +744,14 @@ export function Tracker({
         {/* Keep visited forms mounted: hiding a section must not cancel its
             request or discard its draft, even if a refresh reports an error. */}
         <div hidden={Boolean(problem) || tab !== "session"}>
+        {formKeys.session > 0 ? <Drafts kind="session" today={today} onOpen={openDraftOnForm} /> : null}
         {formKeys.session > 0 ? (
+          <DraftBoundary
+            key={sessionDraft ? `draft-${sessionDraft.id}` : editingWorkout?.id ?? `new-session-${formKeys.session}`}
+            onError={() => draftFailed(sessionDraft)}
+            onReset={() => startNew("session")}
+          >
           <WorkoutForm
-            key={editingWorkout?.id ?? `new-session-${formKeys.session}`}
             today={today}
             grokReady={grokReady}
             sides={sides}
@@ -678,16 +767,27 @@ export function Tracker({
             }
             active={tab === "session" && !problem}
             editing={editingWorkout}
-            onCancelEdit={() => setEditingWorkout(null)}
+            draft={sessionDraft}
+            onCancelEdit={() => {
+              setEditingWorkout(null);
+              setSessionDraft(null);
+            }}
+            onStartNew={() => startNew("session")}
             onEstimateComplete={(error) => estimateFinished("session", error)}
             onSave={save}
           />
+          </DraftBoundary>
         ) : null}
         </div>
         <div hidden={Boolean(problem) || tab !== "meal"}>
+        {formKeys.meal > 0 ? <Drafts kind="meal" today={today} onOpen={openDraftOnForm} /> : null}
         {formKeys.meal > 0 ? (
+          <DraftBoundary
+            key={mealDraft ? `draft-${mealDraft.id}` : editingMeal?.id ?? `new-meal-${formKeys.meal}`}
+            onError={() => draftFailed(mealDraft)}
+            onReset={() => startNew("meal")}
+          >
           <MealForm
-            key={editingMeal?.id ?? `new-meal-${formKeys.meal}`}
             loggingFor={editingMeal?.athlete ?? who}
             meals={shown.filter(isMeal)}
             templates={settings.mealTemplates}
@@ -695,14 +795,20 @@ export function Tracker({
             grokReady={grokReady}
             active={tab === "meal" && !problem}
             editing={editingMeal}
+            draft={mealDraft}
             onLoggingFor={setWho}
-            onCancelEdit={() => setEditingMeal(null)}
+            onCancelEdit={() => {
+              setEditingMeal(null);
+              setMealDraft(null);
+            }}
+            onStartNew={() => startNew("meal")}
             onEstimateComplete={(error) => estimateFinished("meal", error)}
             onSave={save}
             onSaveTemplates={(mealTemplates, notice) =>
               saveSettings({ ...settings, mealTemplates }, notice)
             }
           />
+          </DraftBoundary>
         ) : null}
         </div>
       </main>

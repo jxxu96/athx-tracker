@@ -63,6 +63,7 @@ single SQLite file on a volume.
   whose estimated max is, says so: "New best: Back squat 195 lb × 5, up from
   185 lb × 5". The server checks every earlier session, the session's own
   earlier version included, so saving an edit announces nothing it already held.
+  What is typed and not saved yet is kept as a draft; see *Drafts*.
 - **Meal** — describe a meal and let Grok estimate the macros, or type them in
   yourself. Editing an estimated number saves the meal as your own figures.
   Calories keep the source's reported or estimated total, including in queued
@@ -73,7 +74,8 @@ single SQLite file on a volume.
   a time of day, which starts at the clock; a new meal's sitting follows it until
   you pick one. A meal logged on more than one day is offered again. Save it as
   a template to keep your own name, items and grams; tapping one fills the form,
-  and the saved macros stay until you estimate again.
+  and the saved macros stay until you estimate again. A meal typed and not
+  saved yet is kept as a draft; see *Drafts*.
 - **Progress** — the main lifts for each athlete: split jerk, overhead press,
   back squat and deadlift. Each shows its start, latest, best and target, how far
   is left, and a bar towards the target: grey up to the start, the athlete's
@@ -369,7 +371,27 @@ keep the current estimate and the text you were typing.
 Meal and Session drafts stay open when you switch sections, including while AI
 is processing. If an estimate finishes while you are elsewhere, a small popup
 offers to take you back to review it. Failed estimates also notify you and keep
-the description for retry. Nothing is saved until you choose to save the form.
+the description for retry. Nothing reaches the journal until you choose to save
+the form.
+
+### Drafts
+
+What is typed into the Meal or Session form is kept on the phone as it is
+typed (`lib/drafts.ts`, `hooks/use-form-draft.ts`), so the app being closed, the
+phone dropping it from memory, or a reload loses none of it: opening the form
+again opens it as it was left, an unsaved edit of an entry included, which says
+"unsaved changes restored". A form that is opened and not typed in keeps no
+draft, and neither does one typed in and emptied again.
+
+**New meal** or **New session** above a form with a draft sets it aside and
+starts a fresh one; **Discard draft** throws it away. Drafts set aside are
+listed at the top of their tab, newest first, with who they are for and when
+they were last typed into. Tapping one opens it on the form, and the one that
+was open joins the list. Saving the form deletes its draft, Cancel on an edit
+deletes that edit's draft, and deleting an entry in the Log deletes any unsaved
+edit of it. Drafts belong to the phone they were typed on and are not sent to
+the server. A draft the form cannot open, as one saved by an older version of
+the form could be, is removed with a notice rather than breaking the app.
 
 **Food notes** in Setup are a shared list of foods you eat often: a usual
 order, which product a word means ("yogurt" is Fage Total 0% plain), or its

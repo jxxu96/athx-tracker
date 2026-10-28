@@ -27,6 +27,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Textarea } from "@/components/ui/textarea";
 import { athleteOutline, type AthleteOutline } from "@/lib/athlete-outline";
 import { addDays, api, dayToDate, message, newId } from "@/lib/client";
+import { bothOf, isText, oneOf, textOf, type Draft } from "@/lib/drafts";
+import { useFormDraft } from "@/hooks/use-form-draft";
 import {
   ATHLETES,
   METCON,
@@ -693,7 +695,9 @@ export function WorkoutForm({
   onWeightUnit,
   onLoggingFor,
   editing,
+  draft: resumed,
   onCancelEdit,
+  onStartNew,
   onSave,
   onEstimateComplete,
 }: {
@@ -707,33 +711,42 @@ export function WorkoutForm({
   /** Hippos, Gators, or both. The header switch and these buttons are one choice. */
   onLoggingFor: (next: "hippos" | "gators" | "both") => void;
   editing?: Workout | null;
+  /** What was typed here before and not saved, which the form opens with. */
+  draft?: Draft | null;
   onCancelEdit?: () => void;
+  /** Set this session aside in Drafts and start a fresh one. */
+  onStartNew?: () => void;
   onSave: (batch: Workout[]) => Promise<void>;
   onEstimateComplete?: (error?: string) => void;
 }) {
+  // A draft's fields win over the entry being edited: they are what was
+  // typed since. Its loads are in the unit it was typed in, which comes too.
+  const from = resumed?.state ?? null;
   // The form's own copy: every box here is in this unit, whether or not the
   // switch has reached the server yet, so what is typed is read correctly.
-  const [unit, setUnit] = useState<WeightUnit>(weightUnit);
+  const [unit, setUnit] = useState<WeightUnit>(oneOf(from?.unit, ["kg", "lb"] as const) ?? weightUnit);
   // Editing is one athlete's record, so it fills that athlete's column alone.
   // The parent remounts on a change of target, so these initialisers are enough.
   const editSide = editing ? sideOf(editing.athlete) : null;
 
-  const [day, setDay] = useState(editing?.day ?? today);
+  const [day, setDay] = useState(textOf(from?.day, editing?.day ?? today));
   // A new session starts at the clock; an older one without a time stays without.
-  const [time, setTime] = useState(editing ? editing.time ?? "" : clockTime());
-  const [title, setTitle] = useState(editing?.title ?? "");
+  const [time, setTime] = useState(textOf(from?.time, editing ? editing.time ?? "" : clockTime()));
+  const [title, setTitle] = useState(textOf(from?.title, editing?.title ?? ""));
   const [category, setCategory] = useState<Workout["category"]>(
-    editing?.category ?? "Mixed",
+    oneOf(from?.category, CATEGORIES) ?? editing?.category ?? "Mixed",
   );
   const [customCategory, setCustomCategory] = useState(
-    editing?.customCategory ?? "",
+    textOf(from?.customCategory, editing?.customCategory ?? ""),
   );
   // An open edit is one record. These name that record. A new session follows
   // the header, and the format buttons are that switch: one person is solo,
   // Pairs is both.
-  const [recordSide, setRecordSide] = useState<Side>(editSide ?? "hippos");
+  const [recordSide, setRecordSide] = useState<Side>(
+    oneOf(from?.recordSide, ["hippos", "gators"] as const) ?? editSide ?? "hippos",
+  );
   const [recordContext, setRecordContext] = useState<Workout["context"]>(
-    editing?.context ?? "solo",
+    oneOf(from?.recordContext, ["solo", "pairs"] as const) ?? editing?.context ?? "solo",
   );
   const format: Format = editing
     ? recordContext === "pairs"
@@ -752,7 +765,9 @@ export function WorkoutForm({
     editing && editSide && recordSide === editSide ? editing.athlete : recordSide;
   const columns: readonly Side[] = editing ? [recordSide] : sides;
   const [stations, setStations] = useState<Station[]>(() =>
-    editing
+    Array.isArray(from?.stations)
+      ? (from.stations as Station[])
+      : editing
       ? editing.segments.map((segment) => {
           const block = segmentBlock(editing, segment);
           const circuit = METCON.find((station) => station.name === segment.name);
@@ -775,6 +790,8 @@ export function WorkoutForm({
       : stationsFor(category),
   );
   const [entries, setEntries] = useState<Record<Side, Entry[]>>(() => {
+    const typed = bothOf(from?.entries, (item): item is Entry[] => Array.isArray(item));
+    if (typed) return typed;
     if (!editing || !editSide)
       return entriesForBoth(stationsFor(category), weightUnit);
     const mine = editing.segments.map((segment) => ({
@@ -789,16 +806,17 @@ export function WorkoutForm({
       : { hippos: mine, gators: empty };
   });
   const [elapsed, setElapsed] = useState<Record<Side, string>>(() =>
-    editing && editSide
+    bothOf(from?.elapsed, isText) ?? (editing && editSide
       ? {
         hippos: "",
         gators: "",
         // Zero was never recorded, so the box stays empty rather than reading 0:00.
         [editSide]: editing.seconds > 0 ? formatTime(editing.seconds) : "",
       }
-      : { hippos: "", gators: "" },
+      : { hippos: "", gators: "" }),
   );
   const [lifts, setLifts] = useState<LiftRow[]>(() => {
+    if (Array.isArray(from?.lifts) && from.lifts.length > 0) return from.lifts as LiftRow[];
     if (!editing || !editSide || editing.lifts.length === 0) return [blankLift()];
     return editing.lifts.map((lift) => ({
       ...blankLift(),
@@ -817,30 +835,46 @@ export function WorkoutForm({
       },
     }));
   });
-  const [capHit, setCapHit] = useState<Record<Side, boolean>>(() => ({
-    hippos: false,
-    gators: false,
-    ...(editing && editSide ? { [editSide]: Boolean(editing.capHit) } : {}),
-  }));
-  const [goal, setGoal] = useState(editing?.goal ? formatTime(editing.goal) : "");
+  const [capHit, setCapHit] = useState<Record<Side, boolean>>(() =>
+    bothOf(from?.capHit, (item): item is boolean => typeof item === "boolean") ?? {
+      hippos: false,
+      gators: false,
+      ...(editing && editSide ? { [editSide]: Boolean(editing.capHit) } : {}),
+    },
+  );
+  const [goal, setGoal] = useState(textOf(from?.goal, editing?.goal ? formatTime(editing.goal) : ""));
   const fatigue = editing?.fatigue ?? 10;
   const transition = editing ? String(editing.transition) : "";
-  const [notes, setNotes] = useState(editing?.notes ?? "");
+  const [notes, setNotes] = useState(textOf(from?.notes, editing?.notes ?? ""));
   const [error, setError] = useState("");
   const [invalidSide, setInvalidSide] = useState<Side | null>(null);
   // Stable across attempts. The endpoint upserts on id, so a retry after a
   // half-failed save corrects the entry that landed rather than adding a
   // second one beside it. New ids only once the whole submit is through.
-  const [draftIds, setDraftIds] = useState(() => ({
+  const [draftIds, setDraftIds] = useState(() => bothOf(from?.draftIds, isText) ?? {
     hippos: newId(),
     gators: newId(),
-  }));
+  });
   const [saving, setSaving] = useState(false);
-  const [description, setDescription] = useState("");
+  const [description, setDescription] = useState(textOf(from?.description, ""));
   const [drafting, setDrafting] = useState(false);
   const [listening, setListening] = useState(false);
   const [draftError, setDraftError] = useState("");
-  const [draftNotice, setDraftNotice] = useState("");
+  const [draftNotice, setDraftNotice] = useState(textOf(from?.draftNotice, ""));
+  // Everything typed, kept on this phone as it changes. Busy and error states
+  // are the moment's, not the session's, so they stay out.
+  const { dirty, finish } = useFormDraft({
+    kind: "session",
+    draft: resumed,
+    editing: editing ?? null,
+    who: editing ? recordSide : sides.length > 1 ? "both" : sides[0],
+    snapshot: JSON.stringify({
+      unit, day, time, title, category, customCategory, recordSide, recordContext,
+      stations, entries, elapsed, lifts, capHit, goal, notes, draftIds, description, draftNotice,
+    }),
+    summary: title.trim() || "Untitled session",
+    detail: category === "Other" && customCategory.trim() ? customCategory.trim() : category,
+  });
   const draftRequest = useRef<AbortController | null>(null);
   const columnKey = columns.join(",");
   // A response for the old athlete selection must never fill the new one.
@@ -1422,6 +1456,8 @@ export function WorkoutForm({
     setSaving(true);
     try {
       await onSave(records);
+      // Saved: the draft has done its job.
+      finish(true);
       setDraftIds({ hippos: newId(), gators: newId() });
       const fresh = stationsFor(category);
       setTitle("");
@@ -1451,10 +1487,47 @@ export function WorkoutForm({
             <span className="font-medium">{ATHLETES[athleteForEdit].name}</span>
             {" · "}
             {day}
+            {resumed ? <span className="text-muted-foreground"> · unsaved changes restored</span> : null}
           </p>
-          <Button type="button" variant="ghost" size="xs" onClick={onCancelEdit}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            onClick={() => {
+              finish(true);
+              onCancelEdit?.();
+            }}
+          >
             Cancel
           </Button>
+        </div>
+      ) : dirty || resumed ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border bg-muted/50 p-3">
+          <p className="text-xs text-muted-foreground">Kept as a draft on this phone as you type.</p>
+          <div className="flex gap-1.5">
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              onClick={() => {
+                finish(false);
+                onStartNew?.();
+              }}
+            >
+              New session
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              onClick={() => {
+                finish(true);
+                onStartNew?.();
+              }}
+            >
+              Discard draft
+            </Button>
+          </div>
         </div>
       ) : null}
       <Panel outline={outline} title="Describe your workout">
