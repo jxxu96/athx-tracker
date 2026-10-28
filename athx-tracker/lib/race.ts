@@ -1,6 +1,8 @@
 import { matchMovement, normalize } from "./movement-match.ts";
 import {
   METCON,
+  type LiftTargets,
+  type RaceGoals,
   isDistanceUnit,
   standardLoad,
   toKilograms,
@@ -517,6 +519,42 @@ export function raceStart(records: RecordItem[]): Record<RaceZone, ZoneStart | n
     if (RACE_ZONES.every(({ key }) => found[key])) break;
   }
   return found;
+}
+
+/**
+ * Strength's goal, from the lift targets Progress measures against. A target
+ * is a one-rep max, as Progress reads it against each estimated max, so each
+ * is carried to the window's reps on the same line a logged set is. Shoulder
+ * to overhead takes the higher of the press and split jerk targets, since
+ * either counts. Null until both athletes have all three, as the score is.
+ */
+export function strengthGoal(targets: Record<RaceAthlete, LiftTargets>) {
+  let total = 0;
+  for (const athlete of RACE_ATHLETES) {
+    const own = targets[athlete];
+    const kg: Record<StrengthLift, number> = {
+      overhead: Math.max(own.overheadPress, own.splitJerk),
+      squat: own.backSquat,
+      deadlift: own.deadlift,
+    };
+    for (const { key } of STRENGTH_LIFTS) {
+      if (!(kg[key] > 0)) return null;
+      total += Math.round(repMax(kg[key], 1, STRENGTH_2027.reps[key]));
+    }
+  }
+  return total;
+}
+
+/** Each zone's goal: Strength from the lift targets, the others from Setup's race goals. */
+export function zoneGoals(
+  targets: Record<RaceAthlete, LiftTargets>,
+  goals: RaceGoals | undefined,
+): Record<RaceZone, number> {
+  return {
+    strength: strengthGoal(targets) ?? 0,
+    endurance: goals?.endurance ?? 0,
+    metcon: goals?.metcon ?? 0,
+  };
 }
 
 /**
