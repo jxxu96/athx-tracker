@@ -4,8 +4,10 @@ import { Dumbbell, Target } from "lucide-react";
 import { CollapsibleCard } from "@/components/collapsible-card";
 import { Fuel } from "@/components/fuel";
 import { RaceEstimate, RaceProgress, raceLine } from "@/components/race-estimate";
+import { zoneGoals } from "@/lib/race";
 import {
   ATHLETES,
+  DEFAULT_SETTINGS,
   METCON,
   categoryName,
   completionLine,
@@ -149,7 +151,7 @@ export function Overview({
         <RaceProgress
           estimate={figures.race}
           start={figures.raceStart}
-          goals={settings.raceGoals}
+          goals={zoneGoals(settings.liftTargets ?? DEFAULT_SETTINGS.liftTargets, settings.raceGoals)}
           today={today}
         />
         <RaceEstimate estimate={figures.race} placing={figures.placing} />

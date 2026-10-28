@@ -690,6 +690,7 @@ export function Tracker({
             key={editingMeal?.id ?? `new-meal-${formKeys.meal}`}
             loggingFor={editingMeal?.athlete ?? who}
             meals={shown.filter(isMeal)}
+            templates={settings.mealTemplates}
             today={today}
             grokReady={grokReady}
             active={tab === "meal" && !problem}
@@ -698,6 +699,9 @@ export function Tracker({
             onCancelEdit={() => setEditingMeal(null)}
             onEstimateComplete={(error) => estimateFinished("meal", error)}
             onSave={save}
+            onSaveTemplates={(mealTemplates, notice) =>
+              saveSettings({ ...settings, mealTemplates }, notice)
+            }
           />
         ) : null}
         </div>

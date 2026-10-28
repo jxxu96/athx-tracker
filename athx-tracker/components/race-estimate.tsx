@@ -1,7 +1,7 @@
 "use client";
 
 import { formatDay } from "@/lib/client";
-import { ATHLETES, METCON, formatDistance, formatTime, type RaceGoals } from "@/lib/domain";
+import { ATHLETES, METCON, formatDistance, formatTime } from "@/lib/domain";
 import { FIELD, FIELD_LIFTS, type StrengthPlacing } from "@/lib/field";
 import { formatAmount } from "@/lib/fuel";
 import {
@@ -369,7 +369,8 @@ export function RaceProgress({
   estimate: ReturnType<typeof raceEstimate>;
   /** Missing from a summary worked out before starts were. */
   start: ReturnType<typeof raceStart> | undefined;
-  goals: RaceGoals | undefined;
+  /** Each zone's goal in its own unit, zero for none. */
+  goals: Record<RaceZone, number>;
   today: string;
 }) {
   const current = zoneScores(estimate);
@@ -386,7 +387,7 @@ export function RaceProgress({
         {RACE_ZONES.map(({ key, name, lower }) => {
           const now = current[key];
           const from = start?.[key] ?? null;
-          const goal = goals?.[key] ?? 0;
+          const goal = goals[key];
           const pct = from && now !== null ? zoneProgress(from.score, now, goal, lower) : null;
           const reached = goal > 0 && now !== null && (lower ? now <= goal : now >= goal);
           return (
@@ -416,7 +417,11 @@ export function RaceProgress({
                   {from ? `Start ${SCORE[key](from.score)} · ${formatDay(from.day, today)}` : "No estimate yet"}
                 </span>
                 <span>
-                  {goal > 0 ? `${reached ? "Reached" : "Goal"} ${SCORE[key](goal)}` : "No goal in Setup"}
+                  {goal > 0
+                    ? `${reached ? "Reached" : "Goal"} ${SCORE[key](goal)}`
+                    : key === "strength"
+                      ? "Needs all six lift targets"
+                      : "No goal in Setup"}
                 </span>
               </p>
             </div>

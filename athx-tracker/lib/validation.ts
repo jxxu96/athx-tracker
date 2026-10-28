@@ -1,6 +1,16 @@
 import { z } from "zod";
 import { CONVERSATION_LIMIT, FOOD_NOTES_LIMIT, MAX_REPLIES, REPLY_LIMIT } from "./estimate-conversation.ts";
-import { DEFAULT_SETTINGS, VOLUME_UNITS, isClockTime, liftTop } from "./domain.ts";
+import {
+  DEFAULT_SETTINGS,
+  MEAL_TEMPLATE_GRAMS_LIMIT,
+  MEAL_TEMPLATE_ITEM_LIMIT,
+  MEAL_TEMPLATE_ITEMS,
+  MEAL_TEMPLATE_LIMIT,
+  MEAL_TEMPLATE_NAME_LIMIT,
+  VOLUME_UNITS,
+  isClockTime,
+  liftTop,
+} from "./domain.ts";
 import { TARGET_HISTORY_LIMIT } from "./targets.ts";
 const finite = z.number().finite().nonnegative();
 export const macroSchema = z.object({
@@ -124,6 +134,27 @@ const liftTarget = finite.max(1000);
 const liftTargetsSchema = z.object({
   splitJerk: liftTarget, overheadPress: liftTarget, backSquat: liftTarget, deadlift: liftTarget,
 }).strict();
+const mealTemplateSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().trim().min(1).max(MEAL_TEMPLATE_NAME_LIMIT),
+  meal: z.enum(["Breakfast", "Lunch", "Dinner", "Snack", "Alcohol"]),
+  items: z.array(z.object({
+    name: z.string().trim().min(1).max(MEAL_TEMPLATE_ITEM_LIMIT),
+    grams: finite.max(MEAL_TEMPLATE_GRAMS_LIMIT),
+  }).strict()).min(1).max(MEAL_TEMPLATE_ITEMS),
+  macros: mealMacroSchema,
+  assumptions: z.string().max(3000),
+  sourceKey: z.string().max(120).default(""),
+}).strict().superRefine((template, context) => {
+  if (template.meal !== "Alcohol" && template.macros.alcohol !== 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["macros", "alcohol"],
+      message: "Ethanol is only part of an alcohol sitting.",
+    });
+  }
+  rejectFiberAboveCarbs(template.macros, context, ["macros", "fiber"]);
+});
 export const settingsSchema = z.object({
   eventDate: daySchema, eventName: z.string().trim().min(1).max(100),
   weeklyTarget: z.number().int().min(1).max(21), weightUnit: z.enum(["kg","lb"]).default("lb"),
@@ -135,11 +166,18 @@ export const settingsSchema = z.object({
   // pick up the same targets the app shows for them.
   liftTargets: z.object({ hippos: liftTargetsSchema, gators: liftTargetsSchema })
     .strict().default(DEFAULT_SETTINGS.liftTargets),
-  // Kilograms, metres and seconds, zero for none. Defaulted for older settings.
-  raceGoals: z.object({ strength: finite.max(2000), endurance: finite.max(20000), metcon: finite.max(3600) })
-    .strict().default({ strength: 0, endurance: 0, metcon: 0 }),
+  // Metres and seconds, zero for none. Defaulted for older settings. Not
+  // strict: goals saved with their own Strength figure, before it followed the
+  // lift targets, still parse, and that figure is dropped.
+  raceGoals: z.object({ endurance: finite.max(20000), metcon: finite.max(3600) })
+    .default({ endurance: 0, metcon: 0 }),
   // Defaulted, so settings stored before food notes existed still parse.
   foodNotes: z.string().max(FOOD_NOTES_LIMIT).default(""),
+  // Defaulted, so settings stored before meal templates existed still parse.
+  mealTemplates: z.object({
+    hippos: z.array(mealTemplateSchema).max(MEAL_TEMPLATE_LIMIT),
+    gators: z.array(mealTemplateSchema).max(MEAL_TEMPLATE_LIMIT),
+  }).strict().default({ hippos: [], gators: [] }),
   // Defaulted, so settings stored before targets were dated still parse.
   targetHistory: z.object({ hippos: pastTargetsSchema, gators: pastTargetsSchema })
     .strict().default({ hippos: [], gators: [] }),

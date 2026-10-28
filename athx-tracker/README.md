@@ -7,8 +7,8 @@ single SQLite file on a volume.
 ## What it does
 
 - **Today** — countdown to the event, then fuel for each athlete, then each
-  zone's progress from its first estimate to the race goal set in Setup, then a
-  race-day estimate: the pair's Strength score in kilograms, each athlete's share
+  zone's progress from its first estimate to its goal (Strength's from the lift
+  targets), then a race-day estimate: the pair's Strength score in kilograms, each athlete's share
   of it, and where it would have placed among last season's mixed Lite pairs; the
   2.4 km run times and SkiErg distance for Endurance; and the MetCon X time. Then
   the sessions logged this week and over the last 7 days against the weekly
@@ -71,7 +71,9 @@ single SQLite file on a volume.
   include fiber; fiber, sugar alcohols, food-specific factors and rounding can
   make the simple calculation differ from a label's calorie total. A meal takes
   a time of day, which starts at the clock; a new meal's sitting follows it until
-  you pick one.
+  you pick one. A meal logged on more than one day is offered again. Save it as
+  a template to keep your own name, items and grams; tapping one fills the form,
+  and the saved macros stay until you estimate again.
 - **Progress** — the main lifts for each athlete: split jerk, overhead press,
   back squat and deadlift. Each shows its start, latest, best and target, how far
   is left, and a bar towards the target: grey up to the start, the athlete's
@@ -219,8 +221,10 @@ sends the figures; with the whole journal loaded the phone works them out itself
 **Progress** on Today measures each zone from its start to its goal. The start is
 the zone's estimate as of the first day the log could give one, counting only what
 was logged up to then (`raceStart` in `lib/race.ts`); now is today's estimate; the
-goal is Setup's race goal for that zone (combined kilograms, SkiErg metres, or a
-MetCon X time, which counts down). The bar is the share of start-to-goal covered,
+goal for Strength is the lift targets Progress measures against, read as one-rep
+maxes and carried to the race's reps on Brzycki's line (the higher of the press and
+split jerk targets stands for shoulder to overhead), so it needs all six; Endurance
+and MetCon X take Setup's race goals (SkiErg metres, and a time that counts down). The bar is the share of start-to-goal covered,
 clamped to 0-100%. A zone with no goal shows start and now only.
 
 **The Strength percentile** places the pair among every mixed ATHX Lite pair from
@@ -377,8 +381,10 @@ still fits the estimator's request limit. An older estimator still receives
 the notes, but without the instruction that says how to use them.
 
 The conversation stays with the open draft. Saving keeps the final macros and
-assumptions; reopening a saved meal, or tapping a usual meal, lets you start
-from those values. A fresh **Estimate macros** starts a new conversation. Each
+assumptions; reopening a saved meal, or tapping a template or a repeated meal,
+lets you start from those values. Edit a template to rename it or to change
+the foods and the grams. Those portions are what the next estimate reads.
+Saving Setup keeps the templates. A fresh **Estimate macros** starts a new conversation. Each
 successful reply counts toward the daily estimate limit. Replies carry more
 context than a first estimate, so an estimator running on your own machine has
 to be updated along with the app; an older one turns replies away.

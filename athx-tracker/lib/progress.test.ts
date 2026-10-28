@@ -280,6 +280,9 @@ test("settings saved before lift targets existed parse with the same targets the
   assert.ok(bad({ deadlift: -1 }));
   assert.ok(bad({ deadlift: 1001 }));
   assert.ok(!bad({ deadlift: 0 }), "zero is no target");
+  // Race goals saved with their own Strength figure, before it followed the lift targets.
+  const goals = settingsSchema.parse({ ...legacy, raceGoals: { strength: 400, endurance: 3000, metcon: 900 } });
+  assert.deepEqual(goals.raceGoals, { endurance: 3000, metcon: 900 });
 });
 
 test("the estimated max is the best any set of ten or fewer predicts, on the race's line", () => {

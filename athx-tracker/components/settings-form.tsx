@@ -141,11 +141,9 @@ export function SettingsForm({
       return { hippos: show(savedLifts.hippos), gators: show(savedLifts.gators) };
     },
   );
-  // Strength is in kilograms whatever the unit, as the race estimate shows it.
   const [raceGoals, setRaceGoals] = useState(() => {
     const goals = settings.raceGoals ?? DEFAULT_SETTINGS.raceGoals!;
     return {
-      strength: goals.strength > 0 ? String(goals.strength) : "",
       endurance: goals.endurance > 0 ? String(goals.endurance) : "",
       metcon: goals.metcon > 0 ? formatTime(goals.metcon) : "",
     };
@@ -296,12 +294,11 @@ export function SettingsForm({
     return parseLoad(raw, weightUnit, savedLifts[athlete][key]);
   }
 
-  /** Race goals as stored: kilograms, metres and seconds, zero for none, NaN when unreadable. */
+  /** Race goals as stored: metres and seconds, zero for none, NaN when unreadable. */
   function goalsFrom() {
     const amount = (text: string) => (text.trim() === "" ? 0 : Number(text.trim().replace(/,/g, "")));
     const time = raceGoals.metcon.trim();
     return {
-      strength: amount(raceGoals.strength),
       endurance: amount(raceGoals.endurance),
       metcon: time === "" ? 0 : parseTime(time),
     };
@@ -346,8 +343,6 @@ export function SettingsForm({
       }
     }
     const goals = goalsFrom();
-    if (!Number.isFinite(goals.strength) || goals.strength < 0 || goals.strength > 2000)
-      return "Strength goal needs kilograms, or nothing at all.";
     if (!Number.isFinite(goals.endurance) || goals.endurance < 0 || goals.endurance > 20000)
       return "Endurance goal needs metres, or nothing at all.";
     if (!Number.isFinite(goals.metcon) || goals.metcon > 3600)
@@ -427,6 +422,7 @@ export function SettingsForm({
           },
           raceGoals: goalsFrom(),
           foodNotes: foodNotes.trim(),
+          mealTemplates: settings.mealTemplates ?? { hippos: [], gators: [] },
         },
         undefined,
         weighIns,
@@ -639,14 +635,14 @@ export function SettingsForm({
         <div>
           <h3 className="text-sm font-semibold">Race goals</h3>
           <p className="text-[11px] text-muted-foreground">
-            What the pair is aiming for in each zone. Today measures progress from your first
-            estimate to these. Leave one blank for no goal.
+            What the pair is aiming for in Endurance and MetCon X. Today measures progress from
+            your first estimate to these. Strength&apos;s goal is your lift targets above, carried
+            to the race&apos;s reps. Leave one blank for no goal.
           </p>
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {(
             [
-              { key: "strength", label: "Strength (kg, combined)", mode: "decimal", placeholder: "Not set" },
               { key: "endurance", label: "Endurance (m SkiErg)", mode: "numeric", placeholder: "Not set" },
               { key: "metcon", label: "MetCon X (m:ss)", mode: "text", placeholder: "Not set" },
             ] as const
