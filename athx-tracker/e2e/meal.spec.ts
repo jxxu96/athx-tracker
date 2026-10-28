@@ -526,3 +526,61 @@ test("a meal keeps the time of day it was eaten, and the log orders the day by i
   await expect(entries.nth(0)).toContainText("12:30 · Hippos · Lunch");
   await expect(entries.nth(1)).toContainText("07:45 · Hippos · Breakfast");
 });
+
+test("a meal template can be renamed, and its grams changed, and setup keeps it", async ({ page }) => {
+  const clear = async () => {
+    const current = await page.request.get("/api/settings").then((response) => response.json()) as {
+      settings: Record<string, unknown>;
+      revision: number;
+    };
+    await page.request.put("/api/settings", {
+      data: {
+        revision: current.revision,
+        settings: {
+          ...current.settings,
+          mealTemplates: { hippos: [], gators: [] },
+        },
+      },
+    });
+  };
+  try {
+    await loggingFor(page, "Hippos").click();
+    await page.getByRole("group", { name: "Sitting" }).getByRole("button", { name: "Breakfast" }).click();
+    await page.getByLabel("Meal description").fill("80 g oats, 2 eggs");
+    await page.getByLabel("Meal", { exact: true }).fill("Morning oats");
+    await page.getByLabel("Calories (kcal)").fill("455");
+    await page.getByLabel("Protein (g)").fill("30");
+    await page.getByLabel("Carbs (g)").fill("50");
+    await page.getByLabel("Fat (g)").fill("15");
+    await page.getByRole("button", { name: "Save this meal as a template" }).click();
+    await expect(page.getByText("Template saved", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Hippos: Morning oats" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Update this template" })).toBeVisible();
+
+    await loggingFor(page, "Gators").click();
+    await expect(page.getByRole("button", { name: "Hippos: Morning oats" })).toHaveCount(0);
+    await loggingFor(page, "Hippos").click();
+
+    await page.getByRole("button", { name: "Edit Morning oats" }).click();
+    await expect(page.getByRole("dialog", { name: "Edit Hippos template" })).toBeVisible();
+    await page.getByLabel("Template name").fill("Hippos breakfast");
+    await page.getByLabel("Grams, item 1").fill("100");
+    await page.getByRole("button", { name: "Save template" }).click();
+    await expect(page.getByText("Template updated", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Hippos: Hippos breakfast" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Hippos: Hippos breakfast" }).click();
+    await expect(page.getByLabel("Meal", { exact: true })).toHaveValue("Hippos breakfast");
+    await expect(page.getByLabel("Meal description")).toHaveValue("100 g oats, 2 eggs");
+    await expect(page.getByLabel("Calories (kcal)")).toHaveValue("455");
+    await expect(page.getByRole("group", { name: "Sitting" }).getByRole("button", { name: "Breakfast" })).toHaveAttribute("aria-pressed", "true");
+
+    await page.getByRole("button", { name: "Setup", exact: true }).click();
+    await page.getByRole("button", { name: "Save settings" }).click();
+    await expect(page.getByText("Settings saved", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Meal", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Hippos: Hippos breakfast" })).toBeVisible();
+  } finally {
+    await clear();
+  }
+});

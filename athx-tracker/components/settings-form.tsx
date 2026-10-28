@@ -422,6 +422,7 @@ export function SettingsForm({
           },
           raceGoals: goalsFrom(),
           foodNotes: foodNotes.trim(),
+          mealTemplates: settings.mealTemplates ?? { hippos: [], gators: [] },
         },
         undefined,
         weighIns,
