@@ -113,13 +113,6 @@ export function Overview({
             timeZone: "UTC",
           }).format(dayToDate(settings.eventDate))}
         </p>
-        <RaceProgress
-          estimate={figures.race}
-          start={figures.raceStart}
-          goals={settings.raceGoals}
-          today={today}
-        />
-        <RaceEstimate estimate={figures.race} placing={figures.placing} />
       </section>
 
       <Fuel
@@ -132,6 +125,15 @@ export function Overview({
         refresh={fuelRefresh}
       />
 
+      <section className="rounded-2xl border bg-card p-5 sm:p-6">
+        <RaceProgress
+          estimate={figures.race}
+          start={figures.raceStart}
+          goals={settings.raceGoals}
+          today={today}
+        />
+        <RaceEstimate estimate={figures.race} placing={figures.placing} />
+      </section>
 
       <Panel title="Sessions" icon={<Dumbbell className="size-4 text-muted-foreground" />}>
         <table className="w-full table-fixed text-left">

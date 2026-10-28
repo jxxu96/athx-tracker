@@ -365,7 +365,7 @@ export function RaceProgress({
 }) {
   const current = zoneScores(estimate);
   return (
-    <div className="mt-5 border-t pt-4">
+    <div>
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3">
         <h2 className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
           Progress

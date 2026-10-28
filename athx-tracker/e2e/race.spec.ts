@@ -102,7 +102,7 @@ test("with nothing logged, each part of the estimate says what it needs", async 
   );
 });
 
-test("the first box estimates all three zones from what is logged", async ({ page }) => {
+test("the race-day estimate covers all three zones from what is logged", async ({ page }) => {
   const gators = [120, 90, 60, 90, 60, 120, 160];
   // Hippos is quicker at the bench press, on dumbbells half the weight.
   const hippos = [240, 90, 45, 180, 120, 120, 240];
@@ -236,7 +236,7 @@ test("the pair's Strength is placed among 2026's mixed Lite pairs, live", async 
   }
 });
 
-test("the top box measures each zone from its first estimate to the goal in Setup", async ({ page }) => {
+test("Progress measures each zone from its first estimate to the goal in Setup", async ({ page }) => {
   const lifts = (kg: number) => [
     { name: "Overhead press", kg, sets: 1, reps: 1 },
     { name: "Back squat", kg, sets: 1, reps: 2 },
