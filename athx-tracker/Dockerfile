@@ -12,7 +12,18 @@ COPY package.json package-lock.json ./
 FROM base AS prod-deps
 RUN npm ci --omit=dev
 
-FROM base AS build
+# The compiled app is plain JavaScript, so it is built once on the builder's own
+# architecture. Under emulation the arm64 build took seven minutes against one
+# natively, on every push. The one native module the image runs, better-sqlite3,
+# comes from prod-deps, which is still installed for the target.
+# This repeats base rather than starting from it, because --platform does not
+# apply to a stage, and npm compiles better-sqlite3 here too.
+FROM --platform=$BUILDPLATFORM node:22-slim AS build
+WORKDIR /app
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3 make g++ \
+  && rm -rf /var/lib/apt/lists/*
+COPY package.json package-lock.json ./
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm ci
 COPY . .
