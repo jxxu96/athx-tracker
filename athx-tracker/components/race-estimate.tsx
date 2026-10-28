@@ -346,6 +346,15 @@ const SCORE: Record<RaceZone, (score: number) => string> = {
   metcon: (seconds) => formatTime(seconds),
 };
 
+/** Where each zone stands now, on one line for a folded box. */
+export function raceLine(estimate: ReturnType<typeof raceEstimate>) {
+  const current = zoneScores(estimate);
+  return RACE_ZONES.map(({ key, name }) => {
+    const now = current[key];
+    return `${name} ${now === null ? "—" : SCORE[key](now)}`;
+  }).join(" · ");
+}
+
 /**
  * Each zone from its first estimate to the goal set in Setup, with where the
  * pair is now. The bar is the share of that distance covered, so falling back
@@ -365,8 +374,9 @@ export function RaceProgress({
 }) {
   const current = zoneScores(estimate);
   return (
-    <div className="mt-5 border-t pt-4">
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3">
+    <div>
+      {/* Clear of the box's fold button in the corner. */}
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3 pr-8">
         <h2 className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
           Progress
         </h2>

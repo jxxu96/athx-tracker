@@ -3,7 +3,7 @@
 import { Dumbbell, Target } from "lucide-react";
 import { CollapsibleCard } from "@/components/collapsible-card";
 import { Fuel } from "@/components/fuel";
-import { RaceEstimate, RaceProgress } from "@/components/race-estimate";
+import { RaceEstimate, RaceProgress, raceLine } from "@/components/race-estimate";
 import {
   ATHLETES,
   METCON,
@@ -129,13 +129,6 @@ export function Overview({
             timeZone: "UTC",
           }).format(dayToDate(settings.eventDate))}
         </p>
-        <RaceProgress
-          estimate={figures.race}
-          start={figures.raceStart}
-          goals={settings.raceGoals}
-          today={today}
-        />
-        <RaceEstimate estimate={figures.race} placing={figures.placing} />
       </CollapsibleCard>
 
       <Fuel
@@ -148,6 +141,19 @@ export function Overview({
         refresh={fuelRefresh}
       />
 
+      <CollapsibleCard
+        name="Progress and race-day estimate"
+        className="p-5 sm:p-6"
+        mini={`Race-day estimate: ${raceLine(figures.race)}`}
+      >
+        <RaceProgress
+          estimate={figures.race}
+          start={figures.raceStart}
+          goals={settings.raceGoals}
+          today={today}
+        />
+        <RaceEstimate estimate={figures.race} placing={figures.placing} />
+      </CollapsibleCard>
 
       <Panel
         title="Sessions"

@@ -17,7 +17,7 @@ export type JournalSummary = {
   /** The day they were worked out for, which is the phone's day when it asked. */
   today: string;
   race: ReturnType<typeof raceEstimate>;
-  /** Each zone's first estimate, which the top box measures progress from. */
+  /** Each zone's first estimate, which Progress on Today measures from. */
   raceStart: ReturnType<typeof raceStart>;
   placing: StrengthPlacing;
   lifts: Record<"hippos" | "gators", LiftProgress[]>;

@@ -39,7 +39,14 @@ test("a control inside a box does its job without folding it", async ({ page }) 
 
 test("the countdown box folds to the days left", async ({ page }) => {
   await signIn(page);
+  await page.getByText("days to go", { exact: true }).click();
+  await expect(page.getByText(/^\d+ days? to go$/)).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Expand ATHX/ })).toBeVisible();
+});
+
+test("the race box folds to where each zone stands", async ({ page }) => {
+  await signIn(page);
   await page.getByRole("heading", { name: "Race-day estimate" }).click();
   await expect(page.getByRole("heading", { name: "Race-day estimate" })).toHaveCount(0);
-  await expect(page.getByText(/^\d+ days? to go$/)).toBeVisible();
+  await expect(page.getByText(/^Race-day estimate: Strength .* · Endurance .* · MetCon X /)).toBeVisible();
 });

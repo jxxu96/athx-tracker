@@ -22,7 +22,7 @@ export function CollapsibleCard({
   /** What the toggle names, as in "Collapse Fuel". */
   name: string;
   /** Shown open or folded, so a folded box still says what it is. */
-  heading: React.ReactNode;
+  heading?: React.ReactNode;
   /** The one line a folded box keeps. */
   mini: React.ReactNode;
   className?: string;
@@ -49,7 +49,7 @@ export function CollapsibleCard({
       >
         <ChevronDown className={cn("size-4 transition-transform", open && "rotate-180")} />
       </button>
-      <div className="pr-8">{heading}</div>
+      {heading ? <div className="pr-8">{heading}</div> : null}
       {open ? (
         children
       ) : (
