@@ -5,7 +5,15 @@
  */
 
 /** Three times the 16×16 source, so the pixels stay whole and the face reads. */
-export const RUNNER_SIZE = 48;
+const PIXEL = 3;
+const ART = 16;
+/** Two rows above the art. The bagel stroke sits on y = 0 and would be cut off without them. */
+const ART_HEADROOM = 2;
+export const RUNNER_SIZE = PIXEL * ART;
+/** Art plus the rows above it. Feet stay on the bottom edge. */
+export const RUNNER_BOX = PIXEL * (ART + ART_HEADROOM);
+/** Air above the sprite, past the two-pixel bounce, so the track does not shave the crown. */
+export const RUNNER_GAP = 6;
 
 const HIPPO = "#a898a8";
 const HIPPO_D = "#786880";
@@ -45,9 +53,9 @@ function Pixel({ frame, bagel, className, children }: {
 }) {
   return (
     <svg
-      viewBox="0 0 16 16"
+      viewBox={`0 ${-ART_HEADROOM} 16 ${ART + ART_HEADROOM}`}
       width={RUNNER_SIZE}
-      height={RUNNER_SIZE}
+      height={RUNNER_BOX}
       aria-hidden="true"
       shapeRendering="crispEdges"
       className={className}
@@ -104,7 +112,15 @@ function Gator({ frame, bagel, className }: { frame: 0 | 1; bagel: boolean; clas
 export function Creature({ kind, bagel }: { kind: "hippos" | "gators"; bagel: boolean }) {
   const Art = kind === "hippos" ? Hippo : Gator;
   return (
-    <div className="athx-runner" style={{ "--runner-size": `${RUNNER_SIZE}px` } as React.CSSProperties}>
+    <div
+      className="athx-runner"
+      style={
+        {
+          "--runner-size": `${RUNNER_SIZE}px`,
+          "--runner-box": `${RUNNER_BOX}px`,
+        } as React.CSSProperties
+      }
+    >
       <div className="athx-runner-bob">
         <div className="athx-runner-face">
           <Art frame={0} bagel={bagel} />

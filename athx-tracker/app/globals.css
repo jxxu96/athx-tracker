@@ -226,20 +226,20 @@ button[data-athlete-outline="gators"] {
 
 .athx-runner {
   width: 100%;
-  height: var(--runner-size);
+  height: var(--runner-box);
   animation: athx-runner-slide 4.8s linear infinite;
 }
 
 .athx-runner-bob {
   width: var(--runner-size);
-  height: var(--runner-size);
+  height: var(--runner-box);
   animation: athx-runner-bob 0.28s ease-in-out infinite;
 }
 
 .athx-runner-face {
   position: relative;
   width: var(--runner-size);
-  height: var(--runner-size);
+  height: var(--runner-box);
   transform-origin: center;
   animation: athx-runner-face 4.8s linear infinite;
 }
