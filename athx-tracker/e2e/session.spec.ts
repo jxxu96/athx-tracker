@@ -163,16 +163,14 @@ test.describe("a first visit", () => {
     await expect(page.locator("body")).toHaveCSS("background-color", "rgb(10, 10, 10)");
   });
 
-  test("follows the device only after Device is chosen", async ({ page }) => {
+  test("has no control that follows the device", async ({ page }) => {
+    await expect(page.getByRole("button", { name: "Device" })).toHaveCount(0);
+    await expect(page.getByRole("group", { name: "Theme" }).getByRole("button")).toHaveCount(2);
+    await page.evaluate(() => localStorage.setItem("athx-theme", "system"));
+    await page.reload();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
     await expect(page.locator("body")).toHaveCSS("background-color", "rgb(10, 10, 10)");
     await expect(page.getByRole("button", { name: "Dark" })).toHaveAttribute("aria-pressed", "true");
-    await page.getByRole("button", { name: "Device" }).click();
-    await expect(page.locator("body")).toHaveCSS("background-color", "rgb(255, 255, 255)");
-    await expect(page.getByRole("button", { name: "Device" })).toHaveAttribute("aria-pressed", "true");
-    await page.reload();
-    await expect(page.locator("body")).toHaveCSS("background-color", "rgb(255, 255, 255)");
-    await expect(page.getByRole("button", { name: "Device" })).toHaveAttribute("aria-pressed", "true");
-    expect(await page.evaluate(() => localStorage.getItem("athx-theme"))).toBe("system");
   });
 });
 

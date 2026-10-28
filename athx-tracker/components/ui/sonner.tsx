@@ -7,11 +7,25 @@ import {
   OctagonXIcon,
   TriangleAlertIcon,
 } from "lucide-react"
-import { useTheme } from "next-themes"
+import { useSyncExternalStore } from "react"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 
+function subscribeToTheme(callback: () => void) {
+  const observer = new MutationObserver(callback)
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme"],
+  })
+  return () => observer.disconnect()
+}
+
+/** The page theme, so a toast does not follow the device on its own. */
+function pageTheme(): "light" | "dark" {
+  return document.documentElement.dataset.theme === "light" ? "light" : "dark"
+}
+
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = "system" } = useTheme()
+  const theme = useSyncExternalStore(subscribeToTheme, pageTheme, () => "dark" as const)
 
   return (
     <Sonner

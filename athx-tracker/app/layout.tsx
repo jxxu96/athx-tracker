@@ -29,10 +29,10 @@ export const viewport: Viewport = {
 
 /**
  * Runs before anything paints, so the page never shows one theme and then
- * swaps. A missing choice is dark. "system" follows the device. Light and
- * dark are used as stored.
+ * swaps. Only a stored light choice is light. Anything else, including an
+ * older device choice, is dark.
  */
-const THEME_SCRIPT = `try{var s=localStorage.getItem('athx-theme');var d=s==='light'?false:s==='system'?window.matchMedia('(prefers-color-scheme: dark)').matches:true;document.documentElement.dataset.theme=d?'dark':'light'}catch(e){document.documentElement.dataset.theme='dark'}`;
+const THEME_SCRIPT = `try{var s=localStorage.getItem('athx-theme');document.documentElement.dataset.theme=s==='light'?'light':'dark'}catch(e){document.documentElement.dataset.theme='dark'}`;
 
 export default function RootLayout({
   children,

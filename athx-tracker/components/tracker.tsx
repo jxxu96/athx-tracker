@@ -623,9 +623,9 @@ export function Tracker({
 
       <header className="sticky top-0 z-20 border-b bg-background/95 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur">
         <div className="flex items-center justify-between gap-2">
-          {/* Three theme buttons and a refresh leave no room for this beside
-              the athlete pills on a phone, and the name is already on the tab
-              and the home screen icon. */}
+          {/* Theme buttons and a refresh leave no room for this beside the
+              athlete pills on a phone, and the name is already on the tab and
+              the home screen icon. */}
           <h1 className="hidden truncate text-sm font-semibold tracking-tight sm:block">
             Hippos &amp; Gators
           </h1>
