@@ -112,10 +112,16 @@ export type RecordItem = Workout | Meal | Bodyweight;
 export const PROGRESS_LIFTS = [
   { key: "splitJerk", name: "Split jerk" },
   { key: "overheadPress", name: "Overhead press" },
+  { key: "pushPress", name: "Push press" },
   { key: "backSquat", name: "Back squat" },
   { key: "deadlift", name: "Deadlift" },
 ] as const;
 export type ProgressLift = (typeof PROGRESS_LIFTS)[number]["key"];
+/** Each athlete's four, in the same order: Hippos follows the push press, Gators the overhead press. */
+export const FOLLOWED_LIFTS = {
+  hippos: PROGRESS_LIFTS.filter(({ key }) => key !== "overheadPress"),
+  gators: PROGRESS_LIFTS.filter(({ key }) => key !== "pushPress"),
+};
 /** Kilograms, like every other weight here. Zero means no target. */
 export type LiftTargets = Record<ProgressLift, number>;
 /**
@@ -166,10 +172,11 @@ export const DEFAULT_SETTINGS: Settings = {
   height: { hippos: 0, gators: 0 },
   birthYear: { hippos: 0, gators: 0 },
   liftTargets: {
-    hippos: { splitJerk: 0, overheadPress: 0, backSquat: 0, deadlift: 0 },
+    hippos: { splitJerk: 0, overheadPress: 0, pushPress: 0, backSquat: 0, deadlift: 0 },
     gators: {
       splitJerk: 175 / LB_PER_KG,
       overheadPress: 135 / LB_PER_KG,
+      pushPress: 0,
       backSquat: 255 / LB_PER_KG,
       deadlift: 335 / LB_PER_KG,
     },

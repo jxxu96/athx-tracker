@@ -117,6 +117,13 @@ test("each main lift shows its start, latest, best and target", async ({ page })
     .toContainText("Not logged yet · target 335 lb");
   await expect(page.getByRole("group", { name: "Hippos split jerk" }))
     .toContainText("Not logged yet · no target");
+  // Hippos follows the push press in place of the overhead press.
+  await expect(page.getByRole("group", { name: "Hippos push press" }))
+    .toContainText("Not logged yet · no target");
+  await expect(page.getByRole("group", { name: "Hippos overhead press" })).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Gators push press" })).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Hippos total" }))
+    .toContainText("Push press, back squat and deadlift");
 });
 
 test("a filled-in Progress tab is usable without sight, in both themes", async ({ page }) => {
@@ -153,6 +160,11 @@ test("a target set in Setup is what Progress measures against", async ({ page })
 
   const hippos = page.getByRole("group", { name: "Hippos", exact: true });
   await hippos.getByLabel("Deadlift (lb)").fill("185");
+  // Hippos' press target is the push press; Gators' stays the overhead press.
+  await expect(hippos.getByLabel("Overhead press (lb)")).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Gators", exact: true }).getByLabel("Push press (lb)"))
+    .toHaveCount(0);
+  await hippos.getByLabel("Push press (lb)").fill("95");
   await page.getByRole("button", { name: "Save settings" }).click();
   await expect(page.getByText("Settings saved", { exact: true })).toBeVisible();
 
@@ -161,6 +173,7 @@ test("a target set in Setup is what Progress measures against", async ({ page })
     (await fetch("/api/settings").then((r) => r.json())).settings.liftTargets,
   );
   expect(stored.hippos.deadlift).toBe(kg(185));
+  expect(stored.hippos.pushPress).toBe(kg(95));
   expect(stored.gators.splitJerk).toBeCloseTo(175 / 2.20462262, 6);
 
   await openProgress(page);
@@ -169,6 +182,8 @@ test("a target set in Setup is what Progress measures against", async ({ page })
   await expect(deadlift).toContainText("83.9 kg");
   await expect(deadlift).toContainText("22.7 kg");
   await expect(deadlift.getByText("73% of target")).toBeVisible();
+  await expect(page.getByRole("group", { name: "Hippos push press" }))
+    .toContainText("Not logged yet · target 95 lb");
 
   // The unit switch carries the targets across with it.
   await page.getByRole("button", { name: "Setup", exact: true }).click();
@@ -255,7 +270,7 @@ test("the hippo and the gator run their bars, with a bagel only through Wednesda
           },
           liftTargets: {
             ...current.settings.liftTargets,
-            hippos: { ...current.settings.liftTargets.hippos, overheadPress: 40 },
+            hippos: { ...current.settings.liftTargets.hippos, pushPress: 40 },
           },
         },
       }),

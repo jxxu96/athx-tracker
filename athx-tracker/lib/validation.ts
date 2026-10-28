@@ -132,7 +132,10 @@ const birthYear = z.union([z.literal(0), z.number().int().min(1900).max(2100)]);
 /** Kilograms, like every load. Zero is no target. */
 const liftTarget = finite.max(1000);
 const liftTargetsSchema = z.object({
-  splitJerk: liftTarget, overheadPress: liftTarget, backSquat: liftTarget, deadlift: liftTarget,
+  splitJerk: liftTarget, overheadPress: liftTarget,
+  // Defaulted, so targets saved before the push press was followed still parse.
+  pushPress: liftTarget.default(0),
+  backSquat: liftTarget, deadlift: liftTarget,
 }).strict();
 const mealTemplateSchema = z.object({
   id: z.string().uuid(),

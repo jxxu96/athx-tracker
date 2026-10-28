@@ -1,7 +1,9 @@
 import { matchMovement, normalize } from "./movement-match.ts";
 import {
+  FOLLOWED_LIFTS,
   METCON,
   type LiftTargets,
+  type ProgressLift,
   type RaceGoals,
   isDistanceUnit,
   standardLoad,
@@ -525,17 +527,21 @@ export function raceStart(records: RecordItem[]): Record<RaceZone, ZoneStart | n
  * Strength's goal, from the lift targets Progress measures against. A target
  * is a one-rep max, as Progress reads it against each estimated max, so each
  * is carried to the window's reps on the same line a logged set is. Shoulder
- * to overhead takes the higher of the press and split jerk targets, since
- * either counts. Null until both athletes have all three, as the score is.
+ * to overhead takes the higher of the athlete's press and split jerk targets,
+ * since either counts. A target for a lift the athlete does not follow is not
+ * in Setup to change, so it counts for nothing. Null until both athletes have
+ * all three, as the score is.
  */
 export function strengthGoal(targets: Record<RaceAthlete, LiftTargets>) {
   let total = 0;
   for (const athlete of RACE_ATHLETES) {
-    const own = targets[athlete];
+    // Settings are stored as saved, so ones from before a lift was followed lack it.
+    const own = (key: ProgressLift) =>
+      FOLLOWED_LIFTS[athlete].some((lift) => lift.key === key) ? targets[athlete][key] ?? 0 : 0;
     const kg: Record<StrengthLift, number> = {
-      overhead: Math.max(own.overheadPress, own.splitJerk),
-      squat: own.backSquat,
-      deadlift: own.deadlift,
+      overhead: Math.max(own("overheadPress"), own("pushPress"), own("splitJerk")),
+      squat: own("backSquat"),
+      deadlift: own("deadlift"),
     };
     for (const { key } of STRENGTH_LIFTS) {
       if (!(kg[key] > 0)) return null;

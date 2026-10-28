@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import {
   ATHLETES,
   DEFAULT_SETTINGS,
+  PROGRESS_LIFTS,
   formatWeight,
   fromKilograms,
   type RecordItem,
@@ -23,6 +24,7 @@ import type { JournalSummary } from "@/lib/summary";
 import {
   liftTotal,
   progressMarks,
+  TOTAL_LIFTS,
   shownGap,
   toGo,
   VOLUME_WEEKS,
@@ -295,7 +297,10 @@ function Total({
   bagel: boolean;
 }) {
   const color = ATHLETES[athlete].color;
-  const total: LiftTotal = liftTotal(rows);
+  const total: LiftTotal = liftTotal(rows, athlete);
+  const [press, ...rest] = TOTAL_LIFTS[athlete].map(
+    (key) => PROGRESS_LIFTS.find((lift) => lift.key === key)!.name,
+  );
   const marks = progressMarks(
     {
       start: asSet(total.start),
@@ -311,7 +316,7 @@ function Total({
       <div>
         <h3 className="text-sm font-medium">Total</h3>
         <p className="text-[11px] text-muted-foreground">
-          Overhead press, back squat and deadlift
+          {press}, {rest.map((name) => name.toLowerCase()).join(" and ")}
         </p>
       </div>
       <div>
