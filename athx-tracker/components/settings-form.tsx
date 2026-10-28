@@ -17,6 +17,7 @@ import { FOOD_NOTES_LIMIT } from "@/lib/estimate-conversation";
 import {
   ATHLETES,
   DEFAULT_SETTINGS,
+  FOLLOWED_LIFTS,
   PROGRESS_LIFTS,
   SEX,
   clockTime,
@@ -334,7 +335,7 @@ export function SettingsForm({
         if (value > LIMITS[key])
           return `${ATHLETES[athlete].name} ${label.toLowerCase()} looks too high.`;
       }
-      for (const { key, name } of PROGRESS_LIFTS) {
+      for (const { key, name } of FOLLOWED_LIFTS[athlete]) {
         const kg = liftKg(athlete, key);
         if (kg === null)
           return `${ATHLETES[athlete].name} ${name.toLowerCase()} target needs a weight, or nothing at all.`;
@@ -611,7 +612,7 @@ export function SettingsForm({
               {ATHLETES[athlete].name}
             </legend>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {PROGRESS_LIFTS.map(({ key, name }) => (
+              {FOLLOWED_LIFTS[athlete].map(({ key, name }) => (
                 <Field key={key} label={`${name} (${weightUnit})`}>
                   <Input
                     value={liftTargets[athlete][key]}

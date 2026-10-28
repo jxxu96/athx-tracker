@@ -2,6 +2,7 @@ import { addDays, daysBetween, weekStart } from "./client.ts";
 import { matchMovement } from "./movement-match.ts";
 import { MAX_REPS, repMax } from "./race.ts";
 import {
+  FOLLOWED_LIFTS,
   PROGRESS_LIFTS,
   displayLoad,
   liftTop,
@@ -155,7 +156,7 @@ export function liftProgress(
     }
     for (const key of logged) sessions.set(key, (sessions.get(key) ?? 0) + 1);
   }
-  return PROGRESS_LIFTS.map(({ key, name }) => {
+  return FOLLOWED_LIFTS[athlete].map(({ key, name }) => {
     const sets = [...(days.get(key)?.values() ?? [])].sort((a, b) =>
       a.day < b.day ? -1 : a.day > b.day ? 1 : 0,
     );
@@ -175,8 +176,14 @@ export function liftProgress(
   });
 }
 
-/** Press, squat and deadlift. The split jerk is followed on its own and is not in this total. */
-export const TOTAL_LIFTS = ["overheadPress", "backSquat", "deadlift"] as const;
+/**
+ * Press, squat and deadlift, the press being the one the athlete follows. The
+ * split jerk is followed on its own and is not in this total.
+ */
+export const TOTAL_LIFTS = {
+  hippos: ["pushPress", "backSquat", "deadlift"],
+  gators: ["overheadPress", "backSquat", "deadlift"],
+} as const satisfies Record<ProgressAthlete, readonly ProgressLift[]>;
 
 export type LiftTotal = {
   start: number | null;
@@ -190,8 +197,8 @@ export type LiftTotal = {
  * The three lifts added together. A column stays empty until every one of them
  * has that figure, so a missing deadlift cannot look like a small total.
  */
-export function liftTotal(rows: LiftProgress[]): LiftTotal {
-  const three = TOTAL_LIFTS.map((key) => rows.find((row) => row.key === key));
+export function liftTotal(rows: LiftProgress[], athlete: ProgressAthlete): LiftTotal {
+  const three = TOTAL_LIFTS[athlete].map((key) => rows.find((row) => row.key === key));
   const sum = (value: (row: LiftProgress) => number | null) => {
     let total = 0;
     for (const row of three) {

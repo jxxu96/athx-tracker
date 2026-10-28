@@ -257,7 +257,7 @@ test("Progress measures each zone from its first estimate to its goal, Strength'
           ...settings,
           // One-rep maxes. Gators' split jerk is the higher, so it is the S2OH goal.
           liftTargets: {
-            hippos: { splitJerk: 0, overheadPress: 40, backSquat: 72, deadlift: 90 },
+            hippos: { splitJerk: 0, overheadPress: 0, pushPress: 40, backSquat: 72, deadlift: 90 },
             gators: { splitJerk: 80, overheadPress: 60, backSquat: 108, deadlift: 144 },
           },
           raceGoals: { endurance: 0, metcon: 900 },

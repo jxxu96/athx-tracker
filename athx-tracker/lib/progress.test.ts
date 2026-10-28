@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   DEFAULT_SETTINGS,
+  FOLLOWED_LIFTS,
   PROGRESS_LIFTS,
   displayLoad,
   formatWeight,
@@ -41,7 +42,7 @@ const workout = (over: Partial<Workout> = {}): Workout => ({
 });
 
 const lift = (name: string, kg: number, sets = 1, reps = 1) => ({ name, kg, sets, reps });
-const none: LiftTargets = { splitJerk: 0, overheadPress: 0, backSquat: 0, deadlift: 0 };
+const none: LiftTargets = { splitJerk: 0, overheadPress: 0, pushPress: 0, backSquat: 0, deadlift: 0 };
 const jerkOf = (records: Workout[], targets = none) =>
   liftProgress(records, "gators", targets).find((row) => row.key === "splitJerk")!;
 
@@ -56,6 +57,28 @@ test("the four lifts follow in a fixed order, each with its target", () => {
     assert.equal(row.sessions, 0);
     assert.ok(row.target > 0);
   }
+});
+
+test("Hippos follows the push press where Gators follows the overhead press", () => {
+  const records = [
+    workout({ athlete: "hippos", lifts: [lift("Push press", 45), lift("Overhead press", 35)] }),
+    workout({ athlete: "gators", lifts: [lift("Push press", 80), lift("Overhead press", 60)] }),
+  ];
+  const targets = { ...none, overheadPress: 40, pushPress: 50 };
+  const hippos = liftProgress(records, "hippos", targets);
+  const gators = liftProgress(records, "gators", targets);
+  assert.deepEqual(
+    hippos.map((row) => row.name),
+    ["Split jerk", "Push press", "Back squat", "Deadlift"],
+  );
+  assert.deepEqual(
+    gators.map((row) => row.name),
+    ["Split jerk", "Overhead press", "Back squat", "Deadlift"],
+  );
+  const press = hippos.find((row) => row.key === "pushPress")!;
+  assert.equal(press.best!.kg, 45, "a strict press is not counted as the push press");
+  assert.equal(press.target, 50);
+  assert.equal(gators.find((row) => row.key === "overheadPress")!.best!.kg, 60);
 });
 
 test("start is the first day, latest the last, best the heaviest", () => {
@@ -127,9 +150,10 @@ test("names match the way a described workout's do, and variations stay out", ()
   assert.equal(progressLift("Split jerk"), "splitJerk");
   assert.equal(progressLift("OHP"), "overheadPress");
   assert.equal(progressLift("strict press"), "overheadPress");
+  assert.equal(progressLift("Push press"), "pushPress");
   assert.equal(progressLift("barbell back squats"), "backSquat");
   assert.equal(progressLift("deadlifts"), "deadlift");
-  for (const other of ["Push press", "Front squat", "Romanian deadlift", "Sumo deadlift", "Push jerk", "Squat"])
+  for (const other of ["Front squat", "Romanian deadlift", "Sumo deadlift", "Push jerk", "Squat"])
     assert.equal(progressLift(other), null, other);
 });
 
@@ -231,9 +255,9 @@ test("the total adds press, squat and deadlift, and waits for all three", () => 
       }),
     ],
     "gators",
-    { splitJerk: 80, overheadPress: 50, backSquat: 140, deadlift: 180 },
+    { ...none, splitJerk: 80, overheadPress: 50, backSquat: 140, deadlift: 180 },
   );
-  const total = liftTotal(logged);
+  const total = liftTotal(logged, "gators");
   assert.equal(total.start, 260);
   assert.equal(total.latest, 260);
   assert.equal(total.best, 260);
@@ -241,19 +265,29 @@ test("the total adds press, squat and deadlift, and waits for all three", () => 
   const missing = liftProgress(
     [workout({ lifts: [lift("Overhead press", 40), lift("Back squat", 100)] })],
     "gators",
-    { splitJerk: 0, overheadPress: 50, backSquat: 140, deadlift: 0 },
+    { ...none, overheadPress: 50, backSquat: 140 },
   );
-  assert.equal(liftTotal(missing).start, null);
-  assert.equal(liftTotal(missing).target, null, "one target left blank keeps the total empty");
-  const gators = liftTotal(liftProgress([], "gators", DEFAULT_SETTINGS.liftTargets.gators));
+  assert.equal(liftTotal(missing, "gators").start, null);
+  assert.equal(liftTotal(missing, "gators").target, null, "one target left blank keeps the total empty");
+  const gators = liftTotal(liftProgress([], "gators", DEFAULT_SETTINGS.liftTargets.gators), "gators");
   assert.equal(formatWeight(gators.target!, "lb"), "725 lb");
   assert.equal(formatWeight(gators.target!, "kg"), "328.9 kg");
+  const hippos = liftTotal(
+    liftProgress(
+      [workout({ athlete: "hippos", lifts: [lift("Push press", 45), lift("Back squat", 80), lift("Deadlift", 100)] })],
+      "hippos",
+      { ...none, overheadPress: 40, pushPress: 50, backSquat: 90, deadlift: 110 },
+    ),
+    "hippos",
+  );
+  assert.equal(hippos.best, 225, "Hippos' total takes the push press");
+  assert.equal(hippos.target, 250);
 });
 
 test("Gators' targets read back as given, in pounds", () => {
   const targets = DEFAULT_SETTINGS.liftTargets.gators;
   assert.deepEqual(
-    PROGRESS_LIFTS.map(({ key }) => displayLoad(targets[key], "lb")),
+    FOLLOWED_LIFTS.gators.map(({ key }) => displayLoad(targets[key], "lb")),
     ["175", "135", "255", "335"],
   );
   assert.deepEqual(DEFAULT_SETTINGS.liftTargets.hippos, none, "Hippos has none until Setup gets one");
@@ -280,6 +314,10 @@ test("settings saved before lift targets existed parse with the same targets the
   assert.ok(bad({ deadlift: -1 }));
   assert.ok(bad({ deadlift: 1001 }));
   assert.ok(!bad({ deadlift: 0 }), "zero is no target");
+  const beforePushPress: Partial<LiftTargets> = { ...none };
+  delete beforePushPress.pushPress;
+  const older = settingsSchema.parse({ ...legacy, liftTargets: { hippos: beforePushPress, gators: beforePushPress } });
+  assert.equal(older.liftTargets.hippos.pushPress, 0, "targets saved before the push press parse with none for it");
   // Race goals saved with their own Strength figure, before it followed the lift targets.
   const goals = settingsSchema.parse({ ...legacy, raceGoals: { strength: 400, endurance: 3000, metcon: 900 } });
   assert.deepEqual(goals.raceGoals, { endurance: 3000, metcon: 900 });

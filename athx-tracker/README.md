@@ -76,8 +76,9 @@ single SQLite file on a volume.
   a template to keep your own name, items and grams; tapping one fills the form,
   and the saved macros stay until you estimate again. A meal typed and not
   saved yet is kept as a draft; see *Drafts*.
-- **Progress** — the main lifts for each athlete: split jerk, overhead press,
-  back squat and deadlift. Each shows its start, latest, best and target, how far
+- **Progress** — the main lifts for each athlete: split jerk, overhead press
+  (push press for Hippos), back squat and deadlift, with a total of the press,
+  squat and deadlift. Each shows its start, latest, best and target, how far
   is left, and a bar towards the target: grey up to the start, the athlete's
   colour for what has been gained since. A day counts as its heaviest
   set of the lift, so a warm-up is never the figure. Start is the first day the
@@ -127,6 +128,8 @@ single SQLite file on a volume.
   Lift targets are stored in kilograms like every other weight. Gators'
   default to a 175 lb split jerk, 135 lb overhead press, 255 lb back squat and
   335 lb deadlift; Hippos has none until set, and a blank target is no target.
+  Each athlete's targets are for the lifts Progress follows for them, so Hippos
+  sets a push press where Gators sets an overhead press.
 
 ### Weights and older entries
 
@@ -224,8 +227,9 @@ sends the figures; with the whole journal loaded the phone works them out itself
 the zone's estimate as of the first day the log could give one, counting only what
 was logged up to then (`raceStart` in `lib/race.ts`); now is today's estimate; the
 goal for Strength is the lift targets Progress measures against, read as one-rep
-maxes and carried to the race's reps on Brzycki's line (the higher of the press and
-split jerk targets stands for shoulder to overhead), so it needs all six; Endurance
+maxes and carried to the race's reps on Brzycki's line (the higher of the athlete's
+press and split jerk targets stands for shoulder to overhead; a target for the press
+an athlete does not follow is not counted), so it needs all six; Endurance
 and MetCon X take Setup's race goals (SkiErg metres, and a time that counts down). The bar is the share of start-to-goal covered,
 clamped to 0-100%. A zone with no goal shows start and now only.
 
