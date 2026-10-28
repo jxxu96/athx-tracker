@@ -37,7 +37,10 @@ ENV HOME=/config \
     GROK_BIN=/usr/local/bin/grok \
     CLAUDE_BIN=/usr/local/bin/claude \
     CODEX_BIN=/usr/local/bin/codex
-RUN mkdir -p /config && chown -R node:node /config /app
+# /backups has to exist here, owned by node: Docker gives a new named volume the
+# owner of the directory it mounts over, and creates a missing one as root,
+# which the node user cannot write a backup into.
+RUN mkdir -p /config /backups && chown -R node:node /config /backups /app
 USER node
 EXPOSE 8787
 
