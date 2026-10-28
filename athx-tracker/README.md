@@ -25,6 +25,8 @@ single SQLite file on a volume.
   so an old best counts however much has been logged since. The last session stays underneath,
   with its time, what it burned, and the whole-session estimate when the
   stations support one, and so does the ATHX Lite running order.
+  Tap any box away from its buttons to fold it to one line, such as the days to
+  go or this week's counts, and see what is under it; tap again to open it.
 - **Session** — log a workout as MetCon, Strength, Endurance, Solidcore, Tennis, YTW or
   Other, with Solidcore, tennis and YTW a tap away under Quick start. Load the seven
   ATHX stations with one tap, then fill in what you completed and each split.

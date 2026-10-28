@@ -1,6 +1,7 @@
 "use client";
 
 import { Dumbbell, Target } from "lucide-react";
+import { CollapsibleCard } from "@/components/collapsible-card";
 import { Fuel } from "@/components/fuel";
 import { RaceEstimate, RaceProgress } from "@/components/race-estimate";
 import {
@@ -23,20 +24,28 @@ import type { JournalSummary } from "@/lib/summary";
 function Panel({
   title,
   icon,
+  mini,
   children,
 }: {
   title: string;
   icon?: React.ReactNode;
+  mini: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-2xl border bg-card p-4 sm:p-5">
-      <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
-        {icon}
-        {title}
-      </h2>
+    <CollapsibleCard
+      name={title}
+      mini={mini}
+      className="p-4 sm:p-5"
+      heading={
+        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold group-data-[collapsed]:mb-0">
+          {icon}
+          {title}
+        </h2>
+      }
+    >
       {children}
-    </section>
+    </CollapsibleCard>
   );
 }
 
@@ -89,13 +98,20 @@ export function Overview({
       ? estimateBurn(lastSession, bodyweightOn(history, lastSession.athlete, lastSession.day))
       : null;
   const lastScenario = lastSession ? scenarioLine(lastSession) : null;
+  const daysToGo = `${countdown >= 0 ? countdown : 0} ${countdown === 1 ? "day to go" : "days to go"}`;
 
   return (
     <div className="space-y-4">
-      <section className="rounded-2xl border bg-card p-5 sm:p-6">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
-          {settings.eventName}
-        </p>
+      <CollapsibleCard
+        name={settings.eventName}
+        className="p-5 sm:p-6"
+        heading={
+          <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
+            {settings.eventName}
+          </p>
+        }
+        mini={daysToGo}
+      >
         <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <span className="text-4xl font-semibold tabular-nums tracking-tight sm:text-5xl">
             {countdown >= 0 ? countdown : 0}
@@ -120,7 +136,7 @@ export function Overview({
           today={today}
         />
         <RaceEstimate estimate={figures.race} placing={figures.placing} />
-      </section>
+      </CollapsibleCard>
 
       <Fuel
         records={records}
@@ -133,7 +149,13 @@ export function Overview({
       />
 
 
-      <Panel title="Sessions" icon={<Dumbbell className="size-4 text-muted-foreground" />}>
+      <Panel
+        title="Sessions"
+        icon={<Dumbbell className="size-4 text-muted-foreground" />}
+        mini={`${windows[0].label}: ${(["hippos", "gators", "team"] as const)
+          .map((key) => `${ATHLETES[key].name} ${sessionCount(windows[0].workouts, key)}/${settings.weeklyTarget}`)
+          .join(" · ")}`}
+      >
         <table className="w-full table-fixed text-left">
           <thead>
             <tr className="text-xs text-muted-foreground">
@@ -197,7 +219,11 @@ export function Overview({
       </Panel>
 
       {lastSession ? (
-        <Panel title="Last session" icon={<Target className="size-4 text-muted-foreground" />}>
+        <Panel
+          title="Last session"
+          icon={<Target className="size-4 text-muted-foreground" />}
+          mini={`${lastSession.title} · ${formatTimeOrDash(lastSession.seconds)} · ${lastSession.day}`}
+        >
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <p className="font-medium">{lastSession.title}</p>
             <p className="text-sm tabular-nums text-muted-foreground">
@@ -231,7 +257,10 @@ export function Overview({
         </Panel>
       ) : null}
 
-      <Panel title="ATHX Lite running order">
+      <Panel
+        title="ATHX Lite running order"
+        mini={`${METCON.length} stations, ${METCON[0].name} to ${METCON[METCON.length - 1].name}`}
+      >
         <ol className="divide-y text-xs">
           {METCON.map((station, index) => (
             <li key={station.name} className="flex gap-3 py-2 first:pt-0 last:pb-0">

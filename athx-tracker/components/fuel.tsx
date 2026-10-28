@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Flame } from "lucide-react";
+import { CollapsibleCard } from "@/components/collapsible-card";
 import { Input } from "@/components/ui/input";
 import { ATHLETES, type Macros, type RecordItem, type Settings } from "@/lib/domain";
 import type { BodyweightHistory } from "@/lib/bodyweight";
@@ -316,13 +317,17 @@ export function Fuel({
     .join(". ");
 
   return (
-    <section className="rounded-2xl border bg-card p-4 sm:p-5">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-sm font-semibold">
+    <CollapsibleCard
+      name="Fuel"
+      className="p-4 sm:p-5"
+      heading={
+        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold group-data-[collapsed]:mb-0">
           <Flame className="size-4 text-muted-foreground" />
           Fuel
         </h2>
-      </div>
+      }
+      mini={loadingDay || (span === "day" && dayError) ? null : `${story}.`}
+    >
       <div
         role="group"
         aria-label="Fuel range"
@@ -414,6 +419,6 @@ export function Fuel({
           ) : null}
         </>
       )}
-    </section>
+    </CollapsibleCard>
   );
 }
