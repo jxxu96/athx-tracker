@@ -23,6 +23,15 @@ on:
     paths: *code
   workflow_dispatch:
 
+# Agents push to a pull request several times in a row and merges land minutes
+# apart, and every run used to finish in full, each billed against the month's
+# Actions minutes. Builds on main overlapped, too, and whichever finished last,
+# not whichever was newest, became :latest. A newer run on the same branch now
+# cancels the older one; on main the next image carries the cancelled commit.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # The image is published to :latest and the server redeploys itself from it
   # within five minutes, so nothing between a bad push and production asks any
@@ -30,6 +39,9 @@ jobs:
   # build; these are the failures that compile perfectly well.
   checks:
     runs-on: ubuntu-latest
+    # A hung job otherwise runs, and bills, for six hours. These take about five
+    # minutes.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -69,6 +81,9 @@ jobs:
     # the server pulls, and it should only ever hold what is on main.
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    # Generous on purpose: a lockfile change reinstalls the arm64 dependencies
+    # under emulation, which has taken over three minutes on its own.
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
