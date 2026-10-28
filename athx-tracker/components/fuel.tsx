@@ -9,7 +9,6 @@ import type { BodyweightHistory } from "@/lib/bodyweight";
 import { addDays, dayToDate } from "@/lib/client";
 import {
   athleteFuel,
-  calorieTracking,
   energyBalance,
   formatAmount,
   fuelWindow,
@@ -54,13 +53,29 @@ function weekdayLetter(day: string) {
 }
 
 function spanNote(span: FuelSpan, today: string) {
-  if (span === "today") return "Today, against the daily target.";
-  if (span === "yesterday") return "Yesterday, against the daily target.";
+  if (span === "today" || span === "yesterday") return null;
   if (span === "overall") {
     return "Daily average across every day with a meal. The totals underneath are the whole stretch; spend is a day's average since the first entry.";
   }
   const window = fuelWindow("week", today);
   return `${shortDate(window!.start)} to ${shortDate(window!.end)}. Daily average of days with a meal.`;
+}
+
+function dayCaption(day: string) {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(dayToDate(day));
+}
+
+function foldedFuel(name: string, fuel: AthleteFuel, average: boolean) {
+  if (fuel.daysWithMeals === 0) return `${name} —`;
+  const eaten = formatAmount(fuel.shown.calories);
+  const target = fuel.dailyTarget.calories;
+  const figure = target > 0 ? `${eaten} / ${formatAmount(target)} kcal` : `${eaten} kcal`;
+  return `${name} ${average ? "avg " : ""}${figure}`;
 }
 
 function MacroRow({
@@ -310,11 +325,7 @@ export function Fuel({
     );
   };
   const together = span === "overall" ? figures.togetherOverall : teamSessions(records, period, referenceDay);
-  const story = people
-    .map((person) =>
-      calorieTracking(ATHLETES[person.athlete].name, person.fuel, multi),
-    )
-    .join(". ");
+  const caption = span === "day" ? dayCaption(day) : spanNote(span, today);
 
   return (
     <CollapsibleCard
@@ -326,7 +337,13 @@ export function Fuel({
           Fuel
         </h2>
       }
-      mini={loadingDay || (span === "day" && dayError) ? null : `${story}.`}
+      mini={
+        loadingDay || (span === "day" && dayError)
+          ? null
+          : people
+              .map((person) => foldedFuel(ATHLETES[person.athlete].name, person.fuel, multi))
+              .join(" · ")
+      }
     >
       <div
         role="group"
@@ -380,11 +397,7 @@ export function Fuel({
           />
         </div>
       ) : null}
-      <p className="mb-3 text-xs text-muted-foreground">
-        {span === "day"
-          ? `${new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(dayToDate(day))}, against that day's targets.`
-          : spanNote(span, today)}
-      </p>
+      {caption ? <p className="mb-3 text-xs text-muted-foreground">{caption}</p> : null}
       {span === "day" && dayError ? (
         <div role="alert" className="text-sm">
           <p>{dayError}</p>
@@ -398,7 +411,6 @@ export function Fuel({
         <p role="status" className="text-sm text-muted-foreground">Loading this day…</p>
       ) : (
         <>
-          <p className="mb-4 text-sm">{story}.</p>
           <div className="grid gap-5 sm:grid-cols-2">
             {people.map((person) => (
               <AthleteFuelCard

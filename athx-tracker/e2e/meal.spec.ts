@@ -131,9 +131,10 @@ test("a new meal starts on the sitting that matches the time", async ({ page }) 
   const sitting = mealForTime(new Date());
   const group = page.getByRole("group", { name: "Sitting" });
   await expect(group.getByRole("button", { name: sitting })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByText("Matched to the time.")).toBeVisible();
-  await group.getByRole("button", { name: sitting === "Snack" ? "Dinner" : "Snack" }).click();
   await expect(page.getByText("Matched to the time.")).toHaveCount(0);
+  const other = sitting === "Snack" ? "Dinner" : "Snack";
+  await group.getByRole("button", { name: other }).click();
+  await expect(group.getByRole("button", { name: other })).toHaveAttribute("aria-pressed", "true");
 });
 
 test("ethanol is only on an alcohol sitting, and snacks alongside still count", async ({ page }) => {

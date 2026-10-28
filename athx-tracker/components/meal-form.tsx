@@ -587,20 +587,17 @@ export function MealForm({
             onChange={setSlot}
             options={MEALS.map((value) => ({ value, label: value }))}
           />
-          {!editing && picked === null ? (
-            <p className="text-xs text-muted-foreground">Matched to the time.</p>
-          ) : null}
           <DayButtons today={today} day={day} onChange={setDay} time={time} onTimeChange={setTime} />
         </section>
 
         <section {...athleteOutline(who)} className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
           <div>
             <h3 className="text-sm font-semibold">Describe it</h3>
-            <p className="text-[11px] text-muted-foreground">
-              {grokReady
-                ? "The estimator fills the macros. Review its assumptions, then reply to refine them."
-                : "The estimator is not connected, so enter the macros yourself below."}
-            </p>
+            {grokReady ? null : (
+              <p className="text-[11px] text-muted-foreground">
+                The estimator is not connected, so enter the macros yourself below.
+              </p>
+            )}
           </div>
           <Textarea
             aria-label="Meal description"

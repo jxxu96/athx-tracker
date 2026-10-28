@@ -30,7 +30,10 @@ test("a control inside a box does its job without folding it", async ({ page }) 
   await signIn(page);
   const fuel = page.locator("section").filter({ has: page.getByRole("heading", { name: "Fuel" }) });
   await fuel.getByRole("button", { name: "Fuel for yesterday" }).click();
-  await expect(page.getByText("Yesterday, against the daily target.")).toBeVisible();
+  await expect(fuel.getByRole("button", { name: "Fuel for yesterday" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   await expect(fuel.getByRole("button", { name: "Collapse Fuel" })).toBeVisible();
 
   await page.getByText("How these are worked out").click();
