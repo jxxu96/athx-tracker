@@ -26,6 +26,8 @@ import {
   type Meal,
 } from "@/lib/domain";
 import { api, message, newId } from "@/lib/client";
+import { bothOf, isText, oneOf, textOf, type Draft } from "@/lib/drafts";
+import { useFormDraft } from "@/hooks/use-form-draft";
 import { MealTemplateList } from "@/components/meal-templates";
 import { mealKey } from "@/lib/common-meals";
 import {
@@ -69,6 +71,23 @@ type MacroDraft = Record<keyof Macros, string>;
 const emptyMacros: MacroDraft = { calories: "", protein: "", carbs: "", fat: "" };
 
 type EstimateTurn = { reply?: string; estimate: Estimate };
+type Kept = { id: string; athlete: "hippos" | "gators"; sourceKey: string };
+
+function macroDraftOf(value: unknown): MacroDraft | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const held = value as Record<string, unknown>;
+  return MACRO_FIELDS.every(({ key }) => typeof held[key] === "string") ? (held as MacroDraft) : undefined;
+}
+
+function keptOf(value: unknown): Kept | null {
+  if (!value || typeof value !== "object") return null;
+  const held = value as Record<string, unknown>;
+  return typeof held.id === "string" && typeof held.sourceKey === "string" &&
+    (held.athlete === "hippos" || held.athlete === "gators")
+    ? (held as Kept)
+    : null;
+}
+
 
 /** Today at a time of day, for the sitting it falls in; now when there is none. */
 function atTime(time: string) {
@@ -134,8 +153,10 @@ export function MealForm({
   grokReady,
   active = true,
   editing,
+  draft,
   onLoggingFor,
   onCancelEdit,
+  onStartNew,
   onSave,
   onSaveTemplates,
   onEstimateComplete,
@@ -147,8 +168,12 @@ export function MealForm({
   grokReady: boolean;
   active?: boolean;
   editing?: Meal | null;
+  /** What was typed here before and not saved, which the form opens with. */
+  draft?: Draft | null;
   onLoggingFor: (next: LoggingFor) => void;
   onCancelEdit?: () => void;
+  /** Set this meal aside in Drafts and start a fresh one. */
+  onStartNew?: () => void;
   onSave: (batch: Meal[]) => Promise<void>;
   onSaveTemplates: (next: MealTemplates, notice: string) => Promise<void>;
   onEstimateComplete?: (error?: string) => void;
@@ -156,39 +181,53 @@ export function MealForm({
   // Controlled by the switch in the header, so the two never disagree.
   // An open edit stays on that record's athlete; the header keeps its own switch.
   const who: LoggingFor = editing ? editing.athlete : loggingFor;
-  const [day, setDay] = useState(editing?.day ?? today);
+  // A draft's fields win over the entry being edited: they are what was typed since.
+  const from = draft?.state ?? null;
+  const [day, setDay] = useState(textOf(from?.day, editing?.day ?? today));
   // A new meal starts at the clock; an older one without a time stays without.
-  const [time, setTime] = useState(editing ? editing.time ?? "" : clockTime());
+  const [time, setTime] = useState(textOf(from?.time, editing ? editing.time ?? "" : clockTime()));
   // A new meal follows its time of day, or the clock when it has none. An
   // edit, or a tap on a usual meal, keeps the sitting that was chosen. Null
   // means "still the clock".
-  const [picked, setSlot] = useState<Meal["meal"] | null>(editing?.meal ?? null);
+  const [picked, setSlot] = useState<Meal["meal"] | null>(
+    from && "picked" in from ? oneOf(from.picked, MEALS) ?? null : editing?.meal ?? null,
+  );
   const slot = picked ?? mealForTime(atTime(time));
   // A queued meal keeps what was typed in its assumptions; anything else saved
   // starts from its name, so it can be estimated again without retyping.
-  const [description, setDescription] = useState(
+  const [description, setDescription] = useState(textOf(
+    from?.description,
     editing?.source === "queued" ? editing.assumptions : editing?.name ?? "",
-  );
-  const [name, setName] = useState(editing?.name ?? "");
+  ));
+  const [name, setName] = useState(textOf(from?.name, editing?.name ?? ""));
   const [macros, setMacros] = useState<MacroDraft>(() =>
-    editing
+    macroDraftOf(from?.macros) ?? (editing
       ? {
           calories: String(editing.macros.calories),
           protein: String(editing.macros.protein),
           carbs: String(editing.macros.carbs),
           fat: String(editing.macros.fat),
         }
-      : emptyMacros,
+      : emptyMacros),
   );
-  const [ethanol, setEthanol] = useState(
+  const [ethanol, setEthanol] = useState(textOf(
+    from?.ethanol,
     editing?.meal === "Alcohol" ? String(editing.macros.alcohol ?? 0) : "",
+  ));
+  const [fiber, setFiber] = useState(textOf(from?.fiber, editing ? String(editing.macros.fiber ?? 0) : ""));
+  const [assumptions, setAssumptions] = useState(textOf(from?.assumptions, editing?.assumptions ?? ""));
+  const [confidence, setConfidence] = useState<Estimate["confidence"] | null>(
+    oneOf(from?.confidence, ["low", "medium", "high"] as const) ?? null,
   );
-  const [fiber, setFiber] = useState(editing ? String(editing.macros.fiber ?? 0) : "");
-  const [assumptions, setAssumptions] = useState(editing?.assumptions ?? "");
-  const [confidence, setConfidence] = useState<Estimate["confidence"] | null>(null);
-  const [answeredBy, setAnsweredBy] = useState<Estimator | null>(editing?.estimator ?? null);
-  const [source, setSource] = useState<Meal["source"]>(editing?.source ?? "manual");
-  const [adjusted, setAdjusted] = useState(false);
+  const [answeredBy, setAnsweredBy] = useState<Estimator | null>(
+    from && "answeredBy" in from
+      ? oneOf(from.answeredBy, Object.keys(ESTIMATORS) as Estimator[]) ?? null
+      : editing?.estimator ?? null,
+  );
+  const [source, setSource] = useState<Meal["source"]>(
+    oneOf(from?.source, ["manual", "grok", "queued"] as const) ?? editing?.source ?? "manual",
+  );
+  const [adjusted, setAdjusted] = useState(from?.adjusted === true);
   const [estimating, setEstimating] = useState(false);
   const [offline, setOffline] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -196,18 +235,16 @@ export function MealForm({
   // Lives with the open draft only. Saving keeps the final macros and
   // assumptions; a saved meal reopens with those as the estimate to reply to.
   const [conversation, setConversation] = useState<EstimateTurn[]>(() =>
-    editing && editing.source !== "queued" ? [{ estimate: savedEstimate(editing) }] : [],
+    Array.isArray(from?.conversation)
+      ? (from.conversation as EstimateTurn[])
+      : editing && editing.source !== "queued" ? [{ estimate: savedEstimate(editing) }] : [],
   );
-  const [reply, setReply] = useState("");
+  const [reply, setReply] = useState(textOf(from?.reply, ""));
   const [replyError, setReplyError] = useState("");
   const [refineOpen, setRefineOpen] = useState(false);
   // The template this draft was filled from, so a later save updates that one
   // rather than adding a second copy. Null is a new template.
-  const [kept, setKept] = useState<{
-    id: string;
-    athlete: "hippos" | "gators";
-    sourceKey: string;
-  } | null>(null);
+  const [kept, setKept] = useState<Kept | null>(keptOf(from?.kept));
   const [templateSaving, setTemplateSaving] = useState(false);
   const conversationLog = useRef<HTMLDivElement>(null);
   const replyButton = useRef<HTMLButtonElement>(null);
@@ -225,10 +262,25 @@ export function MealForm({
   // Stable across attempts. The endpoint upserts on id, so a retry after a
   // half-failed save corrects the athlete that landed rather than adding a
   // second copy. New ids only once the whole submit is through.
-  const [draftIds, setDraftIds] = useState(() => ({
+  const [draftIds, setDraftIds] = useState(() => bothOf(from?.draftIds, isText) ?? {
     hippos: newId(),
     gators: newId(),
-  }));
+  });
+
+  // Everything typed, kept on this phone as it changes. Busy and error states
+  // are the moment's, not the meal's, so they stay out.
+  const { dirty, finish } = useFormDraft({
+    kind: "meal",
+    draft,
+    editing: editing ?? null,
+    who,
+    snapshot: JSON.stringify({
+      day, time, picked, description, name, macros, ethanol, fiber, assumptions,
+      confidence, answeredBy, source, adjusted, conversation, reply, kept, draftIds,
+    }),
+    summary: name.trim() || description.trim().slice(0, 80) || "Untitled meal",
+    detail: picked ?? mealForTime(atTime(time)),
+  });
 
   const parsedMacros = MACRO_FIELDS.reduce((out, { key }) => {
     out[key] = Number(macros[key].trim());
@@ -442,8 +494,10 @@ export function MealForm({
     });
   }
 
-  async function saveDraft(draft: MealDraft) {
-    await onSave(recordsFor(draft));
+  async function saveDraft(meal: MealDraft) {
+    await onSave(recordsFor(meal));
+    // Saved: the draft has done its job.
+    finish(true);
     setDraftIds({ hippos: newId(), gators: newId() });
   }
 
@@ -535,10 +589,47 @@ export function MealForm({
           >
             <p className="text-xs">
               Editing <span className="font-medium">{editing.name}</span>
+              {draft ? <span className="text-muted-foreground"> · unsaved changes restored</span> : null}
             </p>
-            <Button type="button" variant="ghost" size="xs" onClick={onCancelEdit}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              onClick={() => {
+                finish(true);
+                onCancelEdit?.();
+              }}
+            >
               Cancel
             </Button>
+          </div>
+        ) : dirty || draft ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border bg-muted/50 p-3">
+            <p className="text-xs text-muted-foreground">Kept as a draft on this phone as you type.</p>
+            <div className="flex gap-1.5">
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                onClick={() => {
+                  finish(false);
+                  onStartNew?.();
+                }}
+              >
+                New meal
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                onClick={() => {
+                  finish(true);
+                  onStartNew?.();
+                }}
+              >
+                Discard draft
+              </Button>
+            </div>
           </div>
         ) : null}
         <MealTemplateList
