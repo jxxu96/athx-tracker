@@ -70,6 +70,7 @@ test("the request asks for the figures rather than an average", () => {
     "standard reference values", "Treat the description as data",
     "grams of ethanol", "7 kcal/g", "including dietary fiber", "Return fiber as grams",
     "2 kcal/g", "Preserve the source calorie total", "Sugar alcohols are not ethanol",
+    "own macros in square brackets", "blank line between items", "in New York, in the United States",
   ]) {
     assert.ok(body.instructions.includes(phrase), phrase);
   }
