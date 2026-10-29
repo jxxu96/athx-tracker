@@ -34,6 +34,8 @@ single SQLite file on a volume.
   nothing timed is still a session, and reads as a dash rather than as a time of
   zero. Pairs or solo follows the switch at the top unless you set it yourself,
   and Other takes a name of its own, which is what the log then calls it.
+  Other also takes the calories each athlete burned, from a watch or a machine;
+  typed, that figure is the session's burn, and left empty it is estimated.
   A lift is one weight for every set, or, under **Advanced**, a row for each set
   with its own weight and reps. Sets that differ are listed one by one in the
   log, every rep counts towards the burn, and Progress takes the heaviest.
@@ -168,6 +170,10 @@ weigh-in takes the weight Setup held before weigh-ins were dated, which is what 
 burn used until then, so none of those burns moves; with no such weight, the first
 weigh-in, the nearest one known. Weigh-ins are journal entries, so the phone always
 holds all of them, however small the slice of everything else.
+
+An Other session can be anything, so its one MET is a guess, and calories typed on it
+are its burn instead: as typed, not rounded, and without needing a bodyweight. Fuel
+still counts no training burn, typed or estimated, until a bodyweight is known.
 
 A Mixed session has no single MET, so `sessionMet` weights it by where the time
 went: timed MetCon stations at 8, timed endurance at 9, and the untimed rest at

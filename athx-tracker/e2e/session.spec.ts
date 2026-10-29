@@ -400,6 +400,63 @@ test("the name field belongs to Other alone", async ({ page }) => {
     .toContain("Tennis:");
 });
 
+test("an Other session's burn is the one typed, with or without a bodyweight", async ({ page }) => {
+  await athlete(page, "Gators").click();
+  await openSession(page);
+  await typeSelect(page).selectOption("Other");
+  await page.getByLabel("What was it?").fill("Hiking");
+  await elapsed(page).first().fill("90:00");
+  await page.getByLabel("Gators calories burned").fill("412");
+  await page.getByRole("button", { name: "Save session" }).click();
+
+  // No bodyweight is set, so this is the typed figure and not an estimate.
+  await openLog(page);
+  await expect(page.getByText(/· Hiking · 90:00 · ~412 kcal/)).toBeVisible();
+
+  await page.getByLabel("Edit entry").click();
+  await expect(page.getByLabel("Gators calories burned")).toHaveValue("412");
+
+  // Another category estimates its own burn, so the typed one does not ride along.
+  await typeSelect(page).selectOption("Tennis");
+  await expect(page.getByLabel("Gators calories burned")).toHaveCount(0);
+  await page.getByRole("button", { name: "Update session" }).click();
+  await expect
+    .poll(async () =>
+      page.evaluate(async () => {
+        const data = await fetch("/api/records").then((r) => r.json());
+        return data.records.map((r: { category: string; kcal?: number }) => `${r.category}:${r.kcal ?? ""}`);
+      }),
+    )
+    .toEqual(["Tennis:"]);
+});
+
+test("a time box opens a keyboard that has a colon", async ({ page }) => {
+  await openSession(page);
+  await typeSelect(page).selectOption("Other");
+  await page.getByRole("button", { name: "Station", exact: true }).click();
+  // A number pad has no colon, and every one of these is written mm:ss.
+  for (const box of [
+    page.getByLabel("Goal time"),
+    elapsed(page).first(),
+    page.getByLabel("Time", { exact: true }).first(),
+  ])
+    await expect(box).not.toHaveAttribute("inputmode", /.*/);
+});
+
+test("a lift can be added from the bottom of the list", async ({ page }) => {
+  await openSession(page);
+  await typeSelect(page).selectOption("Strength");
+  const lifts = page.getByLabel("Lift", { exact: true });
+  await expect(lifts).toHaveCount(1);
+  const add = page.getByRole("button", { name: "Lift", exact: true });
+  await expect(add).toHaveCount(2);
+  await add.last().click();
+  await expect(lifts).toHaveCount(2);
+  // The new lift lands just above the button that added it.
+  const [lift, button] = await Promise.all([lifts.last().boundingBox(), add.last().boundingBox()]);
+  expect(lift!.y).toBeLessThan(button!.y);
+});
+
 test("a partial session shows its finish on the log, and an untimed one does not", async ({ page }) => {
   await athlete(page, "Gators").click();
   await openSession(page);
