@@ -390,6 +390,8 @@ function Lift({
           </p>
         </div>
         {marks ? <Bar bar={marks} color={color} unit={unit} runner={athlete} bagel={bagel} /> : null}
+        {/* Sets past ten reps make no figure, but they were still lifted. */}
+        <Volume weeks={lift.weeks} unit={unit} color={color} name={label} />
       </div>
     );
 

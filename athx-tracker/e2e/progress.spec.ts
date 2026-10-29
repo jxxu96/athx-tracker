@@ -254,6 +254,16 @@ test("a lift's figure is the rep max its sets predict, beside the volume of each
   // Three sets of five at 225 lb.
   await expect(deadlift).toContainText("this week 3,375");
   await expect(deadlift.getByRole("img", { name: /^Gators deadlift weekly volume/ })).toBeVisible();
+
+  // Twelves predict no squat figure, but their volume still counts.
+  await logLifts(page, [
+    { athlete: "gators", day: today, lifts: [{ name: "Back squat", kg: kg(135), sets: 3, reps: 12 }] },
+  ]);
+  await page.reload();
+  await openProgress(page);
+  const squat = page.getByRole("group", { name: "Gators back squat" });
+  await expect(squat).toContainText("No set of 10 reps or fewer yet");
+  await expect(squat).toContainText("this week 4,860");
 });
 
 test("the hippo and the gator run their bars, with a bagel only through Wednesday", async ({ page }) => {
