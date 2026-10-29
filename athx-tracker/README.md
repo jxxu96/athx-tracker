@@ -59,9 +59,10 @@ single SQLite file on a volume.
   out in the notes. AI replaces the workout fields but saves only when you
   choose Save session. Unsupported browsers can use keyboard dictation.
   A session takes a time of day, which starts at the clock and can be cleared.
-  Saving a lift heavier than any of that athlete's earlier sessions, or a set
-  whose estimated max is, says so: "New best: Back squat 195 lb × 5, up from
-  185 lb × 5". The server checks every earlier session, the session's own
+  Saving a lift heavier than any of that athlete's earlier sessions, or the
+  same weight for more reps, says so: "New best: Back squat 195 lb × 5, up from
+  185 lb × 5". Less weight for more reps is not a best, since nothing is
+  carried up to a max. The server checks every earlier session, the session's own
   earlier version included, so saving an edit announces nothing it already held.
   What is typed and not saved yet is kept as a draft; see *Drafts*.
 - **Meal** — describe a meal and let Grok estimate the macros, or type them in
@@ -82,11 +83,12 @@ single SQLite file on a volume.
   shoulder to overhead, a 2RM back squat and a 3RM deadlift. Each shows its
   start, latest, best and target, how far is left, and a bar towards the
   target: grey up to the start, the athlete's colour for what has been gained
-  since. A day's figure is the most any of its sets of ten reps or fewer
-  predicts for that rep max, on the race estimate's line (see *The race-day
-  estimate*), so a warm-up is never the figure and 100 kg for five reads as a
-  3RM deadlift of 106 kg. Under each figure is the set it comes from. A day
-  with only longer sets has no figure. Start is the first day with one, and a
+  since. A day's figure is the most any of its sets shows for that rep max,
+  read the way the race estimate reads it (see *The race-day estimate*):
+  never carried up, so five at 155 lb is a 155 lb 2RM squat, and carried down
+  from fewer reps, so a 100 kg single is a 97.2 kg 2RM. A warm-up is never the
+  figure, and at the same figure the set of more reps stands. Under each figure
+  is the set it comes from. Start is the first day the lift was logged, and a
   best belongs to the first day it was reached. Names are
   matched the way a described workout's are, so "OHP" typed under Other counts,
   while push press, front squat and Romanian deadlift stay lifts of their own.
@@ -199,10 +201,13 @@ the best the log has shown, carried to the race's reps, distance or time. Whatev
 the log cannot support shows a dash and says what to log, rather than a guess.
 
 - **Strength** is a 1RM shoulder to overhead, a 2RM back squat and a 3RM deadlift
-  for each of you, all six added. Each is the most any logged set of ten reps or
-  fewer predicts on Brzycki's line, where the most you can lift *r* times is
-  (37 − *r*)/36 of a 1RM. Past ten reps a set says little about a max, so it is not
-  used, and a working set that stopped short of failure makes the figure err low.
+  for each of you, all six added. Each is the most any logged set shows, and a
+  set is never carried up: one of at least the reps asked for shows only that
+  its load goes up that many times, so five at 155 lb is a 155 lb 2RM squat,
+  not the 170 lb a formula would make of it. A set of fewer reps is carried
+  down on Brzycki's line, where the most you can lift *r* times is
+  (37 − *r*)/36 of a 1RM, so a 100 kg single is a 97.2 kg 2RM. Either way the
+  figure can only err low.
   Shoulder to overhead counts the overhead press, push press, split jerk, a typed
   push jerk, and the clean and jerk. Figures are whole kilograms and the totals add
   what is shown; nothing is combined until all six lifts have one. The race averages

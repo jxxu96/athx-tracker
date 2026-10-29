@@ -134,12 +134,12 @@ test("the race-day estimate covers all three zones from what is logged", async (
   ]);
   await page.reload();
 
-  // Hippos 45 + 70 + 90, Gators 80 + 109 + 149.
+  // Hippos 40 + 70 + 90, Gators 80 + 100 + 140: fives count at their load, never carried up.
   const strength = page.getByRole("group", { name: "Strength estimate" });
-  await expect(strength).toContainText("543 kg");
-  await expect(strength.getByRole("row", { name: /^Hippos/ })).toHaveText(/Hippos\s*45\s*70\s*90\s*205/);
-  await expect(strength.getByRole("row", { name: /^Gators/ })).toHaveText(/Gators\s*80\s*109\s*149\s*338/);
-  await expect(strength.getByRole("row", { name: /^Combined/ })).toHaveText(/Combined\s*125\s*179\s*239\s*543/);
+  await expect(strength).toContainText("520 kg");
+  await expect(strength.getByRole("row", { name: /^Hippos/ })).toHaveText(/Hippos\s*40\s*70\s*90\s*200/);
+  await expect(strength.getByRole("row", { name: /^Gators/ })).toHaveText(/Gators\s*80\s*100\s*140\s*320/);
+  await expect(strength.getByRole("row", { name: /^Combined/ })).toHaveText(/Combined\s*120\s*170\s*230\s*520/);
   await expect(strength).toContainText("Hippos 38%");
   await expect(strength).toContainText("Gators 62%");
   await expect(strength).toContainText("S2OH counts Hippos' overhead press and Gators' split jerk.");

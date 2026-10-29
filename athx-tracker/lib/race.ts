@@ -136,17 +136,16 @@ export function strengthLift(name: string, strict = false): StrengthLift | null 
   return lift === "overhead" && strict && listed !== "Overhead press" ? null : lift;
 }
 
-/** Past ten reps a set is endurance as much as strength, and says little about a max. */
-export const MAX_REPS = 10;
-
 /**
- * A set's load carried to another rep count, on Brzycki's line: the most you
- * can lift r times is (37 - r) / 36 of a 1RM. Exact at the reps done, so a
- * single is its own 1RM. A working set is rarely to failure, which makes this
- * an estimate that errs low.
+ * What a set says about a rep max. It is never carried up: a set of at least
+ * the reps asked for shows only that its load goes up that many times, so the
+ * figure is the load itself. Five at 155 lb is a 155 lb 2RM, not the 170 lb a
+ * formula would put on it. A set of fewer reps is carried down on Brzycki's
+ * line, where the most you can lift r times is (37 - r) / 36 of a 1RM, so a
+ * single at 100 kg is a 2RM of 97.2 kg.
  */
 export function repMax(kg: number, reps: number, target: number) {
-  return (kg * (37 - target)) / (37 - reps);
+  return reps >= target ? kg : (kg * (37 - target)) / (37 - reps);
 }
 
 export type LiftEstimate = {
@@ -167,7 +166,7 @@ export type AthleteStrength = {
   total: number | null;
 };
 
-/** Each lift at the most any logged set predicts for the window's reps. */
+/** Each lift at the most any logged set shows for the window's reps. */
 export function athleteStrength(
   records: RecordItem[],
   athlete: RaceAthlete,
@@ -183,7 +182,7 @@ export function athleteStrength(
       const sets = lift.detail?.length ? lift.detail : [{ kg: lift.kg, reps: lift.reps }];
       for (const set of sets) {
         const reps = Math.floor(set.reps);
-        if (!(set.kg > 0) || !(reps >= 1 && reps <= MAX_REPS)) continue;
+        if (!(set.kg > 0) || !(reps >= 1)) continue;
         const kg = repMax(set.kg, reps, target);
         const held = lifts[key];
         if (held && held.kg >= kg) continue;
