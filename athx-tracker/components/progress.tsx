@@ -8,9 +8,9 @@ import { Button } from "@/components/ui/button";
 import {
   ATHLETES,
   DEFAULT_SETTINGS,
-  PROGRESS_LIFTS,
   formatWeight,
   fromKilograms,
+  type LiftTargets,
   type RecordItem,
   type Settings,
   type WeightUnit,
@@ -19,21 +19,22 @@ import type { BodyweightHistory } from "@/lib/bodyweight";
 import { formatDay } from "@/lib/client";
 import { formatAmount, targetPercent } from "@/lib/fuel";
 import { wearsProteinBagel } from "@/lib/protein-week";
+import { STRENGTH_2027, STRENGTH_LIFTS } from "@/lib/race";
 import type { JournalSummary } from "@/lib/summary";
 import {
   liftTotal,
   progressMarks,
-  TOTAL_LIFTS,
   shownGap,
   toGo,
   VOLUME_WEEKS,
+  type EstimatedMax,
   type LiftProgress,
   type LiftTotal,
   leaderLanes,
   type ProgressAthlete,
   type ProgressBar,
   type ProgressMark,
-  type TopSet,
+  type StrengthProgress,
 } from "@/lib/progress";
 
 const PEOPLE = ["hippos", "gators"] as const;
@@ -266,10 +267,7 @@ function targetNotes(targetKg: number, bestKg: number | null, unit: WeightUnit) 
     return notes;
   }
   if (bestKg === null) return notes;
-  const gap = toGo(
-    { best: { day: "", kg: bestKg, sets: 1, reps: 1 }, target: targetKg },
-    unit,
-  );
+  const gap = toGo({ best: { kg: bestKg }, target: targetKg }, unit);
   if (gap === null) return notes;
   if (gap <= 0) {
     notes.push("Reached");
@@ -280,26 +278,31 @@ function targetNotes(targetKg: number, bestKg: number | null, unit: WeightUnit) 
   return notes;
 }
 
-function asSet(kg: number | null): TopSet | null {
-  return kg !== null && kg > 0 ? { day: "", kg, sets: 1, reps: 1 } : null;
+function asSet(kg: number | null) {
+  return kg !== null && kg > 0 ? { kg } : null;
 }
+
+/** "Shoulder to overhead 1RM, back squat 2RM and deadlift 3RM". */
+const [OVERHEAD, ...BELOW] = STRENGTH_LIFTS.map(
+  ({ key, name }, index) => `${index ? name.toLowerCase() : name} ${STRENGTH_2027.reps[key]}RM`,
+);
+const TOTAL_OF = `${OVERHEAD}, ${BELOW.join(" and ")}`;
 
 function Total({
   athlete,
-  rows,
+  windows,
+  targets,
   unit,
   bagel,
 }: {
   athlete: ProgressAthlete;
-  rows: LiftProgress[];
+  windows: StrengthProgress;
+  targets: LiftTargets;
   unit: WeightUnit;
   bagel: boolean;
 }) {
   const color = ATHLETES[athlete].color;
-  const total: LiftTotal = liftTotal(rows, athlete);
-  const [press, ...rest] = TOTAL_LIFTS[athlete].map(
-    (key) => PROGRESS_LIFTS.find((lift) => lift.key === key)!.name,
-  );
+  const total: LiftTotal = liftTotal(windows, targets, athlete);
   const marks = progressMarks(
     {
       start: asSet(total.start),
@@ -315,7 +318,7 @@ function Total({
       <div>
         <h3 className="text-sm font-medium">Total</h3>
         <p className="text-[11px] text-muted-foreground">
-          {press}, {rest.map((name) => name.toLowerCase()).join(" and ")}
+          {TOTAL_OF} · any press or jerk counts overhead
         </p>
       </div>
       <div>
@@ -363,6 +366,11 @@ function Lift({
   const label = `${ATHLETES[athlete].name} ${lift.name.toLowerCase()}`;
   const { start, latest, best } = lift;
   const marks = progressMarks(lift, unit);
+  const heading = (
+    <h3 className="text-sm font-medium">
+      {lift.name} <span className="font-normal text-muted-foreground">· {lift.reps}RM</span>
+    </h3>
+  );
 
   // Four dashes say less than one line does.
   if (!start || !latest || !best)
@@ -373,21 +381,24 @@ function Lift({
         className="space-y-2 py-4 first:pt-0 last:pb-0"
       >
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-          <h3 className="text-sm font-medium">{lift.name}</h3>
+          {heading}
           <p className="text-xs text-muted-foreground">
-            Not logged yet ·{" "}
+            {lift.sessions > 0 ? "No set of 10 reps or fewer yet" : "Not logged yet"} ·{" "}
             {lift.target > 0
               ? `target ${formatWeight(lift.target, unit)}${unit === "kg" ? "" : ` · ${formatWeight(lift.target, "kg")}`}`
               : "no target"}
           </p>
         </div>
         {marks ? <Bar bar={marks} color={color} unit={unit} runner={athlete} bagel={bagel} /> : null}
+        {/* Sets past ten reps make no figure, but they were still lifted. */}
+        <Volume weeks={lift.weeks} unit={unit} color={color} name={label} />
       </div>
     );
 
   const share = targetPercent(best.kg, lift.target);
   const gained = shownGap(start.kg, best.kg, unit);
-  const notes = (set: TopSet) => [formatDay(set.day, today), `${set.sets}×${set.reps}`];
+  // The set each figure is carried from, so an estimate shows what it rests on.
+  const notes = (set: EstimatedMax) => [formatDay(set.day, today), `${formatWeight(set.setKg, unit)} × ${set.reps}`];
   const summary = [
     gained > 0 ? `+${gained} ${unit} since start` : "",
     share !== null ? `${share}% of target` : "",
@@ -398,7 +409,7 @@ function Lift({
 
   return (
     <div role="group" aria-label={label} className="space-y-2.5 py-4 first:pt-0 last:pb-0">
-      <h3 className="text-sm font-medium">{lift.name}</h3>
+      {heading}
       <div>
         {marks ? <Bar bar={marks} color={color} unit={unit} leaders runner={athlete} bagel={bagel} /> : null}
         <dl className="grid grid-cols-4">
@@ -429,17 +440,6 @@ function Lift({
         </dl>
       </div>
       <p className="text-xs text-muted-foreground">{summary}</p>
-      {lift.estimated ? (
-        <p className="text-xs text-muted-foreground">
-          Estimated max{" "}
-          <span className="font-medium text-foreground tabular-nums">
-            ~{Math.round(fromKilograms(lift.estimated.kg, unit))} {unit}
-          </span>
-          , from {formatWeight(lift.estimated.setKg, unit)} × {lift.estimated.reps} on{" "}
-          {formatDay(lift.estimated.day, today)}
-          {lift.target > 0 ? ` · ${targetPercent(lift.estimated.kg, lift.target)}% of target` : ""}
-        </p>
-      ) : null}
       <Volume weeks={lift.weeks} unit={unit} color={color} name={label} />
     </div>
   );
@@ -593,7 +593,13 @@ export function Progress({
               {rows.map((lift) => (
                 <Lift key={lift.key} athlete={athlete} lift={lift} unit={unit} today={today} bagel={bagel} />
               ))}
-              <Total athlete={athlete} rows={rows} unit={unit} bagel={bagel} />
+              <Total
+                athlete={athlete}
+                windows={figures.strength[athlete]}
+                targets={targets[athlete]}
+                unit={unit}
+                bagel={bagel}
+              />
             </div>
           </section>
         );

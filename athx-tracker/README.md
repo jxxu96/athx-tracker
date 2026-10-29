@@ -77,17 +77,24 @@ single SQLite file on a volume.
   and the saved macros stay until you estimate again. A meal typed and not
   saved yet is kept as a draft; see *Drafts*.
 - **Progress** — the main lifts for each athlete: split jerk, overhead press
-  (push press for Hippos), back squat and deadlift, with a total of the press,
-  squat and deadlift. Each shows its start, latest, best and target, how far
-  is left, and a bar towards the target: grey up to the start, the athlete's
-  colour for what has been gained since. A day counts as its heaviest
-  set of the lift, so a warm-up is never the figure. Start is the first day the
-  lift was logged, and a best belongs to the first day it was reached. Names are
+  (push press for Hippos), back squat and deadlift, each at the rep max the
+  race's Strength asks for: a 1RM for the jerk and the press, which are both
+  shoulder to overhead, a 2RM back squat and a 3RM deadlift. Each shows its
+  start, latest, best and target, how far is left, and a bar towards the
+  target: grey up to the start, the athlete's colour for what has been gained
+  since. A day's figure is the most any of its sets of ten reps or fewer
+  predicts for that rep max, on the race estimate's line (see *The race-day
+  estimate*), so a warm-up is never the figure and 100 kg for five reads as a
+  3RM deadlift of 106 kg. Under each figure is the set it comes from. A day
+  with only longer sets has no figure. Start is the first day with one, and a
+  best belongs to the first day it was reached. Names are
   matched the way a described workout's are, so "OHP" typed under Other counts,
   while push press, front squat and Romanian deadlift stay lifts of their own.
-  Together sessions count for neither athlete. Beside the heaviest set is the
-  estimated max: the most any set of ten reps or fewer predicts for a single, on
-  the race estimate's line, so 100 kg for five reads as more than 101 kg for one.
+  Together sessions count for neither athlete. The total is the athlete's
+  share of the Strength score: shoulder to overhead, back squat and deadlift
+  added, where shoulder to overhead counts any press or jerk the race does,
+  so its best is the race estimate's figure. Its target takes the higher of
+  the press and split jerk targets for shoulder to overhead.
   Under each lift, the volume of the last eight Monday weeks, load times reps
   across every set, this week's growing as it is logged. Each athlete's card opens
   with their bodyweight from the weigh-ins and how far it has moved. All of it is
@@ -125,9 +132,11 @@ single SQLite file on a volume.
   Height is in inches beside pounds and centimetres beside kilograms, and stored
   in centimetres. Changing a daily target keeps the old one as the target for
   every day up to yesterday, so a past day is judged against what it had.
-  Lift targets are stored in kilograms like every other weight. Gators'
-  default to a 175 lb split jerk, 135 lb overhead press, 255 lb back squat and
-  335 lb deadlift; Hippos has none until set, and a blank target is no target.
+  Lift targets are stored in kilograms like every other weight, and each is
+  the rep max Progress measures that lift at, which Setup names beside it.
+  Gators' default to a 175 lb split jerk and 135 lb overhead press for one,
+  a 255 lb back squat for two and a 335 lb deadlift for three; Hippos has none
+  until set, and a blank target is no target.
   Each athlete's targets are for the lifts Progress follows for them, so Hippos
   sets a push press where Gators sets an overhead press.
 
@@ -226,8 +235,8 @@ sends the figures; with the whole journal loaded the phone works them out itself
 **Progress** on Today measures each zone from its start to its goal. The start is
 the zone's estimate as of the first day the log could give one, counting only what
 was logged up to then (`raceStart` in `lib/race.ts`); now is today's estimate; the
-goal for Strength is the lift targets Progress measures against, read as one-rep
-maxes and carried to the race's reps on Brzycki's line (the higher of the athlete's
+goal for Strength is the lift targets Progress measures against, each already the
+race's rep max for its lift, in whole kilograms (the higher of the athlete's
 press and split jerk targets stands for shoulder to overhead; a target for the press
 an athlete does not follow is not counted), so it needs all six; Endurance
 and MetCon X take Setup's race goals (SkiErg metres, and a time that counts down). The bar is the share of start-to-goal covered,
