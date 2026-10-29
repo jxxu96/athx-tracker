@@ -61,7 +61,7 @@ test.beforeEach(async ({ page }) => {
   }, DEFAULT_SETTINGS);
 });
 
-test("each main lift shows its start, latest, best and target", async ({ page }) => {
+test("each main lift shows its start, latest, best and target, at the race's rep max", async ({ page }) => {
   await logLifts(page, [
     { athlete: "gators", day: "2026-03-02", lifts: [{ name: "Split jerk", kg: kg(135), sets: 5, reps: 3 }] },
     {
@@ -81,19 +81,22 @@ test("each main lift shows its start, latest, best and target", async ({ page })
   await openProgress(page);
 
   const jerk = page.getByRole("group", { name: "Gators split jerk" });
+  await expect(jerk.getByRole("heading")).toHaveText("Split jerk · 1RM");
+  // Each day at the single its best set predicts, beside the set it comes from.
   await expect(jerk.getByRole("definition")).toContainText([
-    "135 lb", "5×3", // start
-    "150 lb", "4×2", // latest
-    "160 lb", "1×1", // best
+    "142.9 lb", "135 lb × 3", // start: 135 x 36 / 34
+    "154.3 lb", "150 lb × 2", // latest: 150 x 36 / 35
+    "160 lb", "160 lb × 1", // best
     "175 lb", "15 lb to go", // target
   ]);
-  await expect(jerk.getByText("+25 lb since start · 91% of target · 3 sessions")).toBeVisible();
+  await expect(jerk.getByText("+17.1 lb since start · 91% of target · 3 sessions")).toBeVisible();
   await expect(jerk).toContainText("79.4 kg");
   await expect(jerk).toContainText("6.8 kg");
   const total = page.getByRole("group", { name: "Gators total" });
-  await expect(total).toContainText("725 lb");
-  await expect(total).toContainText("328.9 kg");
-  await expect(total).toContainText("Overhead press, back squat and deadlift");
+  // The 175 lb jerk target is shoulder to overhead's, over the 135 lb press.
+  await expect(total).toContainText("765 lb");
+  await expect(total).toContainText("347 kg");
+  await expect(total).toContainText("Shoulder to overhead 1RM, back squat 2RM and deadlift 3RM");
   const order = await jerk.locator("[data-progress-mark]").evaluateAll((nodes) =>
     nodes
       .map((node) => ({
@@ -111,8 +114,12 @@ test("each main lift shows its start, latest, best and target", async ({ page })
   await expect(
     page.getByRole("group", { name: "Gators overhead press" }).locator("[data-progress-mark]"),
   ).toHaveAttribute("data-progress-mark", "target");
+  await expect(page.getByRole("group", { name: "Gators back squat" }).getByRole("heading"))
+    .toHaveText("Back squat · 2RM");
   await expect(page.getByRole("group", { name: "Gators back squat" }))
     .toContainText("Not logged yet · target 255 lb");
+  await expect(page.getByRole("group", { name: "Gators deadlift" }).getByRole("heading"))
+    .toHaveText("Deadlift · 3RM");
   await expect(page.getByRole("group", { name: "Gators deadlift" }))
     .toContainText("Not logged yet · target 335 lb");
   await expect(page.getByRole("group", { name: "Hippos split jerk" }))
@@ -123,7 +130,7 @@ test("each main lift shows its start, latest, best and target", async ({ page })
   await expect(page.getByRole("group", { name: "Hippos overhead press" })).toHaveCount(0);
   await expect(page.getByRole("group", { name: "Gators push press" })).toHaveCount(0);
   await expect(page.getByRole("group", { name: "Hippos total" }))
-    .toContainText("Push press, back squat and deadlift");
+    .toContainText("Shoulder to overhead 1RM, back squat 2RM and deadlift 3RM");
 });
 
 test("a filled-in Progress tab is usable without sight, in both themes", async ({ page }) => {
@@ -153,18 +160,20 @@ test("a filled-in Progress tab is usable without sight, in both themes", async (
 
 test("a target set in Setup is what Progress measures against", async ({ page }) => {
   await logLifts(page, [
-    { athlete: "hippos", day: "2026-03-02", lifts: [{ name: "Deadlift", kg: kg(135), sets: 3, reps: 5 }] },
+    { athlete: "hippos", day: "2026-03-02", lifts: [{ name: "Deadlift", kg: kg(135), sets: 3, reps: 3 }] },
   ]);
   await page.reload();
   await page.getByRole("button", { name: "Setup", exact: true }).click();
 
   const hippos = page.getByRole("group", { name: "Hippos", exact: true });
-  await hippos.getByLabel("Deadlift (lb)").fill("185");
+  // A target is the rep max the race asks for, and Setup says which.
+  await hippos.getByLabel("Deadlift 3RM (lb)").fill("185");
+  await expect(hippos.getByLabel("Back squat 2RM (lb)")).toBeVisible();
   // Hippos' press target is the push press; Gators' stays the overhead press.
-  await expect(hippos.getByLabel("Overhead press (lb)")).toHaveCount(0);
-  await expect(page.getByRole("group", { name: "Gators", exact: true }).getByLabel("Push press (lb)"))
+  await expect(hippos.getByLabel("Overhead press 1RM (lb)")).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Gators", exact: true }).getByLabel("Push press 1RM (lb)"))
     .toHaveCount(0);
-  await hippos.getByLabel("Push press (lb)").fill("95");
+  await hippos.getByLabel("Push press 1RM (lb)").fill("95");
   await page.getByRole("button", { name: "Save settings" }).click();
   await expect(page.getByText("Settings saved", { exact: true })).toBeVisible();
 
@@ -188,7 +197,7 @@ test("a target set in Setup is what Progress measures against", async ({ page })
   // The unit switch carries the targets across with it.
   await page.getByRole("button", { name: "Setup", exact: true }).click();
   await page.getByRole("button", { name: "kg", exact: true }).click();
-  await expect(page.getByRole("group", { name: "Gators", exact: true }).getByLabel("Split jerk (kg)"))
+  await expect(page.getByRole("group", { name: "Gators", exact: true }).getByLabel("Split jerk 1RM (kg)"))
     .toHaveValue("79.4");
 });
 
@@ -196,7 +205,7 @@ test("a start older than the loaded slice is in the figures without loading it",
   // The app opens with the latest 400 entries. The first split jerk sits
   // behind them, and the server works Progress out over the whole journal.
   await logLifts(page, [
-    { athlete: "gators", day: "2025-01-06", lifts: [{ name: "Split jerk", kg: kg(115), sets: 3, reps: 3 }] },
+    { athlete: "gators", day: "2025-01-06", lifts: [{ name: "Split jerk", kg: kg(115), sets: 3, reps: 1 }] },
   ]);
   await page.evaluate(async () => {
     const meals = Array.from({ length: 400 }, () => ({
@@ -231,7 +240,7 @@ test("a start older than the loaded slice is in the figures without loading it",
   await expect(page.getByRole("button", { name: "Include the full journal" })).toHaveCount(0);
 });
 
-test("each lift shows the max its sets predict and the volume of each week", async ({ page }) => {
+test("a lift's figure is the rep max its sets predict, beside the volume of each week", async ({ page }) => {
   const today = await page.evaluate(() =>
     new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()));
   await logLifts(page, [
@@ -240,8 +249,8 @@ test("each lift shows the max its sets predict and the volume of each week", asy
   await page.reload();
   await openProgress(page);
   const deadlift = page.getByRole("group", { name: "Gators deadlift" });
-  // Five at 225 predicts 225 x 36 / 32 for one, the race estimate's line.
-  await expect(deadlift).toContainText("Estimated max ~253 lb, from 225 lb × 5");
+  // Five at 225 predicts 225 x 34 / 32 for three, the race estimate's line.
+  await expect(deadlift.getByRole("definition")).toContainText(["239.1 lb", "225 lb × 5"]);
   // Three sets of five at 225 lb.
   await expect(deadlift).toContainText("this week 3,375");
   await expect(deadlift.getByRole("img", { name: /^Gators deadlift weekly volume/ })).toBeVisible();

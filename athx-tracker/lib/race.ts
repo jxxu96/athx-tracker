@@ -105,6 +105,30 @@ export const STRENGTH_2026: StrengthFormat = {
   strict: true,
 };
 
+/** The window each lift Progress follows is lifted in, and so the rep max it is measured at. */
+export const WINDOW_OF: Record<ProgressLift, StrengthLift> = {
+  splitJerk: "overhead",
+  overheadPress: "overhead",
+  pushPress: "overhead",
+  backSquat: "squat",
+  deadlift: "deadlift",
+};
+
+/**
+ * Each window's target for one athlete, in kilograms; zero is none. A lift
+ * target is the rep max its window asks for, so it is the window's figure as
+ * it stands. Shoulder to overhead takes the higher of the athlete's press and
+ * split jerk targets, since either counts. A target for a lift the athlete
+ * does not follow is not in Setup to change, so it counts for nothing.
+ */
+export function strengthTargets(targets: LiftTargets, athlete: RaceAthlete) {
+  const kg: Record<StrengthLift, number> = { overhead: 0, squat: 0, deadlift: 0 };
+  // Settings are stored as saved, so ones from before a lift was followed lack it.
+  for (const { key } of FOLLOWED_LIFTS[athlete])
+    kg[WINDOW_OF[key]] = Math.max(kg[WINDOW_OF[key]], targets[key] ?? 0);
+  return kg;
+}
+
 /** A strict window takes the overhead press alone: no leg drive, so no push press or jerk. */
 export function strengthLift(name: string, strict = false): StrengthLift | null {
   const listed = listedName(name);
@@ -524,28 +548,17 @@ export function raceStart(records: RecordItem[]): Record<RaceZone, ZoneStart | n
 }
 
 /**
- * Strength's goal, from the lift targets Progress measures against. A target
- * is a one-rep max, as Progress reads it against each estimated max, so each
- * is carried to the window's reps on the same line a logged set is. Shoulder
- * to overhead takes the higher of the athlete's press and split jerk targets,
- * since either counts. A target for a lift the athlete does not follow is not
- * in Setup to change, so it counts for nothing. Null until both athletes have
- * all three, as the score is.
+ * Strength's goal, from the lift targets Progress measures against: each
+ * window's target, in whole kilograms as the score adds them. Null until both
+ * athletes have all three, as the score is.
  */
 export function strengthGoal(targets: Record<RaceAthlete, LiftTargets>) {
   let total = 0;
   for (const athlete of RACE_ATHLETES) {
-    // Settings are stored as saved, so ones from before a lift was followed lack it.
-    const own = (key: ProgressLift) =>
-      FOLLOWED_LIFTS[athlete].some((lift) => lift.key === key) ? targets[athlete][key] ?? 0 : 0;
-    const kg: Record<StrengthLift, number> = {
-      overhead: Math.max(own("overheadPress"), own("pushPress"), own("splitJerk")),
-      squat: own("backSquat"),
-      deadlift: own("deadlift"),
-    };
+    const kg = strengthTargets(targets[athlete], athlete);
     for (const { key } of STRENGTH_LIFTS) {
       if (!(kg[key] > 0)) return null;
-      total += Math.round(repMax(kg[key], 1, STRENGTH_2027.reps[key]));
+      total += Math.round(kg[key]);
     }
   }
   return total;

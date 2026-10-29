@@ -2,7 +2,13 @@ import { bodyweightHistory } from "./bodyweight.ts";
 import { DEFAULT_SETTINGS, type RecordItem, type Settings } from "./domain.ts";
 import { strengthPlacing, type StrengthPlacing } from "./field.ts";
 import { athleteFuel, teamSessions, type AthleteFuel } from "./fuel.ts";
-import { liftProgress, togetherLiftSessions, type LiftProgress } from "./progress.ts";
+import {
+  liftProgress,
+  strengthProgress,
+  togetherLiftSessions,
+  type LiftProgress,
+  type StrengthProgress,
+} from "./progress.ts";
 import { raceEstimate, raceStart } from "./race.ts";
 
 /**
@@ -21,6 +27,8 @@ export type JournalSummary = {
   raceStart: ReturnType<typeof raceStart>;
   placing: StrengthPlacing;
   lifts: Record<"hippos" | "gators", LiftProgress[]>;
+  /** The race's Strength windows, which Progress totals. */
+  strength: Record<"hippos" | "gators", StrengthProgress>;
   togetherLifts: number;
   overall: Record<"hippos" | "gators", AthleteFuel>;
   togetherOverall: number;
@@ -42,6 +50,10 @@ export function journalSummary(
     lifts: {
       hippos: liftProgress(records, "hippos", targets.hippos, today),
       gators: liftProgress(records, "gators", targets.gators, today),
+    },
+    strength: {
+      hippos: strengthProgress(records, "hippos"),
+      gators: strengthProgress(records, "gators"),
     },
     togetherLifts: togetherLiftSessions(records),
     overall: {

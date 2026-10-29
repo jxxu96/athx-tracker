@@ -13,6 +13,7 @@ import {
   liftProgress,
   liftTotal,
   progressLift,
+  strengthProgress,
   leaderLanes,
   progressMarks,
   progressScale,
@@ -20,6 +21,7 @@ import {
   toGo,
   togetherLiftSessions,
 } from "./progress.ts";
+import { athleteStrength } from "./race.ts";
 import { settingsSchema } from "./validation.ts";
 
 const workout = (over: Partial<Workout> = {}): Workout => ({
@@ -45,6 +47,8 @@ const lift = (name: string, kg: number, sets = 1, reps = 1) => ({ name, kg, sets
 const none: LiftTargets = { splitJerk: 0, overheadPress: 0, pushPress: 0, backSquat: 0, deadlift: 0 };
 const jerkOf = (records: Workout[], targets = none) =>
   liftProgress(records, "gators", targets).find((row) => row.key === "splitJerk")!;
+/** What a set predicts for a single, on Brzycki's line. */
+const single = (kg: number, reps: number) => (kg * 36) / (37 - reps);
 
 test("the four lifts follow in a fixed order, each with its target", () => {
   const rows = liftProgress([], "gators", DEFAULT_SETTINGS.liftTargets.gators);
@@ -52,6 +56,7 @@ test("the four lifts follow in a fixed order, each with its target", () => {
     rows.map((row) => row.name),
     ["Split jerk", "Overhead press", "Back squat", "Deadlift"],
   );
+  assert.deepEqual(rows.map((row) => row.reps), [1, 1, 2, 3], "each at the rep max its race window asks for");
   for (const row of rows) {
     assert.equal(row.start, null);
     assert.equal(row.sessions, 0);
@@ -81,20 +86,36 @@ test("Hippos follows the push press where Gators follows the overhead press", ()
   assert.equal(gators.find((row) => row.key === "overheadPress")!.best!.kg, 60);
 });
 
-test("start is the first day, latest the last, best the heaviest", () => {
+test("start is the first day, latest the last, best the most a day predicts", () => {
   const row = jerkOf([
     // Newest first, as the journal holds them.
     workout({ day: "2026-10-20", lifts: [lift("Split jerk", 70, 1, 3)] }),
     workout({ day: "2026-10-12", lifts: [lift("Split jerk", 72.5, 1, 1)] }),
     workout({ day: "2026-09-02", lifts: [lift("Split jerk", 60, 5, 3)] }),
   ]);
-  assert.deepEqual(row.start, { day: "2026-09-02", kg: 60, sets: 5, reps: 3 });
-  assert.deepEqual(row.latest, { day: "2026-10-20", kg: 70, sets: 1, reps: 3 });
-  assert.deepEqual(row.best, { day: "2026-10-12", kg: 72.5, sets: 1, reps: 1 });
+  assert.deepEqual(row.start, { day: "2026-09-02", kg: single(60, 3), setKg: 60, reps: 3 });
+  assert.deepEqual(row.latest, { day: "2026-10-20", kg: single(70, 3), setKg: 70, reps: 3 });
+  // Three at 70 predicts more than the 72.5 single, so it is the best.
+  assert.deepEqual(row.best, row.latest);
   assert.equal(row.sessions, 3);
 });
 
-test("a day counts as its heaviest set, and a warm-up never stands in for it", () => {
+test("the squat is a 2RM and the deadlift a 3RM, carried from whatever reps were done", () => {
+  const rows = liftProgress(
+    [workout({ lifts: [lift("Back squat", 100, 3, 5), lift("Deadlift", 120, 1, 1), lift("Split jerk", 80, 1, 1)] })],
+    "gators",
+    none,
+  );
+  const of = (key: string) => rows.find((row) => row.key === key)!.best!;
+  // Five at 100 kg predicts 100 x 35 / 32 for two; a single at 120 predicts 120 x 34 / 36 for three.
+  assert.deepEqual(of("backSquat"), { day: "2026-09-01", kg: 109.375, setKg: 100, reps: 5 });
+  assert.equal(of("deadlift").kg, (120 * 34) / 36);
+  assert.equal(of("splitJerk").kg, 80, "a single is its own 1RM");
+  const exact = liftProgress([workout({ lifts: [lift("Back squat", 110, 2, 2)] })], "gators", none);
+  assert.equal(exact.find((row) => row.key === "backSquat")!.best!.kg, 110, "two reps is its own 2RM");
+});
+
+test("a day counts as the set that predicts most, and a warm-up never stands in for it", () => {
   const row = jerkOf([
     workout({
       day: "2026-09-02",
@@ -103,12 +124,12 @@ test("a day counts as its heaviest set, and a warm-up never stands in for it", (
     // Two sessions on one day are one day, at the heavier of the two.
     workout({ id: "pm", day: "2026-09-02", lifts: [lift("Split jerk", 62.5, 1, 1)] }),
   ]);
-  assert.deepEqual(row.start, { day: "2026-09-02", kg: 62.5, sets: 1, reps: 1 });
+  assert.deepEqual(row.start, { day: "2026-09-02", kg: 62.5, setKg: 62.5, reps: 1 });
   assert.deepEqual(row.latest, row.start);
   assert.equal(row.sessions, 2, "both sessions logged it");
 });
 
-test("a varied lift counts as its heaviest sets, warm-ups included", () => {
+test("a varied lift counts as the set that predicts most, warm-ups included", () => {
   const row = jerkOf([
     workout({
       lifts: [{
@@ -126,7 +147,7 @@ test("a varied lift counts as its heaviest sets, warm-ups included", () => {
       }],
     }),
   ]);
-  assert.deepEqual(row.best, { day: "2026-09-01", kg: 70, sets: 2, reps: 2 });
+  assert.deepEqual(row.best, { day: "2026-09-01", kg: single(70, 2), setKg: 70, reps: 2 });
 });
 
 test("equal weight goes to more reps, and a best belongs to the day it was first reached", () => {
@@ -159,7 +180,7 @@ test("names match the way a described workout's do, and variations stay out", ()
 
 test("only that athlete's sessions count, and together sessions count for nobody", () => {
   const records = [
-    workout({ athlete: "hippos", lifts: [lift("Deadlift", 80)] }),
+    workout({ athlete: "hippos", lifts: [lift("Deadlift", 80, 1, 3)] }),
     workout({ athlete: "team", lifts: [lift("Deadlift", 150)] }),
     workout({ athlete: "team", lifts: [lift("Bench press", 60)] }),
   ];
@@ -174,15 +195,15 @@ test("the gaps are the subtraction of the numbers on screen", () => {
   const target = 175 / 2.20462262;
   const best = 72.57; // 160 lb, as the form stores it
   assert.equal(shownGap(best, target, "lb"), 15);
-  assert.equal(toGo({ best: { day: "2026-09-01", kg: best, sets: 1, reps: 1 }, target }, "lb"), 15);
-  assert.equal(toGo({ best: { day: "2026-09-01", kg: 80, sets: 1, reps: 1 }, target }, "lb")! <= 0, true, "past the target is reached");
+  assert.equal(toGo({ best: { kg: best }, target }, "lb"), 15);
+  assert.equal(toGo({ best: { kg: 80 }, target }, "lb")! <= 0, true, "past the target is reached");
   assert.equal(toGo({ best: null, target }, "lb"), null, "nothing logged has no gap yet");
-  assert.equal(toGo({ best: { day: "2026-09-01", kg: best, sets: 1, reps: 1 }, target: 0 }, "lb"), null);
+  assert.equal(toGo({ best: { kg: best }, target: 0 }, "lb"), null);
   assert.equal(shownGap(60, 62.5, "kg"), 2.5);
 });
 
 test("the bar fits its scale to the figures, in round steps", () => {
-  const at = (kg: number) => ({ day: "2026-09-01", kg, sets: 1, reps: 1 });
+  const at = (kg: number) => ({ kg });
   const bar = progressMarks({ start: at(50), latest: at(80), best: at(120), target: 100 }, "kg")!;
   // 50 to 120 kg in steps of 20, not 0 to 120.
   assert.deepEqual(bar.ticks.map((tick) => tick.value), [40, 60, 80, 100, 120]);
@@ -242,46 +263,69 @@ test("leaders turn in the lanes that cross least", () => {
   );
 });
 
-test("the total adds press, squat and deadlift, and waits for all three", () => {
-  const logged = liftProgress(
-    [
-      workout({
-        lifts: [
-          lift("Overhead press", 40),
-          lift("Back squat", 100),
-          lift("Deadlift", 120),
-          lift("Split jerk", 70),
-        ],
-      }),
-    ],
+test("the total adds the race's three lifts, and waits for all three", () => {
+  const records = [
+    workout({
+      lifts: [
+        lift("Overhead press", 40),
+        lift("Back squat", 100, 1, 2),
+        lift("Deadlift", 120, 1, 3),
+        lift("Split jerk", 70),
+      ],
+    }),
+  ];
+  const targets = { ...none, splitJerk: 80, overheadPress: 50, backSquat: 140, deadlift: 180 };
+  const total = liftTotal(strengthProgress(records, "gators"), targets, "gators");
+  // Shoulder to overhead is the jerk, the more of the two, as the higher target is.
+  assert.equal(total.start, 290);
+  assert.equal(total.latest, 290);
+  assert.equal(total.best, 290);
+  assert.equal(total.target, 400);
+  const missing = strengthProgress(
+    [workout({ lifts: [lift("Overhead press", 40), lift("Back squat", 100, 1, 2)] })],
     "gators",
-    { ...none, splitJerk: 80, overheadPress: 50, backSquat: 140, deadlift: 180 },
   );
-  const total = liftTotal(logged, "gators");
-  assert.equal(total.start, 260);
-  assert.equal(total.latest, 260);
-  assert.equal(total.best, 260);
-  assert.equal(total.target, 370);
-  const missing = liftProgress(
-    [workout({ lifts: [lift("Overhead press", 40), lift("Back squat", 100)] })],
-    "gators",
-    { ...none, overheadPress: 50, backSquat: 140 },
+  assert.equal(liftTotal(missing, { ...none, overheadPress: 50, backSquat: 140 }, "gators").start, null);
+  assert.equal(
+    liftTotal(missing, { ...none, overheadPress: 50, backSquat: 140 }, "gators").target,
+    null,
+    "one target left blank keeps the total empty",
   );
-  assert.equal(liftTotal(missing, "gators").start, null);
-  assert.equal(liftTotal(missing, "gators").target, null, "one target left blank keeps the total empty");
-  const gators = liftTotal(liftProgress([], "gators", DEFAULT_SETTINGS.liftTargets.gators), "gators");
-  assert.equal(formatWeight(gators.target!, "lb"), "725 lb");
-  assert.equal(formatWeight(gators.target!, "kg"), "328.9 kg");
+  const gators = liftTotal(strengthProgress([], "gators"), DEFAULT_SETTINGS.liftTargets.gators, "gators");
+  // The 175 lb jerk target over the 135 lb press, then 255 and 335.
+  assert.equal(formatWeight(gators.target!, "lb"), "765 lb");
+  assert.equal(formatWeight(gators.target!, "kg"), "347 kg");
   const hippos = liftTotal(
-    liftProgress(
-      [workout({ athlete: "hippos", lifts: [lift("Push press", 45), lift("Back squat", 80), lift("Deadlift", 100)] })],
+    strengthProgress(
+      [workout({ athlete: "hippos", lifts: [lift("Push press", 45), lift("Back squat", 80, 1, 2), lift("Deadlift", 100, 1, 3)] })],
       "hippos",
-      { ...none, overheadPress: 40, pushPress: 50, backSquat: 90, deadlift: 110 },
     ),
+    { ...none, overheadPress: 40, pushPress: 50, backSquat: 90, deadlift: 110 },
     "hippos",
   );
   assert.equal(hippos.best, 225, "Hippos' total takes the push press");
-  assert.equal(hippos.target, 250);
+  assert.equal(hippos.target, 250, "a target for the press Hippos does not follow is not counted");
+});
+
+test("the total's best is the race estimate's Strength for the athlete", () => {
+  const records = [
+    workout({ id: "a", day: "2026-09-01", lifts: [lift("Overhead press", 55, 3, 5), lift("Back squat", 120, 5, 5)] }),
+    // Gators does not follow the push press, and neither is a clean and jerk a
+    // row on Progress, but either puts a load overhead in the race.
+    workout({ id: "b", day: "2026-09-08", lifts: [lift("Push press", 75, 3, 3), lift("Deadlift", 160, 3, 5)] }),
+    workout({ id: "c", day: "2026-09-15", lifts: [lift("Clean and jerk", 80, 1, 1), lift("Back squat", 130, 1, 1)] }),
+  ];
+  const windows = strengthProgress(records, "gators");
+  const race = athleteStrength(records, "gators").lifts;
+  assert.equal(windows.overhead.best!.kg, race.overhead!.kg);
+  assert.equal(windows.squat.best!.kg, race.squat!.kg);
+  assert.equal(windows.deadlift.best!.kg, race.deadlift!.kg);
+  assert.equal(windows.overhead.best!.day, "2026-09-15");
+  // The first overhead day is the strict press, the latest the clean and jerk.
+  assert.equal(windows.overhead.start!.setKg, 55);
+  assert.equal(windows.overhead.latest!.setKg, 80);
+  const total = liftTotal(windows, none, "gators");
+  assert.equal(total.best, race.overhead!.kg + race.squat!.kg + race.deadlift!.kg);
 });
 
 test("Gators' targets read back as given, in pounds", () => {
@@ -323,7 +367,7 @@ test("settings saved before lift targets existed parse with the same targets the
   assert.deepEqual(goals.raceGoals, { endurance: 3000, metcon: 900 });
 });
 
-test("the estimated max is the best any set of ten or fewer predicts, on the race's line", () => {
+test("a figure is the most any set of ten or fewer predicts, on the race's line", () => {
   const records = [
     workout({ id: "a", day: "2026-09-01", lifts: [lift("Deadlift", 101, 1, 1)] }),
     workout({
@@ -335,10 +379,11 @@ test("the estimated max is the best any set of ten or fewer predicts, on the rac
     workout({ id: "c", day: "2026-09-05", lifts: [lift("Deadlift", 100, 1, 12)] }),
   ];
   const row = liftProgress(records, "gators", none).find((item) => item.key === "deadlift")!;
-  // The heaviest set is still the single; five at 100 predicts 100 x 36 / 32.
-  assert.equal(row.best?.kg, 101);
-  assert.deepEqual(row.estimated, { kg: 112.5, day: "2026-09-03", setKg: 100, reps: 5 });
-  assert.equal(liftProgress([], "gators", none)[0].estimated, null);
+  // Five at 100 predicts 100 x 34 / 32 for three, more than the 101 single does.
+  assert.deepEqual(row.best, { kg: 106.25, day: "2026-09-03", setKg: 100, reps: 5 });
+  assert.equal(row.latest?.day, "2026-09-03", "a day of twelves has no figure");
+  assert.equal(row.sessions, 3, "though it was still a session that logged the lift");
+  assert.equal(liftProgress([], "gators", none)[0].best, null);
 });
 
 test("an estimate reached again later stays with the day it was first reached", () => {
@@ -347,7 +392,7 @@ test("an estimate reached again later stays with the day it was first reached", 
     workout({ id: "early", day: "2026-09-01", lifts: [lift("Back squat", 100, 1, 5)] }),
   ];
   const row = liftProgress(records, "gators", none).find((item) => item.key === "backSquat")!;
-  assert.equal(row.estimated?.day, "2026-09-01");
+  assert.equal(row.best?.day, "2026-09-01");
 });
 
 test("weekly volume is load times reps for every set, by Monday week, the current week last", () => {

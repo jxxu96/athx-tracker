@@ -255,7 +255,7 @@ test("Progress measures each zone from its first estimate to its goal, Strength'
       body: JSON.stringify({
         settings: {
           ...settings,
-          // One-rep maxes. Gators' split jerk is the higher, so it is the S2OH goal.
+          // Each the rep max its window asks for. Gators' split jerk is the higher, so it is the S2OH goal.
           liftTargets: {
             hippos: { splitJerk: 0, overheadPress: 0, pushPress: 40, backSquat: 72, deadlift: 90 },
             gators: { splitJerk: 80, overheadPress: 60, backSquat: 108, deadlift: 144 },
@@ -268,13 +268,13 @@ test("Progress measures each zone from its first estimate to its goal, Strength'
   });
   await page.reload();
 
-  // 120 + 180 on 5 Oct, 120 + 240 now. The goal at race reps is 40 + 70 + 85
-  // and 80 + 105 + 136: 60 of the 216 kg from start to goal.
+  // 120 + 180 on 5 Oct, 120 + 240 now. The goal is 40 + 72 + 90 and
+  // 80 + 108 + 144: 60 of the 234 kg from start to goal.
   const strength = page.getByRole("group", { name: "Strength progress" });
   await expect(strength).toContainText("360\u00a0kg");
-  await expect(strength).toContainText("28%");
+  await expect(strength).toContainText("26%");
   await expect(strength).toContainText("Start 300\u00a0kg · Mon 5 Oct");
-  await expect(strength).toContainText("Goal 516\u00a0kg");
+  await expect(strength).toContainText("Goal 534\u00a0kg");
   await expect(page.getByRole("group", { name: "Endurance progress" })).toContainText(
     "No estimate yet",
   );

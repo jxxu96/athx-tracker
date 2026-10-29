@@ -1,11 +1,19 @@
 import { addDays, daysBetween, weekStart } from "./client.ts";
 import { matchMovement } from "./movement-match.ts";
-import { MAX_REPS, repMax } from "./race.ts";
+import {
+  MAX_REPS,
+  STRENGTH_2027,
+  STRENGTH_LIFTS,
+  WINDOW_OF,
+  repMax,
+  strengthLift,
+  strengthTargets,
+  type StrengthLift,
+} from "./race.ts";
 import {
   FOLLOWED_LIFTS,
   PROGRESS_LIFTS,
   displayLoad,
-  liftTop,
   type Lift,
   type LiftTargets,
   type ProgressLift,
@@ -15,35 +23,45 @@ import {
 
 export type ProgressAthlete = "hippos" | "gators";
 
-/** One day's heaviest set of a lift. Kilograms, like every load. */
-export type TopSet = { day: string; kg: number; sets: number; reps: number };
-
 /**
- * The heaviest single the logged sets predict, on the same line the race
+ * The most the logged sets predict for a rep max, on the same line the race
  * estimate uses, and the set it came from. The heaviest set is what was on
- * the bar; this is what that set says about a max, so 100 kg for five reads
- * as more than 101 kg for one.
+ * the bar; this is what that set says about the race's lift, so 100 kg for
+ * five reads as more than 101 kg for one. Kilograms, like every load.
  */
 export type EstimatedMax = { kg: number; day: string; setKg: number; reps: number };
+
+/**
+ * The rep max Progress measures a lift at: the one its race window asks for,
+ * a single overhead, two for the back squat and three for the deadlift.
+ */
+export const liftReps = (key: ProgressLift) => STRENGTH_2027.reps[WINDOW_OF[key]];
 
 /** Weeks of volume Progress shows, the current one last. */
 export const VOLUME_WEEKS = 8;
 
-export type LiftProgress = {
+/**
+ * A lift's first, most recent and best day, each day at the most its sets
+ * predict. Days with no set of ten reps or fewer have no figure.
+ */
+export type RepMaxProgress = {
+  /** The first day with a figure. */
+  start: EstimatedMax | null;
+  /** The most recent day with a figure. */
+  latest: EstimatedMax | null;
+  /** The most it has predicted, from the first day it got there. */
+  best: EstimatedMax | null;
+};
+
+export type LiftProgress = RepMaxProgress & {
   key: ProgressLift;
   name: string;
-  /** The first day the lift was logged. */
-  start: TopSet | null;
-  /** The most recent day it was logged. */
-  latest: TopSet | null;
-  /** The heaviest it has been, from the first day it got there. */
-  best: TopSet | null;
+  /** The rep max every figure is at. */
+  reps: number;
   /** Sessions that logged it. */
   sessions: number;
-  /** Kilograms. Zero is no target. */
+  /** Kilograms, at the same rep max. Zero is no target. */
   target: number;
-  /** Null until a set of ten reps or fewer has been logged. */
-  estimated: EstimatedMax | null;
   /**
    * Kilograms times reps for each Monday week, oldest first, the current
    * week, which may not be over, last. Empty without a day to count from.
@@ -71,13 +89,6 @@ export function progressLift(name: string) {
   return key;
 }
 
-/** More weight, then more reps, then more sets. */
-function heavier(a: TopSet, b: TopSet) {
-  if (a.kg !== b.kg) return a.kg > b.kg;
-  if (a.reps !== b.reps) return a.reps > b.reps;
-  return a.sets > b.sets;
-}
-
 /** Every set of a lift: each one when they differed, otherwise the one line. */
 function setsOf(lift: Pick<Lift, "kg" | "sets" | "reps" | "detail">) {
   return lift.detail?.length
@@ -91,28 +102,46 @@ export function liftVolume(lift: Pick<Lift, "kg" | "sets" | "reps" | "detail">) 
 }
 
 /**
- * The most any set of ten reps or fewer predicts for a single. Past ten, a
- * set says little about a max, which is the race estimate's rule too.
+ * The most any set of ten reps or fewer predicts for a rep max, a single
+ * unless asked for more. Past ten, a set says little about a max, which is
+ * the race estimate's rule too.
  */
 export function estimatedMax(
   lift: Pick<Lift, "kg" | "sets" | "reps" | "detail">,
   day: string,
+  target = 1,
 ): EstimatedMax | null {
   let best: EstimatedMax | null = null;
   for (const set of setsOf(lift)) {
     const reps = Math.floor(set.reps);
     if (!(set.kg > 0) || !(reps >= 1 && reps <= MAX_REPS)) continue;
-    const kg = repMax(set.kg, reps, 1);
+    const kg = repMax(set.kg, reps, target);
     if (!best || kg > best.kg) best = { kg, day, setKg: set.kg, reps };
   }
   return best;
 }
 
+/** Keeps the higher figure for its day, so a warm-up never stands in for it. */
+function keepDay(days: Map<string, EstimatedMax>, figure: EstimatedMax | null) {
+  if (!figure) return;
+  const held = days.get(figure.day);
+  if (!held || figure.kg > held.kg) days.set(figure.day, figure);
+}
+
+/** First, latest and best of some days' figures, a best going to the first day it was reached. */
+function repMaxProgress(days: Map<string, EstimatedMax> | undefined): RepMaxProgress {
+  const sorted = [...(days?.values() ?? [])].sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
+  let best: EstimatedMax | null = null;
+  for (const figure of sorted) if (!best || figure.kg > best.kg) best = figure;
+  return { start: sorted[0] ?? null, latest: sorted[sorted.length - 1] ?? null, best };
+}
+
 /**
- * Start, latest and best of each followed lift for one athlete. A day counts
- * as its heaviest set, so a warm-up never reads as the figure for the day, and
- * a best is credited to the first day it was reached. With today, the volume
- * of each of the last eight weeks as well.
+ * Start, latest and best of each followed lift for one athlete, at the rep
+ * max its race window asks for. A day counts as the most any of its sets
+ * predicts, so a warm-up never reads as the figure for the day, and a best is
+ * credited to the first day it was reached. With today, the volume of each of
+ * the last eight weeks as well.
  */
 export function liftProgress(
   records: RecordItem[],
@@ -120,9 +149,8 @@ export function liftProgress(
   targets: LiftTargets,
   today?: string,
 ): LiftProgress[] {
-  const days = new Map<ProgressLift, Map<string, TopSet>>();
+  const days = new Map<ProgressLift, Map<string, EstimatedMax>>();
   const sessions = new Map<ProgressLift, number>();
-  const estimates = new Map<ProgressLift, EstimatedMax>();
   const firstWeek = today ? addDays(weekStart(today), -7 * (VOLUME_WEEKS - 1)) : "";
   const volume = new Map<ProgressLift, number[]>();
   for (const record of records) {
@@ -135,85 +163,89 @@ export function liftProgress(
       const key = progressLift(lift.name);
       if (!key) continue;
       logged.add(key);
-      const estimate = estimatedMax(lift, record.day);
-      const known = estimates.get(key);
-      // The first day a figure was reached keeps it, as a best does.
-      if (estimate && (!known || estimate.kg > known.kg || (estimate.kg === known.kg && estimate.day < known.day)))
-        estimates.set(key, estimate);
       if (week >= 0) {
         const weeks = volume.get(key) ?? Array.from({ length: VOLUME_WEEKS }, () => 0);
         weeks[week] += liftVolume(lift);
         volume.set(key, weeks);
       }
-      // A varied lift counts as its heaviest sets, so a warm-up in the same
-      // entry never becomes the number for the day.
-      const top = lift.detail?.length ? liftTop(lift.detail) : { kg: lift.kg, sets: lift.sets ?? 1, reps: lift.reps };
-      const set = { day: record.day, ...top };
-      const byDay = days.get(key) ?? new Map<string, TopSet>();
-      const held = byDay.get(record.day);
-      if (!held || heavier(set, held)) byDay.set(record.day, set);
+      const byDay = days.get(key) ?? new Map<string, EstimatedMax>();
+      keepDay(byDay, estimatedMax(lift, record.day, liftReps(key)));
       days.set(key, byDay);
     }
     for (const key of logged) sessions.set(key, (sessions.get(key) ?? 0) + 1);
   }
-  return FOLLOWED_LIFTS[athlete].map(({ key, name }) => {
-    const sets = [...(days.get(key)?.values() ?? [])].sort((a, b) =>
-      a.day < b.day ? -1 : a.day > b.day ? 1 : 0,
-    );
-    let best: TopSet | null = null;
-    for (const set of sets) if (!best || heavier(set, best)) best = set;
-    return {
-      key,
-      name,
-      start: sets[0] ?? null,
-      latest: sets[sets.length - 1] ?? null,
-      best,
-      sessions: sessions.get(key) ?? 0,
-      target: targets[key] ?? 0,
-      estimated: estimates.get(key) ?? null,
-      weeks: today ? volume.get(key) ?? Array.from({ length: VOLUME_WEEKS }, () => 0) : [],
-    };
-  });
+  return FOLLOWED_LIFTS[athlete].map(({ key, name }) => ({
+    key,
+    name,
+    reps: liftReps(key),
+    ...repMaxProgress(days.get(key)),
+    sessions: sessions.get(key) ?? 0,
+    target: targets[key] ?? 0,
+    weeks: today ? volume.get(key) ?? Array.from({ length: VOLUME_WEEKS }, () => 0) : [],
+  }));
 }
 
+/** One athlete's three Strength windows, each at the rep max the race asks for. */
+export type StrengthProgress = Record<StrengthLift, RepMaxProgress>;
+
 /**
- * Press, squat and deadlift, the press being the one the athlete follows. The
- * split jerk is followed on its own and is not in this total.
+ * Each of the race's Strength windows the way the race estimate counts it:
+ * shoulder to overhead takes any press or jerk logged, followed or not, so its
+ * best is the race estimate's figure for the athlete.
  */
-export const TOTAL_LIFTS = {
-  hippos: ["pushPress", "backSquat", "deadlift"],
-  gators: ["overheadPress", "backSquat", "deadlift"],
-} as const satisfies Record<ProgressAthlete, readonly ProgressLift[]>;
+export function strengthProgress(records: RecordItem[], athlete: ProgressAthlete): StrengthProgress {
+  const days: Record<StrengthLift, Map<string, EstimatedMax>> = {
+    overhead: new Map(),
+    squat: new Map(),
+    deadlift: new Map(),
+  };
+  for (const record of records) {
+    if (record.kind !== "workout" || record.athlete !== athlete) continue;
+    for (const lift of record.lifts) {
+      const key = strengthLift(lift.name);
+      if (key) keepDay(days[key], estimatedMax(lift, record.day, STRENGTH_2027.reps[key]));
+    }
+  }
+  return {
+    overhead: repMaxProgress(days.overhead),
+    squat: repMaxProgress(days.squat),
+    deadlift: repMaxProgress(days.deadlift),
+  };
+}
 
 export type LiftTotal = {
   start: number | null;
   latest: number | null;
   best: number | null;
-  /** Kilograms. Null until all three lifts have a target. */
+  /** Kilograms. Null until all three windows have a target. */
   target: number | null;
 };
 
 /**
- * The three lifts added together. A column stays empty until every one of them
- * has that figure, so a missing deadlift cannot look like a small total.
+ * The race's three Strength lifts added together: the athlete's share of the
+ * Strength score. A column stays empty until every one of them has that
+ * figure, so a missing deadlift cannot look like a small total.
  */
-export function liftTotal(rows: LiftProgress[], athlete: ProgressAthlete): LiftTotal {
-  const three = TOTAL_LIFTS[athlete].map((key) => rows.find((row) => row.key === key));
-  const sum = (value: (row: LiftProgress) => number | null) => {
+export function liftTotal(
+  windows: StrengthProgress,
+  targets: LiftTargets,
+  athlete: ProgressAthlete,
+): LiftTotal {
+  const goals = strengthTargets(targets, athlete);
+  const sum = (value: (key: StrengthLift) => number | null | undefined) => {
     let total = 0;
-    for (const row of three) {
-      if (!row) return null;
-      const kg = value(row);
-      if (kg === null || !(kg > 0)) return null;
+    for (const { key } of STRENGTH_LIFTS) {
+      const kg = value(key);
+      if (kg == null || !(kg > 0)) return null;
       total += kg;
     }
     return total;
   };
   return {
-    start: sum((row) => row.start?.kg ?? null),
-    latest: sum((row) => row.latest?.kg ?? null),
-    best: sum((row) => row.best?.kg ?? null),
-    target: sum((row) => (row.target > 0 ? row.target : null)),
+    start: sum((key) => windows[key].start?.kg),
+    latest: sum((key) => windows[key].latest?.kg),
+    best: sum((key) => windows[key].best?.kg),
+    target: sum((key) => goals[key]),
   };
 }
 
@@ -240,7 +272,7 @@ export function shownGap(fromKg: number, toKg: number, unit: WeightUnit) {
  * How far the best is from the target, on screen. Null without both a target
  * and something logged; zero or less is reached.
  */
-export function toGo(lift: Pick<LiftProgress, "best" | "target">, unit: WeightUnit) {
+export function toGo(lift: { best: { kg: number } | null; target: number }, unit: WeightUnit) {
   if (!(lift.target > 0) || !lift.best) return null;
   return shownGap(lift.best.kg, lift.target, unit);
 }
@@ -288,7 +320,7 @@ export type ProgressBar = {
  * there is nothing to place.
  */
 export function progressMarks(
-  lift: Pick<LiftProgress, "start" | "latest" | "best" | "target">,
+  lift: { [key in Exclude<ProgressMark, "target">]: { kg: number } | null } & { target: number },
   unit: WeightUnit,
 ): ProgressBar | null {
   const marks: { key: ProgressMark; kg: number }[] = [];

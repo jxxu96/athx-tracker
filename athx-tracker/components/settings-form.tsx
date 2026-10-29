@@ -12,6 +12,7 @@ import { api, formatDay, message, newId } from "@/lib/client";
 import { currentBodyweight, type BodyweightHistory } from "@/lib/bodyweight";
 import { ageOn, restingEnergy } from "@/lib/energy";
 import { formatAmount } from "@/lib/fuel";
+import { liftReps } from "@/lib/progress";
 import { recordTargetChange } from "@/lib/targets";
 import { FOOD_NOTES_LIMIT } from "@/lib/estimate-conversation";
 import {
@@ -601,7 +602,7 @@ export function SettingsForm({
             </legend>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {FOLLOWED_LIFTS[athlete].map(({ key, name }) => (
-                <Field key={key} label={`${name} (${weightUnit})`}>
+                <Field key={key} label={`${name} ${liftReps(key)}RM (${weightUnit})`}>
                   <Input
                     value={liftTargets[athlete][key]}
                     inputMode="decimal"
