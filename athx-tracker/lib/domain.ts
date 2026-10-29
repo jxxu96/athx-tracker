@@ -50,6 +50,12 @@ export type Workout = {
   lifts: Lift[];
   /** The MetCon stopped at its time cap. Older sessions omit it, which reads as no. */
   capHit?: boolean;
+  /**
+   * Calories burned as typed, from a watch or a machine, which is the
+   * session's burn instead of the estimate. Only an Other session takes one;
+   * see categoryShape. Omitted when not given.
+   */
+  kcal?: number;
 };
 export type Meal = {
   id: string; kind: "meal"; athlete: Exclude<Athlete, "team">; day: string;
@@ -458,14 +464,16 @@ function kcalFor(met: number, bodyweightKg: number, seconds: number) {
 }
 
 /**
- * Null when it cannot be known rather than a number that looks measured.
- * That takes a bodyweight, and some work: a clock, station splits, or lifts.
+ * A burn typed on the session is what it burned, with or without a weight.
+ * Otherwise null when it cannot be known rather than a number that looks
+ * measured. That takes a bodyweight, and some work: a clock, station splits, or lifts.
  * Station time is the MetCon or the run. A clock longer than those splits
  * already includes the lifts, so their allowance is not added again. A clock
  * that is only the stations does not, and the lifts count beside it. Rounded
  * to ten, because the method is not worth more.
  */
 export function estimateBurn(workout: Workout, bodyweightKg: number) {
+  if (workout.kcal !== undefined && workout.kcal > 0) return workout.kcal;
   if (!(bodyweightKg > 0)) return null;
   const stationSeconds = workout.segments.reduce(
     (sum, segment) => sum + Math.max(0, segment.seconds),
@@ -574,6 +582,11 @@ export function categoryShape(category: Workout["category"]) {
     isRun: category === "Endurance",
     /** Each station says whether it is MetCon or endurance work. */
     isMixed,
+    /**
+     * Calories burned are typed in. Other is anything at all, so its one MET
+     * is a guess that a watch or a machine can do better than.
+     */
+    takesKcal: category === "Other",
   };
 }
 

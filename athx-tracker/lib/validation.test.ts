@@ -28,6 +28,13 @@ test("a session may be logged without an elapsed time", () => {
   assert.ok(!ok(workoutSchema, workout({ seconds: 90000 })), "over a day");
 });
 
+test("a typed burn is whole calories above zero, and optional", () => {
+  assert.ok(ok(workoutSchema, workout({ category: "Other", kcal: 412 })));
+  assert.ok(ok(workoutSchema, workout({ category: "Other" })), "older sessions have none");
+  for (const kcal of [0, -5, 412.5, 20001])
+    assert.ok(!ok(workoutSchema, workout({ category: "Other", kcal })), `${kcal}`);
+});
+
 test("a station may record work without a time", () => {
   assert.ok(
     ok(workoutSchema, workout({ seconds: 0, segments: [station({ seconds: 0 })] })),

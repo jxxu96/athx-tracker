@@ -815,6 +815,13 @@ export function WorkoutForm({
       }
       : { hippos: "", gators: "" }),
   );
+  const [kcal, setKcal] = useState<Record<Side, string>>(() =>
+    bothOf(from?.kcal, isText) ?? {
+      hippos: "",
+      gators: "",
+      ...(editing && editSide && editing.kcal ? { [editSide]: String(editing.kcal) } : {}),
+    },
+  );
   const [lifts, setLifts] = useState<LiftRow[]>(() => {
     if (Array.isArray(from?.lifts) && from.lifts.length > 0) return from.lifts as LiftRow[];
     if (!editing || !editSide || editing.lifts.length === 0) return [blankLift()];
@@ -870,7 +877,7 @@ export function WorkoutForm({
     who: editing ? recordSide : sides.length > 1 ? "both" : sides[0],
     snapshot: JSON.stringify({
       unit, day, time, title, category, customCategory, recordSide, recordContext,
-      stations, entries, elapsed, lifts, capHit, goal, notes, draftIds, description, draftNotice,
+      stations, entries, elapsed, kcal, lifts, capHit, goal, notes, draftIds, description, draftNotice,
     }),
     summary: title.trim() || "Untitled session",
     detail: category === "Other" && customCategory.trim() ? customCategory.trim() : category,
@@ -954,6 +961,7 @@ export function WorkoutForm({
         gators: columns.includes("gators") ? time(draft.elapsed.gators) : "",
       });
       setNotes([draft.notes, draft.assumptions].filter(Boolean).join("\n\n").slice(0, 2000));
+      setKcal({ hippos: "", gators: "" });
       setGoal("");
       setCapHit({ hippos: false, gators: false });
       setInvalidSide(null);
@@ -976,7 +984,7 @@ export function WorkoutForm({
     gators: null,
   });
 
-  const { usesStations, usesLifts, usesCustomStations, isRun, isMixed } =
+  const { usesStations, usesLifts, usesCustomStations, isRun, isMixed, takesKcal } =
     categoryShape(category);
   // Whether the session has MetCon work to have been capped on.
   const hasMetcon = usesStations && stations.some((s) => s.block === "metcon") &&
@@ -1103,6 +1111,10 @@ export function WorkoutForm({
     }));
   }
 
+  function addLift() {
+    setLifts((current) => [...current, blankLift()]);
+  }
+
   function setLift(index: number, side: Side, patch: Partial<LiftSide>) {
     setLifts((current) =>
       current.map((lift, i) =>
@@ -1214,6 +1226,7 @@ export function WorkoutForm({
   /** A column counts as used once anything at all is typed into it. */
   function used(side: Side) {
     if (elapsed[side].trim() !== "") return true;
+    if (takesKcal && kcal[side].trim() !== "") return true;
     if (
       entries[side].some(
         // A standard weight the form filled in is not something you did.
@@ -1305,6 +1318,10 @@ export function WorkoutForm({
     }
     if (total > 86400) return `${who}: that elapsed time is too long.`;
 
+    const burned = kcal[side].trim();
+    if (takesKcal && burned !== "" && !(Number(burned) >= 1 && Number(burned) <= 20000))
+      return `${who}: write the calories burned as a number, or leave it empty.`;
+
     for (const [index, station] of stations.entries()) {
       const name = exerciseName(station.name, station.custom);
       const typed = entries[side][index]?.load.trim() ?? "";
@@ -1378,6 +1395,7 @@ export function WorkoutForm({
   function relocate(from: Side, to: Side) {
     if (from === to) return;
     setElapsed((current) => ({ hippos: "", gators: "", [to]: current[from] }));
+    setKcal((current) => ({ hippos: "", gators: "", [to]: current[from] }));
     setEntries((current) => {
       const moved = current[from].map((entry) => ({ ...entry }));
       const empty = () => current[from].map(() => blankEntry());
@@ -1435,6 +1453,7 @@ export function WorkoutForm({
 
     const records: Workout[] = active.map((side) => ({
       ...(hasMetcon && capHit[side] ? { capHit: true } : {}),
+      ...(takesKcal && kcal[side].trim() !== "" ? { kcal: Math.round(num(kcal[side])) } : {}),
       id: editing ? editing.id : draftIds[side],
       kind: "workout",
       athlete: editing ? athleteForEdit : side,
@@ -1462,6 +1481,7 @@ export function WorkoutForm({
       const fresh = stationsFor(category);
       setTitle("");
       setElapsed({ hippos: "", gators: "" });
+      setKcal({ hippos: "", gators: "" });
       setStations(fresh);
       setEntries(entriesForBoth(fresh, unit));
       setLifts([blankLift()]);
@@ -1604,7 +1624,6 @@ export function WorkoutForm({
           <Field label="Goal time">
             <Input
               value={goal}
-              inputMode="numeric"
               placeholder="mm:ss"
               onChange={(event) => setGoal(event.target.value)}
             />
@@ -1655,7 +1674,7 @@ export function WorkoutForm({
                   elapsedRefs.current[side] = element;
                 }}
                 value={elapsed[side]}
-                inputMode="numeric"
+                // No inputMode on a time: a phone's number pad has no colon.
                 placeholder="mm:ss"
                 aria-invalid={invalidSide === side}
                 aria-label={`${ATHLETES[side].name} elapsed time`}
@@ -1670,6 +1689,26 @@ export function WorkoutForm({
           ))}
         </div>
       </Panel>
+
+      {takesKcal ? (
+        <Panel outline={outline} title="Calories burned">
+          <div className={`grid gap-2.5 ${columns.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+            {columns.map((side) => (
+              <Column key={side} side={side}>
+                <Input
+                  value={kcal[side]}
+                  inputMode="numeric"
+                  placeholder="kcal"
+                  aria-label={`${ATHLETES[side].name} calories burned`}
+                  onChange={(event) =>
+                    setKcal((current) => ({ ...current, [side]: event.target.value }))
+                  }
+                />
+              </Column>
+            ))}
+          </div>
+        </Panel>
+      ) : null}
 
       {usesStations ? (
         <Panel
@@ -1862,7 +1901,6 @@ export function WorkoutForm({
                         <Field label="Time" hint="mm:ss">
                           <Input
                             value={entries[side][index]?.time ?? ""}
-                            inputMode="numeric"
                             placeholder="mm:ss"
                             className="h-8"
                             onChange={(event) =>
@@ -1925,12 +1963,7 @@ export function WorkoutForm({
           outline={outline}
           title="Lifts"
           action={
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setLifts((current) => [...current, blankLift()])}
-            >
+            <Button type="button" variant="outline" size="sm" onClick={addLift}>
               <Plus /> Lift
             </Button>
           }
@@ -1992,6 +2025,10 @@ export function WorkoutForm({
               </li>
             ))}
           </ul>
+          {/* Mid-workout, the last lift is where you are, not the top of the list. */}
+          <Button type="button" variant="outline" size="sm" onClick={addLift}>
+            <Plus /> Lift
+          </Button>
         </Panel>
       ) : null}
 
