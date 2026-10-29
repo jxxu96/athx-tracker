@@ -383,21 +383,19 @@ function Lift({
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
           {heading}
           <p className="text-xs text-muted-foreground">
-            {lift.sessions > 0 ? "No set of 10 reps or fewer yet" : "Not logged yet"} ·{" "}
+            Not logged yet ·{" "}
             {lift.target > 0
               ? `target ${formatWeight(lift.target, unit)}${unit === "kg" ? "" : ` · ${formatWeight(lift.target, "kg")}`}`
               : "no target"}
           </p>
         </div>
         {marks ? <Bar bar={marks} color={color} unit={unit} runner={athlete} bagel={bagel} /> : null}
-        {/* Sets past ten reps make no figure, but they were still lifted. */}
-        <Volume weeks={lift.weeks} unit={unit} color={color} name={label} />
       </div>
     );
 
   const share = targetPercent(best.kg, lift.target);
   const gained = shownGap(start.kg, best.kg, unit);
-  // The set each figure is carried from, so an estimate shows what it rests on.
+  // The set each figure comes from, so a carried-down single shows what it rests on.
   const notes = (set: EstimatedMax) => [formatDay(set.day, today), `${formatWeight(set.setKg, unit)} × ${set.reps}`];
   const summary = [
     gained > 0 ? `+${gained} ${unit} since start` : "",

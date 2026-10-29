@@ -60,11 +60,14 @@ const circuit = (splits: number[]): Segment[] =>
   }));
 const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
 
-test("a set carries to another rep count on Brzycki's line, and a single is its own 1RM", () => {
+test("a set is never carried up, only down on Brzycki's line", () => {
   assert.equal(repMax(100, 1, 1), 100);
-  assert.equal(repMax(100, 5, 1), 112.5);
-  assert.equal(repMax(100, 5, 3), 106.25);
+  assert.equal(repMax(100, 3, 3), 100, "a set at the reps asked for is its own rep max");
+  // Five at 155 lb is a 155 lb 2RM, not the 169.5 lb Brzycki would put on it.
+  assert.equal(repMax(155, 5, 2), 155);
+  assert.equal(repMax(100, 12, 1), 100);
   assert.ok(Math.abs(repMax(100, 1, 2) - 97.2222) < 1e-3);
+  assert.equal(repMax(100, 2, 3), (100 * 34) / 35);
 });
 
 test("any press or jerk from the shoulders counts as shoulder to overhead, and other lifts do not", () => {
@@ -77,18 +80,18 @@ test("any press or jerk from the shoulders counts as shoulder to overhead, and o
     assert.equal(strengthLift(name), null, name);
 });
 
-test("each lift is the most any set of ten reps or fewer predicts for the window", () => {
+test("each lift is the most any set shows for the window, never carried up", () => {
   const strength = athleteStrength([
     workout({ day: "2026-10-01", lifts: [lift("Split jerk", 80, 1, 1)] }),
     workout({
       day: "2026-10-05",
       lifts: [
-        // 74 kg for a single, below the jerk.
+        // Three at 70 is a 70 kg single at most, below the jerk.
         lift("Push press", 70, 3, 3),
-        // The single at 120 predicts the heaviest double, not the triple at 110.
+        // The single at 120 carries down to 116.7 kg for two, past the triple at 110.
         lift("Back squat", 120, 1, 1, [{ kg: 100, reps: 5 }, { kg: 110, reps: 3 }, { kg: 120, reps: 1 }]),
+        // Fives and twelves show their own load for three, nothing more.
         lift("Deadlift", 140, 3, 5),
-        // Twelve reps would predict 177 kg, which is not what a triple tells you.
         lift("Deadlift", 130, 1, 12),
       ],
     }),
@@ -100,9 +103,9 @@ test("each lift is the most any set of ten reps or fewer predicts for the window
     { day: strength.lifts.squat?.day, setKg: strength.lifts.squat?.setKg, reps: strength.lifts.squat?.reps },
     { day: "2026-10-05", setKg: 120, reps: 1 },
   );
-  assert.equal(strength.lifts.deadlift?.kg, 148.75);
-  assert.equal(strength.lifts.deadlift?.shown, 149);
-  assert.equal(strength.total, 80 + 117 + 149);
+  assert.equal(strength.lifts.deadlift?.kg, 140);
+  assert.equal(strength.lifts.deadlift?.reps, 5);
+  assert.equal(strength.total, 80 + 117 + 140);
 });
 
 test("the combined weight waits for all six lifts, and adds the whole kilograms shown", () => {
@@ -113,7 +116,7 @@ test("the combined weight waits for all six lifts, and adds the whole kilograms 
     workout({ athlete: "team", lifts: [lift("Deadlift", 90, 1, 3)] }),
   ];
   const before = strengthPlan(records);
-  assert.equal(before.athletes.hippos.lifts.overhead?.shown, 45);
+  assert.equal(before.athletes.hippos.lifts.overhead?.shown, 40);
   assert.equal(before.athletes.hippos.lifts.deadlift, null);
   assert.equal(before.athletes.hippos.total, null);
   assert.equal(before.combined, null);
@@ -122,9 +125,9 @@ test("the combined weight waits for all six lifts, and adds the whole kilograms 
     ...records,
     workout({ athlete: "hippos", lifts: [lift("Deadlift", 90, 1, 3)] }),
   ]);
-  assert.equal(after.athletes.hippos.total, 45 + 70 + 90);
-  assert.equal(after.athletes.gators.total, 80 + 117 + 149);
-  assert.equal(after.combined, 205 + 346);
+  assert.equal(after.athletes.hippos.total, 40 + 70 + 90);
+  assert.equal(after.athletes.gators.total, 80 + 117 + 140);
+  assert.equal(after.combined, 200 + 337);
 });
 
 test("a run predicts its 2.4 km on Riegel's curve, in whatever unit it was logged", () => {

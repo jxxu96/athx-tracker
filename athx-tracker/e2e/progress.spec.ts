@@ -82,14 +82,14 @@ test("each main lift shows its start, latest, best and target, at the race's rep
 
   const jerk = page.getByRole("group", { name: "Gators split jerk" });
   await expect(jerk.getByRole("heading")).toHaveText("Split jerk · 1RM");
-  // Each day at the single its best set predicts, beside the set it comes from.
+  // Each day at the most its sets show for one, never carried up, beside the set it comes from.
   await expect(jerk.getByRole("definition")).toContainText([
-    "142.9 lb", "135 lb × 3", // start: 135 x 36 / 34
-    "154.3 lb", "150 lb × 2", // latest: 150 x 36 / 35
+    "135 lb", "135 lb × 3", // start
+    "150 lb", "150 lb × 2", // latest
     "160 lb", "160 lb × 1", // best
     "175 lb", "15 lb to go", // target
   ]);
-  await expect(jerk.getByText("+17.1 lb since start · 91% of target · 3 sessions")).toBeVisible();
+  await expect(jerk.getByText("+25 lb since start · 91% of target · 3 sessions")).toBeVisible();
   await expect(jerk).toContainText("79.4 kg");
   await expect(jerk).toContainText("6.8 kg");
   const total = page.getByRole("group", { name: "Gators total" });
@@ -240,7 +240,7 @@ test("a start older than the loaded slice is in the figures without loading it",
   await expect(page.getByRole("button", { name: "Include the full journal" })).toHaveCount(0);
 });
 
-test("a lift's figure is the rep max its sets predict, beside the volume of each week", async ({ page }) => {
+test("a lift's figure is the rep max its sets show, never carried up, beside the volume of each week", async ({ page }) => {
   const today = await page.evaluate(() =>
     new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()));
   await logLifts(page, [
@@ -249,20 +249,20 @@ test("a lift's figure is the rep max its sets predict, beside the volume of each
   await page.reload();
   await openProgress(page);
   const deadlift = page.getByRole("group", { name: "Gators deadlift" });
-  // Five at 225 predicts 225 x 34 / 32 for three, the race estimate's line.
-  await expect(deadlift.getByRole("definition")).toContainText(["239.1 lb", "225 lb × 5"]);
+  // Five at 225 is a 225 lb 3RM, not the 239 lb a formula would carry it up to.
+  await expect(deadlift.getByRole("definition")).toContainText(["225 lb", "225 lb × 5"]);
   // Three sets of five at 225 lb.
   await expect(deadlift).toContainText("this week 3,375");
   await expect(deadlift.getByRole("img", { name: /^Gators deadlift weekly volume/ })).toBeVisible();
 
-  // Twelves predict no squat figure, but their volume still counts.
+  // Twelves are a 2RM of their own load, and their volume counts.
   await logLifts(page, [
     { athlete: "gators", day: today, lifts: [{ name: "Back squat", kg: kg(135), sets: 3, reps: 12 }] },
   ]);
   await page.reload();
   await openProgress(page);
   const squat = page.getByRole("group", { name: "Gators back squat" });
-  await expect(squat).toContainText("No set of 10 reps or fewer yet");
+  await expect(squat.getByRole("definition")).toContainText(["135 lb", "135 lb × 12"]);
   await expect(squat).toContainText("this week 4,860");
 });
 

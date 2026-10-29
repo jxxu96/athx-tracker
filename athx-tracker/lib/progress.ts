@@ -1,7 +1,6 @@
 import { addDays, daysBetween, weekStart } from "./client.ts";
 import { matchMovement } from "./movement-match.ts";
 import {
-  MAX_REPS,
   STRENGTH_2027,
   STRENGTH_LIFTS,
   WINDOW_OF,
@@ -24,10 +23,9 @@ import {
 export type ProgressAthlete = "hippos" | "gators";
 
 /**
- * The most the logged sets predict for a rep max, on the same line the race
- * estimate uses, and the set it came from. The heaviest set is what was on
- * the bar; this is what that set says about the race's lift, so 100 kg for
- * five reads as more than 101 kg for one. Kilograms, like every load.
+ * The most the logged sets show for a rep max, the way the race estimate
+ * reads them, and the set it came from: never carried up, so five at 155 lb
+ * is a 155 lb 2RM, and carried down from fewer reps. Kilograms, like every load.
  */
 export type EstimatedMax = { kg: number; day: string; setKg: number; reps: number };
 
@@ -40,16 +38,13 @@ export const liftReps = (key: ProgressLift) => STRENGTH_2027.reps[WINDOW_OF[key]
 /** Weeks of volume Progress shows, the current one last. */
 export const VOLUME_WEEKS = 8;
 
-/**
- * A lift's first, most recent and best day, each day at the most its sets
- * predict. Days with no set of ten reps or fewer have no figure.
- */
+/** A lift's first, most recent and best day, each day at the most its sets show. */
 export type RepMaxProgress = {
   /** The first day with a figure. */
   start: EstimatedMax | null;
   /** The most recent day with a figure. */
   latest: EstimatedMax | null;
-  /** The most it has predicted, from the first day it got there. */
+  /** The most it has shown, from the first day it got there. */
   best: EstimatedMax | null;
 };
 
@@ -101,31 +96,31 @@ export function liftVolume(lift: Pick<Lift, "kg" | "sets" | "reps" | "detail">) 
   return setsOf(lift).reduce((sum, set) => sum + set.kg * Math.max(0, Math.floor(set.reps)), 0);
 }
 
-/**
- * The most any set of ten reps or fewer predicts for a rep max, a single
- * unless asked for more. Past ten, a set says little about a max, which is
- * the race estimate's rule too.
- */
+/** The most any of a lift's sets shows for a rep max, on the race estimate's rule. */
 export function estimatedMax(
   lift: Pick<Lift, "kg" | "sets" | "reps" | "detail">,
   day: string,
-  target = 1,
+  target: number,
 ): EstimatedMax | null {
   let best: EstimatedMax | null = null;
   for (const set of setsOf(lift)) {
     const reps = Math.floor(set.reps);
-    if (!(set.kg > 0) || !(reps >= 1 && reps <= MAX_REPS)) continue;
+    if (!(set.kg > 0) || !(reps >= 1)) continue;
     const kg = repMax(set.kg, reps, target);
-    if (!best || kg > best.kg) best = { kg, day, setKg: set.kg, reps };
+    if (!best || kg > best.kg || (kg === best.kg && reps > best.reps)) best = { kg, day, setKg: set.kg, reps };
   }
   return best;
 }
 
-/** Keeps the higher figure for its day, so a warm-up never stands in for it. */
+/**
+ * Keeps the higher figure for its day, so a warm-up never stands in for it,
+ * and at the same figure the set of more reps, which did more with it.
+ */
 function keepDay(days: Map<string, EstimatedMax>, figure: EstimatedMax | null) {
   if (!figure) return;
   const held = days.get(figure.day);
-  if (!held || figure.kg > held.kg) days.set(figure.day, figure);
+  if (!held || figure.kg > held.kg || (figure.kg === held.kg && figure.reps > held.reps))
+    days.set(figure.day, figure);
 }
 
 /** First, latest and best of some days' figures, a best going to the first day it was reached. */
@@ -139,7 +134,7 @@ function repMaxProgress(days: Map<string, EstimatedMax> | undefined): RepMaxProg
 /**
  * Start, latest and best of each followed lift for one athlete, at the rep
  * max its race window asks for. A day counts as the most any of its sets
- * predicts, so a warm-up never reads as the figure for the day, and a best is
+ * shows, so a warm-up never reads as the figure for the day, and a best is
  * credited to the first day it was reached. With today, the volume of each of
  * the last eight weeks as well.
  */
