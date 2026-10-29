@@ -153,6 +153,12 @@ per call.
   item is looked up, and the assumptions should name the page the figures came
   from. An unbranded food still uses reference values. Every number is editable
   before saving, and editing one marks the meal as your own figures.
+- Food is assumed to be from New York, in the US (products, chain menus,
+  portion sizes) unless the description says otherwise.
+- The assumptions go item by item, a blank line between each: the item and
+  its own macros in brackets, such as `Chicken breast, 150 g cooked [248 kcal,
+  47P, 0C, 5F]`, then how those figures were reached. Meal-wide notes, and the
+  answer to a reply, come after the items.
 - A meal may search the web and open a page, and nothing else. Codex gets live
   web search. Claude and Grok get web search and page fetch, for up to four
   turns. A workout stays one turn with those tools off. Looking a product up
