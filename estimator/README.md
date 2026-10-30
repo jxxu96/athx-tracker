@@ -160,7 +160,7 @@ per call.
   47P, 0C, 5F]`, then how those figures were reached. Meal-wide notes, and the
   answer to a reply, come after the items.
 - A meal may search the web and open a page, and nothing else. Codex gets live
-  web search. Claude and Grok get web search and page fetch, for up to four
+  web search. Claude and Grok get web search and page fetch, for up to ten
   turns. A workout stays one turn with those tools off. Looking a product up
   has a 90s cap per provider, and a click holds 40s so a fallback can search
   too. The shorter cap still applies to workouts.

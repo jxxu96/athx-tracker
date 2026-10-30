@@ -106,6 +106,10 @@ const RESERVE_MS = Number(process.env.ESTIMATOR_RESERVE_MS ?? 12600);
 // path sends this cap plus the reserve. Workouts stay on the shorter cap.
 const MEAL_PROVIDER_MS = 90_000;
 const MEAL_RESERVE_MS = 40_000;
+// Writing the answer takes a turn as well. Four ran out whenever the first page
+// opened showed no nutrition: search, open another, search again, and no turn
+// was left to answer in. The time cap above still bounds a long lookup.
+const MEAL_MAX_TURNS = "10";
 
 // Codex, then Claude, then Grok. A missing binary or a login that is not there
 // fails quickly and the next provider answers. Whoever is not last still leaves
@@ -333,7 +337,7 @@ const PROVIDERS = {
       "--permission-mode",
       "dontAsk",
       "--max-turns",
-      meal ? "4" : "1",
+      meal ? MEAL_MAX_TURNS : "1",
       ...(meal
         ? ["--tools", "web_search,web_fetch", "--allow", "WebFetch"]
         : ["--tools", "", "--disable-web-search"]),
@@ -363,7 +367,7 @@ const PROVIDERS = {
       "--json-schema",
       JSON.stringify(task.schema),
       "--max-turns",
-      meal ? "4" : "1",
+      meal ? MEAL_MAX_TURNS : "1",
       // A meal may search and open a page. A workout gets no tools at all.
       ...(meal
         ? ["--tools", "WebSearch,WebFetch", "--allowedTools", "WebSearch,WebFetch", "--permission-mode", "dontAsk"]

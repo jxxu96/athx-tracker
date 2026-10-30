@@ -153,7 +153,7 @@ test("a named product is looked up, and a workout is not", () => {
   assert.equal(mealGrok.includes("--disable-web-search"), false);
   assert.equal(mealGrok[mealGrok.indexOf("--tools") + 1], "web_search,web_fetch");
   assert.equal(mealGrok[mealGrok.indexOf("--allow") + 1], "WebFetch");
-  assert.equal(mealGrok[mealGrok.indexOf("--max-turns") + 1], "4");
+  assert.equal(mealGrok[mealGrok.indexOf("--max-turns") + 1], "10");
 
   const workoutGrok = PROVIDERS.grok.args("easy 5k", WORKOUT_TASK);
   assert.ok(workoutGrok.includes("--disable-web-search"));
@@ -163,7 +163,7 @@ test("a named product is looked up, and a workout is not", () => {
   const mealClaude = PROVIDERS.claude.args("RxBar");
   assert.equal(mealClaude[mealClaude.indexOf("--tools") + 1], "WebSearch,WebFetch");
   assert.equal(mealClaude[mealClaude.indexOf("--allowedTools") + 1], "WebSearch,WebFetch");
-  assert.equal(mealClaude[mealClaude.indexOf("--max-turns") + 1], "4");
+  assert.equal(mealClaude[mealClaude.indexOf("--max-turns") + 1], "10");
 
   const workoutClaude = PROVIDERS.claude.args("easy 5k", WORKOUT_TASK);
   assert.equal(workoutClaude[workoutClaude.indexOf("--tools") + 1], "");
