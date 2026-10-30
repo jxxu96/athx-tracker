@@ -102,10 +102,10 @@ const BUDGET_MS = Number(process.env.ESTIMATOR_BUDGET_MS ?? 56000);
 const PER_PROVIDER_MS = Number(process.env.ESTIMATOR_TIMEOUT_MS ?? 49000);
 // Time held back so a fallback still gets a turn after a slow first provider.
 const RESERVE_MS = Number(process.env.ESTIMATOR_RESERVE_MS ?? 12600);
-// A named product is looked up, which does not fit in the recall cap. The click
-// path sends this cap plus the reserve. Workouts stay on the shorter cap.
+// A named product is looked up, which does not fit in the recall cap. A meal
+// asks every provider at once, so the click path sends just this, with nothing
+// held back for a fallback. Workouts stay on the shorter cap.
 const MEAL_PROVIDER_MS = 90_000;
-const MEAL_RESERVE_MS = 40_000;
 // Writing the answer takes a turn as well. Four ran out whenever the first page
 // opened showed no nutrition: search, open another, search again, and no turn
 // was left to answer in. The time cap above still bounds a long lookup.
@@ -113,13 +113,16 @@ const MEAL_MAX_TURNS = "10";
 
 // Codex, then Claude, then Grok. A missing binary or a login that is not there
 // fails quickly and the next provider answers. Whoever is not last still leaves
-// the reserve, so a slow leader cannot spend the whole budget. A meal answered
-// with low confidence is then asked of the rest at once, and settled.
+// the reserve, so a slow leader cannot spend the whole budget. That order is a
+// workout's; a meal asks all of them at once and settles their answers.
 // ESTIMATOR_ORDER overrides this.
 const ORDER = (process.env.ESTIMATOR_ORDER ?? "codex,claude,grok")
   .split(",")
   .map((name) => name.trim().toLowerCase())
   .filter(Boolean);
+// How much each answer counts when answers on the same footing are averaged,
+// shared out again over whoever answered.
+const WEIGHTS = { codex: 0.4, claude: 0.35, grok: 0.25 };
 
 // A named product is looked up. The meal CLIs get web search for that and
 // nothing else; a workout does not. An unbranded food stays a reference value.
@@ -188,7 +191,7 @@ function childEnv() {
   return env;
 }
 
-function run(bin, args, timeoutMs) {
+function run(bin, args, timeoutMs, signal) {
   return new Promise((resolve) => {
     // stdin ignored: the CLIs otherwise wait three seconds for piped input.
     const child = spawn(bin, args, {
@@ -197,6 +200,7 @@ function run(bin, args, timeoutMs) {
       stdio: ["ignore", "pipe", "pipe"],
       // A Windows npm shim is a .cmd file, which spawn will not start directly.
       shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(bin),
+      signal,
     });
     let out = "";
     let err = "";
@@ -417,26 +421,40 @@ function shorten(text, max) {
 
 /**
  * The best-sourced answer wins, so a label one of them found is never diluted
- * by another's guess. Answers on the same footing are averaged. Each one's
- * working is kept, inside the 3000 characters the app holds for assumptions.
+ * by another's guess. Answers on the same footing are averaged by WEIGHTS, each
+ * figure over the answers that gave it more than 0: a 0 beside real figures is
+ * one left out, not one measured. Each one's working is kept, inside the 3000
+ * characters the app holds for assumptions.
  */
 function settle(answers) {
   const best = Math.max(...answers.map(({ estimate }) => RANK[estimate.confidence]));
   const top = answers.filter(({ estimate }) => RANK[estimate.confidence] === best);
   if (top.length === 1) return top[0];
 
-  const names = top.map(({ provider }) => title(provider));
+  const weight = (list) => list.reduce((sum, { provider }) => sum + WEIGHTS[provider], 0);
+  const mean = (key) => {
+    const given = top.filter(({ estimate }) => estimate[key] > 0);
+    return given.length
+      ? given.reduce((sum, { estimate, provider }) => sum + estimate[key] * WEIGHTS[provider], 0) /
+          weight(given)
+      : 0;
+  };
+  const macros = Object.fromEntries(
+    ["calories", "protein", "carbs", "fat", "fiber", "alcohol"].map((key) => [key, mean(key)]),
+  );
+  const shares = top.map(
+    ({ provider }) => `${title(provider)} ${Math.round((WEIGHTS[provider] / weight(top)) * 100)}%`,
+  );
   const { confidence } = top[0].estimate;
-  const header = `Averaged from ${names.slice(0, -1).join(", ")} and ${names.at(-1)}: each was ${confidence} confidence, so the totals are their mean.`;
+  const header = `Weighted average of ${shares.slice(0, -1).join(", ")} and ${shares.at(-1)}, each ${confidence} confidence. A 0 is left out of that figure's average.`;
   const room = Math.floor((3000 - header.length) / top.length) - 2;
-  const mean = (key) =>
-    top.reduce((sum, { estimate }) => sum + estimate[key], 0) / top.length;
   return {
     estimate: clean({
       name: top[0].estimate.name,
-      ...Object.fromEntries(
-        ["calories", "protein", "carbs", "fat", "fiber", "alcohol"].map((key) => [key, mean(key)]),
-      ),
+      ...macros,
+      // Fiber is averaged over fewer answers than carbs can be, so it is held
+      // to them.
+      fiber: Math.min(macros.fiber, macros.carbs),
       assumptions: [
         header,
         ...top.map(({ estimate, provider }) => {
@@ -455,7 +473,7 @@ async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK) {
   const tried = [];
   const meal = task.name === "meal";
 
-  async function ask(name, isLast) {
+  async function ask(name, isLast, signal) {
     const provider = PROVIDERS[name];
     if (!provider) return null;
     const bin = provider.bin();
@@ -465,24 +483,24 @@ async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK) {
     }
 
     // Hold time back for whoever is next, so a slow leader cannot eat the lot.
-    const slice = budgetSlice(
-      deadline - Date.now(),
-      isLast,
-      meal ? MEAL_PROVIDER_MS : PER_PROVIDER_MS,
-      meal ? MEAL_RESERVE_MS : RESERVE_MS,
-    );
+    // A meal asks everyone at once, so there is nobody next to hold it for.
+    const slice = meal
+      ? Math.min(MEAL_PROVIDER_MS, deadline - Date.now())
+      : budgetSlice(deadline - Date.now(), isLast);
     if (slice < 4000) {
       tried.push(`${name}: skipped, out of time`);
       return null;
     }
 
     const started = Date.now();
-    const { code, out, err, timedOut } = await run(bin, provider.args(description, task), slice);
+    const { code, out, err, timedOut } = await run(bin, provider.args(description, task), slice, signal);
     const value = task.clean(parseCliOutput(out));
     if (value) {
       console.log(`[estimator] ${name} answered in ${Date.now() - started}ms`);
       return { estimate: value, provider: name };
     }
+    // Stopped because another found the label, which is not a failure.
+    if (signal?.aborted) return null;
     const why = timedOut
       ? `timed out after ${slice}ms`
       : `exit ${code} ${(err || out).slice(0, 160).trim()}`;
@@ -491,14 +509,24 @@ async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK) {
     return null;
   }
 
-  for (const [index, name] of ORDER.entries()) {
-    const answer = await ask(name, index === ORDER.length - 1);
-    if (!answer) continue;
-    if (!meal || answer.estimate.confidence !== "low") return answer;
-    // An unsure meal goes to everyone left at once. Nobody is after them, so
-    // each has whatever time remains.
-    const others = await Promise.all(ORDER.slice(index + 1).map((next) => ask(next, true)));
-    return settle([answer, ...others.filter(Boolean)]);
+  if (meal) {
+    // Everyone at once, so the wait is the slowest answer and not the sum of
+    // them. A looked-up label ends it early: nothing would outrank it.
+    const stop = new AbortController();
+    const answers = await Promise.all(
+      ORDER.map(async (name) => {
+        const answer = await ask(name, true, stop.signal);
+        if (answer?.estimate.confidence === "high") stop.abort();
+        return answer;
+      }),
+    );
+    const given = answers.filter(Boolean);
+    if (given.length) return settle(given);
+  } else {
+    for (const [index, name] of ORDER.entries()) {
+      const answer = await ask(name, index === ORDER.length - 1);
+      if (answer) return answer;
+    }
   }
   return { error: tried.join(" | ") || "no providers configured" };
 }
@@ -791,7 +819,6 @@ const runDirectly =
 export {
   INSTRUCTIONS,
   MEAL_PROVIDER_MS,
-  MEAL_RESERVE_MS,
   SCHEMA,
   PROVIDERS,
   budgetSlice,

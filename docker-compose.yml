@@ -42,9 +42,10 @@ services:
     environment:
       # Must match GROK_GATEWAY_TOKEN above.
       ESTIMATOR_TOKEN: ${GROK_GATEWAY_TOKEN:?set GROK_GATEWAY_TOKEN, matching the app}
-      # Codex, then Claude, then Grok. A provider that is not signed in fails
-      # fast and the next one answers. Whoever is not last still leaves time
-      # for the fallback, which is why Grok no longer leads.
+      # A meal asks them all at once. A workout goes Codex, then Claude, then
+      # Grok: a provider that is not signed in fails fast and the next one
+      # answers, and whoever is not last still leaves time for the fallback,
+      # which is why Grok no longer leads.
       ESTIMATOR_ORDER: ${ESTIMATOR_ORDER:-codex,claude,grok}
       # Auto-redeploy. GitHub Actions cannot reach a tailnet address, so CI
       # cannot call Portainer. This container can: it watches ghcr.io for a new
