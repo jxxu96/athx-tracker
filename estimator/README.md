@@ -78,7 +78,7 @@ Everything can go in `estimator/.env`; a real environment variable overrides it.
 | `ESTIMATOR_TOKEN` | — | Required, 16+ characters. Must match `GROK_GATEWAY_TOKEN`. |
 | `ESTIMATOR_HOST` | `127.0.0.1` | Bind address. Your tailnet IP for the container to reach it. |
 | `ESTIMATOR_PORT` | `8787` | Port. |
-| `ESTIMATOR_ORDER` | `codex,claude,grok` | Providers to try, in order. |
+| `ESTIMATOR_ORDER` | `codex,claude,grok` | Providers to ask: all at once for a meal, in this order for a workout. |
 | `CODEX_BIN` / `CLAUDE_BIN` / `GROK_BIN` | auto | Found in the usual install paths; set to override. |
 | `CLAUDE_MODEL` | `claude-haiku-5-5` | See the warning below. |
 | `ESTIMATOR_BUDGET_MS` | `56000` | Total time for all providers when the caller does not set one. |
@@ -89,24 +89,22 @@ Everything can go in `estimator/.env`; a real environment variable overrides it.
 
 ## Provider order
 
-Codex goes first, then Claude, then Grok. The first one that returns a usable
-estimate wins. A CLI that is not installed or not signed in fails immediately
-and the next one is asked, so estimates keep working before Codex is logged in.
+A meal asks Codex, Claude and Grok at once, each with up to 90 s to look a
+named product up, so the wait is the slowest answer rather than the sum of
+them. The first answer with high confidence, a looked-up label, ends it and
+the others are stopped. Otherwise the best-sourced answer is kept, so a
+reference value beats a guess. Answers on the same footing are averaged,
+weighted Codex 40%, Claude 35% and Grok 25%, shared out again over whoever
+answered. A 0 beside real figures is left out of that figure's average. The
+meal then says "Averaged across estimators", and its assumptions give each
+one's figures and working. A CLI that is not installed or not signed in fails
+immediately and is simply not counted. The background queue allows 210 s.
 
-A meal that comes back with low confidence, a named product that was not found
-or a guess, is then asked of everyone left at once, each with the time that
-remains. The best-sourced answer is kept, so a label one of them found beats
-the guesses. Answers on the same footing are averaged, and the meal says
-"Averaged across estimators"; its assumptions give each one's figures and
-working. Medium confidence, reference values for an unbranded food, is not
-asked again.
-
-Whoever is not last still leaves a reserve of time. That is why Grok does not
-lead: it takes about 32 s, and the fallback then has nothing left. Claude on
-Haiku is the fast middle step, about 7 s. A workout click allows the first
-provider its full 49 s cap and still holds the reserve. A meal click allows
-90 s, because a named product is looked up, and holds 40 s for a fallback
-search. The background queue allows 210 s.
+A workout goes in order instead: Codex, then Claude, then Grok, and the first
+usable answer wins. Whoever is not last leaves a reserve of time. That is why
+Grok does not lead: it takes about 32 s, and the fallback then has nothing
+left. Claude on Haiku is the fast middle step, about 7 s. A workout click
+allows the first provider its full 49 s cap and still holds the reserve.
 
 Measured here, one estimate each:
 
@@ -170,8 +168,8 @@ per call.
 - A meal may search the web and open a page, and nothing else. Codex gets live
   web search. Claude and Grok get web search and page fetch, for up to ten
   turns. A workout stays one turn with those tools off. Looking a product up
-  has a 90s cap per provider, and a click holds 40s so a fallback can search
-  too. The shorter cap still applies to workouts.
+  has a 90s cap, with every provider asked at once. The shorter cap and the
+  order still apply to workouts.
 - A reply that would not validate counts as a failure and moves to the next
   provider, rather than reaching the app as a bad estimate.
 

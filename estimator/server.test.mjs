@@ -15,7 +15,6 @@ process.env.ESTIMATOR_RESERVE_MS = "12600";
 const {
   INSTRUCTIONS,
   MEAL_PROVIDER_MS,
-  MEAL_RESERVE_MS,
   PROVIDERS,
   budgetSlice,
   clean,
@@ -172,17 +171,13 @@ test("a named product is looked up, and a workout is not", () => {
   assert.equal(workoutClaude[workoutClaude.indexOf("--max-turns") + 1], "1");
 });
 
-test("a click leaves time to look a product up", () => {
+test("a click leaves every estimator time to look a product up", () => {
   assert.equal(MEAL_PROVIDER_MS, 90_000);
-  assert.equal(MEAL_RESERVE_MS, 40_000);
-  const click = MEAL_PROVIDER_MS + MEAL_RESERVE_MS;
-  assert.equal(budgetSlice(click, false, MEAL_PROVIDER_MS, MEAL_RESERVE_MS), MEAL_PROVIDER_MS);
-  assert.equal(budgetSlice(MEAL_RESERVE_MS, true, MEAL_PROVIDER_MS, MEAL_RESERVE_MS), MEAL_RESERVE_MS);
   const route = readFileSync(
     new URL("../athx-tracker/app/api/estimate/route.ts", import.meta.url),
     "utf8",
   );
-  assert.match(route, /90_000 \+ 40_000/);
+  assert.match(route, /INTERACTIVE_BUDGET_MS = 90_000;/);
 });
 
 test("a provider is never given more than its own ceiling", () => {
@@ -207,16 +202,37 @@ test("a label one estimator found is not averaged with guesses", () => {
   assert.deepEqual(settle([guess("codex", 600)]), guess("codex", 600));
 });
 
-test("guesses on the same footing are averaged, each one's working kept", () => {
+test("guesses on the same footing are averaged by weight, each one's working kept", () => {
   const { estimate, provider } = settle([guess("codex", 600), guess("claude", 700), guess("grok", 800)]);
   assert.equal(provider, "average");
-  assert.deepEqual(
-    [estimate.calories, estimate.protein, estimate.carbs, estimate.fat, estimate.fiber, estimate.confidence],
-    [700, 35, 70, 17.5, 2, "low"],
+  // 40% Codex, 35% Claude, 25% Grok.
+  assert.deepEqual([estimate.calories, estimate.fiber, estimate.confidence], [685, 2, "low"]);
+  assert.match(
+    estimate.assumptions,
+    /^Weighted average of Codex 40%, Claude 35% and Grok 25%, each low confidence\./,
   );
-  assert.match(estimate.assumptions, /^Averaged from Codex, Claude and Grok: each was low confidence/);
   assert.match(estimate.assumptions, /\n\nFrom Claude \[700 kcal, 35P, 70C, 18F, 2 fiber\]:\nclaude guessed\./);
-  assert.match(settle([guess("codex", 600), guess("grok", 800)]).estimate.assumptions, /^Averaged from Codex and Grok:/);
+  // The weights are shared out again over whoever answered.
+  const pair = settle([guess("claude", 700), guess("grok", 800)]).estimate;
+  assert.match(pair.assumptions, /^Weighted average of Claude 58% and Grok 42%,/);
+  assert.equal(pair.calories, 741.7);
+});
+
+test("a 0 is left out of that figure's average", () => {
+  const empty = {
+    provider: "grok",
+    estimate: { ...whole, calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, alcohol: 0,
+      assumptions: "Not found.", confidence: "low" },
+  };
+  const { estimate } = settle([guess("codex", 600), guess("claude", 700), empty]);
+  // Codex and Claude only, 40 to 35.
+  assert.deepEqual([estimate.calories, estimate.protein, estimate.alcohol], [646.7, 32.3, 0]);
+
+  // Fiber can come from fewer answers than carbs do, and still never exceeds them.
+  const few = { ...guess("codex", 600), estimate: { ...guess("codex", 600).estimate, carbs: 1, fiber: 0 } };
+  const lots = { ...guess("claude", 700), estimate: { ...guess("claude", 700).estimate, carbs: 10, fiber: 10 } };
+  const held = settle([few, lots]).estimate;
+  assert.deepEqual([held.carbs, held.fiber], [5.2, 5.2]);
 });
 
 test("averaged working still fits the app's 3000 characters, whole items first", () => {

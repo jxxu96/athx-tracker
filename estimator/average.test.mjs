@@ -8,19 +8,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// Stand-ins for the three CLIs, so the order runs without a model or any
-// allowance. Codex answers at once and the others take a moment, long enough
-// to tell asking them together from asking them in turn. Each logs when it
-// starts and when it finishes.
+// Stand-ins for the three CLIs, so a meal runs without a model or any
+// allowance. Each takes a second, long enough to tell asking them together
+// from asking them in turn, except Claude finding a label, which is quick.
+// Each logs when it starts and when it finishes.
 const FAKE = `#!/usr/bin/env node
 const { appendFileSync } = require("node:fs");
 const name = require("node:path").basename(process.argv[1]);
 const description = process.argv.at(-1);
 const calories = { codex: 600, claude: 700, grok: 1100 }[name];
-const confidence =
-  name === "codex" && description.includes("zzsure") ? "medium"
-  : name === "claude" && description.includes("zzlabel") ? "high"
-  : "low";
+const label = name === "claude" && description.includes("zzlabel");
+const confidence = name === "codex" && description.includes("zzsure") ? "medium" : label ? "high" : "low";
 appendFileSync(process.env.FAKE_LOG, "start " + name + "\\n");
 setTimeout(() => {
   appendFileSync(process.env.FAKE_LOG, "end " + name + "\\n");
@@ -28,10 +26,10 @@ setTimeout(() => {
     name: "Bowl", calories, protein: calories / 20, carbs: calories / 10, fat: calories / 40,
     fiber: 0, alcohol: 0, assumptions: name + " guessed.", confidence,
   }));
-}, name === "codex" ? 0 : 500);
+}, label ? 200 : 1000);
 `;
 
-test("an unsure meal asks the rest at once and keeps the best-sourced answer", async (t) => {
+test("a meal asks every estimator at once, and a label ends the wait", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "athx-fake-cli-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const bin = (name) => {
@@ -73,8 +71,8 @@ test("an unsure meal asks the rest at once and keeps the best-sourced answer", a
     const response = await fetch(`http://127.0.0.1:${port}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      // What a click sends, so Codex is not skipped for want of time.
-      body: JSON.stringify({ description, budgetMs: 130000 }),
+      // What a click sends.
+      body: JSON.stringify({ description, budgetMs: 90000 }),
     });
     return {
       provider: response.headers.get("x-athx-provider"),
@@ -85,16 +83,17 @@ test("an unsure meal asks the rest at once and keeps the best-sourced answer", a
 
   const guessed = await post("zz bowl");
   assert.equal(guessed.provider, "average");
-  assert.equal(guessed.body.calories, 800);
+  // 600 x 40% + 700 x 35% + 1100 x 25%.
+  assert.equal(guessed.body.calories, 760);
   assert.equal(guessed.body.confidence, "low");
-  assert.deepEqual(guessed.log.slice(0, 2), ["start codex", "end codex"]);
-  assert.deepEqual(guessed.log.slice(2, 4).sort(), ["start claude", "start grok"], "asked together");
+  assert.deepEqual(guessed.log.slice(0, 3).sort(), ["start claude", "start codex", "start grok"], "asked together");
 
   const labelled = await post("zzlabel bowl");
   assert.equal(labelled.provider, "claude");
   assert.equal(labelled.body.calories, 700);
+  assert.deepEqual(labelled.log.filter((line) => line.startsWith("end")), ["end claude"], "the rest were stopped");
 
   const sure = await post("zzsure bowl");
   assert.equal(sure.provider, "codex");
-  assert.deepEqual(sure.log, ["start codex", "end codex"]);
+  assert.equal(sure.body.calories, 600);
 });
