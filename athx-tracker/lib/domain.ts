@@ -97,6 +97,8 @@ export const ESTIMATORS = {
   codex: "Codex",
   claude: "Claude",
   grok: "Grok",
+  // Several answered on the same footing, and the totals are their mean.
+  average: "Averaged",
 } as const;
 export type Estimator = keyof typeof ESTIMATORS;
 /**

@@ -20,6 +20,7 @@ const {
   budgetSlice,
   clean,
   parseCliOutput,
+  settle,
   structured,
 } = await import("./server.mjs");
 const { WORKOUT_TASK } = await import("./workout.mjs");
@@ -190,4 +191,38 @@ test("a provider is never given more than its own ceiling", () => {
       assert.ok(budgetSlice(remaining, isLast) <= 49000, `${remaining}/${isLast}`);
     }
   }
+});
+
+const guess = (provider, calories, assumptions = `${provider} guessed.`, confidence = "low") => ({
+  provider,
+  estimate: {
+    ...whole, calories, protein: calories / 20, carbs: calories / 10, fat: calories / 40, fiber: 2,
+    assumptions, confidence,
+  },
+});
+
+test("a label one estimator found is not averaged with guesses", () => {
+  const label = guess("claude", 700, "Looked up.", "high");
+  assert.deepEqual(settle([guess("codex", 600), label, guess("grok", 800)]), label);
+  assert.deepEqual(settle([guess("codex", 600)]), guess("codex", 600));
+});
+
+test("guesses on the same footing are averaged, each one's working kept", () => {
+  const { estimate, provider } = settle([guess("codex", 600), guess("claude", 700), guess("grok", 800)]);
+  assert.equal(provider, "average");
+  assert.deepEqual(
+    [estimate.calories, estimate.protein, estimate.carbs, estimate.fat, estimate.fiber, estimate.confidence],
+    [700, 35, 70, 17.5, 2, "low"],
+  );
+  assert.match(estimate.assumptions, /^Averaged from Codex, Claude and Grok: each was low confidence/);
+  assert.match(estimate.assumptions, /\n\nFrom Claude \[700 kcal, 35P, 70C, 18F, 2 fiber\]:\nclaude guessed\./);
+  assert.match(settle([guess("codex", 600), guess("grok", 800)]).estimate.assumptions, /^Averaged from Codex and Grok:/);
+});
+
+test("averaged working still fits the app's 3000 characters, whole items first", () => {
+  const long = `Rice, 200 g [260 kcal, 5P, 57C, 0F]\nReference values.\n\n${"x".repeat(2900)}`;
+  const { estimate } = settle(["codex", "claude", "grok"].map((name) => guess(name, 600, long)));
+  assert.ok(estimate.assumptions.length <= 3000);
+  for (const name of ["Codex", "Claude", "Grok"])
+    assert.match(estimate.assumptions, new RegExp(`From ${name} [^\\n]*:\\nRice, 200 g \\[260 kcal, 5P, 57C, 0F\\]\\nReference values\\.…`));
 });

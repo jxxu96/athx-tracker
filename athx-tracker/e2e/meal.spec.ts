@@ -228,6 +228,24 @@ for (const sitting of ["Alcohol", "Dinner"] as const) {
   });
 }
 
+test("an averaged estimate says so, and the meal keeps it", async ({ page }) => {
+  await loggingFor(page, "Hippos").click();
+  const name = "Averaged burrito bowl";
+  await page.route("**/api/estimate", (route) => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ estimate: { name, calories: 800, protein: 40, carbs: 80, fat: 20,
+      assumptions: "Three guesses.", confidence: "low" }, provider: "average" }),
+  }));
+  await page.getByPlaceholder("Two eggs, 80 g oats with milk, banana, flat white").fill("Burrito bowl");
+  await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
+  await expect(page.getByText("Averaged across estimators")).toBeVisible();
+  await page.getByRole("button", { name: "Save meal", exact: true }).click();
+  await expect.poll(async () => (await meals(page)).find((meal) => meal.name === name)?.estimator)
+    .toBe("average");
+  await page.getByRole("button", { name: "Log", exact: true }).click();
+  await expect(page.getByRole("listitem").filter({ hasText: name })).toContainText("Averaged");
+});
+
 test("a new food estimate clears ethanol left by a previous drink estimate", async ({ page }) => {
   await page.getByRole("group", { name: "Sitting" }).getByRole("button", { name: "Alcohol" }).click();
   let alcohol = 10;

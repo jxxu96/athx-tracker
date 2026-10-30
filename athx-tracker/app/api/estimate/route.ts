@@ -16,7 +16,7 @@ const DAILY_LIMIT = 60;
  */
 const INTERACTIVE_BUDGET_MS = 90_000 + 40_000;
 
-const PROVIDERS = ["codex", "claude", "grok"] as const;
+const PROVIDERS = ["codex", "claude", "grok", "average"] as const;
 function namedProvider(value: string | null) {
   return PROVIDERS.find((provider) => provider === value);
 }

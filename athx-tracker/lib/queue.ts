@@ -21,7 +21,7 @@ import {
 /** No browser deadline here, so a slow CLI is merely slow, not a failure. */
 const QUEUE_BUDGET_MS = 210_000;
 
-const PROVIDERS = ["codex", "claude", "grok"] as const;
+const PROVIDERS = ["codex", "claude", "grok", "average"] as const;
 
 async function estimate(description: string) {
   const config = runtime();
