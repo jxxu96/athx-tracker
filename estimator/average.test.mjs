@@ -29,7 +29,7 @@ setTimeout(() => {
 }, label ? 200 : 1000);
 `;
 
-test("a meal asks every estimator at once, and a label ends the wait", async (t) => {
+test("a complex meal asks every estimator at once, and a simple one goes in order", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "athx-fake-cli-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const bin = (name) => {
@@ -72,7 +72,7 @@ test("a meal asks every estimator at once, and a label ends the wait", async (t)
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       // What a click sends.
-      body: JSON.stringify({ description, budgetMs: 90000 }),
+      body: JSON.stringify({ description, budgetMs: 130000 }),
     });
     return {
       provider: response.headers.get("x-athx-provider"),
@@ -81,19 +81,29 @@ test("a meal asks every estimator at once, and a label ends the wait", async (t)
     };
   };
 
-  const guessed = await post("zz bowl");
+  // Complex: three items. Everyone starts before anyone finishes.
+  const guessed = await post("zz rice, beans, cheese");
   assert.equal(guessed.provider, "average");
   // 600 x 40% + 700 x 35% + 1100 x 25%.
   assert.equal(guessed.body.calories, 760);
   assert.equal(guessed.body.confidence, "low");
   assert.deepEqual(guessed.log.slice(0, 3).sort(), ["start claude", "start codex", "start grok"], "asked together");
 
-  const labelled = await post("zzlabel bowl");
+  const labelled = await post("zzlabel rice, beans, cheese");
   assert.equal(labelled.provider, "claude");
   assert.equal(labelled.body.calories, 700);
   assert.deepEqual(labelled.log.filter((line) => line.startsWith("end")), ["end claude"], "the rest were stopped");
 
+  // Simple, and Codex is sure: nobody else is asked.
   const sure = await post("zzsure bowl");
   assert.equal(sure.provider, "codex");
   assert.equal(sure.body.calories, 600);
+  assert.deepEqual(sure.log, ["start codex", "end codex"]);
+
+  // Simple, but Codex is unsure: the rest are asked together after it.
+  const unsure = await post("zz bowl");
+  assert.equal(unsure.provider, "average");
+  assert.equal(unsure.body.calories, 760);
+  assert.deepEqual(unsure.log.slice(0, 2), ["start codex", "end codex"]);
+  assert.deepEqual(unsure.log.slice(2, 4).sort(), ["start claude", "start grok"], "then the rest together");
 });

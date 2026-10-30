@@ -102,10 +102,14 @@ const BUDGET_MS = Number(process.env.ESTIMATOR_BUDGET_MS ?? 56000);
 const PER_PROVIDER_MS = Number(process.env.ESTIMATOR_TIMEOUT_MS ?? 49000);
 // Time held back so a fallback still gets a turn after a slow first provider.
 const RESERVE_MS = Number(process.env.ESTIMATOR_RESERVE_MS ?? 12600);
-// A named product is looked up, which does not fit in the recall cap. A meal
-// asks every provider at once, so the click path sends just this, with nothing
-// held back for a fallback. Workouts stay on the shorter cap.
+// A named product is looked up, which does not fit in the recall cap. The click
+// path sends this cap plus the reserve, so a simple meal's fallback can search
+// too. Workouts stay on the shorter cap.
 const MEAL_PROVIDER_MS = 90_000;
+const MEAL_RESERVE_MS = 40_000;
+// A meal that links a page or lists this many items is complex: every provider
+// is asked at once. Anything less goes in order.
+const COMPLEX_ITEMS = 3;
 // Writing the answer takes a turn as well. Four ran out whenever the first page
 // opened showed no nutrition: search, open another, search again, and no turn
 // was left to answer in. The time cap above still bounds a long lookup.
@@ -113,8 +117,8 @@ const MEAL_MAX_TURNS = "10";
 
 // Codex, then Claude, then Grok. A missing binary or a login that is not there
 // fails quickly and the next provider answers. Whoever is not last still leaves
-// the reserve, so a slow leader cannot spend the whole budget. That order is a
-// workout's; a meal asks all of them at once and settles their answers.
+// the reserve, so a slow leader cannot spend the whole budget. A complex meal
+// asks all of them at once instead, and settles their answers.
 // ESTIMATOR_ORDER overrides this.
 const ORDER = (process.env.ESTIMATOR_ORDER ?? "codex,claude,grok")
   .split(",")
@@ -468,6 +472,24 @@ function settle(answers) {
   };
 }
 
+/**
+ * A link or a list of items is complex. The description is the meal itself, or
+ * JSON around it when notes or a follow-up ride along.
+ */
+function complex(description) {
+  const wrapped = (() => {
+    try {
+      return JSON.parse(description).mealDescription;
+    } catch {
+      return undefined;
+    }
+  })();
+  const meal = typeof wrapped === "string" ? wrapped : description;
+  if (/https?:\/\/|www\./i.test(meal)) return true;
+  const items = meal.split(/[,;+&\n]|\b(?:and|with|plus)\b/i).filter((part) => part.trim());
+  return items.length >= COMPLEX_ITEMS;
+}
+
 async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK) {
   const deadline = Date.now() + budgetMs;
   const tried = [];
@@ -483,10 +505,12 @@ async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK) {
     }
 
     // Hold time back for whoever is next, so a slow leader cannot eat the lot.
-    // A meal asks everyone at once, so there is nobody next to hold it for.
-    const slice = meal
-      ? Math.min(MEAL_PROVIDER_MS, deadline - Date.now())
-      : budgetSlice(deadline - Date.now(), isLast);
+    const slice = budgetSlice(
+      deadline - Date.now(),
+      isLast,
+      meal ? MEAL_PROVIDER_MS : PER_PROVIDER_MS,
+      meal ? MEAL_RESERVE_MS : RESERVE_MS,
+    );
     if (slice < 4000) {
       tried.push(`${name}: skipped, out of time`);
       return null;
@@ -509,23 +533,31 @@ async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK) {
     return null;
   }
 
-  if (meal) {
-    // Everyone at once, so the wait is the slowest answer and not the sum of
-    // them. A looked-up label ends it early: nothing would outrank it.
+  // Everyone at once, so the wait is the slowest answer and not the sum of
+  // them. Nobody is after them, so each has whatever time remains. A looked-up
+  // label ends it early: nothing would outrank it.
+  async function together(names) {
     const stop = new AbortController();
     const answers = await Promise.all(
-      ORDER.map(async (name) => {
+      names.map(async (name) => {
         const answer = await ask(name, true, stop.signal);
         if (answer?.estimate.confidence === "high") stop.abort();
         return answer;
       }),
     );
-    const given = answers.filter(Boolean);
+    return answers.filter(Boolean);
+  }
+
+  if (meal && complex(description)) {
+    const given = await together(ORDER);
     if (given.length) return settle(given);
   } else {
     for (const [index, name] of ORDER.entries()) {
       const answer = await ask(name, index === ORDER.length - 1);
-      if (answer) return answer;
+      if (!answer) continue;
+      if (!meal || answer.estimate.confidence !== "low") return answer;
+      // A simple meal that came back unsure asks everyone left after all.
+      return settle([answer, ...(await together(ORDER.slice(index + 1)))]);
     }
   }
   return { error: tried.join(" | ") || "no providers configured" };
@@ -819,10 +851,12 @@ const runDirectly =
 export {
   INSTRUCTIONS,
   MEAL_PROVIDER_MS,
+  MEAL_RESERVE_MS,
   SCHEMA,
   PROVIDERS,
   budgetSlice,
   clean,
+  complex,
   estimate,
   parseCliOutput,
   settle,
