@@ -15,9 +15,11 @@ process.env.ESTIMATOR_RESERVE_MS = "12600";
 const {
   INSTRUCTIONS,
   MEAL_PROVIDER_MS,
+  MEAL_RESERVE_MS,
   PROVIDERS,
   budgetSlice,
   clean,
+  complex,
   parseCliOutput,
   settle,
   structured,
@@ -171,13 +173,39 @@ test("a named product is looked up, and a workout is not", () => {
   assert.equal(workoutClaude[workoutClaude.indexOf("--max-turns") + 1], "1");
 });
 
-test("a click leaves every estimator time to look a product up", () => {
+test("a click leaves time to look a product up, and a fallback time to search", () => {
   assert.equal(MEAL_PROVIDER_MS, 90_000);
+  assert.equal(MEAL_RESERVE_MS, 40_000);
+  const click = MEAL_PROVIDER_MS + MEAL_RESERVE_MS;
+  assert.equal(budgetSlice(click, false, MEAL_PROVIDER_MS, MEAL_RESERVE_MS), MEAL_PROVIDER_MS);
+  assert.equal(budgetSlice(MEAL_RESERVE_MS, true, MEAL_PROVIDER_MS, MEAL_RESERVE_MS), MEAL_RESERVE_MS);
+  // Asked at once, a complex meal's estimators each still get the whole cap.
+  assert.equal(budgetSlice(click, true, MEAL_PROVIDER_MS, MEAL_RESERVE_MS), MEAL_PROVIDER_MS);
   const route = readFileSync(
     new URL("../athx-tracker/app/api/estimate/route.ts", import.meta.url),
     "utf8",
   );
-  assert.match(route, /INTERACTIVE_BUDGET_MS = 90_000;/);
+  assert.match(route, /INTERACTIVE_BUDGET_MS = 90_000 \+ 40_000;/);
+});
+
+test("a link or three items make a meal complex", () => {
+  for (const meal of [
+    "https://www.chick-fil-a.com/menu/chick-fil-a-chicken-sandwich",
+    "www.sweetgreen.com harvest bowl",
+    "Two eggs, 80 g oats with milk, banana, flat white",
+    "burrito bowl with chicken, rice and beans",
+    JSON.stringify({ mealDescription: "eggs, toast, coffee", replies: ["no butter"] }),
+  ])
+    assert.equal(complex(meal), true, meal);
+  for (const meal of [
+    "banana",
+    "Chicken and rice",
+    "Chipotle chicken burrito bowl",
+    "mac and cheese",
+    // Notes list foods too, and are not the meal.
+    JSON.stringify({ mealDescription: "banana", foodNotes: "yogurt, berries, granola" }),
+  ])
+    assert.equal(complex(meal), false, meal);
 });
 
 test("a provider is never given more than its own ceiling", () => {

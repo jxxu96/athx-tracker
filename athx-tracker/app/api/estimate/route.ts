@@ -9,11 +9,13 @@ import { estimatePrompt } from "@/lib/estimate-conversation";
 const DAILY_LIMIT = 60;
 
 /**
- * Long enough to look a named product up. A meal asks every estimator at once,
- * so nothing is held back for a fallback: this is MEAL_PROVIDER_MS in
- * estimator/server.mjs. The queue remains the path with no one waiting.
+ * Long enough for the first model to look a named product up, plus the reserve
+ * the estimator holds so a simple meal's fallback can search too. These are
+ * MEAL_PROVIDER_MS and MEAL_RESERVE_MS in estimator/server.mjs. A complex meal
+ * asks everyone at once and needs only the first. The queue remains the path
+ * with no one waiting.
  */
-const INTERACTIVE_BUDGET_MS = 90_000;
+const INTERACTIVE_BUDGET_MS = 90_000 + 40_000;
 
 const PROVIDERS = ["codex", "claude", "grok", "average"] as const;
 function namedProvider(value: string | null) {
