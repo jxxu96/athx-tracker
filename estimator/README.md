@@ -93,6 +93,14 @@ Codex goes first, then Claude, then Grok. The first one that returns a usable
 estimate wins. A CLI that is not installed or not signed in fails immediately
 and the next one is asked, so estimates keep working before Codex is logged in.
 
+A meal that comes back with low confidence, a named product that was not found
+or a guess, is then asked of everyone left at once, each with the time that
+remains. The best-sourced answer is kept, so a label one of them found beats
+the guesses. Answers on the same footing are averaged, and the meal says
+"Averaged across estimators"; its assumptions give each one's figures and
+working. Medium confidence, reference values for an unbranded food, is not
+asked again.
+
 Whoever is not last still leaves a reserve of time. That is why Grok does not
 lead: it takes about 32 s, and the fallback then has nothing left. Claude on
 Haiku is the fast middle step, about 7 s. A workout click allows the first

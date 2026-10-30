@@ -113,7 +113,8 @@ const MEAL_MAX_TURNS = "10";
 
 // Codex, then Claude, then Grok. A missing binary or a login that is not there
 // fails quickly and the next provider answers. Whoever is not last still leaves
-// the reserve, so a slow leader cannot spend the whole budget.
+// the reserve, so a slow leader cannot spend the whole budget. A meal answered
+// with low confidence is then asked of the rest at once, and settled.
 // ESTIMATOR_ORDER overrides this.
 const ORDER = (process.env.ESTIMATOR_ORDER ?? "codex,claude,grok")
   .split(",")
@@ -395,30 +396,84 @@ function budgetSlice(
   return Math.min(cap, isLast ? remaining : remaining - reserve);
 }
 
+const RANK = { low: 0, medium: 1, high: 2 };
+const title = (name) => name[0].toUpperCase() + name.slice(1);
+const brackets = ({ calories, protein, carbs, fat, fiber, alcohol }) =>
+  `[${[
+    `${Math.round(calories)} kcal`,
+    `${Math.round(protein)}P`,
+    `${Math.round(carbs)}C`,
+    `${Math.round(fat)}F`,
+    ...(fiber ? [`${Math.round(fiber)} fiber`] : []),
+    ...(alcohol ? [`${Math.round(alcohol)} ethanol`] : []),
+  ].join(", ")}]`;
+
+/** Whole items first: cut at the last blank line that fits, else mid-text. */
+function shorten(text, max) {
+  if (text.length <= max) return text;
+  const cut = text.lastIndexOf("\n\n", max - 1);
+  return `${(cut > 0 ? text.slice(0, cut) : text.slice(0, max - 1)).trimEnd()}…`;
+}
+
+/**
+ * The best-sourced answer wins, so a label one of them found is never diluted
+ * by another's guess. Answers on the same footing are averaged. Each one's
+ * working is kept, inside the 3000 characters the app holds for assumptions.
+ */
+function settle(answers) {
+  const best = Math.max(...answers.map(({ estimate }) => RANK[estimate.confidence]));
+  const top = answers.filter(({ estimate }) => RANK[estimate.confidence] === best);
+  if (top.length === 1) return top[0];
+
+  const names = top.map(({ provider }) => title(provider));
+  const { confidence } = top[0].estimate;
+  const header = `Averaged from ${names.slice(0, -1).join(", ")} and ${names.at(-1)}: each was ${confidence} confidence, so the totals are their mean.`;
+  const room = Math.floor((3000 - header.length) / top.length) - 2;
+  const mean = (key) =>
+    top.reduce((sum, { estimate }) => sum + estimate[key], 0) / top.length;
+  return {
+    estimate: clean({
+      name: top[0].estimate.name,
+      ...Object.fromEntries(
+        ["calories", "protein", "carbs", "fat", "fiber", "alcohol"].map((key) => [key, mean(key)]),
+      ),
+      assumptions: [
+        header,
+        ...top.map(({ estimate, provider }) => {
+          const line = `From ${title(provider)} ${brackets(estimate)}:\n`;
+          return line + shorten(estimate.assumptions, room - line.length);
+        }),
+      ].join("\n\n"),
+      confidence,
+    }),
+    provider: "average",
+  };
+}
+
 async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK) {
   const deadline = Date.now() + budgetMs;
   const tried = [];
+  const meal = task.name === "meal";
 
-  for (const [index, name] of ORDER.entries()) {
+  async function ask(name, isLast) {
     const provider = PROVIDERS[name];
-    if (!provider) continue;
+    if (!provider) return null;
     const bin = provider.bin();
     if (!bin) {
       tried.push(`${name}: no binary found`);
-      continue;
+      return null;
     }
 
     // Hold time back for whoever is next, so a slow leader cannot eat the lot.
-    const meal = task.name === "meal";
     const slice = budgetSlice(
       deadline - Date.now(),
-      index === ORDER.length - 1,
+      isLast,
       meal ? MEAL_PROVIDER_MS : PER_PROVIDER_MS,
       meal ? MEAL_RESERVE_MS : RESERVE_MS,
     );
     if (slice < 4000) {
       tried.push(`${name}: skipped, out of time`);
-      continue;
+      return null;
     }
 
     const started = Date.now();
@@ -432,7 +487,18 @@ async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK) {
       ? `timed out after ${slice}ms`
       : `exit ${code} ${(err || out).slice(0, 160).trim()}`;
     tried.push(`${name}: ${why}`);
-    console.warn(`[estimator] ${name} failed (${why}), trying the next one`);
+    console.warn(`[estimator] ${name} failed (${why})`);
+    return null;
+  }
+
+  for (const [index, name] of ORDER.entries()) {
+    const answer = await ask(name, index === ORDER.length - 1);
+    if (!answer) continue;
+    if (!meal || answer.estimate.confidence !== "low") return answer;
+    // An unsure meal goes to everyone left at once. Nobody is after them, so
+    // each has whatever time remains.
+    const others = await Promise.all(ORDER.slice(index + 1).map((next) => ask(next, true)));
+    return settle([answer, ...others.filter(Boolean)]);
   }
   return { error: tried.join(" | ") || "no providers configured" };
 }
@@ -732,6 +798,7 @@ export {
   clean,
   estimate,
   parseCliOutput,
+  settle,
   structured,
 };
 

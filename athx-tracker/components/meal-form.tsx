@@ -822,7 +822,9 @@ export function MealForm({
 
           {confidence || answeredBy ? (
             <p className="text-xs text-muted-foreground">
-              {answeredBy ? (
+              {answeredBy === "average" ? (
+                "Averaged across estimators"
+              ) : answeredBy ? (
                 <>
                   Answered by <span className="font-medium">{ESTIMATORS[answeredBy]}</span>
                 </>
