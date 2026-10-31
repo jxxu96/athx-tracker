@@ -47,6 +47,9 @@ export default async function Home() {
         config.XAI_API_KEY ||
           (config.GROK_GATEWAY_URL && config.GROK_GATEWAY_TOKEN),
       )}
+      // The background worker asks the gateway only; the direct API is for a
+      // click. Offered without it, a meal would stay queued for good.
+      queueReady={Boolean(config.GROK_GATEWAY_URL && config.GROK_GATEWAY_TOKEN)}
       records={journal?.records ?? []}
       total={journal?.total ?? 0}
       settings={journal?.settings ?? DEFAULT_SETTINGS}

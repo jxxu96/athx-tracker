@@ -419,7 +419,9 @@ athletes is estimated once and both records are filled with the same figures.
 While one is waiting, the app looks for its figures every 15 seconds, and a
 popup says when they arrive, from whichever section is open. It is offered
 until there is an estimate on the form, since a queued meal would throw those
-figures away. Background estimates do not count toward the 60 a day.
+figures away. Background estimates do not count toward the 60 a day. They
+need the estimator: with only `XAI_API_KEY` set, the button is not offered,
+since the worker asks the gateway and nothing else.
 
 ### Drafts
 

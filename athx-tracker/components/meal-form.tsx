@@ -197,6 +197,7 @@ export function MealForm({
   templates,
   today,
   grokReady,
+  queueReady,
   active = true,
   editing,
   draft,
@@ -212,6 +213,8 @@ export function MealForm({
   templates: MealTemplates | undefined;
   today: string;
   grokReady: boolean;
+  /** The background worker can estimate. It asks the gateway, never the direct API. */
+  queueReady: boolean;
   active?: boolean;
   editing?: Meal | null;
   /** What was typed here before and not saved, which the form opens with. */
@@ -651,7 +654,7 @@ export function MealForm({
   const busy = estimating || saving || templateSaving;
   // Not once there is an estimate: a queued meal saves zero macros, and would
   // throw away the figures already on the form.
-  const canQueue = grokReady && conversation.length === 0 && !rejected;
+  const canQueue = queueReady && conversation.length === 0 && !rejected;
 
   return (
     <form onSubmit={submit} className="space-y-4 pb-4">

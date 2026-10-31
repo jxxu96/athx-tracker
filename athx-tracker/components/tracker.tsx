@@ -118,6 +118,7 @@ function waitingReason(error: unknown) {
 export function Tracker({
   today: serverToday,
   grokReady,
+  queueReady,
   records: initialRecords,
   total: initialTotal,
   settings: initialSettings,
@@ -128,6 +129,8 @@ export function Tracker({
 }: {
   today: string;
   grokReady: boolean;
+  /** Whether a meal saved to be estimated in the background will ever be. */
+  queueReady: boolean;
   records: RecordItem[];
   total: number;
   settings: Settings;
@@ -850,6 +853,7 @@ export function Tracker({
             templates={settings.mealTemplates}
             today={today}
             grokReady={grokReady}
+            queueReady={queueReady}
             active={tab === "meal" && !problem}
             editing={editingMeal}
             draft={mealDraft}
