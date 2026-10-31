@@ -313,25 +313,33 @@ test("the date is today, yesterday, or a day from the calendar", async ({ page }
     "true",
   );
 
-  const picked = await page.evaluate(() => {
-    const date = new Date();
-    date.setDate(date.getDate() - 3);
-    return {
-      day: new Intl.DateTimeFormat("en-CA", {
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      }).format(date),
-      dataDay: date.toLocaleDateString(),
+  const { picked, tomorrow } = await page.evaluate(() => {
+    const today = new Date();
+    const shifted = (days: number) => {
+      const date = new Date();
+      date.setDate(date.getDate() + days);
+      return {
+        day: new Intl.DateTimeFormat("en-CA", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(date),
+        dataDay: date.toLocaleDateString(),
+        newMonth: date.getMonth() !== today.getMonth(),
+      };
     };
+    return { picked: shifted(-3), tomorrow: shifted(1) };
   });
+  // The calendar opens on this month, and its outside days only fill out the
+  // first and last weeks, so a day in another month is paged to. Without
+  // this the spec failed whenever tomorrow or three days ago was off the grid.
+  const turn = (to: "Next" | "Previous") =>
+    page.getByRole("button", { name: `Go to the ${to} Month`, exact: true }).click();
   await dates.getByRole("button", { name: "Calendar", exact: true }).click();
-  const tomorrow = await page.evaluate(() => {
-    const date = new Date();
-    date.setDate(date.getDate() + 1);
-    return date.toLocaleDateString();
-  });
-  await expect(page.locator(`[data-day="${tomorrow}"]`)).toBeDisabled();
+  if (tomorrow.newMonth) await turn("Next");
+  await expect(page.locator(`[data-day="${tomorrow.dataDay}"]`)).toBeDisabled();
+  if (tomorrow.newMonth) await turn("Previous");
+  if (picked.newMonth) await turn("Previous");
   await page.locator(`[data-day="${picked.dataDay}"]`).click();
   await expect(dates.getByRole("button", { name: /^Calendar/ })).toHaveAttribute(
     "aria-pressed",
