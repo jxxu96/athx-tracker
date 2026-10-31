@@ -225,6 +225,11 @@ the log cannot support shows a dash and says what to log, rather than a guess.
   farthest-reaching SkiErg piece of at least a kilometre. A shorter piece is a
   sprint, not a race. Each athlete's metres come from their whole time on the erg,
   which errs low for someone resting between turns. The score is the metres skied.
+  The run and the SkiErg show apart, so either can be read before the other is
+  logged: each of you has a 2.4 km time once you have a run, and until both runs
+  are in, the SkiErg shows each of your farthest-reaching pieces and their pace.
+  On Riegel's curve that piece is the farthest at any time on the erg, so it is
+  the one the metres will come from.
 - **MetCon X** gives each station to whichever of you has timed it quicker, at the
   quickest pace you have shown there; with one pace logged, that athlete takes it.
   It is a plan you can always carry out, and taking turns well can only beat it. An

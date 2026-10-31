@@ -261,15 +261,25 @@ export function runSeconds(runs: Piece[]) {
   return best;
 }
 
+/** How far a piece carries, up to a factor that is the same for every piece at a given time. */
+const reach = (piece: Piece) => piece.metres / piece.seconds ** (1 / RIEGEL);
+
+/**
+ * The SkiErg piece that carries farthest. On Riegel's curve the pieces keep
+ * the same order at every time on the erg, so it is the one to use whatever
+ * the runs leave, and can be shown before they are logged.
+ */
+export function farthestPiece(skis: Piece[]) {
+  let best: Piece | null = null;
+  for (const ski of skis) if (best === null || reach(ski) > reach(best)) best = ski;
+  return best;
+}
+
 /** The farthest any logged SkiErg piece predicts for that long on the erg, in metres. */
 export function skiMetres(skis: Piece[], seconds: number) {
   if (!(seconds > 0)) return 0;
-  let best: number | null = null;
-  for (const ski of skis) {
-    const metres = ski.metres * (seconds / ski.seconds) ** (1 / RIEGEL);
-    if (best === null || metres > best) best = metres;
-  }
-  return best;
+  const best = farthestPiece(skis);
+  return best === null ? null : best.metres * (seconds / best.seconds) ** (1 / RIEGEL);
 }
 
 /** Ski distances are shown to ten metres, which is all the method is worth. */
@@ -282,6 +292,11 @@ export type EndurancePlan = {
   ski: Record<RaceAthlete, { seconds: number; metres: number | null }> | null;
   /** When the first athlete back starts skiing. Null when nobody gets there before the cap. */
   skiFrom: number | null;
+  /**
+   * Each athlete's SkiErg piece the metres come from, known before the runs
+   * are. Missing from a summary worked out before it was added.
+   */
+  skiPiece?: Record<RaceAthlete, Piece | null>;
   /** The score: both athletes' metres added. Null while either is unknown. */
   metres: number | null;
   /** Whose run or SkiErg has nothing to go on yet. */
@@ -305,12 +320,13 @@ export function endurancePlan(records: RecordItem[]): EndurancePlan {
     gators: pieces(records, "gators", "Ski erg"),
   };
   const run = { hippos: runSeconds(runs.hippos), gators: runSeconds(runs.gators) };
+  const skiPiece = { hippos: farthestPiece(skis.hippos), gators: farthestPiece(skis.gators) };
   const missing = RACE_ATHLETES.flatMap((athlete) => [
     ...(run[athlete] === null ? [{ athlete, piece: "run" as const }] : []),
     ...(skis[athlete].length === 0 ? [{ athlete, piece: "ski" as const }] : []),
   ]);
   if (run.hippos === null || run.gators === null)
-    return { run, ski: null, skiFrom: null, metres: null, missing };
+    return { run, ski: null, skiFrom: null, skiPiece, metres: null, missing };
 
   const [first, second] = run.hippos <= run.gators
     ? (["hippos", "gators"] as const)
@@ -334,6 +350,7 @@ export function endurancePlan(records: RecordItem[]): EndurancePlan {
     run,
     ski,
     skiFrom: firstBack < cap ? firstBack : null,
+    skiPiece,
     metres: hippos.metres === null || gators.metres === null ? null : hippos.metres + gators.metres,
     missing,
   };

@@ -244,18 +244,57 @@ function Strength({ plan, placing }: { plan: StrengthPlan; placing: StrengthPlac
   );
 }
 
+/** Each of you on a line: a dot and a name, and the figure at the right. */
+function AthleteLines({ value }: { value: (athlete: RaceAthlete) => string | null }) {
+  // Two dashes say less than the line saying what to log.
+  if (RACE_ATHLETES.every((athlete) => value(athlete) === null)) return null;
+  return (
+    <ul className="mt-1 space-y-0.5 tabular-nums">
+      {RACE_ATHLETES.map((athlete) => (
+        <li key={athlete} className="flex items-center justify-between gap-3">
+          <span className="flex items-center gap-1.5 text-foreground">
+            <Dot athlete={athlete} />
+            {who(athlete)}
+          </span>
+          <span className="text-right text-foreground">{value(athlete) ?? "—"}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * The run or the SkiErg on its own, so whichever is logged shows before the
+ * other is. The zone's figure, the metres skied, still needs both.
+ */
+function Leg({ name, detail, children }: { name: string; detail: string; children: React.ReactNode }) {
+  return (
+    <div role="group" aria-label={`${name} estimate`} className="pt-1">
+      <p className="flex items-baseline justify-between gap-3">
+        <span className="font-medium text-foreground">{name}</span>
+        <span className="text-right">{detail}</span>
+      </p>
+      {children}
+    </div>
+  );
+}
+
+// Non-breaking, so a figure never wraps away from its unit.
+const metresIn = (metres: number | null, seconds: number) =>
+  `${metres === null ? "—" : `${formatAmount(metres)}\u00a0m`} in\u00a0${formatTime(seconds)}`;
+
 function Endurance({ plan }: { plan: EndurancePlan }) {
-  const { run, ski } = plan;
-  const runs = RACE_ATHLETES.map((athlete) => {
-    const seconds = run[athlete];
-    return `${who(athlete)} ${seconds === null ? "—" : formatTime(seconds)}`;
-  });
-  const whose = (piece: "run" | "ski") =>
-    list(plan.missing.filter((gap) => gap.piece === piece).map((gap) => who(gap.athlete)));
-  const missing = [
-    whose("run") ? `a run for ${whose("run")}` : "",
-    whose("ski") ? `a SkiErg piece for ${whose("ski")}` : "",
-  ].filter(Boolean);
+  const { run, ski, skiFrom } = plan;
+  const skiPiece = (athlete: RaceAthlete) => plan.skiPiece?.[athlete] ?? null;
+  const still = (piece: "run" | "ski", what: string) => {
+    const whose = plan.missing.filter((gap) => gap.piece === piece).map((gap) => who(gap.athlete));
+    return whose.length ? (
+      <p className="mt-1">
+        Still to log: {what} of {formatDistance(MIN_PIECE_METRES / 1000, "km")} or longer for{" "}
+        {list(whose)}.
+      </p>
+    ) : null;
+  };
 
   return (
     <Zone
@@ -264,31 +303,43 @@ function Endurance({ plan }: { plan: EndurancePlan }) {
       figure={plan.metres === null ? null : formatAmount(plan.metres)}
       unit="m SkiErg"
     >
-      {run.hippos !== null || run.gators !== null ? (
-        <p>
-          Run {formatDistance(ENDURANCE.runMetres / 1000, "km")} · {runs.join(" · ")}
-        </p>
-      ) : null}
+      <Leg name="Run" detail={`${formatDistance(ENDURANCE.runMetres / 1000, "km")} each`}>
+        <AthleteLines value={(athlete) => (run[athlete] === null ? null : formatTime(run[athlete]))} />
+        {still("run", "a run")}
+      </Leg>
       {ski ? (
-        plan.skiFrom === null ? (
-          <p>No time left to ski before the cap.</p>
-        ) : (
-          <p>
-            SkiErg from {formatTime(plan.skiFrom)}
-            {RACE_ATHLETES.map((athlete) => {
-              const { seconds, metres } = ski[athlete];
-              // Non-breaking, so a figure never wraps away from its unit.
-              return ` · ${who(athlete)} ${metres === null ? "—" : `${formatAmount(metres)}\u00a0m`} in\u00a0${formatTime(seconds)}`;
-            }).join("")}
-          </p>
-        )
-      ) : null}
-      {missing.length ? (
-        <p>
-          Still to log: {missing.join("; ")}, each{" "}
-          {formatDistance(MIN_PIECE_METRES / 1000, "km")} or longer.
-        </p>
-      ) : null}
+        <Leg
+          name="SkiErg"
+          detail={
+            skiFrom === null
+              ? "No time left before the cap"
+              : `${formatTime(skiFrom)} to ${formatTime(ENDURANCE.capSeconds)}`
+          }
+        >
+          {skiFrom === null ? null : (
+            <AthleteLines value={(athlete) => metresIn(ski[athlete].metres, ski[athlete].seconds)} />
+          )}
+          {still("ski", "a SkiErg piece")}
+        </Leg>
+      ) : (
+        <Leg name="SkiErg" detail="Best piece so far">
+          <AthleteLines
+            value={(athlete) => {
+              const piece = skiPiece(athlete);
+              if (!piece) return null;
+              const pace = formatTime((piece.seconds / piece.metres) * 500);
+              return `${metresIn(piece.metres, piece.seconds)} · ${pace}/500\u00a0m`;
+            }}
+          />
+          {RACE_ATHLETES.some(skiPiece) ? (
+            <p className="mt-1">
+              Race-day metres follow once you both have a run: the erg starts when the first of you
+              is back.
+            </p>
+          ) : null}
+          {still("ski", "a SkiErg piece")}
+        </Leg>
+      )}
     </Zone>
   );
 }

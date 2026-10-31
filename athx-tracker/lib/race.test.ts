@@ -14,6 +14,7 @@ import {
   raceLoad,
   repMax,
   runSeconds,
+  farthestPiece,
   skiMetres,
   stationPace,
   strengthLift,
@@ -158,6 +159,16 @@ test("a SkiErg piece carries to the time on the erg, and none at all is unknown"
   assert.equal(skiMetres([], 0), 0);
 });
 
+test("the farthest-reaching SkiErg piece is the same at any time on the erg", () => {
+  const sprint = { metres: 1000, seconds: 240, day: "a" };
+  const long = { metres: 5000, seconds: 1400, day: "b" };
+  assert.equal(farthestPiece([sprint, long]), sprint);
+  for (const seconds of [60, 300, 900, 1440]) {
+    assert.equal(skiMetres([sprint, long], seconds), skiMetres([sprint], seconds));
+  }
+  assert.equal(farthestPiece([]), null);
+});
+
 test("the first back skis alone, then you take turns until 24:00", () => {
   const plan = endurancePlan([
     workout({ athlete: "hippos", category: "Endurance", segments: [piece("Run", 2.4, "km", 840)] }),
@@ -191,11 +202,23 @@ test("without a SkiErg piece, or a run, the endurance score is withheld and says
   ]);
   assert.equal(noRun.ski, null);
   assert.equal(noRun.metres, null);
+  assert.deepEqual(noRun.skiPiece, { hippos: null, gators: null });
   assert.deepEqual(noRun.missing, [
     { athlete: "hippos", piece: "run" },
     { athlete: "hippos", piece: "ski" },
     { athlete: "gators", piece: "ski" },
   ]);
+});
+
+test("a SkiErg piece shows before the runs that set its time on the erg", () => {
+  const plan = endurancePlan([
+    workout({ athlete: "hippos", segments: [piece("Ski erg", 1000, "m", 240), piece("Ski erg", 500, "m", 100)] }),
+    workout({ athlete: "hippos", day: "2026-09-02", segments: [piece("SkiErg", 2000, "m", 540)] }),
+  ]);
+  assert.equal(plan.ski, null);
+  assert.equal(plan.metres, null);
+  // The 500 m is a sprint and left out; the 1,000 m carries farther than the 2,000 m.
+  assert.deepEqual(plan.skiPiece, { hippos: { metres: 1000, seconds: 240, day: "2026-10-01" }, gators: null });
 });
 
 test("runs that take the whole cap leave nobody any time to ski", () => {
