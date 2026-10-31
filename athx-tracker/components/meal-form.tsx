@@ -99,11 +99,17 @@ function Choice<T extends string>({
   value,
   options,
   onChange,
+  fit = false,
 }: {
   label: string;
   value: T;
   options: readonly { value: T; label: string; outline?: AthleteOutline }[];
   onChange: (next: T) => void;
+  /**
+   * Columns as wide as their labels, then stretched to fill the row. Five
+   * equal columns on a phone cut "Breakfast" to "Breakfa".
+   */
+  fit?: boolean;
 }) {
   return (
     <div>
@@ -114,7 +120,9 @@ function Choice<T extends string>({
         role="group"
         aria-label={label}
         className="grid gap-1.5"
-        style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
+        style={{
+          gridTemplateColumns: `repeat(${options.length}, ${fit ? "minmax(0, auto)" : "minmax(0, 1fr)"})`,
+        }}
       >
         {options.map((option) => {
           const selected = value === option.value;
@@ -125,8 +133,15 @@ function Choice<T extends string>({
               onClick={() => onChange(option.value)}
               aria-pressed={selected}
               {...(selected && option.outline ? athleteOutline(option.outline, "accent") : {})}
-              className={`rounded-lg px-2 py-2.5 text-xs font-medium transition-colors aria-pressed:bg-accent aria-pressed:font-semibold ${
-                option.outline ? "border-2" : "border"
+              // An athlete is told apart by its coloured ring. A plain option has
+              // only its fill, and accent on a card was too faint to see which
+              // one was chosen, so it takes the primary fill instead. It stays
+              // the same weight: a bolder label would widen a fitted column and
+              // shift the row on every tap.
+              className={`rounded-lg py-2.5 text-xs font-medium transition-colors ${fit ? "px-1.5" : "px-2"} ${
+                option.outline
+                  ? "border-2 aria-pressed:bg-accent aria-pressed:font-semibold"
+                  : "border aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
               }`}
             >
               {option.label}
@@ -664,6 +679,7 @@ export function MealForm({
             value={slot}
             onChange={setSlot}
             options={MEALS.map((value) => ({ value, label: value }))}
+            fit
           />
           <DayButtons today={today} day={day} onChange={setDay} time={time} onTimeChange={setTime} />
         </section>

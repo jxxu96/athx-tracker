@@ -399,7 +399,7 @@ export function MealTemplateList({
                         aria-pressed={editor.draft.meal === sitting}
                         disabled={saving || estimating}
                         onClick={() => updateDraft({ meal: sitting })}
-                        className="rounded-lg border px-2 py-2 text-xs font-medium aria-pressed:bg-accent aria-pressed:font-semibold"
+                        className="rounded-lg border px-2 py-2 text-xs font-medium aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
                       >
                         {sitting}
                       </button>
