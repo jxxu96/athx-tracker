@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Clock, MessageCircle, Sparkles, Square } from "lucide-react";
+import { Clock, MessageCircle, Sparkles, Split, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,11 +24,12 @@ import {
   type Macros,
   type Meal,
 } from "@/lib/domain";
-import { message, newId } from "@/lib/client";
+import { api, message, newId } from "@/lib/client";
 import { NDJSON, readEstimate, type PartialEstimate } from "@/lib/estimate-stream";
 import { bothOf, isText, oneOf, textOf, type Draft } from "@/lib/drafts";
 import { useFormDraft } from "@/hooks/use-form-draft";
 import { MealTemplateList } from "@/components/meal-templates";
+import { DishShares, MealDishes } from "@/components/meal-dishes";
 import { mealKey } from "@/lib/common-meals";
 import {
   buildTemplate,
@@ -47,6 +48,18 @@ import {
 import { macroCalories } from "@/lib/meal-calories";
 import { fanOutMeal, type LoggingFor, type MealDraft } from "@/lib/meal-fanout";
 import { mealForTime } from "@/lib/meal-time";
+import {
+  EATERS,
+  ETHANOL_LIMIT,
+  FIBER_LIMIT,
+  MACRO_LIMITS as LIMITS,
+  dishesOf,
+  emptyDish,
+  fillDish,
+  readDishes,
+  splitMeal,
+  type DishDraft,
+} from "@/lib/meal-dishes";
 
 const MACRO_FIELDS = [
   { key: "calories", label: "Calories", unit: "kcal" },
@@ -56,10 +69,6 @@ const MACRO_FIELDS = [
 ] as const satisfies readonly { key: keyof Macros; label: string; unit: string }[];
 
 const MEALS = ["Breakfast", "Lunch", "Dinner", "Snack", "Alcohol"] as const;
-const ETHANOL_LIMIT = 500;
-const FIBER_LIMIT = 3000;
-
-const LIMITS: Macros = { calories: 20000, protein: 2000, carbs: 3000, fat: 2000 };
 
 type MacroDraft = Record<keyof Macros, string>;
 const emptyMacros: MacroDraft = { calories: "", protein: "", carbs: "", fat: "" };
@@ -300,6 +309,14 @@ export function MealForm({
   // rather than adding a second copy. Null is a new template.
   const [kept, setKept] = useState<Kept | null>(keptOf(from?.kept));
   const [templateSaving, setTemplateSaving] = useState(false);
+  // A shared meal written down dish by dish. Any dishes at all make this a
+  // split meal; removing the last goes back to one meal. An edit is one
+  // person's record, so it never splits.
+  const [dishes, setDishes] = useState<DishDraft[]>(() => (editing ? [] : dishesOf(from?.dishes)));
+  const [estimatingDish, setEstimatingDish] = useState<string | null>(null);
+  const [dishErrors, setDishErrors] = useState<Record<string, string>>({});
+  const splitting = !editing && dishes.length > 0;
+  const eaters = who === "both" ? EATERS : ([who] as const);
   const conversationLog = useRef<HTMLDivElement>(null);
   const replyButton = useRef<HTMLButtonElement>(null);
   const replies = conversation.flatMap((turn) => (turn.reply ? [turn.reply] : []));
@@ -335,8 +352,13 @@ export function MealForm({
     snapshot: JSON.stringify({
       day, time, picked, description, name, macros, ethanol, fiber, assumptions,
       confidence, answeredBy, source, adjusted, conversation, reply, kept, draftIds,
+      dishes,
     }),
-    summary: name.trim() || description.trim().slice(0, 80) || "Untitled meal",
+    summary: (
+      name.trim() ||
+      dishes.map((dish) => dish.name.trim()).filter(Boolean).join(", ") ||
+      description.trim()
+    ).slice(0, 80) || "Untitled meal",
     detail: picked ?? mealForTime(atTime(time)),
   });
 
@@ -379,6 +401,85 @@ export function MealForm({
     setRefineOpen(false);
     setRejected(false);
     setKept(null);
+    setDishes([]);
+    setDishErrors({});
+  }
+
+  /**
+   * Turns the meal into dishes. Whatever was on the form becomes the first
+   * dish, figures and estimate included, and it starts shared half and half.
+   * A name typed for the whole meal stays the meal's name, unless it was all
+   * there was, in which case it names the dish instead.
+   */
+  function splitByDish() {
+    // Whole: the description is what the figures came from, and what the
+    // dish's own estimate will read.
+    const text = description.trim() || name.trim();
+    const typed = text !== "" || assumptions.trim() !== "" || fiber.trim() !== "" || ethanol.trim() !== "" ||
+      MACRO_FIELDS.some(({ key }) => macros[key].trim() !== "");
+    const first: DishDraft = typed
+      ? {
+          ...emptyDish(newId()),
+          name: text,
+          ...macros,
+          fiber,
+          ethanol,
+          source: source === "grok" ? "grok" : "manual",
+          estimator: answeredBy,
+          confidence,
+          adjusted,
+          assumptions,
+        }
+      : emptyDish(newId());
+    const mealName = description.trim() ? name : "";
+    reset();
+    setName(mealName);
+    setError("");
+    setDishes([first]);
+  }
+
+  function changeDish(id: string, change: (dish: DishDraft) => DishDraft) {
+    setDishes((current) => current.map((dish) => (dish.id === id ? change(dish) : dish)));
+    setError("");
+  }
+
+  function removeDish(id: string) {
+    setDishes((current) => current.filter((dish) => dish.id !== id));
+    setDishErrors((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+    setError("");
+  }
+
+  /** One dish's own estimate. The dish's text is the description, as typed. */
+  async function estimateDish(id: string) {
+    if (estimatingDish || saving) return;
+    const text = dishes.find((dish) => dish.id === id)?.name.trim() ?? "";
+    if (text.length < 3) return;
+    setEstimatingDish(id);
+    setError("");
+    setDishErrors((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+    try {
+      const { estimate, provider } = await api<{ estimate: Estimate; provider?: Estimator }>("/api/estimate", {
+        method: "POST",
+        body: JSON.stringify({ description: text }),
+      });
+      setDishes((current) => current.map((dish) => (dish.id === id ? fillDish(dish, estimate, provider) : dish)));
+      // Ethanol belongs to an Alcohol sitting, as it does for a whole meal.
+      if ((estimate.alcohol ?? 0) > 0) setSlot("Alcohol");
+      onEstimateComplete?.();
+    } catch (problem) {
+      onEstimateComplete?.(message(problem));
+      setDishErrors((current) => ({ ...current, [id]: message(problem) }));
+    } finally {
+      setEstimatingDish(null);
+    }
   }
 
   function markManual() {
@@ -562,11 +663,15 @@ export function MealForm({
     });
   }
 
-  async function saveDraft(meal: MealDraft) {
-    await onSave(recordsFor(meal));
+  async function saveRecords(batch: Meal[]) {
+    await onSave(batch);
     // Saved: the draft has done its job.
     finish(true);
     setDraftIds({ hippos: newId(), gators: newId() });
+  }
+
+  async function saveDraft(meal: MealDraft) {
+    await saveRecords(recordsFor(meal));
   }
 
   /**
@@ -599,10 +704,17 @@ export function MealForm({
     }
   }
 
-  function validate() {
-    if (!name.trim()) return "Name the meal, or run an estimate first.";
+  /** The day and time, which a meal and a split meal share. */
+  function validateWhen() {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return "Pick a valid date.";
     if (time !== "" && !isClockTime(time)) return "Write the time of day as HH:MM, or leave it empty.";
+    return "";
+  }
+
+  function validate() {
+    if (!name.trim()) return "Name the meal, or run an estimate first.";
+    const when = validateWhen();
+    if (when) return when;
     if (slot === "Alcohol" && !ethanolOk)
       return ethanolGrams > ETHANOL_LIMIT
         ? "Ethanol looks too high."
@@ -625,9 +737,38 @@ export function MealForm({
     return "";
   }
 
+  /** One meal for each of you with a share, each holding that share of every dish. */
+  async function submitSplit() {
+    const when = validateWhen();
+    const read = when ? null : readDishes(dishes, slot);
+    const split = read?.ok
+      ? splitMeal({
+          eaters,
+          meal: { kind: "meal", day, ...(time ? { time } : {}), meal: slot },
+          name,
+          dishes: read.dishes,
+          ids: draftIds,
+        })
+      : null;
+    const problem = when || (read && !read.ok ? read.error : "") || (split && !split.ok ? split.error : "");
+    setError(problem);
+    if (problem || !split?.ok) return;
+    setSaving(true);
+    try {
+      await saveRecords(split.meals);
+      reset();
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (estimating || saving) return;
+    if (estimating || saving || estimatingDish) return;
+    if (splitting) {
+      await submitSplit();
+      return;
+    }
     const problem = validate();
     setError(problem);
     if (problem) return;
@@ -710,6 +851,7 @@ export function MealForm({
             </div>
           </div>
         ) : null}
+        {splitting ? null : (
         <MealTemplateList
           loggingFor={who}
           templates={templates}
@@ -727,6 +869,7 @@ export function MealForm({
           onSaveForm={() => void saveAsTemplate()}
           onSaveTemplates={onSaveTemplates}
         />
+        )}
         <section {...athleteOutline(who)} className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
           <Choice
             label="Athlete"
@@ -756,6 +899,45 @@ export function MealForm({
         </section>
       </fieldset>
 
+      {splitting ? (
+        <fieldset disabled={busy} className="min-w-0 space-y-4">
+            <section
+              {...athleteOutline(who)}
+              aria-label="Dishes"
+              className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5"
+            >
+              <h3 className="text-sm font-semibold">Dishes</h3>
+              <MealDishes
+                dishes={dishes}
+                sitting={slot}
+                grokReady={grokReady}
+                estimating={estimatingDish}
+                errors={dishErrors}
+                onDish={changeDish}
+                onEstimate={(id) => void estimateDish(id)}
+                onRemove={removeDish}
+                onAdd={() => {
+                  setDishes((current) => [...current, emptyDish(newId())]);
+                  setError("");
+                }}
+              />
+            </section>
+            <section {...athleteOutline(who)} className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
+              <Field label="Meal">
+                <Input
+                  value={name}
+                  maxLength={300}
+                  placeholder={dishes.map((dish) => dish.name.trim()).filter(Boolean).join(", ") || "Named after its dishes"}
+                  onChange={(event) => {
+                    setName(event.target.value);
+                    setError("");
+                  }}
+                />
+              </Field>
+              <DishShares dishes={dishes} sitting={slot} eaters={eaters} />
+            </section>
+        </fieldset>
+      ) : (
       <section {...athleteOutline(who)} className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
         <fieldset disabled={busy} className="min-w-0 space-y-3">
           <div>
@@ -806,10 +988,19 @@ export function MealForm({
             {saving ? "Saving…" : "Save and estimate in background"}
           </Button>
         ) : null}
+        {who === "both" && !editing ? (
+          <Button type="button" variant="outline" className="w-full" disabled={busy} onClick={splitByDish}>
+            <Split />
+            Split by dish
+          </Button>
+        ) : null}
         {estimating && !refineOpen ? <SoFar partials={partials} /> : null}
       </section>
+      )}
 
       <fieldset disabled={busy} className="min-w-0 space-y-4">
+        {splitting ? null : (
+        <>
 
         {assumptions || conversation.length > 0 ? (
           <section
@@ -941,6 +1132,8 @@ export function MealForm({
             </p>
           ) : null}
         </section>
+        </>
+        )}
 
         {error ? (
           <p role="alert" className="text-sm text-destructive">
@@ -948,7 +1141,7 @@ export function MealForm({
           </p>
         ) : null}
 
-        <Button type="submit" size="lg" className="w-full" disabled={saving}>
+        <Button type="submit" size="lg" className="w-full" disabled={saving || estimatingDish !== null}>
           {saving ? "Saving…" : editing ? "Update meal" : "Save meal"}
         </Button>
       </fieldset>
