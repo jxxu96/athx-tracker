@@ -12,7 +12,12 @@ single SQLite file on a volume.
   of it, and where it would have placed among last season's mixed Lite pairs; the
   2.4 km run times and SkiErg distance for Endurance; and the MetCon X time. Then
   the sessions logged this week and over the last 7 days against the weekly
-  target. Fuel switches between today, yesterday, the last 7 days, and
+  target, and under them the last 7 days as a strip, a dot for each session in
+  its athlete's colour, with what each one was listed beneath: the time, who and
+  what, the burn, lifts, distance and notes. Tap a day for that day alone, step
+  back a week at a time, or switch to **Month** for a calendar to tap. Days older
+  than the phone's recent slice are fetched for the strip or month being shown
+  (`/api/records?from=…&to=…&kind=workout`), not shown as empty. Fuel switches between today, yesterday, the last 7 days, and
   the whole journal. **Pick day**, beside Overall, shows any past date, including
   entries older than the phone's recent slice. A single day is that day's macros against
   the daily targets. A longer range is the daily average of days that have a meal,
