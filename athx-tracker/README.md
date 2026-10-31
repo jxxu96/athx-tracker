@@ -79,6 +79,22 @@ single SQLite file on a volume.
   a template to keep your own name, items and grams; tapping one fills the form,
   and the saved macros stay until you estimate again. A meal typed and not
   saved yet is kept as a draft; see *Drafts*.
+  Logging for both saves the same meal for each of you, unless you choose
+  **Split by dish**: what is on the form becomes the first dish, and you add
+  the rest. Each dish has its own figures, typed or estimated from what the
+  dish says, and a share for each of you as a percentage of that dish, starting
+  at half each. The two shares always add up to 100: typing one sets the other,
+  and blank counts as 0. Saving writes one meal for each of you with a share,
+  holding your share of every dish (`splitMeal` in `lib/meal-dishes.ts`), so
+  the two meals add up to what was on the table. Someone with no share of
+  anything gets no meal, and switching to one of you saves only that share. A
+  name left blank becomes each person's own dishes. The assumptions give your
+  share of each dish and the whole dish's figures, then how that dish's figures
+  were reached. A meal reads as estimated when every dish in it was estimated
+  and left alone. Each dish's estimate counts towards the daily limit, one runs
+  at a time, and a dish cannot wait in the queue for later. Templates and
+  replies to an estimate are for a single meal, so a split meal does not offer
+  them. The two saved meals are separate entries, edited one at a time.
 - **Progress** — the main lifts for each athlete: split jerk, overhead press
   (push press for Hippos), back squat and deadlift, each at the rep max the
   race's Strength asks for: a 1RM for the jerk and the press, which are both
