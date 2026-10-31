@@ -64,8 +64,13 @@ test("the meal date is today, yesterday, or a day from the calendar", async ({ p
     "true",
   );
 
+  // The calendar opens on the chosen day's month, which is yesterday's here,
+  // and its outside days only fill out the first and last weeks. A day in
+  // another month is paged to; without that the spec failed whenever tomorrow
+  // or three days ago was off the grid.
   const { picked, tomorrow } = await page.evaluate(() => {
-    const today = new Date();
+    const opens = new Date();
+    opens.setDate(opens.getDate() - 1);
     const shifted = (days: number) => {
       const date = new Date();
       date.setDate(date.getDate() + days);
@@ -76,21 +81,22 @@ test("the meal date is today, yesterday, or a day from the calendar", async ({ p
           day: "2-digit",
         }).format(date),
         dataDay: date.toLocaleDateString(),
-        newMonth: date.getMonth() !== today.getMonth(),
+        months:
+          (date.getFullYear() - opens.getFullYear()) * 12 + date.getMonth() - opens.getMonth(),
       };
     };
     return { picked: shifted(-3), tomorrow: shifted(1) };
   });
-  // The calendar opens on this month, and its outside days only fill out the
-  // first and last weeks, so a day in another month is paged to. Without
-  // this the spec failed whenever tomorrow or three days ago was off the grid.
-  const turn = (to: "Next" | "Previous") =>
-    page.getByRole("button", { name: `Go to the ${to} Month`, exact: true }).click();
+  const turn = async (months: number) => {
+    const to = months > 0 ? "Next" : "Previous";
+    for (let step = 0; step < Math.abs(months); step++) {
+      await page.getByRole("button", { name: `Go to the ${to} Month`, exact: true }).click();
+    }
+  };
   await dates.getByRole("button", { name: "Calendar", exact: true }).click();
-  if (tomorrow.newMonth) await turn("Next");
+  await turn(tomorrow.months);
   await expect(page.locator(`[data-day="${tomorrow.dataDay}"]`)).toBeDisabled();
-  if (tomorrow.newMonth) await turn("Previous");
-  if (picked.newMonth) await turn("Previous");
+  await turn(picked.months - tomorrow.months);
   await page.locator(`[data-day="${picked.dataDay}"]`).click();
   await expect(dates.getByRole("button", { name: /^Calendar/ })).toHaveAttribute(
     "aria-pressed",
