@@ -42,6 +42,11 @@ async function session(page: Page, title: string) {
   }, title);
 }
 
+// Today also lists the week's sessions, so the title shows twice; this box is
+// the one that has always shown it.
+const lastSession = (page: Page) =>
+  page.locator("section").filter({ has: page.getByRole("heading", { name: "Last session" }) });
+
 /** Whether the worker holds a copy of the journal page yet. */
 const kept = (page: Page) =>
   page.evaluate(async () => {
@@ -64,14 +69,14 @@ test("the journal opens without a connection, and a meal saved there sends itsel
   await expect.poll(() => kept(page), { timeout: 15_000 }).toBe(true);
   // The worker keeps each page as it loads, so this load is the copy.
   await page.reload();
-  await expect(page.getByText("Kept for offline")).toBeVisible();
+  await expect(lastSession(page).getByText("Kept for offline")).toBeVisible();
   await expect.poll(() => page.evaluate(() => navigator.serviceWorker.controller !== null)).toBe(true);
 
   // Logged on the other phone after this one went out of signal.
   await session(page, "Logged elsewhere");
   await context.setOffline(true);
   await page.reload();
-  await expect(page.getByText("Kept for offline")).toBeVisible();
+  await expect(lastSession(page).getByText("Kept for offline")).toBeVisible();
   await expect(page.getByText("Logged elsewhere")).toHaveCount(0);
 
   await page.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: "Meal", exact: true }).click();

@@ -49,6 +49,7 @@ import {
   subscribeOutbox,
 } from "@/lib/outbox";
 import { journalSummary, type JournalSummary } from "@/lib/summary";
+import { heldFrom as sliceHeldFrom } from "@/lib/session-calendar";
 import {
   changeDrafts,
   draftFor,
@@ -259,6 +260,11 @@ export function Tracker({
   // Whether what is in hand is the whole journal, as of the last fetch. Saving
   // here adds to both, so it stays true or false until the next one.
   const [complete, setComplete] = useState(initialRecords.length >= initialTotal);
+  // The oldest day that slice reaches. Days fetched on their own later do not
+  // move it, since the days between them and the slice are still missing.
+  const [heldFrom, setHeldFrom] = useState(() =>
+    sliceHeldFrom(initialRecords, initialRecords.length >= initialTotal),
+  );
   // The whole-journal figures the server worked out, for while only the
   // recent slice is in hand.
   const [summary, setSummary] = useState(initialSummary);
@@ -326,6 +332,7 @@ export function Tracker({
       setRecords(sortRecords(entries.records));
       setTotal(entries.total);
       setComplete(entries.records.length >= entries.total);
+      setHeldFrom(sliceHeldFrom(entries.records, entries.records.length >= entries.total));
       setScope(next);
       if (config) {
         setSettings(config.settings);
@@ -365,6 +372,18 @@ export function Tracker({
       ...entries,
     ]));
   }, [complete]);
+
+  /** A calendar's sessions from before the slice, merged in like a picked day's. */
+  const loadSessions = useCallback(async (from: string, to: string) => {
+    const { records: entries } = await api<{ records: RecordItem[] }>(
+      `/api/records?from=${from}&to=${to}&kind=workout`,
+      { signal: timeout(SAVE_TIMEOUT_MS) },
+    );
+    setRecords((current) => sortRecords([
+      ...current.filter((record) => record.kind !== "workout" || record.day < from || record.day > to),
+      ...entries,
+    ]));
+  }, []);
 
   /**
    * A submit, not a record. Logging for both used to save one athlete, succeed,
@@ -699,6 +718,8 @@ export function Tracker({
             today={today}
             onLoadFuelDay={loadFuelDay}
             fuelRefresh={fuelRefresh}
+            heldFrom={heldFrom}
+            onLoadSessions={loadSessions}
           />
         ) : tab === "progress" ? (
           <Progress
