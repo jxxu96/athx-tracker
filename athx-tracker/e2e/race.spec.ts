@@ -94,12 +94,40 @@ test("with nothing logged, each part of the estimate says what it needs", async 
   await expect(strength).toContainText(
     "Still to log: Hippos shoulder to overhead, back squat and deadlift; Gators shoulder to overhead, back squat and deadlift.",
   );
-  await expect(page.getByRole("group", { name: "Endurance estimate" })).toContainText(
-    "Still to log: a run for Hippos and Gators; a SkiErg piece for Hippos and Gators, each 1 km or longer.",
+  await expect(page.getByRole("group", { name: "Run estimate" })).toContainText(
+    "Still to log: a run of 1 km or longer for Hippos and Gators.",
+  );
+  await expect(page.getByRole("group", { name: "SkiErg estimate" })).toContainText(
+    "Still to log: a SkiErg piece of 1 km or longer for Hippos and Gators.",
   );
   await expect(page.getByRole("group", { name: "MetCon X estimate" })).toContainText(
     "Log the circuit with a split at each station to estimate it.",
   );
+});
+
+test("the run and the SkiErg each show before the other is logged", async ({ page }) => {
+  await log(page, [
+    { athlete: "hippos", category: "Endurance", segments: [piece("Run", 2.4, "km", 840)] },
+    { athlete: "gators", category: "Mixed", segments: [piece("Ski erg", 2000, "m", 480)] },
+  ]);
+  await page.reload();
+  const endurance = page.getByRole("group", { name: "Endurance estimate" });
+  // The metres skied, the zone's figure, need both runs and both of you on the erg.
+  await expect(endurance).not.toContainText("m SkiErg");
+
+  const run = endurance.getByRole("group", { name: "Run estimate" });
+  await expect(run.getByRole("listitem").filter({ hasText: "Hippos" })).toHaveText(/Hippos\s*14:00/);
+  await expect(run.getByRole("listitem").filter({ hasText: "Gators" })).toHaveText(/Gators\s*—/);
+  await expect(run).toContainText("Still to log: a run of 1 km or longer for Gators.");
+
+  const ski = endurance.getByRole("group", { name: "SkiErg estimate" });
+  await expect(ski).toContainText("Best piece so far");
+  await expect(ski.getByRole("listitem").filter({ hasText: "Gators" })).toHaveText(
+    /Gators\s*2,000\sm in\s8:00 · 2:00\/500\sm/,
+  );
+  await expect(ski.getByRole("listitem").filter({ hasText: "Hippos" })).toHaveText(/Hippos\s*—/);
+  await expect(ski).toContainText("Race-day metres follow once you both have a run");
+  await expect(ski).toContainText("Still to log: a SkiErg piece of 1 km or longer for Hippos.");
 });
 
 test("the race-day estimate covers all three zones from what is logged", async ({ page }) => {
@@ -151,10 +179,14 @@ test("the race-day estimate covers all three zones from what is logged", async (
 
   const endurance = page.getByRole("group", { name: "Endurance estimate" });
   await expect(endurance).toContainText("3,000 m SkiErg");
-  await expect(endurance).toContainText("Run 2.4 km · Hippos 14:00 · Gators 12:00");
-  await expect(endurance).toContainText(
-    "SkiErg from 12:00 · Hippos 1,000 m in 5:00 · Gators 2,000 m in 7:00",
-  );
+  const run = endurance.getByRole("group", { name: "Run estimate" });
+  await expect(run.getByRole("listitem").filter({ hasText: "Hippos" })).toHaveText(/Hippos\s*14:00/);
+  await expect(run.getByRole("listitem").filter({ hasText: "Gators" })).toHaveText(/Gators\s*12:00/);
+  const ski = endurance.getByRole("group", { name: "SkiErg estimate" });
+  await expect(ski).toContainText("12:00 to 24:00");
+  await expect(ski.getByRole("listitem").filter({ hasText: "Hippos" })).toHaveText(/Hippos\s*1,000\sm in\s5:00/);
+  await expect(ski.getByRole("listitem").filter({ hasText: "Gators" })).toHaveText(/Gators\s*2,000\sm in\s7:00/);
+  await expect(endurance).not.toContainText("Still to log");
 
   // 715 s of stations for the pair, and Gators' clock shows 10 s at each of the six changes.
   const metcon = page.getByRole("group", { name: "MetCon X estimate" });
