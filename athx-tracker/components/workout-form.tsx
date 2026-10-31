@@ -321,8 +321,12 @@ const parseDay = (day: string) => {
   return new Date(year, (month ?? 1) - 1, date ?? 1);
 };
 
+/**
+ * A date button. The chosen one takes the primary fill, as a chosen sitting
+ * does: accent on a card was too faint to see which day was picked.
+ */
 const CHOICE =
-  "inline-flex min-w-0 items-center justify-center gap-1.5 rounded-lg border px-2 py-2.5 text-xs font-medium whitespace-nowrap transition-colors aria-pressed:bg-accent aria-pressed:font-semibold";
+  "inline-flex min-w-0 items-center justify-center gap-1.5 rounded-lg border px-2 py-2.5 text-xs font-medium whitespace-nowrap transition-colors aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground";
 
 const FORMAT_OPTIONS: readonly {
   value: Format;
