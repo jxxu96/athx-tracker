@@ -106,4 +106,36 @@ test("a complex meal asks every estimator at once, and a simple one goes in orde
   assert.equal(unsure.body.calories, 760);
   assert.deepEqual(unsure.log.slice(0, 2), ["start codex", "end codex"]);
   assert.deepEqual(unsure.log.slice(2, 4).sort(), ["start claude", "start grok"], "then the rest together");
+
+  // Streamed: each answer as it lands, then the settled one.
+  writeFileSync(log, "");
+  const streamed = await fetch(`http://127.0.0.1:${port}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ description: "zz rice, beans, cheese", budgetMs: 130000, stream: true }),
+  });
+  assert.equal(streamed.headers.get("content-type"), "application/x-ndjson");
+  const lines = (await streamed.text()).trim().split("\n").map((line) => JSON.parse(line));
+  assert.deepEqual(
+    lines.slice(0, 3).map(({ type, provider, estimate }) => [type, provider, estimate.calories]).sort(),
+    [["partial", "claude", 700], ["partial", "codex", 600], ["partial", "grok", 1100]],
+  );
+  assert.deepEqual(lines.slice(3).map(({ type, provider }) => [type, provider]), [["done", "average"]]);
+  assert.equal(lines[3].estimate.calories, 760);
+
+  // Hanging up stops every CLI still running: none of them finishes.
+  writeFileSync(log, "");
+  const stop = new AbortController();
+  const abandoned = await fetch(`http://127.0.0.1:${port}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ description: "zz rice, beans, cheese", budgetMs: 130000, stream: true }),
+    signal: stop.signal,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  stop.abort();
+  await abandoned.text().catch(() => {});
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  const after = readFileSync(log, "utf8").trim().split("\n");
+  assert.deepEqual(after.sort(), ["start claude", "start codex", "start grok"], "stopped before answering");
 });

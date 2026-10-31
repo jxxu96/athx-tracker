@@ -403,6 +403,24 @@ offers to take you back to review it. Failed estimates also notify you and keep
 the description for retry. Nothing reaches the journal until you choose to save
 the form.
 
+While a meal estimate runs, each estimator's figures appear under **Answers so
+far** as it answers. They are shown, not applied: the meal waits for the
+settled answer, which may average them or keep only the best-sourced one.
+**Stop estimate** ends it, stops the estimator's CLIs, gives the daily
+estimate back, and unlocks the form to edit. A stopped estimate raises no
+popup.
+
+**Save and estimate in background** saves the meal now, with zero macros and
+the description kept, and the server estimates it with the same estimators and
+the same settling, with nobody waiting on it. Pressed mid-estimate, it takes
+over from the one on screen. The server starts within a few seconds of the
+save rather than at its two-minute retry timer, and a meal logged for both
+athletes is estimated once and both records are filled with the same figures.
+While one is waiting, the app looks for its figures every 15 seconds, and a
+popup says when they arrive, from whichever section is open. It is offered
+until there is an estimate on the form, since a queued meal would throw those
+figures away. Background estimates do not count toward the 60 a day.
+
 ### Drafts
 
 What is typed into the Meal or Session form is kept on the phone as it is

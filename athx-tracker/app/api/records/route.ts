@@ -2,6 +2,7 @@ import { BodyTooLarge, database, guard, json, readBody, tooLarge } from "@/lib/s
 import { newBests } from "@/lib/bests";
 import type { Workout } from "@/lib/domain";
 import { readRecords, readRecordsOn } from "@/lib/journal";
+import { kickQueue } from "@/lib/queue";
 import { daySchema, recordSchema } from "@/lib/validation";
 import { ZodError } from "zod";
 
@@ -61,6 +62,8 @@ export async function POST(request: Request) {
         JSON.stringify(record),
         new Date().toISOString(),
       );
+    // Saved to be estimated in the background: start now, not at the timer.
+    if (record.kind === "meal" && record.source === "queued") kickQueue();
     return json({ record, ...(bests.length ? { newBests: bests } : {}) });
   } catch (error) {
     if (error instanceof BodyTooLarge) return tooLarge();

@@ -2,11 +2,14 @@ import { database, runtime, storedFoodNotes } from "./server";
 import { estimatePrompt } from "./estimate-conversation";
 import { estimateSchema } from "./validation";
 import { type Estimator, type Meal } from "./domain";
+import { namedEstimator } from "./estimate-stream";
 import {
   RETRY_MAX_MS,
   RETRY_MIN_MS,
+  byDescription,
   fillQueuedMeal,
   nextRetryDelay,
+  type DrainOutcome,
 } from "./queue-rules";
 
 /**
@@ -20,8 +23,6 @@ import {
  */
 /** No browser deadline here, so a slow CLI is merely slow, not a failure. */
 const QUEUE_BUDGET_MS = 210_000;
-
-const PROVIDERS = ["codex", "claude", "grok", "average"] as const;
 
 async function estimate(description: string) {
   const config = runtime();
@@ -40,7 +41,7 @@ async function estimate(description: string) {
   });
   if (!response.ok) return null;
   const estimate = estimateSchema.parse(await response.json());
-  const provider = PROVIDERS.find((name) => name === response.headers.get("x-athx-provider"));
+  const provider = namedEstimator(response.headers.get("x-athx-provider"));
   return provider ? { ...estimate, estimator: provider satisfies Estimator } : estimate;
 }
 
@@ -53,21 +54,19 @@ function queuedMeals(): Meal[] {
     .filter((meal) => meal.source === "queued");
 }
 
-export async function drainQueue() {
+async function drainOnce() {
   const pending = queuedMeals();
   if (pending.length === 0) return { filled: 0, waiting: 0 };
 
   let filled = 0;
-  for (const meal of pending) {
-    const result = await estimate(meal.assumptions).catch(() => null);
+  for (const meals of byDescription(pending)) {
+    const result = await estimate(meals[0].assumptions).catch(() => null);
     // Still failing: stop rather than burn through the rest and fail each.
     if (!result) break;
 
-    const updated = fillQueuedMeal(meal, result);
-    database()
-      .prepare("UPDATE records SET payload = ? WHERE id = ?")
-      .run(JSON.stringify(updated), meal.id);
-    filled += 1;
+    const write = database().prepare("UPDATE records SET payload = ? WHERE id = ?");
+    for (const meal of meals) write.run(JSON.stringify(fillQueuedMeal(meal, result)), meal.id);
+    filled += meals.length;
   }
 
   const waiting = pending.length - filled;
@@ -78,8 +77,58 @@ export async function drainQueue() {
 
 // Next reloads modules in development, so register can run again and leave a
 // second loop behind, each draining the same queue and spending estimates
-// twice. Held on globalThis for the same reason the database handle is.
-const cache = globalThis as unknown as { athxQueueStarted?: boolean };
+// twice. Held on globalThis for the same reason the database handle is. The
+// drain in progress is held there too: the timer and a meal just queued must
+// not both estimate the same meal.
+const cache = globalThis as unknown as {
+  athxQueueStarted?: boolean;
+  athxQueueDrain?: Promise<Exclude<DrainOutcome, "failed">>;
+  athxQueueAgain?: boolean;
+  athxQueueKick?: ReturnType<typeof setTimeout>;
+};
+
+/**
+ * One drain at a time. Asked while one runs, it runs once more after, so a
+ * meal queued mid-drain is not left for the timer.
+ */
+export function drainQueue() {
+  if (cache.athxQueueDrain) {
+    cache.athxQueueAgain = true;
+    return cache.athxQueueDrain;
+  }
+  cache.athxQueueDrain = (async () => {
+    try {
+      let outcome;
+      do {
+        cache.athxQueueAgain = false;
+        outcome = await drainOnce();
+      } while (cache.athxQueueAgain);
+      return outcome;
+    } finally {
+      cache.athxQueueDrain = undefined;
+    }
+  })();
+  return cache.athxQueueDrain;
+}
+
+/**
+ * Long enough for a meal saved for both athletes to land both records, which
+ * are sent one after the other, so the drain sees them together.
+ */
+const KICK_DELAY_MS = 5000;
+
+/**
+ * A meal was just queued: estimate it now rather than at the timer's next
+ * turn, which can be minutes away. Kicks close together are one drain.
+ */
+export function kickQueue() {
+  if (cache.athxQueueKick) return;
+  cache.athxQueueKick = setTimeout(() => {
+    cache.athxQueueKick = undefined;
+    drainQueue().catch((error) => console.error(`[queue] drain failed: ${(error as Error).message}`));
+  }, KICK_DELAY_MS);
+  cache.athxQueueKick.unref?.();
+}
 
 /** One loop per container, started from instrumentation. */
 export function startQueueWorker() {

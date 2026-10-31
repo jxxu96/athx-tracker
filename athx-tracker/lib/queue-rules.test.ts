@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   RETRY_MAX_MS,
   RETRY_MIN_MS,
+  byDescription,
   fillQueuedMeal,
   nextRetryDelay,
 } from "./queue-rules.ts";
@@ -86,4 +87,16 @@ test("the wait is never longer than the ceiling or shorter than the floor", () =
       assert.ok(next >= RETRY_MIN_MS && next <= RETRY_MAX_MS, `${start} ${JSON.stringify(outcome)} -> ${next}`);
     }
   }
+});
+
+test("a meal saved for both athletes is one description, estimated once", () => {
+  const hippos = queued({ id: "a", athlete: "hippos" });
+  const gators = queued({ id: "b", athlete: "gators" });
+  const other = queued({ id: "c", assumptions: "two eggs" });
+  const spaced = queued({ id: "d", assumptions: " chicken thigh rice bowl \n" });
+  assert.deepEqual(
+    byDescription([hippos, other, gators, spaced]).map((group) => group.map((meal) => meal.id)),
+    [["a", "b", "d"], ["c"]],
+  );
+  assert.deepEqual(byDescription([]), []);
 });

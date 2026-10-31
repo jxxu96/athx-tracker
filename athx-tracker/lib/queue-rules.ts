@@ -51,3 +51,18 @@ export function fillQueuedMeal(
     ...(estimate.estimator ? { estimator: estimate.estimator } : {}),
   };
 }
+
+/**
+ * Queued meals that share a description, oldest first. A meal logged for both
+ * athletes is two records with one description, and estimating each on its
+ * own asked the estimators twice and could give the two of them different
+ * figures for the same plate. One estimate per description fills them all.
+ */
+export function byDescription(meals: Meal[]): Meal[][] {
+  const groups = new Map<string, Meal[]>();
+  for (const meal of meals) {
+    const key = meal.assumptions.trim();
+    groups.set(key, [...(groups.get(key) ?? []), meal]);
+  }
+  return [...groups.values()];
+}

@@ -25,6 +25,14 @@ description going out and macros coming back.
 
 The app already speaks this protocol: it is the `GROK_GATEWAY_URL` path, which
 POSTs `{"description": "..."}` with a bearer token and expects the estimate back.
+A meal request with `"stream": true` is answered as
+`application/x-ndjson`: one line `{"type":"partial","provider":"codex","estimate":{...}}`
+per estimator as it answers, then `{"type":"done","provider":"average","estimate":{...}}`
+or `{"type":"error","error":"No estimate available.","detail":"..."}`. The
+status is sent before anyone answers, so a failure is in the last line, not the
+status. Without the flag, a meal gets one JSON body as before, so an app from
+before streaming still works. Whichever way, a caller that hangs up stops every
+CLI still running for it.
 Workout drafts use the same authenticated service and provider fallback with
 `{"task":"workout","description":"Deadlift 1 x 2 at 185 lb","athletes":["hippos"],"weightUnit":"lb"}`.
 They return editable workout fields instead of meal macros. Sets precede reps in
