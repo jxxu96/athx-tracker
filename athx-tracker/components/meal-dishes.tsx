@@ -9,7 +9,7 @@ import { Field } from "@/components/workout-form";
 import { ATHLETES, ESTIMATORS, type Meal } from "@/lib/domain";
 import {
   DISH_LIMIT,
-  DISH_NAME_LIMIT,
+  DISH_TEXT_LIMIT,
   EATERS,
   looseDishes,
   setFigure,
@@ -107,7 +107,7 @@ function DishCard({
         <Input
           aria-label="Dish"
           value={dish.name}
-          maxLength={DISH_NAME_LIMIT}
+          maxLength={DISH_TEXT_LIMIT}
           placeholder="Margherita pizza, 12 inch"
           disabled={busy}
           onChange={(event) => {

@@ -48,7 +48,6 @@ import { macroCalories } from "@/lib/meal-calories";
 import { fanOutMeal, type LoggingFor, type MealDraft } from "@/lib/meal-fanout";
 import { mealForTime } from "@/lib/meal-time";
 import {
-  DISH_NAME_LIMIT,
   EATERS,
   ETHANOL_LIMIT,
   FIBER_LIMIT,
@@ -363,7 +362,9 @@ export function MealForm({
    * there was, in which case it names the dish instead.
    */
   function splitByDish() {
-    const text = (description.trim() || name.trim()).slice(0, DISH_NAME_LIMIT);
+    // Whole: the description is what the figures came from, and what the
+    // dish's own estimate will read.
+    const text = description.trim() || name.trim();
     const typed = text !== "" || assumptions.trim() !== "" || fiber.trim() !== "" || ethanol.trim() !== "" ||
       MACRO_FIELDS.some(({ key }) => macros[key].trim() !== "");
     const first: DishDraft = typed

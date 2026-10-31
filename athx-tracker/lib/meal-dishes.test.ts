@@ -202,6 +202,25 @@ test("long working is cut to fit, and the shares stay whole", () => {
   assert.match(text, /Item one, cut nowhere\.…/);
 });
 
+test("a long dish is kept whole, and clipped only where it names the meal", () => {
+  const long = `Tasting menu: ${"course with sauce, ".repeat(200)}`.trim().slice(0, 3500);
+  const dishes = read([dish("long", { name: long, calories: "1800", protein: "90", carbs: "150", fat: "80" })]);
+  assert.equal(dishes[0].name, long, "the estimate still reads all of it");
+  const split = splitMeal({ eaters: ["hippos", "gators"], meal: dinner, name: "", dishes, ids });
+  assert.ok(split.ok);
+  for (const meal of split.meals) {
+    assert.ok(meal.name.length <= 300, String(meal.name.length));
+    assert.ok(meal.name.endsWith("…"));
+    assert.ok(meal.assumptions.length <= ASSUMPTIONS_LIMIT);
+    assert.match(meal.assumptions, /… \[900 kcal, 45P, 75C, 40F\]\n/);
+    assert.deepEqual(mealSchema.parse(meal), meal);
+  }
+  assert.equal(
+    problem([dish("long", { name: "x".repeat(4001), calories: "100" })]),
+    "Dish 1: the description is too long.",
+  );
+});
+
 test("ethanol counts only on an Alcohol sitting", () => {
   const wine = dish("w", { name: "Red wine, 2 glasses", calories: "250", carbs: "8", ethanol: "28" });
   assert.equal(read([wine], "Dinner")[0].macros.alcohol, 0);

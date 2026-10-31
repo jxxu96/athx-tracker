@@ -20,8 +20,13 @@ export const ETHANOL_LIMIT = 500;
 export const FIBER_LIMIT = 3000;
 /** The server's limit on a meal's assumptions. */
 export const ASSUMPTIONS_LIMIT = 3000;
-/** A meal's name, and a dish's, which is also what its estimate reads. */
-export const DISH_NAME_LIMIT = 300;
+/** A meal's name, which a dish's text is clipped to wherever it names something. */
+export const MEAL_NAME_LIMIT = 300;
+/**
+ * What a dish says, which is also what its estimate reads: as long as a meal's
+ * description can be, so turning a long description into a dish keeps all of it.
+ */
+export const DISH_TEXT_LIMIT = 4000;
 export const DISH_LIMIT = 20;
 
 const MACROS = [
@@ -185,7 +190,7 @@ export function readDishes(
   for (const [index, draft] of drafts.entries()) {
     const dish = `Dish ${index + 1}`;
     if (!draft.name.trim()) return { ok: false, error: `Name dish ${index + 1}.` };
-    if (draft.name.trim().length > DISH_NAME_LIMIT) return { ok: false, error: `${dish}: the name is too long.` };
+    if (draft.name.trim().length > DISH_TEXT_LIMIT) return { ok: false, error: `${dish}: the description is too long.` };
     if (sitting === "Alcohol") {
       const ethanol = amount(draft.ethanol);
       if (!Number.isFinite(ethanol) || ethanol < 0)
@@ -262,6 +267,11 @@ export function percent(fraction: number) {
   return String(Math.round(fraction * 1000) / 10);
 }
 
+/** A dish's text where it names something: a meal, or a line of the assumptions. */
+function clip(text: string, max = MEAL_NAME_LIMIT) {
+  return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
+}
+
 /** Whole paragraphs first: cut at the last blank line that fits, else mid-text. */
 function shorten(text: string, max: number) {
   if (text.length <= max) return text;
@@ -282,7 +292,7 @@ export function shareAssumptions(dishes: readonly Dish[], eater: Eater) {
       const whole = dish.share[eater] >= 1;
       const yours = whole ? dish.macros : shareTotals([dish], eater);
       const head = [
-        `${percent(dish.share[eater])}% of ${dish.name} ${bracketed(yours)}`,
+        `${percent(dish.share[eater])}% of ${clip(dish.name)} ${bracketed(yours)}`,
         ...(whole ? [] : [`The whole dish ${bracketed(dish.macros)}`]),
       ].join("\n");
       return { head, working: dish.assumptions };
@@ -303,8 +313,7 @@ export function shareAssumptions(dishes: readonly Dish[], eater: Eater) {
 
 /** One person's meal is named after their dishes when no name is typed. */
 export function shareName(dishes: readonly Dish[], eater: Eater) {
-  const named = dishes.filter((dish) => dish.share[eater] > 0).map((dish) => dish.name).join(", ");
-  return named.length <= DISH_NAME_LIMIT ? named : `${named.slice(0, DISH_NAME_LIMIT - 1).trimEnd()}…`;
+  return clip(dishes.filter((dish) => dish.share[eater] > 0).map((dish) => dish.name).join(", "));
 }
 
 /**
@@ -352,7 +361,7 @@ export function splitMeal(input: {
       meal: input.meal.meal,
       id: input.ids[eater],
       athlete: eater,
-      name: input.name.trim().slice(0, DISH_NAME_LIMIT) || shareName(input.dishes, eater),
+      name: input.name.trim().slice(0, MEAL_NAME_LIMIT) || shareName(input.dishes, eater),
       macros,
       source: estimated ? "grok" : "manual",
       ...(estimated && estimators.size === 1 && estimator ? { estimator } : {}),

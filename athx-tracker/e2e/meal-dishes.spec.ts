@@ -223,4 +223,11 @@ test("dishes logged for one of you save only that share, and removing them goes 
   await page.getByRole("button", { name: "Remove dish 1" }).click();
   await expect(page.getByLabel("Meal description")).toBeVisible();
   await expect(page.getByRole("button", { name: "Save this meal as a template" })).toBeVisible();
+
+  // A description longer than a meal's name still becomes the dish whole.
+  const long = `Tasting menu: ${Array.from({ length: 30 }, (_, index) => `course ${index + 1} with sauce`).join(", ")}`;
+  expect(long.length).toBeGreaterThan(300);
+  await page.getByLabel("Meal description").fill(long);
+  await page.getByRole("button", { name: "Split by dish" }).click();
+  await expect(dish(page, 1).getByLabel("Dish", { exact: true })).toHaveValue(long);
 });
