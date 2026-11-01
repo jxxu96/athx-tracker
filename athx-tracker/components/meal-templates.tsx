@@ -101,7 +101,8 @@ export function MealTemplateList({
   showOffers: boolean;
   formLabel: string;
   onApply: (athlete: "hippos" | "gators", offer: MealOffer) => void;
-  onSaveForm: () => void;
+  /** Absent while the form has no meal of its own to keep, as before a shared meal is split. */
+  onSaveForm?: () => void;
   onSaveTemplates: (next: MealTemplates, notice: string) => Promise<void>;
 }) {
   const stored = storedTemplates(templates);
@@ -300,15 +301,17 @@ export function MealTemplateList({
       className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5"
     >
       <h3 className="text-sm font-semibold">Meal templates</h3>
-      <Button
-        type="button"
-        variant="outline"
-        className="w-full"
-        disabled={disabled || saving || estimating}
-        onClick={onSaveForm}
-      >
-        {formLabel}
-      </Button>
+      {onSaveForm ? (
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          disabled={disabled || saving || estimating}
+          onClick={onSaveForm}
+        >
+          {formLabel}
+        </Button>
+      ) : null}
       {listError ? (
         <p role="alert" className="text-sm text-destructive">{listError}</p>
       ) : null}

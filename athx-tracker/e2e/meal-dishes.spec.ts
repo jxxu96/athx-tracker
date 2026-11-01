@@ -49,7 +49,8 @@ test("a meal for both splits by dish, and each of you saves your share", async (
   await page.getByRole("group", { name: "Sitting" }).getByRole("button", { name: "Dinner" }).click();
   await page.getByLabel("Time of day").fill("19:30");
 
-  // What is already on the form becomes the first dish.
+  // Figures already on the form, for the same meal for each, become the first dish whole.
+  await page.getByRole("button", { name: "Same meal for each of you" }).click();
   await page.getByLabel("Meal description").fill("Margherita pizza, 12 inch");
   await page.getByLabel("Calories (kcal)").fill("880");
   await page.getByLabel("Protein (g)").fill("36");
@@ -124,7 +125,7 @@ test("a meal for both splits by dish, and each of you saves your share", async (
   expect(hippos?.assumptions).toContain("50% of Caesar salad [210 kcal, 6P, 8C, 17F, 2 fiber]");
   expect(hippos?.assumptions).not.toContain("Tiramisu");
 
-  // The next meal starts as one meal again.
+  // The next meal waits to be split again.
   await page.getByRole("button", { name: "Meal", exact: true }).click();
   await expect(page.getByLabel("Meal description")).toBeVisible();
   await expect(page.getByRole("group", { name: "Dish 1", exact: true })).toHaveCount(0);
@@ -155,7 +156,8 @@ test("a dish is estimated on its own, and a split meal outlives a reload", async
   await expect(dish(page, 1).getByLabel("Calories (kcal)")).toHaveValue("560");
   await expect(dish(page, 1)).toContainText("Answered by Claude");
   await expect(dish(page, 1).getByLabel("Dish", { exact: true })).toHaveValue("2 slices pepperoni pizza");
-  expect(requests).toEqual([{ description: "2 slices pepperoni pizza" }]);
+  // Asked dish by dish; an answer without dishes fills the one it was asked for.
+  expect(requests).toEqual([{ description: "2 slices pepperoni pizza", dishes: ["2 slices pepperoni pizza"] }]);
   await dish(page, 1).getByLabel("Gators (%)").fill("75");
   await expect(dish(page, 1).getByLabel("Hippos (%)")).toHaveValue("25");
 
@@ -190,6 +192,7 @@ test("a dish is estimated on its own, and a split meal outlives a reload", async
 test("dishes logged for one of you save only that share, and removing them goes back to one meal", async ({ page }) => {
   await loggingFor(page, "Both").click();
   await page.getByRole("group", { name: "Sitting" }).getByRole("button", { name: "Snack" }).click();
+  await page.getByRole("button", { name: "Same meal for each of you" }).click();
   await page.getByLabel("Meal", { exact: true }).fill("Shared fries");
   await page.getByRole("button", { name: "Split by dish" }).click();
   // A name was all there was, so it names the dish.
@@ -221,11 +224,13 @@ test("dishes logged for one of you save only that share, and removing them goes 
   await page.getByRole("button", { name: "Add dish" }).click();
   await page.getByRole("button", { name: "Remove dish 2" }).click();
   await page.getByRole("button", { name: "Remove dish 1" }).click();
+  // For both, no dishes is a meal waiting to be split, not one meal.
   await expect(page.getByLabel("Meal description")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Save this meal as a template" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Same meal for each of you" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save this meal as a template" })).toHaveCount(0);
 
-  // A description longer than a meal's name still becomes the dish whole.
-  const long = `Tasting menu: ${Array.from({ length: 30 }, (_, index) => `course ${index + 1} with sauce`).join(", ")}`;
+  // A description longer than a meal's name, with nothing to cut it at, becomes the dish whole.
+  const long = `Tasting menu ${Array.from({ length: 30 }, (_, index) => `course ${index + 1} with sauce`).join(" then ")}`;
   expect(long.length).toBeGreaterThan(300);
   await page.getByLabel("Meal description").fill(long);
   await page.getByRole("button", { name: "Split by dish" }).click();
@@ -259,11 +264,11 @@ test("each dish shows its own estimate's assumptions, and an edit to them is wha
   await loggingFor(page, "Both").click();
   await page.getByRole("group", { name: "Sitting" }).getByRole("button", { name: "Dinner" }).click();
 
-  // A whole-meal estimate carries its working over to the first dish.
+  // An answer for the whole meal, from an estimator without dishes, is one dish with its working.
   await page.getByLabel("Meal description").fill("Tonkotsu ramen");
   await page.getByRole("button", { name: "Estimate macros" }).click();
-  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("900");
-  await page.getByRole("button", { name: "Split by dish" }).click();
+  await expect(dish(page, 1).getByLabel("Calories (kcal)")).toHaveValue("900");
+  await expect(dish(page, 1).getByLabel("Dish", { exact: true })).toHaveValue("Tonkotsu ramen");
   await expect(dish(page, 1).getByLabel("Assumptions")).toHaveValue(
     "Tonkotsu ramen, one bowl [900 kcal, 40P, 100C, 36F, 4 fiber]\nPork broth, noodles, chashu.",
   );
@@ -437,4 +442,127 @@ test("a slider shares each dish, a slice at a time once the dish is counted", as
   const hippos = (await meals(page)).find((meal) => meal.athlete === "hippos" && meal.name === "Pizza and salad");
   expect(hippos?.assumptions).toContain("37.5% of Margherita pizza, 12 inch (3 of 8 slices) [330 kcal, 14P, 38C, 11F, 2 fiber]");
   expect(hippos?.assumptions).toContain("70% of Caesar salad [294 kcal, 8P, 11C, 24F, 3 fiber]");
+});
+
+/** An estimate dish by dish, each dish an estimate of its own, with the totals theirs added up. */
+function shared(dishes: { name: string; calories: number; protein: number; carbs: number; fat: number; fiber?: number; alcohol?: number; confidence?: string }[]) {
+  const full = dishes.map((each) => ({
+    fiber: 0, alcohol: 0, confidence: "medium", assumptions: `${each.name}, worked out.`, ...each,
+  }));
+  const total = (key: "calories" | "protein" | "carbs" | "fat" | "fiber" | "alcohol") =>
+    full.reduce((sum, each) => sum + each[key], 0);
+  return {
+    name: "Shared meal", calories: total("calories"), protein: total("protein"), carbs: total("carbs"),
+    fat: total("fat"), fiber: total("fiber"), alcohol: total("alcohol"),
+    assumptions: "Weighted average, dish by dish.", confidence: "medium", dishes: full,
+  };
+}
+
+test("a meal for both is split by dish from the start, and its estimate comes back dish by dish", async ({ page }) => {
+  const requests: { description: string; dishes?: string[] }[] = [];
+  await page.route("**/api/estimate", async (route) => {
+    const body = route.request().postDataJSON() as { description: string; dishes?: string[] };
+    requests.push(body);
+    // The estimator splits what was written with only a space, as the phone cannot.
+    const dishes = body.description.startsWith("burger fries")
+      ? [
+          { name: "burger", calories: 650, protein: 35, carbs: 45, fat: 36 },
+          { name: "fries", calories: 380, protein: 4, carbs: 48, fat: 19, fiber: 4 },
+        ]
+      : [
+          { name: "Margherita pizza", calories: 880, protein: 36, carbs: 100, fat: 30, fiber: 6, confidence: "high" },
+          { name: "Caesar salad", calories: 420, protein: 12, carbs: 16, fat: 34, fiber: 4 },
+          { name: "tiramisu", calories: 490, protein: 8, carbs: 45, fat: 30 },
+        ];
+    await route.fulfill({ json: { estimate: shared(dishes), provider: "average" } });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await loggingFor(page, "Both").click();
+  await page.getByRole("group", { name: "Sitting" }).getByRole("button", { name: "Dinner" }).click();
+
+  // Before it is split there are no meal figures to type, and no queue to wait in.
+  await expect(page.getByLabel("Meal description")).toBeVisible();
+  await expect(page.getByLabel("Calories (kcal)")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Same meal for each of you" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save and estimate in background" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Save meal", exact: true }).click();
+  await expect(page.locator("form").getByRole("alert")).toHaveText("Describe the meal first.");
+  await page.locator("form").screenshot({ path: "test-results/meal-both-describe-mobile.png" });
+
+  await page.getByLabel("Meal description").fill("Margherita pizza, Caesar salad and tiramisu");
+  await page.getByRole("button", { name: "Estimate macros" }).click();
+  // The phone's cut goes with the description, for the estimator to keep.
+  await expect.poll(() => requests.at(-1)).toEqual({
+    description: "Margherita pizza, Caesar salad and tiramisu",
+    dishes: ["Margherita pizza", "Caesar salad", "tiramisu"],
+  });
+  await expect(dish(page, 3).getByLabel("Dish", { exact: true })).toHaveValue("tiramisu");
+  await expect(page.getByLabel("Meal description")).toHaveCount(0);
+  await expect(dish(page, 1).getByLabel("Calories (kcal)")).toHaveValue("880");
+  await expect(dish(page, 1).getByLabel("Assumptions")).toHaveValue("Margherita pizza, worked out.");
+  await expect(dish(page, 1)).toContainText("Averaged across estimators · Confidence: high");
+  await expect(dish(page, 2)).toContainText("Confidence: medium");
+  await expect(dish(page, 2).getByLabel("Hippos (%)")).toHaveValue("50");
+  await dish(page, 1).screenshot({ path: "test-results/meal-both-dish-mobile.png" });
+
+  // A dish estimated on its own can come back as two, each keeping its share.
+  await page.getByRole("button", { name: "Add dish" }).click();
+  await dish(page, 4).getByLabel("Dish", { exact: true }).fill("burger fries");
+  await dish(page, 4).getByLabel("Gators (%)").fill("100");
+  await dish(page, 4).getByRole("button", { name: "Estimate" }).click();
+  await expect(dish(page, 5).getByLabel("Dish", { exact: true })).toHaveValue("fries");
+  expect(requests.at(-1)).toEqual({ description: "burger fries", dishes: ["burger fries"] });
+  await expect(dish(page, 4).getByLabel("Dish", { exact: true })).toHaveValue("burger");
+  await expect(dish(page, 4).getByLabel("Calories (kcal)")).toHaveValue("650");
+  await expect(dish(page, 5).getByLabel("Gators (%)")).toHaveValue("100");
+  await dish(page, 3).getByLabel("Gators (%)").fill("100");
+
+  const shares = page.getByRole("status", { name: "Shares" });
+  await expect(shares).toContainText("Hippos · 650 kcal");
+  await expect(shares).toContainText("Gators · 2170 kcal");
+  const { violations } = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  expect(violations.map((v) => v.id)).toEqual([]);
+
+  await page.getByRole("button", { name: "Save meal", exact: true }).click();
+  await expect(page.getByText("Meals saved for Hippos and Gators", { exact: true })).toBeVisible();
+  await expect.poll(async () =>
+    (await meals(page))
+      .filter((meal) => meal.name.startsWith("Margherita pizza, Caesar salad"))
+      .map(({ athlete, name, source, estimator, macros }) => ({ athlete, name, source, estimator, calories: macros.calories }))
+      .sort((a, b) => a.athlete.localeCompare(b.athlete)),
+  ).toEqual([
+    { athlete: "gators", name: "Margherita pizza, Caesar salad, tiramisu, burger, fries", source: "grok", estimator: "average", calories: 2170 },
+    { athlete: "hippos", name: "Margherita pizza, Caesar salad", source: "grok", estimator: "average", calories: 650 },
+  ]);
+
+  // The next meal for both is split again.
+  await page.getByRole("button", { name: "Meal", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Same meal for each of you" })).toBeVisible();
+});
+
+test("a meal for both is cut into dishes without an estimate, or kept the same for each", async ({ page }) => {
+  await loggingFor(page, "Both").click();
+  await page.getByRole("group", { name: "Sitting" }).getByRole("button", { name: "Lunch" }).click();
+  await page.getByLabel("Meal description").fill("pad thai\n- green curry, no peanuts\nmac and cheese & 2 beers");
+  await page.getByRole("button", { name: "Split by dish" }).click();
+  await expect(page.getByRole("group", { name: /^Dish \d+$/ })).toHaveCount(4);
+  for (const [n, name] of ["pad thai", "green curry, no peanuts", "mac and cheese", "2 beers"].entries())
+    await expect(dish(page, n + 1).getByLabel("Dish", { exact: true })).toHaveValue(name);
+  await expect(dish(page, 1).getByLabel("Calories (kcal)")).toHaveValue("");
+
+  // Back to one meal for each: remove the dishes, and say so.
+  for (let n = 4; n >= 1; n -= 1) await page.getByRole("button", { name: `Remove dish ${n}` }).click();
+  await page.getByRole("button", { name: "Same meal for each of you" }).click();
+  await page.getByLabel("Meal", { exact: true }).fill("Same lunch");
+  await page.getByLabel("Calories (kcal)").fill("600");
+  await page.getByRole("button", { name: "Save meal", exact: true }).click();
+  await expect(page.getByText("Meals saved for Hippos and Gators", { exact: true })).toBeVisible();
+  await expect.poll(async () =>
+    (await meals(page)).filter((meal) => meal.name === "Same lunch").map((meal) => meal.macros.calories),
+  ).toEqual([600, 600]);
+  // And the next is split again.
+  await page.getByRole("button", { name: "Meal", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Same meal for each of you" })).toBeVisible();
 });

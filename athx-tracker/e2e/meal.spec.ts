@@ -466,6 +466,8 @@ test("logging for both saves one meal for each athlete, and one athlete saves on
   await expect(athletes.getByRole("button", { name: "Hippos" })).toHaveAttribute("aria-pressed", "false");
   await expect(athletes.getByRole("button")).toHaveCount(3);
 
+  // Both is split by dish unless it was the same meal for each.
+  await page.getByRole("button", { name: "Same meal for each of you" }).click();
   await page.getByRole("group", { name: "Sitting" }).getByRole("button", { name: "Dinner" }).click();
   await page.getByLabel("Meal", { exact: true }).fill("Shared oats");
   await page.getByLabel("Calories (kcal)").fill("455");
@@ -514,6 +516,7 @@ test("logging for both saves one meal for each athlete, and one athlete saves on
 
 test("a both meal that fails halfway sends the rest later, not twice", async ({ page }) => {
   await loggingFor(page, "Both").click();
+  await page.getByRole("button", { name: "Same meal for each of you" }).click();
   await page.getByRole("group", { name: "Sitting" }).getByRole("button", { name: "Snack" }).click();
   await page.getByLabel("Meal", { exact: true }).fill("Retry oats");
   await page.getByLabel("Calories (kcal)").fill("455");

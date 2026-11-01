@@ -1,12 +1,16 @@
 import type { Macros } from "./domain.ts";
 
-export type MealEstimate = Macros & {
+/** One answer for some food: a whole meal, or one dish of a shared one. */
+export type DishEstimate = Macros & {
   alcohol?: number;
   fiber?: number;
   name: string;
   assumptions: string;
   confidence: "low" | "medium" | "high";
 };
+
+/** A meal asked for dish by dish comes back with its dishes as well. */
+export type MealEstimate = DishEstimate & { dishes?: DishEstimate[] };
 
 export type EstimateRefinement = {
   previous: MealEstimate;
@@ -27,11 +31,14 @@ export function estimatePrompt(
   description: string,
   refinement?: EstimateRefinement,
   foodNotes = "",
+  dishes?: string[],
 ) {
   const notes = foodNotes.trim();
-  if (!refinement && !notes) return description;
+  if (!refinement && !notes && !dishes?.length) return description;
   return JSON.stringify({
     mealDescription: description,
+    // How the phone cut a shared meal into dishes, for the estimator to keep.
+    ...(dishes?.length ? { dishes } : {}),
     ...(refinement
       ? { previousEstimate: refinement.previous, replies: refinement.replies }
       : {}),

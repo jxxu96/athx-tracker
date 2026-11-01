@@ -2,6 +2,7 @@ import { ATHLETES, ESTIMATORS, type Estimator, type Macros, type Meal } from "./
 import type { MealEstimate } from "./estimate-conversation.ts";
 import type { MealDraftIds } from "./meal-fanout.ts";
 import { bothOf, isText, oneOf, textOf } from "./drafts.ts";
+import { splitDishText } from "./dish-split.ts";
 
 /*
  * A meal the two of you shared, written down dish by dish. Each dish has its
@@ -199,6 +200,39 @@ export function fillDish(dish: DishDraft, estimate: MealEstimate, provider?: Est
     source: "grok",
     adjusted: false,
   };
+}
+
+/**
+ * How the phone cut a description into dishes, sent with its estimate so the
+ * estimator keeps that cut where it can, and every estimator asked cuts it
+ * the same way. Never more than the server takes.
+ */
+export function dishHint(text: string) {
+  const parts = splitDishText(text, DISH_LIMIT);
+  return parts.length && parts.join("").length <= DISH_TEXT_LIMIT ? parts : [text.slice(0, DISH_TEXT_LIMIT)];
+}
+
+/**
+ * The dishes an estimate came back with, each with its own figures, working
+ * and confidence, shared half and half to start. Re-estimating a dish keeps
+ * how it was shared: answered as one dish, it keeps its own words and its
+ * count; answered as several, each takes its share, and the count, which was
+ * for all of it, is left off. An estimator from before dishes answers for the
+ * whole meal, which becomes one dish named after what was described.
+ */
+export function dishesFromEstimate(
+  estimate: MealEstimate,
+  provider: Estimator | undefined,
+  id: () => string,
+  from?: DishDraft,
+  text = "",
+): DishDraft[] {
+  const answers = estimate.dishes ?? [];
+  if (!answers.length) return [fillDish(from ?? { ...emptyDish(id()), name: text || estimate.name }, estimate, provider)];
+  if (from && answers.length === 1) return [fillDish(from, answers[0], provider)];
+  return answers.map((answer) =>
+    fillDish({ ...emptyDish(id()), name: answer.name, ...(from ? { share: from.share } : {}) }, answer, provider),
+  );
 }
 
 /** A box as a number. Blank is 0; NaN is something that is not a number at all. */

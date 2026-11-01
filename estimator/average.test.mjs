@@ -22,9 +22,18 @@ const confidence = name === "codex" && description.includes("zzsure") ? "medium"
 appendFileSync(process.env.FAKE_LOG, "start " + name + "\\n");
 setTimeout(() => {
   appendFileSync(process.env.FAKE_LOG, "end " + name + "\\n");
+  const figures = (share) => ({
+    calories: calories * share, protein: calories * share / 20, carbs: calories * share / 10,
+    fat: calories * share / 40, fiber: 0, alcohol: 0,
+  });
+  // Asked dish by dish, it answers dish by dish: six tenths pizza, four salad.
+  const shared = process.argv.some((arg) => arg.includes("dish by dish"));
   process.stdout.write(JSON.stringify({
-    name: "Bowl", calories, protein: calories / 20, carbs: calories / 10, fat: calories / 40,
-    fiber: 0, alcohol: 0, assumptions: name + " guessed.", confidence,
+    name: "Bowl", ...figures(1), assumptions: name + " guessed.", confidence,
+    ...(shared ? { dishes: [
+      { name: "pizza", ...figures(0.6), assumptions: name + " pizza.", confidence },
+      { name: "salad", ...figures(0.4), assumptions: name + " salad.", confidence },
+    ] } : {}),
   }));
 }, label ? 200 : 1000);
 `;
@@ -93,6 +102,27 @@ test("a complex meal asks every estimator at once, and a simple one goes in orde
   assert.equal(labelled.provider, "claude");
   assert.equal(labelled.body.calories, 700);
   assert.deepEqual(labelled.log.filter((line) => line.startsWith("end")), ["end claude"], "the rest were stopped");
+
+  // A shared meal, asked for dish by dish, is averaged dish by dish.
+  const post2 = async (body) => {
+    writeFileSync(log, "");
+    const response = await fetch(`http://127.0.0.1:${port}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ budgetMs: 130000, ...body }),
+    });
+    return { provider: response.headers.get("x-athx-provider"), body: await response.json() };
+  };
+  const shared = await post2({
+    description: JSON.stringify({ mealDescription: "zz pizza, salad", dishes: ["pizza", "salad"] }),
+    dishes: true,
+  });
+  assert.equal(shared.provider, "average");
+  // 360 x 40% + 420 x 35% + 660 x 25%, and the same for the salad's four tenths.
+  assert.deepEqual(shared.body.dishes.map(({ name, calories }) => [name, calories]), [["pizza", 456], ["salad", 304]]);
+  assert.equal(shared.body.calories, 760);
+  // Not asked dish by dish, the same meal has no dishes.
+  assert.equal((await post2({ description: "zz pizza, salad, wine" })).body.dishes, undefined);
 
   // Simple, and Codex is sure: nobody else is asked.
   const sure = await post("zzsure bowl");

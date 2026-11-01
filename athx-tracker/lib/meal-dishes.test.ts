@@ -5,6 +5,8 @@ import {
   ASSUMPTIONS_LIMIT,
   DISH_LIMIT,
   countShare,
+  dishHint,
+  dishesFromEstimate,
   dishesOf,
   emptyDish,
   fillDish,
@@ -389,4 +391,55 @@ test("a dish's quantity and edited assumptions come back from a draft", () => {
   const { quantity: _quantity, ...older } = pizza;
   void _quantity;
   assert.equal(dishesOf([older])[0].quantity, "");
+});
+
+const answer = (name: string, calories: number, confidence: "low" | "medium" | "high" = "medium") => ({
+  name, calories, protein: calories / 20, carbs: calories / 10, fat: calories / 40, fiber: 0, alcohol: 0,
+  assumptions: `${name}, worked out.`, confidence,
+});
+const counter = () => {
+  let next = 0;
+  return () => `n${(next += 1)}`;
+};
+
+test("an estimate dish by dish becomes the dishes, each with its own working, half each", () => {
+  const meal = { ...answer("Dinner", 1300), dishes: [answer("pizza", 880, "high"), answer("salad", 420)] };
+  const made = dishesFromEstimate(meal, "average", counter());
+  assert.deepEqual(made.map((each) => [each.id, each.name, each.calories, each.confidence, each.estimator, each.source]), [
+    ["n1", "pizza", "880", "high", "average", "grok"],
+    ["n2", "salad", "420", "medium", "average", "grok"],
+  ]);
+  assert.equal(made[0].assumptions, "pizza, worked out.");
+  assert.deepEqual(made[1].share, { hippos: "50", gators: "50" });
+});
+
+test("an estimator from before dishes gives the whole meal as one dish, named as described", () => {
+  const made = dishesFromEstimate(answer("Dinner", 1300), "codex", counter(), undefined, "pizza, salad");
+  assert.deepEqual(made.map((each) => [each.name, each.calories, each.estimator]), [["pizza, salad", "1300", "codex"]]);
+});
+
+test("a dish estimated again keeps its share, and its count while it stays one dish", () => {
+  const typed = dish("t", { name: "burger fries", quantity: "2 plates", share: { hippos: "30", gators: "70" } });
+  const one = dishesFromEstimate({ ...answer("Burger and fries", 900), dishes: [answer("burger and fries", 900)] }, "claude", counter(), typed);
+  assert.deepEqual(one.map((each) => [each.id, each.name, each.quantity, each.share.hippos, each.calories]), [
+    ["t", "burger fries", "2 plates", "30", "900"],
+  ]);
+  const two = dishesFromEstimate(
+    { ...answer("Burger and fries", 900), dishes: [answer("burger", 600), answer("fries", 300)] },
+    "claude",
+    counter(),
+    typed,
+  );
+  assert.deepEqual(two.map((each) => [each.name, each.quantity, each.share.hippos, each.calories]), [
+    ["burger", "", "30", "600"],
+    ["fries", "", "30", "300"],
+  ]);
+});
+
+test("the cut sent with an estimate is the phone's, within what the server takes", () => {
+  assert.deepEqual(dishHint("pizza, salad and wine"), ["pizza", "salad", "wine"]);
+  assert.deepEqual(dishHint("burger fries shake"), ["burger fries shake"]);
+  const long = "x".repeat(3990) + ",y,z";
+  const hint = dishHint(long);
+  assert.ok(hint.join("").length <= 4000);
 });

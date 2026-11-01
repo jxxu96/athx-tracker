@@ -33,6 +33,15 @@ status is sent before anyone answers, so a failure is in the last line, not the
 status. Without the flag, a meal gets one JSON body as before, so an app from
 before streaming still works. Whichever way, a caller that hangs up stops every
 CLI still running for it.
+A meal the two of you shared adds `"dishes": true`, and its description is
+JSON with the meal and how the phone cut it into dishes:
+`{"mealDescription":"pizza, salad and wine","dishes":["pizza","salad","wine"]}`.
+The answer is the same estimate with a `dishes` list, each dish an estimate of
+its own with its own working and confidence, and the totals are the dishes
+added up. The estimator keeps the phone's cut unless a dish is plainly two,
+such as "burger fries" written with only a space, or two are plainly one. An
+estimator from before dishes ignores the flag and answers for the whole meal,
+which the app takes as one dish.
 Workout drafts use the same authenticated service and provider fallback with
 `{"task":"workout","description":"Deadlift 1 x 2 at 185 lb","athletes":["hippos"],"weightUnit":"lb"}`.
 They return editable workout fields instead of meal macros. Sets precede reps in
@@ -110,7 +119,10 @@ best-sourced answer is kept, so a reference value beats a guess. Answers on
 the same footing are averaged, weighted Codex 40%, Claude 35% and Grok 25%,
 shared out again over whoever answered. A 0 beside real figures is left out of
 that figure's average. The meal then says "Averaged across estimators", and
-its assumptions give each one's figures and working. A CLI that is not
+its assumptions give each one's figures and working. A shared meal is averaged
+dish by dish, each dish with the dish in the same place in the other answers,
+so only answers that split it into as many dishes as the best-weighted one are
+averaged; one split another way is left out, and the meal's assumptions say so. A CLI that is not
 installed or not signed in fails immediately and is simply not counted. A meal
 click allows 90 s, plus 40 s held back for a simple meal's fallback. The
 background queue allows 210 s.
