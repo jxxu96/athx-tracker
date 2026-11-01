@@ -1,10 +1,12 @@
 import { BodyTooLarge, database, guard, json, readBody, tooLarge } from "@/lib/server";
 import { newBests } from "@/lib/bests";
-import type { Workout } from "@/lib/domain";
-import { readRecords, readRecordsOn } from "@/lib/journal";
+import type { RecordItem, Workout } from "@/lib/domain";
+import { readRecords, readRecordsBetween, readRecordsOn } from "@/lib/journal";
 import { kickQueue } from "@/lib/queue";
 import { daySchema, recordSchema } from "@/lib/validation";
 import { ZodError } from "zod";
+
+const KINDS: RecordItem["kind"][] = ["workout", "meal", "bodyweight"];
 
 export async function GET(request: Request) {
   const rejected = await guard(request);
@@ -15,6 +17,17 @@ export async function GET(request: Request) {
     if (!daySchema.safeParse(day).success)
       return json({ error: "Choose a valid calendar date." }, 400);
     const records = readRecordsOn(day);
+    return json({ records, total: records.length });
+  }
+  if (params.has("from") || params.has("to")) {
+    const from = daySchema.safeParse(params.get("from"));
+    const to = daySchema.safeParse(params.get("to"));
+    if (!from.success || !to.success || from.data > to.data)
+      return json({ error: "Choose a valid range of dates." }, 400);
+    const kind = params.get("kind");
+    const only = KINDS.find((item) => item === kind);
+    if (kind !== null && !only) return json({ error: "Choose a valid kind of entry." }, 400);
+    const records = readRecordsBetween(from.data, to.data, only);
     return json({ records, total: records.length });
   }
   // Omitting the limit returns the whole journal, which is what the backup job

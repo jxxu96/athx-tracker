@@ -46,3 +46,19 @@ export function readRecordsOn(day: string): RecordItem[] {
     .all(day) as { payload: string }[];
   return rows.map((row) => JSON.parse(row.payload) as RecordItem);
 }
+
+/**
+ * Entries from one day to another, both included, newest first, and only of
+ * one kind when asked. The calendar asks for a week or a month of sessions
+ * older than the phone's recent slice, without fetching the whole journal.
+ */
+export function readRecordsBetween(from: string, to: string, kind?: RecordItem["kind"]): RecordItem[] {
+  const rows = (kind
+    ? database()
+        .prepare("SELECT payload FROM records WHERE day BETWEEN ? AND ? AND kind = ? ORDER BY day DESC, created_at DESC")
+        .all(from, to, kind)
+    : database()
+        .prepare("SELECT payload FROM records WHERE day BETWEEN ? AND ? ORDER BY day DESC, created_at DESC")
+        .all(from, to)) as { payload: string }[];
+  return rows.map((row) => JSON.parse(row.payload) as RecordItem);
+}
