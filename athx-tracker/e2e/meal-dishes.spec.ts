@@ -231,3 +231,167 @@ test("dishes logged for one of you save only that share, and removing them goes 
   await page.getByRole("button", { name: "Split by dish" }).click();
   await expect(dish(page, 1).getByLabel("Dish", { exact: true })).toHaveValue(long);
 });
+
+test("each dish shows its own estimate's assumptions, and an edit to them is what saves", async ({ page }) => {
+  await page.route("**/api/estimate", async (route) => {
+    const { description } = route.request().postDataJSON() as { description: string };
+    await route.fulfill({
+      json: description.includes("ramen")
+        ? {
+            estimate: {
+              name: "Tonkotsu ramen", calories: 900, protein: 40, carbs: 100, fat: 36, fiber: 4, alcohol: 0,
+              assumptions: "Tonkotsu ramen, one bowl [900 kcal, 40P, 100C, 36F, 4 fiber]\nPork broth, noodles, chashu.",
+              confidence: "medium",
+            },
+            provider: "codex",
+          }
+        : {
+            estimate: {
+              name: "Gyoza, 6 pieces", calories: 300, protein: 12, carbs: 30, fat: 14, fiber: 2, alcohol: 0,
+              assumptions: "Gyoza, 6 pan-fried pieces [300 kcal, 12P, 30C, 14F, 2 fiber]\n50 g each.",
+              confidence: "medium",
+            },
+            provider: "claude",
+          },
+    });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await loggingFor(page, "Both").click();
+  await page.getByRole("group", { name: "Sitting" }).getByRole("button", { name: "Dinner" }).click();
+
+  // A whole-meal estimate carries its working over to the first dish.
+  await page.getByLabel("Meal description").fill("Tonkotsu ramen");
+  await page.getByRole("button", { name: "Estimate macros" }).click();
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("900");
+  await page.getByRole("button", { name: "Split by dish" }).click();
+  await expect(dish(page, 1).getByLabel("Assumptions")).toHaveValue(
+    "Tonkotsu ramen, one bowl [900 kcal, 40P, 100C, 36F, 4 fiber]\nPork broth, noodles, chashu.",
+  );
+
+  // A dish typed by hand has nothing to show until it is estimated.
+  await page.getByRole("button", { name: "Add dish" }).click();
+  await expect(dish(page, 2).getByLabel("Assumptions")).toHaveCount(0);
+  await dish(page, 2).getByLabel("Dish", { exact: true }).fill("6 pork gyoza");
+  await dish(page, 2).getByRole("button", { name: "Estimate" }).click();
+  await expect(dish(page, 2).getByLabel("Assumptions")).toHaveValue(
+    "Gyoza, 6 pan-fried pieces [300 kcal, 12P, 30C, 14F, 2 fiber]\n50 g each.",
+  );
+  await expect(dish(page, 2)).toContainText("Answered by Claude");
+  await dish(page, 2).screenshot({ path: "test-results/meal-dish-assumptions-mobile.png" });
+
+  // Correcting the working leaves the figures the estimate's.
+  await dish(page, 2).getByLabel("Assumptions").fill("Gyoza, 6 pieces, steamed not fried.");
+  await expect(dish(page, 2)).not.toContainText("saved as your own numbers");
+  // Changing a figure still makes them your own.
+  await dish(page, 1).getByLabel("Fat (g)").fill("30");
+  await expect(dish(page, 1)).toContainText("saved as your own numbers after your edit");
+  // Emptied, an estimate's box stays, so it can be written again.
+  await dish(page, 1).getByLabel("Assumptions").fill("");
+  await expect(dish(page, 1).getByLabel("Assumptions")).toHaveValue("");
+
+  await page.getByLabel("Meal", { exact: true }).fill("Ramen night");
+  await page.getByRole("button", { name: "Save meal", exact: true }).click();
+  await expect(page.getByText("Meals saved for Hippos and Gators", { exact: true })).toBeVisible();
+  await expect.poll(async () =>
+    (await meals(page)).find((meal) => meal.athlete === "gators" && meal.name === "Ramen night")?.assumptions,
+  ).toBe(
+    "50% of Tonkotsu ramen [450 kcal, 20P, 50C, 15F, 2 fiber]\n" +
+      "The whole dish [900 kcal, 40P, 100C, 30F, 4 fiber]\n\n" +
+      "50% of 6 pork gyoza [150 kcal, 6P, 15C, 7F, 1 fiber]\n" +
+      "The whole dish [300 kcal, 12P, 30C, 14F, 2 fiber]\n" +
+      "Gyoza, 6 pieces, steamed not fried.",
+  );
+});
+
+test("a slider shares each dish, a slice at a time once the dish is counted", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await loggingFor(page, "Both").click();
+  await page.getByRole("group", { name: "Sitting" }).getByRole("button", { name: "Dinner" }).click();
+  await page.getByRole("button", { name: "Split by dish" }).click();
+  await fillDish(page, 1, { name: "Margherita pizza, 12 inch", calories: "880", protein: "36", carbs: "100", fat: "30", fiber: "6" });
+
+  const pie = dish(page, 1);
+  const slider = pie.getByRole("slider", { name: "Hippos' share" });
+  // Uncounted, it goes a percent at a time.
+  await expect(slider).toHaveAttribute("aria-valuemax", "100");
+  await expect(slider).toHaveAttribute("aria-valuenow", "50");
+  await expect(pie).toContainText("Hippos · 50% · 440 kcal");
+
+  await pie.getByLabel("Quantity (whole dish)").fill("eight slices");
+  await expect(pie).toContainText("Start with a number, as in 8 slices");
+  await expect(slider).toHaveAttribute("aria-valuemax", "100");
+  await pie.getByLabel("Quantity (whole dish)").fill("8 slices");
+  await expect(pie).not.toContainText("Start with a number");
+  await expect(slider).toHaveAttribute("aria-valuemax", "8");
+  await expect(slider).toHaveAttribute("aria-valuenow", "4");
+  await expect(slider).toHaveAttribute("aria-valuetext", "Hippos 4 of 8 slices, 50%; Gators 4 of 8 slices, 50%");
+
+  // A slice at a time from the keyboard, and the boxes follow.
+  await slider.focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(slider).toHaveAttribute("aria-valuenow", "3");
+  await expect(pie).toContainText("Hippos · 3 of 8 slices · 37.5% · 330 kcal");
+  await expect(pie).toContainText("Gators · 5 of 8 slices · 62.5% · 550 kcal");
+  await expect(pie.getByLabel("Hippos (%)")).toHaveValue("37.5");
+  await expect(pie.getByLabel("Gators (%)")).toHaveValue("62.5");
+  await page.keyboard.press("Home");
+  await expect(pie).toContainText("Hippos · 0 of 8 slices · 0% · 0 kcal");
+  await page.keyboard.press("End");
+  await expect(pie).toContainText("Gators · 0 of 8 slices · 0% · 0 kcal");
+
+  // A tap on the track takes the slice under it: a quarter of the way is 2.
+  const track = slider.locator("xpath=ancestor::*[@data-orientation][1]");
+  const box = await track.boundingBox();
+  if (!box) throw new Error("The slider has no size.");
+  await track.click({ position: { x: box.width * 0.25, y: box.height / 2 } });
+  await expect(slider).toHaveAttribute("aria-valuenow", "2");
+  await expect(pie).toContainText("Hippos · 2 of 8 slices · 25% · 220 kcal");
+
+  // A share typed between slices sits between them, and reads as typed.
+  await pie.getByLabel("Gators (%)").fill("60");
+  await expect(slider).toHaveAttribute("aria-valuenow", "3.2");
+  await expect(pie).toContainText("Hippos · 3.2 of 8 slices · 40% · 352 kcal");
+  await pie.getByLabel("Hippos (%)").fill("37.5");
+  await expect(slider).toHaveAttribute("aria-valuenow", "3");
+
+  await page.getByRole("button", { name: "Add dish" }).click();
+  await fillDish(page, 2, { name: "Caesar salad", calories: "420", protein: "12", carbs: "16", fat: "34", fiber: "4" });
+  const salad = dish(page, 2).getByRole("slider", { name: "Hippos' share" });
+  await salad.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(dish(page, 2)).toContainText("Hippos · 51% · 214 kcal");
+  await dish(page, 2).getByLabel("Gators (%)").fill("30");
+  await expect(salad).toHaveAttribute("aria-valuenow", "70");
+  await expect(dish(page, 2)).toContainText("Hippos · 70% · 294 kcal");
+
+  const shares = page.getByRole("status", { name: "Shares" });
+  await expect(shares).toContainText("Hippos · 624 kcal");
+  await expect(shares).toContainText("Gators · 676 kcal");
+
+  const { violations } = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  expect(violations.map((v) => v.id)).toEqual([]);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+  await pie.screenshot({ path: "test-results/meal-dish-slider-mobile.png" });
+
+  // The count outlives a reload with the rest of the draft.
+  await page.reload();
+  await page.getByRole("button", { name: "Meal", exact: true }).click();
+  await expect(dish(page, 1).getByLabel("Quantity (whole dish)")).toHaveValue("8 slices");
+  await expect(dish(page, 1).getByRole("slider", { name: "Hippos' share" })).toHaveAttribute("aria-valuenow", "3");
+
+  await page.getByLabel("Meal", { exact: true }).fill("Pizza and salad");
+  await page.getByRole("button", { name: "Save meal", exact: true }).click();
+  await expect(page.getByText("Meals saved for Hippos and Gators", { exact: true })).toBeVisible();
+  await expect.poll(async () =>
+    (await meals(page))
+      .filter((meal) => meal.name === "Pizza and salad")
+      .map(({ athlete, macros }) => ({ athlete, calories: macros.calories }))
+      .sort((a, b) => a.athlete.localeCompare(b.athlete)),
+  ).toEqual([{ athlete: "gators", calories: 676 }, { athlete: "hippos", calories: 624 }]);
+  const hippos = (await meals(page)).find((meal) => meal.athlete === "hippos" && meal.name === "Pizza and salad");
+  expect(hippos?.assumptions).toContain("37.5% of Margherita pizza, 12 inch (3 of 8 slices) [330 kcal, 14P, 38C, 11F, 2 fiber]");
+  expect(hippos?.assumptions).toContain("70% of Caesar salad [294 kcal, 8P, 11C, 24F, 3 fiber]");
+});

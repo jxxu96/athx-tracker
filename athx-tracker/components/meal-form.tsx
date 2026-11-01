@@ -912,6 +912,7 @@ export function MealForm({
                 sitting={slot}
                 grokReady={grokReady}
                 estimating={estimatingDish}
+                disabled={busy}
                 errors={dishErrors}
                 onDish={changeDish}
                 onEstimate={(id) => void estimateDish(id)}

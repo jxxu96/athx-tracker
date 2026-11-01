@@ -87,15 +87,25 @@ single SQLite file on a volume.
   Logging for both saves the same meal for each of you, unless you choose
   **Split by dish**: what is on the form becomes the first dish, and you add
   the rest. Each dish has its own figures, typed or estimated from what the
-  dish says, and a share for each of you as a percentage of that dish, starting
-  at half each. The two shares always add up to 100: typing one sets the other,
-  and blank counts as 0. Saving writes one meal for each of you with a share,
-  holding your share of every dish (`splitMeal` in `lib/meal-dishes.ts`), so
-  the two meals add up to what was on the table. Someone with no share of
-  anything gets no meal, and switching to one of you saves only that share. A
-  name left blank becomes each person's own dishes. The assumptions give your
-  share of each dish and the whole dish's figures, then how that dish's figures
-  were reached. A meal reads as estimated when every dish in it was estimated
+  dish says, and under them the assumptions its estimate gave, to read and
+  correct; correcting them leaves the figures the estimate's. A dish typed by
+  hand has none to show until it is estimated. Each dish has a share for each
+  of you as a percentage of that dish, starting at half each. The two shares
+  always add up to 100: typing one sets the other, and blank counts as 0. A
+  slider sets both, Hippos at the left end and Gators at the right, and under
+  it each of you reads as a percentage and the calories that share holds. Give
+  the dish a quantity, a number and then what it counts, such as "8 slices" or
+  "400 g", and each of you also reads as a count, "3 of 8 slices"; a dish of
+  two or more whole units then slides a unit at a time, and anything else a
+  percent at a time, since one of something would slide all or nothing. A
+  share between steps is typed into the boxes. Saving writes one meal for each
+  of you with a share, holding your share of every dish (`splitMeal` in
+  `lib/meal-dishes.ts`), so the two meals add up to what was on the table.
+  Someone with no share of anything gets no meal, and switching to one of you
+  saves only that share. A name left blank becomes each person's own dishes.
+  The assumptions give your share of each dish, with the count when it has
+  one, and the whole dish's figures, then how that dish's figures were
+  reached. A meal reads as estimated when every dish in it was estimated
   and left alone. Each dish's estimate counts towards the daily limit, one runs
   at a time, and a dish cannot wait in the queue for later. Templates and
   replies to an estimate are for a single meal, so a split meal does not offer

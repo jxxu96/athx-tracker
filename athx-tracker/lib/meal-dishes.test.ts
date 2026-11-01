@@ -4,16 +4,22 @@ import { mealSchema } from "./validation.ts";
 import {
   ASSUMPTIONS_LIMIT,
   DISH_LIMIT,
+  countShare,
   dishesOf,
   emptyDish,
   fillDish,
   looseDishes,
   otherShare,
+  portionText,
   readDishes,
+  readQuantity,
   setFigure,
   setShare,
   shareAssumptions,
   shareTotals,
+  slideShare,
+  sliderSteps,
+  sliderValue,
   splitMeal,
   type Dish,
   type DishDraft,
@@ -281,4 +287,94 @@ test("dishes come back from a draft, and a damaged one keeps what still reads", 
   assert.deepEqual(back[0], { ...pizza, estimator: "codex", confidence: "high", source: "grok", adjusted: false });
   assert.deepEqual(back[1], { ...emptyDish("d9"), calories: "120" });
   assert.equal(dishesOf(Array.from({ length: DISH_LIMIT + 5 }, (_, index) => ({ id: String(index) }))).length, DISH_LIMIT);
+});
+
+test("a quantity reads as a count only when it starts with a number above 0", () => {
+  assert.deepEqual(readQuantity("8 slices"), { amount: 8, unit: "slices" });
+  assert.deepEqual(readQuantity("  400g "), { amount: 400, unit: "g" });
+  assert.deepEqual(readQuantity("6"), { amount: 6, unit: "" });
+  assert.deepEqual(readQuantity("1.5 lb"), { amount: 1.5, unit: "lb" });
+  assert.deepEqual(readQuantity(".5 cup"), { amount: 0.5, unit: "cup" });
+  assert.deepEqual(readQuantity("8 slices (12 inch)"), { amount: 8, unit: "slices (12 inch)" });
+  for (const text of ["", "slices", "eight slices", "0 slices", "1/2 pizza", "1,000 g", "2-3 tacos"])
+    assert.equal(readQuantity(text), null, text);
+});
+
+test("the slider moves a unit at a time for two or more whole units, and a percent otherwise", () => {
+  assert.equal(sliderSteps("8 slices"), 8);
+  assert.equal(sliderSteps("400 g"), 400);
+  assert.equal(sliderSteps("2 burritos"), 2);
+  // One of something would be all or nothing, and part of a unit is not a step.
+  assert.equal(sliderSteps("1 pizza"), 100);
+  assert.equal(sliderSteps("1.5 lb"), 100);
+  assert.equal(sliderSteps(""), 100);
+  assert.equal(sliderSteps("a few"), 100);
+});
+
+test("sliding sets Hippos' share in the slider's steps, and Gators takes the rest", () => {
+  const pie = dish("p", { name: "Margherita pizza", calories: "880", quantity: "8 slices" });
+  assert.equal(sliderValue(pie), 4, "half each to start");
+  const three = slideShare(pie, 3);
+  assert.deepEqual(three.share, { hippos: "37.5", gators: "62.5" });
+  assert.equal(sliderValue(three), 3);
+  assert.deepEqual(slideShare(pie, 0).share, { hippos: "0", gators: "100" });
+  assert.deepEqual(slideShare(pie, 8).share, { hippos: "100", gators: "0" });
+
+  // Thirds still add up to the whole dish.
+  const tacos = slideShare(dish("t", { name: "Tacos", calories: "600", quantity: "3 tacos" }), 1);
+  assert.deepEqual(tacos.share, { hippos: "33.3333", gators: "66.6667" });
+  assert.equal(problem([tacos]), "");
+
+  // Without a count it is a percent at a time.
+  const soup = dish("s", { name: "Soup", calories: "300" });
+  assert.deepEqual(slideShare(soup, 70).share, { hippos: "70", gators: "30" });
+
+  // A share typed between steps sits between them.
+  assert.equal(sliderValue(setShare(pie, "hippos", "40")), 3.2);
+  // A box that does not read yet leaves the slider where the other one says.
+  assert.equal(sliderValue({ ...pie, share: { hippos: "4o", gators: "75" } }), 2);
+  assert.equal(sliderValue({ ...pie, share: { hippos: "4o", gators: "x" } }), 4);
+});
+
+test("each of you reads as a count, a percentage and calories", () => {
+  const [pie] = looseDishes([dish("p", {
+    name: "Margherita pizza", calories: "880", quantity: "8 slices", share: { hippos: "37.5", gators: "62.5" },
+  })], "Dinner");
+  assert.equal(portionText(pie, "hippos"), "3 of 8 slices · 37.5% · 330 kcal");
+  assert.equal(portionText(pie, "gators"), "5 of 8 slices · 62.5% · 550 kcal");
+  const [salad] = looseDishes([dish("s", { name: "Caesar salad", calories: "420" })], "Dinner");
+  assert.equal(portionText(salad, "hippos"), "50% · 210 kcal");
+  assert.equal(countShare({ amount: 6, unit: "" }, 1 / 3), "2 of 6");
+  assert.equal(countShare({ amount: 400, unit: "g" }, 0.333), "133.2 of 400 g");
+});
+
+test("the assumptions say how many of a counted dish each of you had", () => {
+  const pie = dish("p", {
+    name: "Margherita pizza, 12 inch",
+    calories: "880", protein: "36", carbs: "100", fat: "30", fiber: "6",
+    quantity: "8 slices", share: { hippos: "37.5", gators: "62.5" },
+    assumptions: "Joe's Pizza published nutrition, 8 slices.",
+  });
+  const dishes = read([pie, salad]);
+  assert.equal(
+    shareAssumptions(dishes, "hippos"),
+    "37.5% of Margherita pizza, 12 inch (3 of 8 slices) [330 kcal, 14P, 38C, 11F, 2 fiber]\n" +
+      "The whole dish [880 kcal, 36P, 100C, 30F, 6 fiber]\n" +
+      "Joe's Pizza published nutrition, 8 slices.\n\n" +
+      "50% of Caesar salad [210 kcal, 6P, 8C, 17F, 2 fiber]\n" +
+      "The whole dish [420 kcal, 12P, 16C, 34F, 4 fiber]",
+  );
+  // A quantity that is not a count is left out, not guessed at.
+  const loose = read([{ ...pie, quantity: "most of it" }]);
+  assert.match(shareAssumptions(loose, "hippos"), /^37\.5% of Margherita pizza, 12 inch \[/);
+});
+
+test("a dish's quantity and edited assumptions come back from a draft", () => {
+  const [back] = dishesOf([{ ...pizza, quantity: "8 slices", assumptions: "Edited by hand." }]);
+  assert.equal(back.quantity, "8 slices");
+  assert.equal(back.assumptions, "Edited by hand.");
+  // A draft from before quantities has none.
+  const { quantity: _quantity, ...older } = pizza;
+  void _quantity;
+  assert.equal(dishesOf([older])[0].quantity, "");
 });
