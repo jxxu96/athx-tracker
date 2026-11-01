@@ -6,9 +6,9 @@ import { bothOf, isText, oneOf, textOf } from "./drafts.ts";
 /*
  * A meal the two of you shared, written down dish by dish. Each dish has its
  * own figures and a share for each of you, as percentages of that dish that
- * add up to 100: typing one sets the other to the rest. Saving writes one
- * meal for each of you holding your share of every dish, so the two meals
- * add up to what was on the table.
+ * add up to 100: typing one sets the other to the rest, and the slider sets
+ * both. Saving writes one meal for each of you holding your share of every
+ * dish, so the two meals add up to what was on the table.
  */
 
 export type Eater = "hippos" | "gators";
@@ -28,6 +28,8 @@ export const MEAL_NAME_LIMIT = 300;
  */
 export const DISH_TEXT_LIMIT = 4000;
 export const DISH_LIMIT = 20;
+/** A dish's quantity box: a number and what it counts, as in "8 slices". */
+export const QUANTITY_LIMIT = 40;
 
 const MACROS = [
   { key: "calories", label: "Calories" },
@@ -52,6 +54,11 @@ export type DishDraft = {
   fiber: string;
   /** Ethanol grams, which count only on an Alcohol sitting, as on a meal. */
   ethanol: string;
+  /**
+   * How much the whole dish was, counted: "8 slices", "400 g". Optional. A
+   * count lets the slider say how many of them each of you had.
+   */
+  quantity: string;
   /** Percentages of the dish. Blank counts as 0. */
   share: Record<Eater, string>;
   /** "grok" while the figures are an estimate's as it came back. */
@@ -63,10 +70,15 @@ export type DishDraft = {
   assumptions: string;
 };
 
+/** A quantity read as a count: 8 of "slices", 400 of "g", 6 of nothing named. */
+export type Count = { amount: number; unit: string };
+
 /** A dish read into numbers. Shares are fractions of the dish, 0 to 1. */
 export type Dish = {
   name: string;
   macros: Macros & { alcohol: number; fiber: number };
+  /** Present only when the quantity box starts with a number above 0. */
+  count?: Count;
   share: Record<Eater, number>;
   source: "manual" | "grok";
   estimator?: Estimator;
@@ -83,6 +95,7 @@ export function emptyDish(id: string): DishDraft {
     fat: "",
     fiber: "",
     ethanol: "",
+    quantity: "",
     share: { hippos: "50", gators: "50" },
     source: "manual",
     estimator: null,
@@ -116,6 +129,48 @@ export function setShare(dish: DishDraft, eater: Eater, text: string): DishDraft
   const other = eater === "hippos" ? "gators" : "hippos";
   const rest = otherShare(text);
   return { ...dish, share: { ...dish.share, [eater]: text, ...(rest === null ? {} : { [other]: rest }) } };
+}
+
+/**
+ * A quantity box as a count: a number above 0 first, then the word for what
+ * it counts, if any. "8 slices", "400g" and "6" read; "eight slices", "1/2
+ * pizza" and "0 slices" do not, and leave the dish shared by percentage.
+ */
+export function readQuantity(text: string): Count | null {
+  const match = /^\s*(\d+(?:\.\d+)?|\.\d+)(?:\s*(\p{L}.*?))?\s*$/u.exec(text);
+  if (!match) return null;
+  const amount = Number(match[1]);
+  return amount > 0 ? { amount, unit: match[2] ?? "" } : null;
+}
+
+/**
+ * How many steps the share slider has. A dish of two or more whole units
+ * moves a unit at a time, so 8 slices give 8 steps and 400 g gives 400.
+ * Anything else moves a percent at a time: one of something would otherwise
+ * be all or nothing, and part of a unit is not a step. A share between steps
+ * is still typed into the boxes.
+ */
+export function sliderSteps(quantity: string) {
+  const count = readQuantity(quantity);
+  return count && Number.isInteger(count.amount) && count.amount >= 2 ? count.amount : 100;
+}
+
+/**
+ * Where the slider sits: Hippos' share, in its steps. Hippos is the left end
+ * and Gators the right. A box that does not read yet leaves it where the
+ * other box says, and half each when neither reads.
+ */
+export function sliderValue(dish: DishDraft) {
+  const hippos = readShare(dish.share.hippos);
+  const gators = readShare(dish.share.gators);
+  const percent = hippos ?? (gators === null ? 50 : 100 - gators);
+  return (percent / 100) * sliderSteps(dish.quantity);
+}
+
+/** The slider moved: Hippos has that many of its steps, and Gators the rest. */
+export function slideShare(dish: DishDraft, value: number): DishDraft {
+  const percent = Math.min(100, Math.max(0, (value / sliderSteps(dish.quantity)) * 100));
+  return setShare(dish, "hippos", String(Math.round(percent * 10000) / 10000));
 }
 
 /** A figure typed into. An estimate's figures stop being the estimate's once one is changed. */
@@ -154,6 +209,11 @@ function amount(text: string) {
 
 const usable = (value: number) => (Number.isFinite(value) && value >= 0 ? value : 0);
 
+function withCount(quantity: string): { count?: Count } {
+  const count = readQuantity(quantity);
+  return count ? { count } : {};
+}
+
 /**
  * The dishes as far as they can be read, for the shares shown as you type:
  * anything unreadable counts as nothing. Saving reads them strictly instead.
@@ -161,6 +221,7 @@ const usable = (value: number) => (Number.isFinite(value) && value >= 0 ? value 
 export function looseDishes(drafts: readonly DishDraft[], sitting: Meal["meal"]): Dish[] {
   return drafts.map((draft) => ({
     name: draft.name.trim(),
+    ...withCount(draft.quantity),
     macros: {
       calories: usable(amount(draft.calories)),
       protein: usable(amount(draft.protein)),
@@ -267,6 +328,25 @@ export function percent(fraction: number) {
   return String(Math.round(fraction * 1000) / 10);
 }
 
+/** A share of a count, to a hundredth: "3 of 8 slices", "150 of 400 g", "2 of 6". */
+export function countShare(count: Count, fraction: number) {
+  const part = Math.round(count.amount * fraction * 100) / 100;
+  return `${part} of ${count.amount}${count.unit ? ` ${count.unit}` : ""}`;
+}
+
+/**
+ * One person's part of a dish, as the slider reads it: how many, when the
+ * dish is counted, then the percentage and the calories.
+ */
+export function portionText(dish: Dish, eater: Eater) {
+  const share = dish.share[eater];
+  return [
+    ...(dish.count ? [countShare(dish.count, share)] : []),
+    `${percent(share)}%`,
+    `${Math.round(dish.macros.calories * share)} kcal`,
+  ].join(" · ");
+}
+
 /** A dish's text where it names something: a meal, or a line of the assumptions. */
 function clip(text: string, max = MEAL_NAME_LIMIT) {
   return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
@@ -291,8 +371,9 @@ export function shareAssumptions(dishes: readonly Dish[], eater: Eater) {
     .map((dish) => {
       const whole = dish.share[eater] >= 1;
       const yours = whole ? dish.macros : shareTotals([dish], eater);
+      const counted = dish.count ? ` (${countShare(dish.count, dish.share[eater])})` : "";
       const head = [
-        `${percent(dish.share[eater])}% of ${clip(dish.name)} ${bracketed(yours)}`,
+        `${percent(dish.share[eater])}% of ${clip(dish.name)}${counted} ${bracketed(yours)}`,
         ...(whole ? [] : [`The whole dish ${bracketed(dish.macros)}`]),
       ].join("\n");
       return { head, working: dish.assumptions };
@@ -391,6 +472,8 @@ export function dishesOf(value: unknown): DishDraft[] {
       ...blank,
       ...figures,
       name: textOf(held.name, ""),
+      // Drafts from before quantities have none.
+      quantity: textOf(held.quantity, ""),
       share: bothOf(held.share, isText) ?? blank.share,
       source: oneOf(held.source, ["manual", "grok"] as const) ?? "manual",
       estimator: oneOf(held.estimator, Object.keys(ESTIMATORS) as Estimator[]) ?? null,
