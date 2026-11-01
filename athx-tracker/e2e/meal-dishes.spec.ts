@@ -315,7 +315,11 @@ test("a slider shares each dish, a slice at a time once the dish is counted", as
   // Uncounted, it goes a percent at a time.
   await expect(slider).toHaveAttribute("aria-valuemax", "100");
   await expect(slider).toHaveAttribute("aria-valuenow", "50");
-  await expect(pie).toContainText("Hippos · 50% · 440 kcal");
+  await expect(slider).toHaveAttribute("aria-valuetext", "Hippos 50%, 440 kcal; Gators 50%, 440 kcal");
+  // Each part of the bar carries its share, with its calories under it.
+  await expect(pie.getByText("50%", { exact: true })).toHaveCount(2);
+  for (const half of await pie.getByText("50%", { exact: true }).all()) await expect(half).toBeVisible();
+  await expect(pie.getByText("440 kcal", { exact: true })).toHaveCount(2);
 
   await pie.getByLabel("Quantity (whole dish)").fill("eight slices");
   await expect(pie).toContainText("Start with a number, as in 8 slices");
@@ -324,57 +328,96 @@ test("a slider shares each dish, a slice at a time once the dish is counted", as
   await expect(pie).not.toContainText("Start with a number");
   await expect(slider).toHaveAttribute("aria-valuemax", "8");
   await expect(slider).toHaveAttribute("aria-valuenow", "4");
-  await expect(slider).toHaveAttribute("aria-valuetext", "Hippos 4 of 8 slices, 50%; Gators 4 of 8 slices, 50%");
+  await expect(slider).toHaveAttribute(
+    "aria-valuetext",
+    "Hippos 50%, 4 of 8 slices, 440 kcal; Gators 50%, 4 of 8 slices, 440 kcal",
+  );
 
-  // A slice at a time from the keyboard, and the boxes follow.
+  // A slice at a time from the keyboard, and the boxes at either end follow.
   await slider.focus();
   await page.keyboard.press("ArrowLeft");
   await expect(slider).toHaveAttribute("aria-valuenow", "3");
-  await expect(pie).toContainText("Hippos · 3 of 8 slices · 37.5% · 330 kcal");
-  await expect(pie).toContainText("Gators · 5 of 8 slices · 62.5% · 550 kcal");
+  await expect(slider).toHaveAttribute(
+    "aria-valuetext",
+    "Hippos 37.5%, 3 of 8 slices, 330 kcal; Gators 62.5%, 5 of 8 slices, 550 kcal",
+  );
+  await expect(pie.getByText("62.5%", { exact: true })).toBeVisible();
+  await expect(pie.getByText("330 kcal", { exact: true })).toBeVisible();
+  await expect(pie.getByText("5 of 8 slices", { exact: true })).toBeVisible();
   await expect(pie.getByLabel("Hippos (%)")).toHaveValue("37.5");
   await expect(pie.getByLabel("Gators (%)")).toHaveValue("62.5");
   await page.keyboard.press("Home");
-  await expect(pie).toContainText("Hippos · 0 of 8 slices · 0% · 0 kcal");
+  await expect(slider).toHaveAttribute(
+    "aria-valuetext",
+    "Hippos 0%, 0 of 8 slices, 0 kcal; Gators 100%, 8 of 8 slices, 880 kcal",
+  );
+  // A part with no room for its share leaves it to the box at its end.
+  await expect(pie.getByText("100%", { exact: true })).toBeVisible();
+  await expect(pie.getByText("0%", { exact: true })).toBeHidden();
   await page.keyboard.press("End");
-  await expect(pie).toContainText("Gators · 0 of 8 slices · 0% · 0 kcal");
+  await expect(slider).toHaveAttribute(
+    "aria-valuetext",
+    "Hippos 100%, 8 of 8 slices, 880 kcal; Gators 0%, 0 of 8 slices, 0 kcal",
+  );
 
-  // A tap on the track takes the slice under it: a quarter of the way is 2.
+  // A tap on the bar takes the slice under it: a quarter of the way is 2.
   const track = slider.locator("xpath=ancestor::*[@data-orientation][1]");
   const box = await track.boundingBox();
   if (!box) throw new Error("The slider has no size.");
   await track.click({ position: { x: box.width * 0.25, y: box.height / 2 } });
   await expect(slider).toHaveAttribute("aria-valuenow", "2");
-  await expect(pie).toContainText("Hippos · 2 of 8 slices · 25% · 220 kcal");
+  await expect(slider).toHaveAttribute(
+    "aria-valuetext",
+    "Hippos 25%, 2 of 8 slices, 220 kcal; Gators 75%, 6 of 8 slices, 660 kcal",
+  );
 
   // A share typed between slices sits between them, and reads as typed.
   await pie.getByLabel("Gators (%)").fill("60");
   await expect(slider).toHaveAttribute("aria-valuenow", "3.2");
-  await expect(pie).toContainText("Hippos · 3.2 of 8 slices · 40% · 352 kcal");
+  await expect(slider).toHaveAttribute(
+    "aria-valuetext",
+    "Hippos 40%, 3.2 of 8 slices, 352 kcal; Gators 60%, 4.8 of 8 slices, 528 kcal",
+  );
   await pie.getByLabel("Hippos (%)").fill("37.5");
   await expect(slider).toHaveAttribute("aria-valuenow", "3");
 
   await page.getByRole("button", { name: "Add dish" }).click();
   await fillDish(page, 2, { name: "Caesar salad", calories: "420", protein: "12", carbs: "16", fat: "34", fiber: "4" });
-  const salad = dish(page, 2).getByRole("slider", { name: "Hippos' share" });
+  const bowl = dish(page, 2);
+  const salad = bowl.getByRole("slider", { name: "Hippos' share" });
+  // A third reads to a tenth until its box is typed in.
+  await bowl.getByLabel("Quantity (whole dish)").fill("3 bowls");
+  await salad.focus();
+  await page.keyboard.press("Home");
+  await page.keyboard.press("ArrowRight");
+  await expect(bowl.getByLabel("Hippos (%)")).toHaveValue("33.3");
+  await expect(bowl.getByLabel("Gators (%)")).toHaveValue("66.7");
+  await bowl.getByLabel("Hippos (%)").focus();
+  await expect(bowl.getByLabel("Hippos (%)")).toHaveValue("33.3333");
+  await bowl.getByLabel("Hippos (%)").fill("50");
+  await bowl.getByLabel("Quantity (whole dish)").fill("");
   await salad.focus();
   await page.keyboard.press("ArrowRight");
-  await expect(dish(page, 2)).toContainText("Hippos · 51% · 214 kcal");
-  await dish(page, 2).getByLabel("Gators (%)").fill("30");
+  await expect(salad).toHaveAttribute("aria-valuetext", "Hippos 51%, 214 kcal; Gators 49%, 206 kcal");
+  await bowl.getByLabel("Gators (%)").fill("30");
   await expect(salad).toHaveAttribute("aria-valuenow", "70");
-  await expect(dish(page, 2)).toContainText("Hippos · 70% · 294 kcal");
+  await expect(salad).toHaveAttribute("aria-valuetext", "Hippos 70%, 294 kcal; Gators 30%, 126 kcal");
 
   const shares = page.getByRole("status", { name: "Shares" });
   await expect(shares).toContainText("Hippos · 624 kcal");
   await expect(shares).toContainText("Gators · 676 kcal");
 
-  const { violations } = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
-    .analyze();
-  expect(violations.map((v) => v.id)).toEqual([]);
+  // The shares written on the bar read in both themes.
+  for (const theme of ["Light", "Dark"]) {
+    await page.getByRole("button", { name: theme, exact: true }).click();
+    const { violations } = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .analyze();
+    expect(violations.map((v) => v.id), theme).toEqual([]);
+    await pie.screenshot({ path: `test-results/meal-dish-slider-${theme.toLowerCase()}.png` });
+  }
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
-  await pie.screenshot({ path: "test-results/meal-dish-slider-mobile.png" });
 
   // The count outlives a reload with the rest of the draft.
   await page.reload();

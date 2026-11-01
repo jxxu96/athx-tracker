@@ -335,16 +335,26 @@ export function countShare(count: Count, fraction: number) {
 }
 
 /**
- * One person's part of a dish, as the slider reads it: how many, when the
- * dish is counted, then the percentage and the calories.
+ * One person's part of a dish, as the slider shows it: the percentage on the
+ * bar, then under it the calories and, when the dish is counted, how many.
  */
-export function portionText(dish: Dish, eater: Eater) {
+export function portionOf(dish: Dish, eater: Eater) {
   const share = dish.share[eater];
-  return [
-    ...(dish.count ? [countShare(dish.count, share)] : []),
-    `${percent(share)}%`,
-    `${Math.round(dish.macros.calories * share)} kcal`,
-  ].join(" · ");
+  return {
+    percent: `${percent(share)}%`,
+    calories: Math.round(dish.macros.calories * share),
+    count: dish.count ? countShare(dish.count, share) : "",
+  };
+}
+
+/**
+ * A share box as it reads while nobody is typing in it: to a tenth, so the
+ * slider's third shows 33.3 rather than the 33.3333 it keeps. Anything that
+ * is not a share yet shows as typed.
+ */
+export function tidyShare(text: string) {
+  const share = readShare(text);
+  return share === null || text.trim() === "" ? text : percent(share / 100);
 }
 
 /** A dish's text where it names something: a meal, or a line of the assumptions. */
