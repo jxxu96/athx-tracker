@@ -10,7 +10,7 @@ import {
   fillDish,
   looseDishes,
   otherShare,
-  portionText,
+  portionOf,
   readDishes,
   readQuantity,
   setFigure,
@@ -21,6 +21,7 @@ import {
   sliderSteps,
   sliderValue,
   splitMeal,
+  tidyShare,
   type Dish,
   type DishDraft,
 } from "./meal-dishes.ts";
@@ -336,16 +337,27 @@ test("sliding sets Hippos' share in the slider's steps, and Gators takes the res
   assert.equal(sliderValue({ ...pie, share: { hippos: "4o", gators: "x" } }), 4);
 });
 
-test("each of you reads as a count, a percentage and calories", () => {
+test("each of you reads as a percentage, calories, and a count when there is one", () => {
   const [pie] = looseDishes([dish("p", {
     name: "Margherita pizza", calories: "880", quantity: "8 slices", share: { hippos: "37.5", gators: "62.5" },
   })], "Dinner");
-  assert.equal(portionText(pie, "hippos"), "3 of 8 slices · 37.5% · 330 kcal");
-  assert.equal(portionText(pie, "gators"), "5 of 8 slices · 62.5% · 550 kcal");
+  assert.deepEqual(portionOf(pie, "hippos"), { percent: "37.5%", calories: 330, count: "3 of 8 slices" });
+  assert.deepEqual(portionOf(pie, "gators"), { percent: "62.5%", calories: 550, count: "5 of 8 slices" });
   const [salad] = looseDishes([dish("s", { name: "Caesar salad", calories: "420" })], "Dinner");
-  assert.equal(portionText(salad, "hippos"), "50% · 210 kcal");
+  assert.deepEqual(portionOf(salad, "hippos"), { percent: "50%", calories: 210, count: "" });
   assert.equal(countShare({ amount: 6, unit: "" }, 1 / 3), "2 of 6");
   assert.equal(countShare({ amount: 400, unit: "g" }, 0.333), "133.2 of 400 g");
+});
+
+test("a share box reads to a tenth while nobody types in it", () => {
+  assert.equal(tidyShare("33.3333"), "33.3");
+  assert.equal(tidyShare("66.6667"), "66.7");
+  assert.equal(tidyShare("37.5"), "37.5");
+  assert.equal(tidyShare("100"), "100");
+  assert.equal(tidyShare(" 40 % "), "40");
+  assert.equal(tidyShare(""), "");
+  assert.equal(tidyShare("4o"), "4o");
+  assert.equal(tidyShare("120"), "120");
 });
 
 test("the assumptions say how many of a counted dish each of you had", () => {

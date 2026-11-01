@@ -1,6 +1,6 @@
 "use client";
 
-import { useId } from "react";
+import { useId, useState } from "react";
 import { Plus, Sparkles, X } from "lucide-react";
 import { Slider as SliderPrimitive } from "radix-ui";
 import { Button } from "@/components/ui/button";
@@ -15,10 +15,8 @@ import {
   DISH_TEXT_LIMIT,
   EATERS,
   QUANTITY_LIMIT,
-  countShare,
   looseDishes,
-  percent,
-  portionText,
+  portionOf,
   readQuantity,
   setFigure,
   setShare,
@@ -26,6 +24,7 @@ import {
   slideShare,
   sliderSteps,
   sliderValue,
+  tidyShare,
   type DishDraft,
   type Eater,
 } from "@/lib/meal-dishes";
@@ -39,45 +38,83 @@ const FIGURES = [
   { key: "fat", label: "Fat (g)" },
 ] as const;
 
+/**
+ * One person's percentage, at their end of the slider. It reads to a tenth
+ * until it is typed in, then shows everything it holds.
+ */
 function ShareBox({
-  eater,
+  id,
   value,
   disabled,
   onChange,
 }: {
-  eater: Eater;
+  id: string;
   value: string;
   disabled: boolean;
   onChange: (text: string) => void;
 }) {
-  const id = useId();
+  const [typing, setTyping] = useState(false);
   return (
-    <div>
-      <Label
-        htmlFor={id}
-        className="mb-1.5 block text-xs font-medium"
-        style={{ color: ATHLETES[eater].ink }}
-      >
-        {ATHLETES[eater].name} (%)
-      </Label>
+    <div className="relative">
       <Input
         id={id}
-        value={value}
+        value={typing ? value : tidyShare(value)}
         inputMode="decimal"
         placeholder="0"
         disabled={disabled}
+        className="h-10 pr-5 pl-1.5 text-right tabular-nums"
+        onFocus={() => setTyping(true)}
+        onBlur={() => setTyping(false)}
         onChange={(event) => onChange(event.target.value)}
       />
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-sm text-muted-foreground"
+      >
+        %
+      </span>
     </div>
   );
 }
 
 /**
- * Who had how much of a dish. Hippos is the left end and Gators the right, so
- * the thumb is where the dish divides. A dish counted in two or more whole
- * units moves a unit at a time; anything else a percent at a time.
+ * A share written on its own part of the bar, centred in it. A part too
+ * narrow to hold it beside the divider shows nothing, and the box at that
+ * end still says it. A tenth needs more room than a whole number.
  */
-function ShareSlider({
+function BarLabel({ fraction, side, text }: { fraction: number; side: "start" | "end"; text: string }) {
+  return (
+    <span
+      aria-hidden
+      className={`@container pointer-events-none absolute inset-y-0 flex items-center justify-center ${
+        side === "start" ? "left-0" : "right-0"
+      }`}
+      style={{ width: `${fraction * 100}%` }}
+    >
+      <span
+        className={`text-[11px] font-semibold tabular-nums ${
+          text.includes(".") ? "@max-[48px]:hidden" : "@max-[38px]:hidden"
+        }`}
+        // The page's own background reads on both athlete colours, in both
+        // themes: white on the light theme's darker inks, near-black on the
+        // dark theme's lighter ones.
+        style={{ color: "var(--background)" }}
+      >
+        {text}
+      </span>
+    </span>
+  );
+}
+
+/**
+ * Who had how much of a dish. Each of you has a box at your end, and the bar
+ * between them is the dish: Hippos' part on the left, Gators' on the right,
+ * each with its percentage on it, and the handle where the dish divides.
+ * Under the bar, the calories each part holds and, for a counted dish, how
+ * many. A dish counted in two or more whole units slides a unit at a time;
+ * anything else a percent at a time.
+ */
+function ShareControl({
   dish,
   sitting,
   disabled,
@@ -88,19 +125,35 @@ function ShareSlider({
   disabled: boolean;
   onDish: (change: (dish: DishDraft) => DishDraft) => void;
 }) {
+  const ids = { hippos: useId(), gators: useId() };
   const [read] = looseDishes([dish], sitting);
+  const portions = { hippos: portionOf(read, "hippos"), gators: portionOf(read, "gators") };
   // Said for a screen reader in place of the step count, which means nothing alone.
-  const spoken = EATERS.map((eater) => [
-    ATHLETES[eater].name,
-    ...(read.count ? [`${countShare(read.count, read.share[eater])},`] : []),
-    `${percent(read.share[eater])}%`,
-  ].join(" ")).join("; ");
+  const spoken = EATERS.map((eater) =>
+    [`${ATHLETES[eater].name} ${portions[eater].percent}`, portions[eater].count, `${portions[eater].calories} kcal`]
+      .filter(Boolean)
+      .join(", "),
+  ).join("; ");
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center gap-2">
-        <span aria-hidden className="text-xs font-medium" style={{ color: ATHLETES.hippos.ink }}>
-          {ATHLETES.hippos.name}
-        </span>
+      <div className="grid grid-cols-[3.75rem_minmax(0,1fr)_3.75rem] items-center gap-x-1.5 gap-y-1">
+        {EATERS.map((eater, index) => (
+          <Label
+            key={eater}
+            htmlFor={ids[eater]}
+            className={`text-xs font-semibold ${index ? "col-start-3 justify-self-end" : ""}`}
+            style={{ color: ATHLETES[eater].ink }}
+          >
+            {ATHLETES[eater].name}
+            <span className="sr-only"> (%)</span>
+          </Label>
+        ))}
+        <ShareBox
+          id={ids.hippos}
+          value={dish.share.hippos}
+          disabled={disabled}
+          onChange={(text) => onDish((current) => setShare(current, "hippos", text))}
+        />
         <SliderPrimitive.Root
           value={[sliderValue(dish)]}
           min={0}
@@ -108,32 +161,44 @@ function ShareSlider({
           step={1}
           disabled={disabled}
           onValueChange={([value]) => onDish((current) => slideShare(current, value))}
-          className="relative flex h-8 min-w-0 grow touch-none items-center select-none data-[disabled]:opacity-50"
+          className="relative flex h-10 min-w-0 touch-none items-center select-none data-[disabled]:opacity-50"
         >
+          {/* Inset by half the handle, so the handle always sits where the colours meet. */}
           <SliderPrimitive.Track
-            className="relative h-2 grow overflow-hidden rounded-full"
+            className="relative mx-2 h-7 grow overflow-hidden rounded-full"
             style={{ background: ATHLETES.gators.ink }}
           >
             <SliderPrimitive.Range className="absolute h-full" style={{ background: ATHLETES.hippos.ink }} />
+            <BarLabel fraction={read.share.hippos} side="start" text={portions.hippos.percent} />
+            <BarLabel fraction={read.share.gators} side="end" text={portions.gators.percent} />
           </SliderPrimitive.Track>
           <SliderPrimitive.Thumb
             aria-label={`${ATHLETES.hippos.name}' share`}
             aria-valuetext={spoken}
-            className="block size-6 rounded-full border-2 border-foreground/60 bg-background shadow-sm ring-ring/50 transition-[box-shadow] focus-visible:ring-4 focus-visible:outline-hidden"
-          />
+            className="group flex h-10 w-4 cursor-grab items-center justify-center outline-none active:cursor-grabbing data-[disabled]:cursor-default"
+          >
+            <span className="h-9 w-2.5 rounded-full border border-black/15 bg-white shadow-md ring-ring/60 transition-[box-shadow] group-focus-visible:ring-4" />
+          </SliderPrimitive.Thumb>
         </SliderPrimitive.Root>
-        <span aria-hidden className="text-xs font-medium" style={{ color: ATHLETES.gators.ink }}>
-          {ATHLETES.gators.name}
-        </span>
+        <ShareBox
+          id={ids.gators}
+          value={dish.share.gators}
+          disabled={disabled}
+          onChange={(text) => onDish((current) => setShare(current, "gators", text))}
+        />
       </div>
-      {EATERS.map((eater) => (
-        <p key={eater} className="text-xs tabular-nums">
-          <span className="font-semibold" style={{ color: ATHLETES[eater].ink }}>
-            {ATHLETES[eater].name}
-          </span>
-          {` · ${portionText(read, eater)}`}
-        </p>
-      ))}
+      <div className="flex justify-between gap-3 text-xs tabular-nums">
+        {EATERS.map((eater, index) => (
+          <p key={eater} className={index ? "text-right" : undefined}>
+            <span className="font-semibold" style={{ color: ATHLETES[eater].ink }}>
+              {portions[eater].calories} kcal
+            </span>
+            {portions[eater].count ? (
+              <span className="block text-muted-foreground">{portions[eater].count}</span>
+            ) : null}
+          </p>
+        ))}
+      </div>
     </div>
   );
 }
@@ -294,18 +359,7 @@ function DishCard({
           }}
         />
       </Field>
-      <ShareSlider dish={dish} sitting={sitting} disabled={busy || disabled} onDish={onDish} />
-      <div className="grid grid-cols-2 gap-3">
-        {EATERS.map((eater) => (
-          <ShareBox
-            key={eater}
-            eater={eater}
-            value={dish.share[eater]}
-            disabled={busy}
-            onChange={(text) => onDish((current) => setShare(current, eater, text))}
-          />
-        ))}
-      </div>
+      <ShareControl dish={dish} sitting={sitting} disabled={busy || disabled} onDish={onDish} />
       {error ? (
         <p role="alert" className="text-sm text-destructive">
           {error}

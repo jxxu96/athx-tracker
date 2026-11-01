@@ -91,14 +91,16 @@ single SQLite file on a volume.
   correct; correcting them leaves the figures the estimate's. A dish typed by
   hand has none to show until it is estimated. Each dish has a share for each
   of you as a percentage of that dish, starting at half each. The two shares
-  always add up to 100: typing one sets the other, and blank counts as 0. A
-  slider sets both, Hippos at the left end and Gators at the right, and under
-  it each of you reads as a percentage and the calories that share holds. Give
-  the dish a quantity, a number and then what it counts, such as "8 slices" or
-  "400 g", and each of you also reads as a count, "3 of 8 slices"; a dish of
-  two or more whole units then slides a unit at a time, and anything else a
-  percent at a time, since one of something would slide all or nothing. A
-  share between steps is typed into the boxes. Saving writes one meal for each
+  always add up to 100: typing one sets the other, and blank counts as 0. Each
+  of you has a box at your end of a bar, Hippos at the left and Gators at the
+  right, and the bar is the dish divided, each part with its percentage on it
+  when there is room; drag its handle, or tap the bar, to set both. Under the
+  bar are the calories each part holds. Give the dish a quantity, a number and
+  then what it counts, such as "8 slices" or "400 g", and each part also reads
+  as a count, "3 of 8 slices"; a dish of two or more whole units then slides a
+  unit at a time, and anything else a percent at a time, since one of
+  something would slide all or nothing. A share between steps is typed into
+  the boxes, which read to a tenth until typed in. Saving writes one meal for each
   of you with a share, holding your share of every dish (`splitMeal` in
   `lib/meal-dishes.ts`), so the two meals add up to what was on the table.
   Someone with no share of anything gets no meal, and switching to one of you
