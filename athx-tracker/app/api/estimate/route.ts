@@ -174,7 +174,8 @@ export async function POST(request: Request) {
     );
   try {
     const input = estimateRequestSchema.parse(await readBody(request));
-    const description = estimatePrompt(input.description, input.refinement, storedFoodNotes());
+    const description = estimatePrompt(input.description, input.refinement, storedFoodNotes(), input.dishes);
+    const dishes = Boolean(input.dishes?.length);
 
     const bucket = new Date().toISOString().slice(0, 10);
     if (!claimEstimate(bucket))
@@ -214,8 +215,16 @@ export async function POST(request: Request) {
           },
           body: JSON.stringify(
             gateway
-              ? { description, budgetMs: INTERACTIVE_BUDGET_MS, ...(streaming ? { stream: true } : {}) }
-              : grokRequest(description, config.XAI_MODEL || "grok-4.7"),
+              ? {
+                  description,
+                  budgetMs: INTERACTIVE_BUDGET_MS,
+                  ...(streaming ? { stream: true } : {}),
+                  // Dish by dish. An estimator from before dishes ignores the
+                  // ask and answers for the whole meal, which the form takes
+                  // as one dish.
+                  ...(dishes ? { dishes: true } : {}),
+                }
+              : grokRequest(description, config.XAI_MODEL || "grok-4.7", { dishes }),
           ),
           signal: AbortSignal.any(signals),
         },

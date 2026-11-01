@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Clock, MessageCircle, Sparkles, Split, Square } from "lucide-react";
+import { Clock, Copy, MessageCircle, Sparkles, Split, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -49,10 +49,13 @@ import { macroCalories } from "@/lib/meal-calories";
 import { fanOutMeal, type LoggingFor, type MealDraft } from "@/lib/meal-fanout";
 import { mealForTime } from "@/lib/meal-time";
 import {
+  DISH_LIMIT,
   EATERS,
   ETHANOL_LIMIT,
   FIBER_LIMIT,
   MACRO_LIMITS as LIMITS,
+  dishHint,
+  dishesFromEstimate,
   dishesOf,
   emptyDish,
   fillDish,
@@ -60,6 +63,7 @@ import {
   splitMeal,
   type DishDraft,
 } from "@/lib/meal-dishes";
+import { splitDishText } from "@/lib/dish-split";
 
 const MACRO_FIELDS = [
   { key: "calories", label: "Calories", unit: "kcal" },
@@ -315,7 +319,12 @@ export function MealForm({
   const [dishes, setDishes] = useState<DishDraft[]>(() => (editing ? [] : dishesOf(from?.dishes)));
   const [estimatingDish, setEstimatingDish] = useState<string | null>(null);
   const [dishErrors, setDishErrors] = useState<Record<string, string>>({});
-  const splitting = !editing && dishes.length > 0;
+  // A meal for both is split by dish unless you say it was the same meal for
+  // each of you. Dishes already written stay split whoever it is for.
+  const [unsplit, setUnsplit] = useState(from?.unsplit === true);
+  const splitting = !editing && (dishes.length > 0 || (who === "both" && !unsplit));
+  // Split, but with no dishes yet: the description waits to become them.
+  const describing = splitting && dishes.length === 0;
   const eaters = who === "both" ? EATERS : ([who] as const);
   const conversationLog = useRef<HTMLDivElement>(null);
   const replyButton = useRef<HTMLButtonElement>(null);
@@ -352,7 +361,7 @@ export function MealForm({
     snapshot: JSON.stringify({
       day, time, picked, description, name, macros, ethanol, fiber, assumptions,
       confidence, answeredBy, source, adjusted, conversation, reply, kept, draftIds,
-      dishes,
+      dishes, unsplit,
     }),
     summary: (
       name.trim() ||
@@ -403,23 +412,27 @@ export function MealForm({
     setKept(null);
     setDishes([]);
     setDishErrors({});
+    setUnsplit(false);
   }
 
   /**
-   * Turns the meal into dishes. Whatever was on the form becomes the first
-   * dish, figures and estimate included, and it starts shared half and half.
-   * A name typed for the whole meal stays the meal's name, unless it was all
-   * there was, in which case it names the dish instead.
+   * Turns the meal into dishes without estimating it. Figures already on the
+   * form came from the whole meal, so they stay together as the first dish,
+   * estimate and all. A description with no figures yet is cut into dishes
+   * where it was written as dishes (`splitDishText`), each to be typed in or
+   * estimated. Every dish starts shared half and half. A name typed for the
+   * whole meal stays the meal's name, unless it was all there was, in which
+   * case it is what gets cut into dishes instead.
    */
   function splitByDish() {
-    // Whole: the description is what the figures came from, and what the
-    // dish's own estimate will read.
     const text = description.trim() || name.trim();
-    const typed = text !== "" || assumptions.trim() !== "" || fiber.trim() !== "" || ethanol.trim() !== "" ||
+    const figured = assumptions.trim() !== "" || fiber.trim() !== "" || ethanol.trim() !== "" ||
       MACRO_FIELDS.some(({ key }) => macros[key].trim() !== "");
-    const first: DishDraft = typed
-      ? {
+    const made: DishDraft[] = figured
+      ? [{
           ...emptyDish(newId()),
+          // Whole: the description is what the figures came from, and what
+          // the dish's own estimate will read.
           name: text,
           ...macros,
           fiber,
@@ -429,13 +442,13 @@ export function MealForm({
           confidence,
           adjusted,
           assumptions,
-        }
-      : emptyDish(newId());
+        }]
+      : splitDishText(text, DISH_LIMIT).map((part) => ({ ...emptyDish(newId()), name: part }));
     const mealName = description.trim() ? name : "";
     reset();
     setName(mealName);
     setError("");
-    setDishes([first]);
+    setDishes(made.length ? made : [emptyDish(newId())]);
   }
 
   function changeDish(id: string, change: (dish: DishDraft) => DishDraft) {
@@ -468,9 +481,22 @@ export function MealForm({
     try {
       const { estimate, provider } = await api<{ estimate: Estimate; provider?: Estimator }>("/api/estimate", {
         method: "POST",
-        body: JSON.stringify({ description: text }),
+        body: JSON.stringify({ description: text, dishes: dishHint(text) }),
       });
-      setDishes((current) => current.map((dish) => (dish.id === id ? fillDish(dish, estimate, provider) : dish)));
+      // One dish keeps its words, its count and its share. One that comes
+      // back as several takes its place, each with its share, unless they
+      // would not fit beside the rest, when it stays one dish.
+      setDishes((current) => {
+        const at = current.findIndex((dish) => dish.id === id);
+        if (at < 0) return current;
+        const made = dishesFromEstimate(estimate, provider, newId, current[at]);
+        const fits = current.length - 1 + made.length <= DISH_LIMIT;
+        return [
+          ...current.slice(0, at),
+          ...(fits ? made : [fillDish(current[at], estimate, provider)]),
+          ...current.slice(at + 1),
+        ];
+      });
       // Ethanol belongs to an Alcohol sitting, as it does for a whole meal.
       if ((estimate.alcohol ?? 0) > 0) setSlot("Alcohol");
       onEstimateComplete?.();
@@ -496,6 +522,8 @@ export function MealForm({
     const refining = followUp !== undefined;
     const previous = conversation.at(-1)?.estimate;
     if (refining && (!previous || !canReply)) return;
+    // A meal for both, not split yet, is estimated dish by dish.
+    const asDishes = describing && !refining;
     setError("");
     setReplyError("");
     setRejected(false);
@@ -510,6 +538,7 @@ export function MealForm({
         signal: stop.signal,
         body: JSON.stringify({
           description: description.trim().length >= 3 ? description.trim() : `Meal: ${name.trim()}`,
+          ...(asDishes ? { dishes: dishHint(description.trim()) } : {}),
           // The figures on the form, not the last answer, when they have been
           // edited and still make sense, so a reply starts from what you see.
           ...(refining && previous ? {
@@ -528,6 +557,16 @@ export function MealForm({
       const { estimate, provider } = await readEstimate(response, (partial) =>
         setPartials((current) => [...current.filter((held) => held.provider !== partial.provider), partial]),
       );
+      if (asDishes) {
+        // The meal's name stays as typed: left blank, each of you is named
+        // after your own dishes.
+        setDishes(dishesFromEstimate(estimate, provider, newId, undefined, description.trim()));
+        setDescription("");
+        setDishErrors({});
+        if ((estimate.alcohol ?? 0) > 0) setSlot("Alcohol");
+        onEstimateComplete?.();
+        return;
+      }
       setName(estimate.name.slice(0, 300));
       setEthanol(String(estimate.alcohol ?? 0));
       setFiber(String(estimate.fiber ?? 0));
@@ -739,6 +778,10 @@ export function MealForm({
 
   /** One meal for each of you with a share, each holding that share of every dish. */
   async function submitSplit() {
+    if (!dishes.length) {
+      setError(description.trim() ? "Estimate the meal, or split it by dish, first." : "Describe the meal first.");
+      return;
+    }
     const when = validateWhen();
     const read = when ? null : readDishes(dishes, slot);
     const split = read?.ok
@@ -795,7 +838,7 @@ export function MealForm({
   const busy = estimating || saving || templateSaving;
   // Not once there is an estimate: a queued meal saves zero macros, and would
   // throw away the figures already on the form.
-  const canQueue = queueReady && conversation.length === 0 && !rejected;
+  const canQueue = queueReady && conversation.length === 0 && !rejected && !splitting;
 
   return (
     <form onSubmit={submit} className="space-y-4 pb-4">
@@ -851,7 +894,7 @@ export function MealForm({
             </div>
           </div>
         ) : null}
-        {splitting ? null : (
+        {splitting && !describing ? null : (
         <MealTemplateList
           loggingFor={who}
           templates={templates}
@@ -866,7 +909,7 @@ export function MealForm({
               : "Save this meal as a template"
           }
           onApply={applyOffer}
-          onSaveForm={() => void saveAsTemplate()}
+          onSaveForm={describing ? undefined : () => void saveAsTemplate()}
           onSaveTemplates={onSaveTemplates}
         />
         )}
@@ -899,7 +942,7 @@ export function MealForm({
         </section>
       </fieldset>
 
-      {splitting ? (
+      {splitting && !describing ? (
         <fieldset disabled={busy} className="min-w-0 space-y-4">
             <section
               {...athleteOutline(who)}
@@ -993,6 +1036,21 @@ export function MealForm({
           <Button type="button" variant="outline" className="w-full" disabled={busy} onClick={splitByDish}>
             <Split />
             Split by dish
+          </Button>
+        ) : null}
+        {describing ? (
+          <Button
+            type="button"
+            variant="ghost"
+            className="w-full"
+            disabled={busy}
+            onClick={() => {
+              setUnsplit(true);
+              setError("");
+            }}
+          >
+            <Copy />
+            Same meal for each of you
           </Button>
         ) : null}
         {estimating && !refineOpen ? <SoFar partials={partials} /> : null}

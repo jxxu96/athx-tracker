@@ -84,9 +84,23 @@ single SQLite file on a volume.
   a template to keep your own name, items and grams; tapping one fills the form,
   and the saved macros stay until you estimate again. A meal typed and not
   saved yet is kept as a draft; see *Drafts*.
-  Logging for both saves the same meal for each of you, unless you choose
-  **Split by dish**: what is on the form becomes the first dish, and you add
-  the rest. Each dish has its own figures, typed or estimated from what the
+  Logging for both splits the meal by dish. Describe it and **Estimate
+  macros**, and it comes back dish by dish, each with its own figures and
+  assumptions. The phone first cuts the description where it was written as
+  dishes: at line breaks and bullets, commas, semicolons, "and" and "plus",
+  and a "+", "&" or "/" with space around it, keeping a name that is one dish
+  with "and" in it together, such as mac and cheese, and a size or a change,
+  such as "12 inch" or "no cheese", with its dish (`splitDishText` in
+  `lib/dish-split.ts`). The estimate keeps that cut, and makes the one that
+  needs to know food: it splits what is plainly two dishes however it was
+  written, such as "burger fries" with only a space, and joins what is plainly
+  one. A dish estimated again on its own can come back as two, each keeping its
+  share. **Split by dish** makes the phone's cut without estimating, for
+  figures typed by hand; figures already on the form stay together as the
+  first dish. **Same meal for each of you** saves the same meal for each of
+  you instead, as Both used to, and the next meal is split again. An estimator
+  from before dishes answers for the whole meal, which becomes one dish. Each
+  dish has its own figures, typed or estimated from what the
   dish says, and under them the assumptions its estimate gave, to read and
   correct; correcting them leaves the figures the estimate's. A dish typed by
   hand has none to show until it is estimated. Each dish has a share for each
@@ -451,6 +465,7 @@ save rather than at its two-minute retry timer, and a meal logged for both
 athletes is estimated once and both records are filled with the same figures.
 While one is waiting, the app looks for its figures every 15 seconds, and a
 popup says when they arrive, from whichever section is open. It is offered
+for a meal that is not split by dish, which the queue cannot fill, and
 until there is an estimate on the form, since a queued meal would throw those
 figures away. Background estimates do not count toward the 60 a day. They
 need the estimator: with only `XAI_API_KEY` set, the button is not offered,

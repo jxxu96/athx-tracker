@@ -104,17 +104,35 @@ export const mealSchema = z.object({
   }
   rejectFiberAboveCarbs(meal.macros, context, ["macros", "fiber"]);
 });
-/** What an estimator has to come back with, wherever the answer came from. */
-export const estimateSchema = mealMacroSchema.extend({
+/** One answer for some food: a whole meal, or one dish of a shared one. */
+const answerSchema = mealMacroSchema.extend({
   name: z.string().min(1).max(300),
   assumptions: z.string().max(3000),
   confidence: z.enum(["low", "medium", "high"]),
+});
+/** A shared meal holds this many dishes at most, as the form does. */
+export const ESTIMATE_DISH_LIMIT = 20;
+/**
+ * What an estimator has to come back with, wherever the answer came from. A
+ * meal asked for dish by dish also has its dishes, each an answer of its own.
+ */
+export const estimateSchema = answerSchema.extend({
+  dishes: z.array(answerSchema.superRefine((dish, context) => {
+    rejectFiberAboveCarbs(dish, context, ["fiber"]);
+  })).min(1).max(ESTIMATE_DISH_LIMIT).optional(),
 }).superRefine((estimate, context) => {
   rejectFiberAboveCarbs(estimate, context, ["fiber"]);
 });
 /** Keep the latest estimate and every user correction within a bounded request. */
 export const estimateRequestSchema = z.object({
   description: z.string().trim().min(3).max(4000),
+  /**
+   * Asks for the meal dish by dish, and is how the phone cut it: the
+   * estimator keeps these dishes unless one is plainly two, or two one.
+   * They come from the description, so together they are no longer than it.
+   */
+  dishes: z.array(z.string().trim().min(1).max(4000)).min(1).max(ESTIMATE_DISH_LIMIT)
+    .refine((dishes) => dishes.join("").length <= 4000, "Too many dishes.").optional(),
   refinement: z.object({
     previous: estimateSchema,
     replies: z.array(z.string().trim().min(1).max(REPLY_LIMIT)).min(1).max(MAX_REPLIES)

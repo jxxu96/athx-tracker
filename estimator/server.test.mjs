@@ -13,19 +13,25 @@ process.env.ESTIMATOR_BUDGET_MS = "56000";
 process.env.ESTIMATOR_TIMEOUT_MS = "49000";
 process.env.ESTIMATOR_RESERVE_MS = "12600";
 const {
+  DISH_INSTRUCTIONS,
+  DISH_SCHEMA,
+  DISH_TASK,
   INSTRUCTIONS,
   MEAL_PROVIDER_MS,
   MEAL_RESERVE_MS,
   PROVIDERS,
   budgetSlice,
   clean,
+  cleanDishes,
   complex,
   parseCliOutput,
   settle,
+  settleDishes,
   structured,
 } = await import("./server.mjs");
 const { WORKOUT_TASK } = await import("./workout.mjs");
 
+const SCHEMA_REQUIRED = ["name", "calories", "protein", "carbs", "fat", "fiber", "alcohol", "assumptions", "confidence"];
 const whole = {
   name: "Chicken thigh rice bowl",
   calories: 780, protein: 46, carbs: 72, fat: 33, fiber: 0, alcohol: 0,
@@ -269,4 +275,71 @@ test("averaged working still fits the app's 3000 characters, whole items first",
   assert.ok(estimate.assumptions.length <= 3000);
   for (const name of ["Codex", "Claude", "Grok"])
     assert.match(estimate.assumptions, new RegExp(`From ${name} [^\\n]*:\\nRice, 200 g \\[260 kcal, 5P, 57C, 0F\\]\\nReference values\\.…`));
+});
+
+const dish = (name, calories, confidence = "medium") => ({
+  name, calories, protein: calories / 20, carbs: calories / 10, fat: calories / 40,
+  fiber: 0, alcohol: 0, assumptions: `${name}, worked out.`, confidence,
+});
+const shared = (dishes, over = {}) => ({ ...whole, name: "Dinner", assumptions: "Shared.", dishes, ...over });
+
+test("a shared meal is the meal's question, and then dish by dish", () => {
+  assert.ok(DISH_INSTRUCTIONS.startsWith(INSTRUCTIONS.replace(/ Output only the required JSON\.$/, " ")));
+  assert.ok(DISH_INSTRUCTIONS.endsWith("Output only the required JSON."));
+  for (const phrase of [
+    "dish by dish in dishes", "'burger fries shake' is three dishes", "'mac and cheese'",
+    "When the description contains dishes", "household's own words", "The dishes add up to the totals",
+  ])
+    assert.ok(DISH_INSTRUCTIONS.includes(phrase), phrase);
+  assert.deepEqual(DISH_SCHEMA.required, [...SCHEMA_REQUIRED, "dishes"]);
+  assert.deepEqual(DISH_SCHEMA.properties.dishes.items.required, SCHEMA_REQUIRED);
+  // Still a meal: it searches as a meal does.
+  assert.ok(PROVIDERS.codex.args("pizza, salad", DISH_TASK).includes("--search"));
+  const grok = PROVIDERS.grok.args("pizza, salad", DISH_TASK);
+  assert.equal(grok[grok.indexOf("--tools") + 1], "web_search,web_fetch");
+  assert.ok(JSON.parse(grok[grok.indexOf("--json-schema") + 1]).required.includes("dishes"));
+  const claude = PROVIDERS.claude.args("pizza, salad", DISH_TASK);
+  assert.equal(claude[claude.indexOf("--tools") + 1], "WebSearch,WebFetch");
+  assert.equal(claude[claude.indexOf("--system-prompt") + 1], DISH_INSTRUCTIONS);
+});
+
+test("a shared meal's totals are its dishes added up, and its confidence the weakest", () => {
+  const cleaned = cleanDishes(shared([dish("Pizza", 880.04, "high"), dish("Salad", 420, "medium")], { calories: 5 }));
+  assert.equal(cleaned.calories, 1300);
+  assert.equal(cleaned.protein, 65);
+  assert.equal(cleaned.confidence, "medium");
+  assert.deepEqual(cleaned.dishes.map((each) => [each.name, each.calories]), [["Pizza", 880], ["Salad", 420]]);
+});
+
+test("one unusable dish makes the whole answer unusable, since nobody would be given it", () => {
+  assert.equal(cleanDishes(shared([dish("Pizza", 880), { ...dish("Salad", 420), carbs: 1, fiber: 5 }])), null);
+  assert.equal(cleanDishes(shared([dish("Pizza", 880), { ...dish("", 420) }])), null);
+  assert.equal(cleanDishes(shared([])), null);
+  assert.equal(cleanDishes(whole), null, "a meal with no dishes is not a shared meal");
+  assert.equal(cleanDishes(shared(Array.from({ length: 21 }, (_, index) => dish(`Dish ${index}`, 10)))), null);
+  assert.equal(cleanDishes(shared([dish("Feast", 15000), dish("Second feast", 15000)])), null, "totals past a meal's ceiling");
+});
+
+test("shared meals average dish by dish, and an answer split another way is left out", () => {
+  const answers = [
+    { provider: "codex", estimate: cleanDishes(shared([dish("pizza", 800), dish("salad", 400)])) },
+    { provider: "claude", estimate: cleanDishes(shared([dish("pizza", 900, "high"), dish("salad", 300)])) },
+    { provider: "grok", estimate: cleanDishes(shared([dish("pizza and salad", 1200)])) },
+  ];
+  const { provider, estimate } = settleDishes(answers);
+  assert.equal(provider, "average");
+  // 800 x 40% + 900 x 35%, over the 75% that split it in two.
+  assert.deepEqual(estimate.dishes.map((each) => [each.name, each.calories]), [["pizza", 846.7], ["salad", 353.3]]);
+  assert.equal(estimate.calories, 1200);
+  assert.equal(estimate.dishes[0].confidence, "medium", "a dish is as sure as its least sure answer");
+  assert.match(estimate.assumptions, /^Weighted average of Codex 53% and Claude 47%, dish by dish/);
+  assert.match(estimate.assumptions, /Grok split the meal into a different number of dishes, so it is left out\./);
+  assert.match(estimate.dishes[0].assumptions, /From Codex \[800 kcal, 40P, 80C, 20F\]:\npizza, worked out\./);
+
+  // The best-sourced answer still wins outright.
+  const label = { provider: "grok", estimate: cleanDishes(shared([dish("pizza", 700, "high")], { confidence: "high" })) };
+  assert.equal(settleDishes([...answers, label]), label);
+  // With nobody to average it with, the best-weighted answer stands as it is.
+  const alone = [answers[0], answers[2]];
+  assert.equal(settleDishes(alone), answers[0]);
 });

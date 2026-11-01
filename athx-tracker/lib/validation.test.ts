@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  estimateRequestSchema,
   estimateSchema,
   recordSchema,
   settingsSchema,
@@ -312,6 +313,44 @@ test("the app and the estimator describe an estimate the same way", async () => 
     !estimateSchema.safeParse({ ...base, carbs: 10, fiber: 11 }).success,
     "fiber above total carbs must be refused",
   );
+});
+
+test("a shared meal is asked the same question, dish by dish, on either path", async () => {
+  const estimatorModule = "../../estimator/server.mjs";
+  const { DISH_INSTRUCTIONS, DISH_SCHEMA } = (await import(estimatorModule)) as {
+    DISH_INSTRUCTIONS: string;
+    DISH_SCHEMA: { required: string[]; properties: { dishes: { items: { required: string[] } } } };
+  };
+  const { dishFormat, grokRequest } = await import("./grok.ts");
+  const request = grokRequest("pizza, salad", "grok-4.7", { dishes: true });
+  assert.equal(request.instructions, DISH_INSTRUCTIONS, "the direct API and the estimator ask different questions");
+  assert.equal(request.text.format, dishFormat);
+  assert.deepEqual(DISH_SCHEMA.required, dishFormat.schema.required);
+  assert.deepEqual(
+    DISH_SCHEMA.properties.dishes.items.required,
+    dishFormat.schema.properties.dishes.items.required,
+  );
+  // A meal for one is asked as it always was.
+  assert.equal(grokRequest("banana", "grok-4.7").text.format.schema.required.includes("dishes"), false);
+});
+
+test("an estimate's dishes are each an estimate, and a meal holds twenty at most", () => {
+  const answer = {
+    name: "Pizza", calories: 880, protein: 36, carbs: 100, fat: 30, fiber: 6, alcohol: 0,
+    assumptions: "", confidence: "medium",
+  };
+  const meal = { ...answer, name: "Dinner", dishes: [answer, { ...answer, name: "Salad" }] };
+  assert.ok(estimateSchema.safeParse(meal).success);
+  assert.ok(estimateSchema.safeParse(answer).success, "a meal for one has none");
+  assert.ok(!estimateSchema.safeParse({ ...meal, dishes: [] }).success);
+  assert.ok(!estimateSchema.safeParse({ ...meal, dishes: [{ ...answer, fiber: 101 }] }).success, "fiber above a dish's carbs");
+  assert.ok(!estimateSchema.safeParse({ ...meal, dishes: [{ ...answer, calories: 20001 }] }).success);
+  assert.ok(!estimateSchema.safeParse({ ...meal, dishes: Array.from({ length: 21 }, () => answer) }).success);
+
+  assert.ok(estimateRequestSchema.safeParse({ description: "pizza, salad", dishes: ["pizza", "salad"] }).success);
+  assert.ok(!estimateRequestSchema.safeParse({ description: "pizza, salad", dishes: [] }).success);
+  assert.ok(!estimateRequestSchema.safeParse({ description: "pizza", dishes: ["x".repeat(2001), "y".repeat(2000)] }).success);
+  assert.ok(!estimateRequestSchema.safeParse({ description: "pizza", dishes: Array.from({ length: 21 }, () => "pie") }).success);
 });
 
 test("a time of day is optional, and only a real clock time is kept", () => {
