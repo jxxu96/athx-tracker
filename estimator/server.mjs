@@ -490,12 +490,25 @@ function complex(description) {
   return items.length >= COMPLEX_ITEMS;
 }
 
-async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK) {
+/** Either signal stops it. Absent ones are left out. */
+function either(...signals) {
+  const given = signals.filter(Boolean);
+  return given.length > 1 ? AbortSignal.any(given) : given[0];
+}
+
+/**
+ * signal is the caller hanging up: every CLI still running is stopped, and
+ * nobody else is asked. onAnswer hears each usable answer the moment it lands,
+ * before it is settled with the others, so a caller can show it while the rest
+ * are still working.
+ */
+async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK, { signal, onAnswer } = {}) {
   const deadline = Date.now() + budgetMs;
   const tried = [];
   const meal = task.name === "meal";
 
-  async function ask(name, isLast, signal) {
+  async function ask(name, isLast, stop) {
+    if (signal?.aborted) return null;
     const provider = PROVIDERS[name];
     if (!provider) return null;
     const bin = provider.bin();
@@ -517,14 +530,22 @@ async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK) {
     }
 
     const started = Date.now();
-    const { code, out, err, timedOut } = await run(bin, provider.args(description, task), slice, signal);
+    const { code, out, err, timedOut } = await run(
+      bin,
+      provider.args(description, task),
+      slice,
+      either(stop, signal),
+    );
     const value = task.clean(parseCliOutput(out));
     if (value) {
       console.log(`[estimator] ${name} answered in ${Date.now() - started}ms`);
-      return { estimate: value, provider: name };
+      const answer = { estimate: value, provider: name };
+      onAnswer?.(answer);
+      return answer;
     }
-    // Stopped because another found the label, which is not a failure.
-    if (signal?.aborted) return null;
+    // Stopped because another found the label, or because the caller left,
+    // which is not a failure.
+    if (stop?.aborted || signal?.aborted) return null;
     const why = timedOut
       ? `timed out after ${slice}ms`
       : `exit ${code} ${(err || out).slice(0, 160).trim()}`;
@@ -553,6 +574,7 @@ async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK) {
     if (given.length) return settle(given);
   } else {
     for (const [index, name] of ORDER.entries()) {
+      if (signal?.aborted) break;
       const answer = await ask(name, index === ORDER.length - 1);
       if (!answer) continue;
       if (!meal || answer.estimate.confidence !== "low") return answer;
@@ -787,6 +809,14 @@ const server = createServer((request, response) => {
 
   if (request.method !== "POST") return send(response, 405, { error: "POST only" });
 
+  // A caller that hangs up before the answer, because someone pressed Stop or
+  // gave up waiting, stops every CLI still running for it. Left alone they ran
+  // to their own deadline and spent allowance on an answer nobody would read.
+  const gone = new AbortController();
+  response.on("close", () => {
+    if (!response.writableFinished) gone.abort();
+  });
+
   // Meal follow-ups include the previous estimate and earlier corrections.
   // Decode across chunk boundaries so longer descriptions preserve Unicode too.
   request.setEncoding("utf8");
@@ -800,9 +830,11 @@ const server = createServer((request, response) => {
     let budget = BUDGET_MS;
     let task = MEAL_TASK;
     let context = "";
+    let streaming = false;
     try {
       const parsed = JSON.parse(body);
       description = String(parsed.description ?? "").trim();
+      streaming = parsed.stream === true;
       if (parsed.task !== undefined && !["meal", "workout"].includes(parsed.task))
         return send(response, 400, { error: "Unknown task." });
       if (parsed.task === "workout") {
@@ -823,7 +855,34 @@ const server = createServer((request, response) => {
     if (description.length < 3 || description.length > 40000)
       return send(response, 400, { error: "Describe the meal or workout in a little more detail." });
 
-    const result = await estimate(context + description, budget, task);
+    // A streamed meal sends one JSON line per estimator as each answers, then
+    // the settled answer or the failure. The status is sent before anyone has
+    // answered, so a failure travels in the last line, not the status. Only a
+    // caller that asks gets this; an older app still gets one JSON body.
+    if (streaming && task === MEAL_TASK) {
+      response.writeHead(200, {
+        "Content-Type": "application/x-ndjson",
+        "Cache-Control": "no-store",
+      });
+      response.flushHeaders();
+      const line = (value) => {
+        if (!gone.signal.aborted) response.write(`${JSON.stringify(value)}\n`);
+      };
+      const result = await estimate(description, budget, task, {
+        signal: gone.signal,
+        onAnswer: ({ estimate: answer, provider }) =>
+          line({ type: "partial", provider, estimate: answer }),
+      });
+      if (gone.signal.aborted) return response.end();
+      if (result.error) {
+        console.error(`[estimator] all providers failed: ${result.error}`);
+        line({ type: "error", error: "No estimate available.", detail: String(result.error).slice(0, 300) });
+      } else line({ type: "done", provider: result.provider, estimate: result.estimate });
+      return response.end();
+    }
+
+    const result = await estimate(context + description, budget, task, { signal: gone.signal });
+    if (gone.signal.aborted) return response.end();
     if (result.error) {
       console.error(`[estimator] all providers failed: ${result.error}`);
       // Passed to the caller, not just the log. Which CLI failed and why is the

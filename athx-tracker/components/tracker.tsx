@@ -85,6 +85,8 @@ const SAVE_TIMEOUT_MS = 15_000;
 const CATCH_UP_MS = 30_000;
 /** While something waits to be sent, it is tried again this often as well. */
 const RESEND_MS = 60_000;
+/** How often a meal estimating in the background is looked for, while one is. */
+const FILL_CHECK_MS = 15_000;
 
 const timeout = (ms: number) =>
   typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
@@ -117,6 +119,7 @@ function waitingReason(error: unknown) {
 export function Tracker({
   today: serverToday,
   grokReady,
+  queueReady,
   records: initialRecords,
   total: initialTotal,
   settings: initialSettings,
@@ -127,6 +130,8 @@ export function Tracker({
 }: {
   today: string;
   grokReady: boolean;
+  /** Whether a meal saved to be estimated in the background will ever be. */
+  queueReady: boolean;
   records: RecordItem[];
   total: number;
   settings: Settings;
@@ -248,6 +253,9 @@ export function Tracker({
   }, [navigate]);
   const sides = who === "both" ? (["hippos", "gators"] as const) : ([who] as const);
   const [records, setRecords] = useState(() => sortRecords(initialRecords));
+  // Meals seen here while their estimate was still running in the background,
+  // so the moment one comes back filled can be announced.
+  const awaitingFill = useRef(new Set<string>());
   const [settings, setSettings] = useState(initialSettings);
   const [revision, setRevision] = useState(initialRevision);
   const [problem, setProblem] = useState(loadError);
@@ -391,6 +399,8 @@ export function Tracker({
    * athlete's unsaved session with it. Nothing moves until all of them are in.
    */
   const keep = useCallback((batch: RecordItem[]) => {
+    // Saved here: whatever it is now, nobody needs telling it was filled in.
+    for (const record of batch) awaitingFill.current.delete(record.id);
     setRecords((current) =>
       sortRecords([
         ...batch,
@@ -575,6 +585,56 @@ export function Tracker({
       window.clearInterval(timer);
     };
   }, [catchUp]);
+
+  // A meal saved to be estimated in the background says so when its figures
+  // arrive, from whichever tab is open: found by the check below, or by any
+  // other refresh that happens to bring it in first.
+  useEffect(() => {
+    const filled = records.filter(
+      (record): record is Meal => isMeal(record) && record.source !== "queued" && awaitingFill.current.has(record.id),
+    );
+    awaitingFill.current = new Set(
+      records.filter((record) => isMeal(record) && record.source === "queued").map((record) => record.id),
+    );
+    if (!filled.length) return;
+    void refreshSummary();
+    const names = [...new Set(filled.map((meal) => meal.name))];
+    toast.success(names.length > 1 ? "Meal estimates ready" : "Meal estimate ready", {
+      id: "background-estimate",
+      description: names.join(", "),
+      duration: Infinity,
+      closeButton: true,
+      // Two records for one meal logged for both athletes: the Log shows both.
+      action: filled.length === 1
+        ? { label: "View meal", onClick: () => openEdit(filled[0]) }
+        : { label: "View log", onClick: () => navigate("log") },
+    });
+  }, [records, openEdit, navigate, refreshSummary]);
+
+  // While one is waiting, its day is fetched again now and then, which is all
+  // a fill needs and far less than reloading the journal.
+  const waitingDays = [...new Set(
+    records.filter((record) => isMeal(record) && record.source === "queued").map((record) => record.day),
+  )].sort().join(",");
+  useEffect(() => {
+    if (!waitingDays) return;
+    const timer = window.setInterval(async () => {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const fresh = (await Promise.all(waitingDays.split(",").map((day) =>
+          api<{ records: RecordItem[] }>(`/api/records?day=${day}`),
+        ))).flatMap((answer) => answer.records);
+        const filled = new Map(fresh
+          .filter((record) => isMeal(record) && record.source !== "queued" && awaitingFill.current.has(record.id))
+          .map((record) => [record.id, record]));
+        if (filled.size)
+          setRecords((current) => sortRecords(current.map((record) => filled.get(record.id) ?? record)));
+      } catch {
+        // Offline or asleep: the next check, or the next refresh, finds it.
+      }
+    }, FILL_CHECK_MS);
+    return () => window.clearInterval(timer);
+  }, [waitingDays]);
 
   // The app opens without a connection once it has been opened with one. The
   // files this visit loaded before the worker ran are handed to it to keep.
@@ -814,6 +874,7 @@ export function Tracker({
             templates={settings.mealTemplates}
             today={today}
             grokReady={grokReady}
+            queueReady={queueReady}
             active={tab === "meal" && !problem}
             editing={editingMeal}
             draft={mealDraft}

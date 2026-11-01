@@ -96,7 +96,7 @@ test("a failed reply preserves the draft, supports retry, and does not offer a z
   await expect(dialog.getByRole("alert")).toContainText("Your current estimate and reply have been kept");
   await expect(page.getByLabel("Your reply")).toHaveValue("No oil");
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("600");
-  await expect(page.getByRole("button", { name: "Save and estimate later", includeHidden: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Save and estimate in background", includeHidden: true })).toHaveCount(0);
   await dialog.getByRole("button", { name: "Send & re-estimate" }).click();
   await expect(dialog.getByText(final.assumptions)).toBeVisible();
   await expect(page.getByLabel("Your reply")).toHaveValue("");

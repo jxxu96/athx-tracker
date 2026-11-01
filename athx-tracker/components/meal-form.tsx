@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Clock, MessageCircle, Sparkles, Split } from "lucide-react";
+import { Clock, MessageCircle, Sparkles, Split, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -25,6 +25,7 @@ import {
   type Meal,
 } from "@/lib/domain";
 import { api, message, newId } from "@/lib/client";
+import { NDJSON, readEstimate, type PartialEstimate } from "@/lib/estimate-stream";
 import { bothOf, isText, oneOf, textOf, type Draft } from "@/lib/drafts";
 import { useFormDraft } from "@/hooks/use-form-draft";
 import { MealTemplateList } from "@/components/meal-templates";
@@ -98,6 +99,43 @@ function atTime(time: string) {
   return date;
 }
 
+/** An estimate's figures on one line, as the conversation shows them. */
+function figuresOf(estimate: Estimate) {
+  return [
+    `${Math.round(estimate.calories)} kcal`,
+    `${Math.round(estimate.protein)} g protein`,
+    `${Math.round(estimate.carbs)} g carbs`,
+    ...(estimate.fiber ? [`${Math.round(estimate.fiber)} g fiber`] : []),
+    `${Math.round(estimate.fat)} g fat`,
+    ...(estimate.alcohol ? [`${Math.round(estimate.alcohol)} g ethanol`] : []),
+  ].join(" · ");
+}
+
+/**
+ * Each estimator that has answered while the rest are still working. These
+ * are not the meal's figures: the settled answer may average them, or keep
+ * only the best-sourced one.
+ */
+function SoFar({ partials }: { partials: PartialEstimate[] }) {
+  if (!partials.length) return null;
+  return (
+    <div role="status" aria-label="Answers so far" className="space-y-1.5 rounded-xl border bg-muted/40 p-3 text-xs">
+      <p className="font-medium">Answers so far</p>
+      <ul className="space-y-1">
+        {partials.map(({ provider, estimate }) => (
+          <li key={provider}>
+            <span className="font-medium">{ESTIMATORS[provider]}</span>
+            <span className="text-muted-foreground">
+              {": "}
+              {figuresOf(estimate)} · {estimate.confidence} confidence
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /** A saved or usual meal, as the estimate a reply can start from. */
 function savedEstimate(meal: Pick<Meal, "name" | "macros" | "assumptions">): Estimate {
   return { ...meal.macros, name: meal.name, assumptions: meal.assumptions, confidence: "low" };
@@ -168,6 +206,7 @@ export function MealForm({
   templates,
   today,
   grokReady,
+  queueReady,
   active = true,
   editing,
   draft,
@@ -183,6 +222,8 @@ export function MealForm({
   templates: MealTemplates | undefined;
   today: string;
   grokReady: boolean;
+  /** The background worker can estimate. It asks the gateway, never the direct API. */
+  queueReady: boolean;
   active?: boolean;
   editing?: Meal | null;
   /** What was typed here before and not saved, which the form opens with. */
@@ -246,7 +287,12 @@ export function MealForm({
   );
   const [adjusted, setAdjusted] = useState(from?.adjusted === true);
   const [estimating, setEstimating] = useState(false);
-  const [offline, setOffline] = useState(false);
+  // Each estimator's answer as it lands, until the settled one replaces them.
+  const [partials, setPartials] = useState<PartialEstimate[]>([]);
+  const stopper = useRef<AbortController | null>(null);
+  // The estimator turned the description down. Rewording is what helps, so it
+  // is not offered to the background estimate until it changes.
+  const [rejected, setRejected] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   // Lives with the open draft only. Saving keeps the final macros and
@@ -282,7 +328,11 @@ export function MealForm({
   useEffect(() => {
     if (refineOpen && conversationLog.current)
       conversationLog.current.scrollTop = conversationLog.current.scrollHeight;
-  }, [refineOpen, conversation.length]);
+  }, [refineOpen, conversation.length, partials.length]);
+
+  // A form that goes away, for a new meal or another draft, takes its estimate
+  // with it: nothing would show the answer, so the estimators are stopped.
+  useEffect(() => () => stopper.current?.abort(), []);
 
   // Stable across attempts. The endpoint upserts on id, so a retry after a
   // half-failed save corrects the athlete that landed rather than adding a
@@ -349,7 +399,7 @@ export function MealForm({
     setReply("");
     setReplyError("");
     setRefineOpen(false);
-    setOffline(false);
+    setRejected(false);
     setKept(null);
     setDishes([]);
     setDishErrors({});
@@ -448,10 +498,16 @@ export function MealForm({
     if (refining && (!previous || !canReply)) return;
     setError("");
     setReplyError("");
+    setRejected(false);
+    setPartials([]);
+    const stop = new AbortController();
+    stopper.current = stop;
     setEstimating(true);
     try {
-      const { estimate, provider } = await api<{ estimate: Estimate; provider?: Estimator }>("/api/estimate", {
+      const response = await fetch("/api/estimate", {
         method: "POST",
+        headers: { "Content-Type": "application/json", Accept: `${NDJSON}, application/json` },
+        signal: stop.signal,
         body: JSON.stringify({
           description: description.trim().length >= 3 ? description.trim() : `Meal: ${name.trim()}`,
           // The figures on the form, not the last answer, when they have been
@@ -469,6 +525,9 @@ export function MealForm({
           } : {}),
         }),
       });
+      const { estimate, provider } = await readEstimate(response, (partial) =>
+        setPartials((current) => [...current.filter((held) => held.provider !== partial.provider), partial]),
+      );
       setName(estimate.name.slice(0, 300));
       setEthanol(String(estimate.alcohol ?? 0));
       setFiber(String(estimate.fiber ?? 0));
@@ -484,27 +543,28 @@ export function MealForm({
       setAnsweredBy(provider && provider in ESTIMATORS ? provider : null);
       setSource("grok");
       setAdjusted(false);
-      setOffline(false);
       setConversation((current) => refining
         ? [...current, { reply: followUp, estimate }]
         : [{ estimate }]);
       setReply("");
       onEstimateComplete?.();
     } catch (problem) {
+      // Stopped on purpose: the form is as it was, ready to edit.
+      if (stop.signal.aborted) return;
       onEstimateComplete?.(message(problem));
       if (refining) {
         setReplyError(`${message(problem)} Your current estimate and reply have been kept.`);
         return;
       }
       setError(message(problem));
-      // Anything but a rejected description is worth queueing: unreachable,
-      // both CLIs failing, the daily cap. Only 400 means rewording would help,
-      // and the queue spends no quota, so a capped meal still gets filled.
-      // Not once there is an estimate: a queued meal saves zero macros, and
-      // would throw away the figures already on the form.
-      setOffline(conversation.length === 0 && (problem as Error & { status?: number }).status !== 400);
+      // Only 400 means rewording would help. Anything else, unreachable, every
+      // CLI failing, the daily cap, can still go to the background estimate,
+      // which spends no quota, so a capped meal still gets filled.
+      setRejected((problem as Error & { status?: number }).status === 400);
     } finally {
+      if (stopper.current === stop) stopper.current = null;
       setEstimating(false);
+      setPartials([]);
     }
   }
 
@@ -514,7 +574,7 @@ export function MealForm({
     setConversation([{ estimate: savedEstimate(offer) }]);
     setReply("");
     setReplyError("");
-    setOffline(false);
+    setRejected(false);
     setName(offer.name);
     setSlot(offer.meal);
     setMacros({
@@ -614,13 +674,18 @@ export function MealForm({
     await saveRecords(recordsFor(meal));
   }
 
-  /** Save now with the description kept, and let the worker fill the macros. */
+  /**
+   * Save now with the description kept, and let the worker fill the macros:
+   * the same estimators and the same settling, with nobody waiting on it.
+   * Pressed mid-estimate, it takes over from the one on screen.
+   */
   async function queueForLater() {
     const text = description.trim();
     if (text.length < 3) {
-      setError("Describe the meal first, so it can be estimated later.");
+      setError("Describe the meal first, so it can be estimated in the background.");
       return;
     }
+    stopper.current?.abort();
     setSaving(true);
     try {
       await saveDraft({
@@ -634,7 +699,6 @@ export function MealForm({
         assumptions: text.slice(0, 3000),
       });
       reset();
-      setOffline(false);
     } finally {
       setSaving(false);
     }
@@ -728,9 +792,16 @@ export function MealForm({
     }
   }
 
+  const busy = estimating || saving || templateSaving;
+  // Not once there is an estimate: a queued meal saves zero macros, and would
+  // throw away the figures already on the form.
+  const canQueue = queueReady && conversation.length === 0 && !rejected;
+
   return (
     <form onSubmit={submit} className="space-y-4 pb-4">
-      <fieldset disabled={estimating || saving || templateSaving} className="min-w-0 space-y-4">
+      {/* Three fieldsets, not one: the form locks while an estimate runs, and
+          Stop and the background estimate between them must not. */}
+      <fieldset disabled={busy} className="min-w-0 space-y-4">
         {editing ? (
           <div
             {...athleteOutline(who, "muted")}
@@ -826,9 +897,10 @@ export function MealForm({
           />
           <DayButtons today={today} day={day} onChange={setDay} time={time} onTimeChange={setTime} />
         </section>
+      </fieldset>
 
-        {splitting ? (
-          <>
+      {splitting ? (
+        <fieldset disabled={busy} className="min-w-0 space-y-4">
             <section
               {...athleteOutline(who)}
               aria-label="Dishes"
@@ -864,10 +936,10 @@ export function MealForm({
               </Field>
               <DishShares dishes={dishes} sitting={slot} eaters={eaters} />
             </section>
-          </>
-        ) : (
-        <>
-        <section {...athleteOutline(who)} className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
+        </fieldset>
+      ) : (
+      <section {...athleteOutline(who)} className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
+        <fieldset disabled={busy} className="min-w-0 space-y-3">
           <div>
             <h3 className="text-sm font-semibold">Describe it</h3>
             {grokReady ? null : (
@@ -882,37 +954,53 @@ export function MealForm({
             maxLength={4000}
             rows={3}
             placeholder="Two eggs, 80 g oats with milk, banana, flat white"
-            onChange={(event) => setDescription(event.target.value)}
+            onChange={(event) => {
+              setDescription(event.target.value);
+              setRejected(false);
+            }}
           />
+        </fieldset>
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          disabled={!grokReady || busy || description.trim().length < 3}
+          onClick={() => estimate()}
+        >
+          <Sparkles />
+          {estimating ? "Estimating…" : "Estimate macros"}
+        </Button>
+        {estimating ? (
+          <Button type="button" variant="outline" className="w-full" onClick={() => stopper.current?.abort()}>
+            <Square />
+            Stop estimate
+          </Button>
+        ) : null}
+        {canQueue ? (
           <Button
             type="button"
             variant="outline"
             className="w-full"
-            disabled={!grokReady || estimating || description.trim().length < 3}
-            onClick={() => estimate()}
+            disabled={saving || templateSaving || description.trim().length < 3}
+            onClick={queueForLater}
           >
-            <Sparkles />
-            {estimating ? "Estimating…" : "Estimate macros"}
+            <Clock />
+            {saving ? "Saving…" : "Save and estimate in background"}
           </Button>
-          {offline ? (
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              disabled={saving}
-              onClick={queueForLater}
-            >
-              <Clock />
-              {saving ? "Saving…" : "Save and estimate later"}
-            </Button>
-          ) : null}
-          {who === "both" && !editing ? (
-            <Button type="button" variant="outline" className="w-full" onClick={splitByDish}>
-              <Split />
-              Split by dish
-            </Button>
-          ) : null}
-        </section>
+        ) : null}
+        {who === "both" && !editing ? (
+          <Button type="button" variant="outline" className="w-full" disabled={busy} onClick={splitByDish}>
+            <Split />
+            Split by dish
+          </Button>
+        ) : null}
+        {estimating && !refineOpen ? <SoFar partials={partials} /> : null}
+      </section>
+      )}
+
+      <fieldset disabled={busy} className="min-w-0 space-y-4">
+        {splitting ? null : (
+        <>
 
         {assumptions || conversation.length > 0 ? (
           <section
@@ -1094,22 +1182,18 @@ export function MealForm({
                     {turn.estimate.assumptions || "No assumptions supplied."}
                   </p>
                   <p className="mt-2 text-xs text-muted-foreground">
-                    {[
-                      `${Math.round(turn.estimate.calories)} kcal`,
-                      `${Math.round(turn.estimate.protein)} g protein`,
-                      `${Math.round(turn.estimate.carbs)} g carbs`,
-                      ...(turn.estimate.fiber ? [`${Math.round(turn.estimate.fiber)} g fiber`] : []),
-                      `${Math.round(turn.estimate.fat)} g fat`,
-                      ...(turn.estimate.alcohol ? [`${Math.round(turn.estimate.alcohol)} g ethanol`] : []),
-                    ].join(" · ")}
+                    {figuresOf(turn.estimate)}
                   </p>
                 </div>
               </div>
             ))}
             {estimating ? (
-              <p role="status" className="text-sm text-muted-foreground">
-                Re-estimating with your reply…
-              </p>
+              <>
+                <p role="status" className="text-sm text-muted-foreground">
+                  Re-estimating with your reply…
+                </p>
+                <SoFar partials={partials} />
+              </>
             ) : null}
           </div>
           <div className="shrink-0 space-y-2">
@@ -1141,6 +1225,12 @@ export function MealForm({
             <Button type="button" variant="outline" onClick={() => setRefineOpen(false)}>
               Back to meal
             </Button>
+            {estimating ? (
+              <Button type="button" variant="outline" onClick={() => stopper.current?.abort()}>
+                <Square />
+                Stop
+              </Button>
+            ) : null}
             <Button type="button" disabled={!canReply} onClick={() => estimate(reply.trim())}>
               <Sparkles />
               {estimating ? "Re-estimating…" : "Send & re-estimate"}

@@ -5,6 +5,7 @@ import { grokRequest, extractEstimate } from "@/lib/grok";
 import { gatewayAllowed } from "@/lib/gateway";
 import { estimateRequestSchema, estimateSchema } from "@/lib/validation";
 import { estimatePrompt } from "@/lib/estimate-conversation";
+import { NDJSON, namedEstimator, ndjsonLines, relayEstimate } from "@/lib/estimate-stream";
 
 const DAILY_LIMIT = 60;
 
@@ -16,11 +17,6 @@ const DAILY_LIMIT = 60;
  * with no one waiting.
  */
 const INTERACTIVE_BUDGET_MS = 90_000 + 40_000;
-
-const PROVIDERS = ["codex", "claude", "grok", "average"] as const;
-function namedProvider(value: string | null) {
-  return PROVIDERS.find((provider) => provider === value);
-}
 
 
 /** Counts in the database, not in memory, so a restart cannot reset the budget. */
@@ -123,6 +119,50 @@ function releaseEstimate(bucket: string) {
     .run(bucket);
 }
 
+/** Checked as any answer is: the stream is untrusted line by line. */
+function usable(value: unknown) {
+  const parsed = estimateSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * Each estimator's answer passed on as it lands, then the settled one. The
+ * status went out before anyone answered, so a failure is the last line, and
+ * the daily estimate is given back for it, or for a Stop, exactly once.
+ */
+function relay(body: ReadableStream<Uint8Array>, bucket: string, upstream: AbortController) {
+  const events = relayEstimate(ndjsonLines(body), usable);
+  const encoder = new TextEncoder();
+  // Settled once: by the answer, by a failure, or by the caller leaving. A Stop
+  // also cuts the estimator off, which ends the stream in a failure of its own,
+  // and that must not give the estimate back a second time.
+  let settled = false;
+  const settle = (failed: boolean) => {
+    if (settled) return;
+    settled = true;
+    if (failed) releaseEstimate(bucket);
+  };
+  let left = false;
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        const { value, done } = await events.next();
+        if (left) return;
+        if (done) return controller.close();
+        if (value.type !== "partial") settle(value.type === "error");
+        controller.enqueue(encoder.encode(`${JSON.stringify(value)}\n`));
+      },
+      async cancel() {
+        left = true;
+        upstream.abort();
+        settle(true);
+        await events.return(undefined);
+      },
+    }),
+    { headers: { "Content-Type": NDJSON, "Cache-Control": "no-store" } },
+  );
+}
+
 export async function POST(request: Request) {
   const rejected = await guard(request, true);
   if (rejected) return rejected;
@@ -153,6 +193,13 @@ export async function POST(request: Request) {
         503,
       );
 
+    // The form asks for each estimator's answer as it lands. An estimator from
+    // before streaming ignores the ask and answers once, as it always has.
+    const streaming = gateway && (request.headers.get("accept") ?? "").includes(NDJSON);
+    // Stop on the form hangs up, and the estimator stops its CLIs when this does.
+    const upstream = new AbortController();
+    const signals = [AbortSignal.timeout(INTERACTIVE_BUDGET_MS + 5000), upstream.signal, request.signal];
+
     // A failure to reach the estimator is not the same as a bad description, and
     // must not be reported as one. It also should not spend a daily estimate.
     let response: Response;
@@ -167,10 +214,10 @@ export async function POST(request: Request) {
           },
           body: JSON.stringify(
             gateway
-              ? { description, budgetMs: INTERACTIVE_BUDGET_MS }
+              ? { description, budgetMs: INTERACTIVE_BUDGET_MS, ...(streaming ? { stream: true } : {}) }
               : grokRequest(description, config.XAI_MODEL || "grok-4.7"),
           ),
-          signal: AbortSignal.timeout(INTERACTIVE_BUDGET_MS + 5000),
+          signal: AbortSignal.any(signals),
         },
       );
     } catch (error) {
@@ -211,13 +258,15 @@ export async function POST(request: Request) {
         502,
       );
     }
+    if (streaming && response.body && (response.headers.get("content-type") ?? "").includes(NDJSON))
+      return relay(response.body, bucket, upstream);
     // A 200 carrying nonsense is the estimator's fault, not the description's.
     // Left in the outer catch it became a 400, which tells you to reword a meal
     // that was never the problem, keeps the estimate you were charged for, and
     // stops the form offering the queue, since 400 is the one status it reads
     // as "rewording would help".
     let estimate;
-    let provider: (typeof PROVIDERS)[number] | undefined;
+    let provider: ReturnType<typeof namedEstimator>;
     try {
       const result = await response.json();
       estimate = estimateSchema.parse(
@@ -225,7 +274,7 @@ export async function POST(request: Request) {
       );
       // The gateway names who answered in a header, so the body stays an
       // estimate. The direct API is Grok itself.
-      provider = gateway ? namedProvider(response.headers.get("x-athx-provider")) : "grok";
+      provider = gateway ? namedEstimator(response.headers.get("x-athx-provider")) : "grok";
     } catch (error) {
       if (error instanceof BodyTooLarge) return tooLarge();
       releaseEstimate(bucket);
