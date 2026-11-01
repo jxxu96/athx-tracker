@@ -277,21 +277,25 @@ function structured(raw) {
 /**
  * Claude and Grok print one JSON value. Codex prints the same, sometimes after
  * a status line. Take the whole document when it parses, otherwise the last
- * object in the text.
+ * object in the text: the one that ends at its last brace, found by stepping
+ * back from brace to brace. The last brace that opens can belong to an object
+ * inside it, such as a shared meal's last dish, so that one alone is not it.
  */
 function parseCliOutput(raw) {
   if (typeof raw !== "string" || !raw.trim()) return null;
   const direct = structured(raw);
   if (direct && typeof direct === "object" && !Array.isArray(direct)) return direct;
-  const start = raw.lastIndexOf("{");
   const end = raw.lastIndexOf("}");
-  if (start < 0 || end <= start) return null;
-  try {
-    const parsed = JSON.parse(raw.slice(start, end + 1));
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
-  } catch {
-    return null;
+  for (let start = raw.lastIndexOf("{", end); start >= 0; start = raw.lastIndexOf("{", start - 1)) {
+    try {
+      const parsed = JSON.parse(raw.slice(start, end + 1));
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+    } catch {
+      // Not a whole object from here; an earlier brace may open it.
+    }
+    if (start === 0) break;
   }
+  return null;
 }
 
 const schemaPaths = new Map();

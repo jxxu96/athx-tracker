@@ -125,6 +125,20 @@ test("output that is not JSON is not an estimate", () => {
   }
 });
 
+test("a status line in front of a shared meal still yields the whole meal, not its last dish", () => {
+  const meal = shared([dish("pizza", 880), dish("salad", 420)]);
+  for (const raw of [
+    `codex: done\n${JSON.stringify(meal)}`,
+    `status {not json}\n${JSON.stringify(meal, null, 2)}\n`,
+  ]) {
+    const parsed = parseCliOutput(raw);
+    assert.equal(parsed?.name, "Dinner", raw.slice(0, 20));
+    assert.deepEqual(parsed.dishes.map((each) => each.name), ["pizza", "salad"]);
+  }
+  // Cut off, what is left whole is not a usable answer.
+  assert.equal(cleanDishes(parseCliOutput("codex: done\n{\"dishes\":[{\"name\":\"pizza\"}")), null);
+});
+
 test("a status line in front of the JSON still yields the estimate", () => {
   const payload = { name: "Bowl", calories: 190, protein: 12, carbs: 13, fat: 10 };
   const raw = `working\n${JSON.stringify(payload)}\n`;
