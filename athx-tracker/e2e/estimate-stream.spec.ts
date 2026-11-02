@@ -67,16 +67,31 @@ test("each estimator's answer shows as it lands, and the settled one fills the m
 
   const soFar = page.getByRole("status", { name: "Answers so far" });
   await push(page, { type: "partial", provider: "codex", estimate: bowl(600) });
-  await expect(soFar).toContainText("Codex: 600 kcal · 30 g protein · 60 g carbs · 20 g fat · medium confidence");
+  await expect(soFar.locator("p.font-bold")).toHaveText(["Codex"]);
+  await expect(soFar).toContainText("600 kcal · 30 g protein · 60 g carbs · 20 g fat · medium confidence");
+  await expect(soFar).toContainText("About 600 kcal.");
   await push(page, { type: "partial", provider: "grok", estimate: bowl(1100, "low") });
-  await expect(soFar.getByRole("listitem")).toHaveText([/^Codex: 600 kcal/, /^Grok: 1100 kcal.*low confidence$/]);
+  await push(page, { type: "partial", provider: "claude", estimate: bowl(700) });
+  const answers = soFar.getByRole("listitem");
+  await expect(answers).toHaveCount(3);
+  await expect(answers.nth(0).locator("p.font-bold")).toHaveText("Codex");
+  await expect(answers.nth(0)).toContainText("About 600 kcal.");
+  await expect(answers.nth(1).locator("p.font-bold")).toHaveText("Claude");
+  await expect(answers.nth(1)).toContainText("About 700 kcal.");
+  await expect(answers.nth(2).locator("p.font-bold")).toHaveText("Grok");
+  await expect(answers.nth(2)).toContainText("About 1100 kcal.");
+  await expect(answers.nth(2)).toContainText("low confidence");
+  await expect(soFar.getByText("________", { exact: true })).toHaveCount(3);
   // Shown, not applied: the meal waits for the settled answer.
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("");
 
   await push(page, { type: "done", provider: "average", estimate: bowl(760) });
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("760");
   await expect(page.getByText("Averaged across estimators")).toBeVisible();
-  await expect(soFar).toHaveCount(0);
+  await expect(answers).toHaveCount(3);
+  await expect(soFar.getByText("About 600 kcal.")).toBeVisible();
+  await expect(soFar.getByText("About 700 kcal.")).toBeVisible();
+  await expect(soFar.getByText("About 1100 kcal.")).toBeVisible();
 });
 
 test("Stop ends the estimate and leaves the meal to edit", async ({ page }) => {
