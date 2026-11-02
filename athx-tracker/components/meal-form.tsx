@@ -134,8 +134,9 @@ function SoFar({ partials }: { partials: PartialEstimate[] }) {
         {shown.map(({ provider, estimate }) => (
           <li key={provider} className="space-y-1">
             <p className="font-bold">{ESTIMATORS[provider]}</p>
-            <p className="text-muted-foreground">
-              {figuresOf(estimate)} · {estimate.confidence} confidence
+            <p className="font-medium">
+              {figuresOf(estimate)}
+              <span className="font-normal text-muted-foreground"> · {estimate.confidence} confidence</span>
             </p>
             <p className="whitespace-pre-wrap break-words">{estimate.assumptions}</p>
             <p aria-hidden="true" className="font-mono text-muted-foreground">________</p>
@@ -1084,7 +1085,7 @@ export function MealForm({
             Same meal for each of you
           </Button>
         ) : null}
-        {(estimating || partials.length > 0) && !refineOpen ? <SoFar partials={partials} /> : null}
+
       </section>
       )}
 
@@ -1123,6 +1124,7 @@ export function MealForm({
           </section>
         ) : null}
 
+        {!refineOpen ? <SoFar partials={partials} /> : null}
         <section {...athleteOutline(who)} className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
           <Field label="Meal">
             <Input

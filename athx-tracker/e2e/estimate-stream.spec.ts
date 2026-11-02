@@ -82,8 +82,11 @@ test("each estimator's answer shows as it lands, and the settled one fills the m
   await expect(answers.nth(2)).toContainText("About 1100 kcal.");
   await expect(answers.nth(2)).toContainText("low confidence");
   await expect(soFar.getByText("________", { exact: true })).toHaveCount(3);
-  // Shown, not applied: the meal waits for the settled answer.
-  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("");
+  // Shown, not applied: the meal waits for the settled answer. Each model's
+  // totals sit above the box those settled figures are typed into.
+  const calories = page.getByLabel("Calories (kcal)");
+  await expect(calories).toHaveValue("");
+  expect((await soFar.boundingBox())!.y).toBeLessThan((await calories.boundingBox())!.y);
 
   await push(page, { type: "done", provider: "average", estimate: bowl(760) });
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("760");
