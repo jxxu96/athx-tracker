@@ -115,24 +115,31 @@ function figuresOf(estimate: Estimate) {
   ].join(" · ");
 }
 
+const ANSWER_ORDER = ["codex", "claude", "grok"] as const;
+
 /**
- * Each estimator that has answered while the rest are still working. These
- * are not the meal's figures: the settled answer may average them, or keep
- * only the best-sourced one.
+ * Each estimator that has answered. The settled figures may still average
+ * them, or keep only the best-sourced one. Every model's own description stays
+ * here, bold name first and a rule under the section.
  */
 function SoFar({ partials }: { partials: PartialEstimate[] }) {
   if (!partials.length) return null;
+  const shown = [...partials].sort(
+    (a, b) => ANSWER_ORDER.indexOf(a.provider) - ANSWER_ORDER.indexOf(b.provider),
+  );
   return (
-    <div role="status" aria-label="Answers so far" className="space-y-1.5 rounded-xl border bg-muted/40 p-3 text-xs">
+    <div role="status" aria-label="Answers so far" className="space-y-3 rounded-xl border bg-muted/40 p-3 text-xs">
       <p className="font-medium">Answers so far</p>
-      <ul className="space-y-1">
-        {partials.map(({ provider, estimate }) => (
-          <li key={provider}>
-            <span className="font-medium">{ESTIMATORS[provider]}</span>
-            <span className="text-muted-foreground">
-              {": "}
-              {figuresOf(estimate)} · {estimate.confidence} confidence
-            </span>
+      <ul className="space-y-3">
+        {shown.map(({ provider, estimate }) => (
+          <li key={provider} className="space-y-1">
+            <p className="font-bold">{ESTIMATORS[provider]}</p>
+            <p className="font-medium">
+              {figuresOf(estimate)}
+              <span className="font-normal text-muted-foreground"> · {estimate.confidence} confidence</span>
+            </p>
+            <p className="whitespace-pre-wrap break-words">{estimate.assumptions}</p>
+            <p aria-hidden="true" className="font-mono text-muted-foreground">________</p>
           </li>
         ))}
       </ul>
@@ -415,6 +422,7 @@ export function MealForm({
     setAssumptions("");
     setConfidence(null);
     setAnsweredBy(null);
+    setPartials([]);
     setSource("manual");
     setAdjusted(false);
     setConversation([]);
@@ -605,6 +613,7 @@ export function MealForm({
     } catch (problem) {
       // Stopped on purpose: the form is as it was, ready to edit.
       if (stop.signal.aborted) return;
+      setPartials([]);
       onEstimateComplete?.(message(problem));
       if (refining) {
         setReplyError(`${message(problem)} Your current estimate and reply have been kept.`);
@@ -618,7 +627,9 @@ export function MealForm({
     } finally {
       if (stopper.current === stop) stopper.current = null;
       setEstimating(false);
-      setPartials([]);
+      // A finished estimate keeps each model's description on the form. Stop
+      // throws them away with the attempt.
+      if (stop.signal.aborted) setPartials([]);
     }
   }
 
@@ -644,6 +655,7 @@ export function MealForm({
     setAdjusted(false);
     setConfidence(null);
     setAnsweredBy(null);
+    setPartials([]);
     setError("");
     setKept(offer.saved ? { id: offer.id, athlete, sourceKey: offer.sourceKey } : null);
   }
@@ -1073,7 +1085,7 @@ export function MealForm({
             Same meal for each of you
           </Button>
         ) : null}
-        {estimating && !refineOpen ? <SoFar partials={partials} /> : null}
+
       </section>
       )}
 
@@ -1112,6 +1124,7 @@ export function MealForm({
           </section>
         ) : null}
 
+        {!refineOpen ? <SoFar partials={partials} /> : null}
         <section {...athleteOutline(who)} className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
           <Field label="Meal">
             <Input
