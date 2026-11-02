@@ -113,10 +113,12 @@ meal goes in order, Codex, then Claude, then Grok, and a sure first answer, a
 looked-up label or reference values, ends it. If that first answer is unsure,
 everyone left is asked at once.
 
-Whenever several are asked together, the first answer with high confidence, a
-looked-up label, ends it and the others are stopped. Otherwise the
-best-sourced answer is kept, so a reference value beats a guess. Answers on
-the same footing are averaged, weighted Codex 40%, Claude 35% and Grok 25%,
+A complex meal waits for every provider. Grok's search is the slow one, and
+that answer is kept even when another model is more sure, so the search is
+not thrown out. A simple meal's fallback still stops when one of them finds a
+label. Otherwise the best-sourced answer is kept, so a reference value beats
+a guess. Answers on the same footing are averaged, weighted Codex 40%, Claude
+35% and Grok 25%,
 shared out again over whoever answered. A 0 beside real figures is left out of
 that figure's average. The meal then says "Averaged across estimators", and
 its assumptions give each one's figures and working. A shared meal is averaged

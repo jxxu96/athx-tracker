@@ -118,7 +118,8 @@ const MEAL_MAX_TURNS = "10";
 // Codex, then Claude, then Grok. A missing binary or a login that is not there
 // fails quickly and the next provider answers. Whoever is not last still leaves
 // the reserve, so a slow leader cannot spend the whole budget. A complex meal
-// asks all of them at once instead, and settles their answers.
+// asks all of them at once, waits for them, and keeps Grok's answer: its search
+// is the slow part, and that answer is not thrown out for finishing less sure.
 // ESTIMATOR_ORDER overrides this.
 const ORDER = (process.env.ESTIMATOR_ORDER ?? "codex,claude,grok")
   .split(",")
@@ -366,14 +367,14 @@ function cleanDishes(value) {
   };
 }
 
-const MEAL_TASK = { schema: SCHEMA, instructions: INSTRUCTIONS, clean, name: "meal", meal: true, settle: (answers) => settle(answers) };
+const MEAL_TASK = { schema: SCHEMA, instructions: INSTRUCTIONS, clean, name: "meal", meal: true, settle: (answers, options) => settle(answers, options) };
 const DISH_TASK = {
   schema: DISH_SCHEMA,
   instructions: DISH_INSTRUCTIONS,
   clean: cleanDishes,
   name: "dishes",
   meal: true,
-  settle: (answers) => settleDishes(answers),
+  settle: (answers, options) => settleDishes(answers, options),
 };
 const PROVIDERS = {
   codex: {
@@ -494,15 +495,34 @@ function shorten(text, max) {
 }
 
 /**
+ * The best confidence among these answers, plus anyone named in keep. A
+ * complex meal keeps Grok, so a search that came back less sure still counts.
+ */
+function kept(answers, keep = []) {
+  const best = Math.max(...answers.map(({ estimate }) => RANK[estimate.confidence]));
+  return answers.filter(
+    ({ estimate, provider }) => RANK[estimate.confidence] === best || keep.includes(provider),
+  );
+}
+
+/** One phrase for the header. Same footing stays "each low confidence". */
+function footing(list) {
+  const [first] = list;
+  return list.every(({ estimate }) => estimate.confidence === first.estimate.confidence)
+    ? `each ${first.estimate.confidence} confidence`
+    : list.map(({ provider, estimate }) => `${title(provider)} ${estimate.confidence} confidence`).join(", ");
+}
+
+/**
  * The best-sourced answer wins, so a label one of them found is never diluted
  * by another's guess. Answers on the same footing are averaged by WEIGHTS, each
  * figure over the answers that gave it more than 0: a 0 beside real figures is
  * one left out, not one measured. Each one's working is kept, inside the 3000
- * characters the app holds for assumptions.
+ * characters the app holds for assumptions. keep names a provider that still
+ * counts when it is less sure.
  */
-function settle(answers) {
-  const best = Math.max(...answers.map(({ estimate }) => RANK[estimate.confidence]));
-  const top = answers.filter(({ estimate }) => RANK[estimate.confidence] === best);
+function settle(answers, { keep = [] } = {}) {
+  const top = kept(answers, keep);
   if (top.length === 1) return top[0];
 
   const weight = (list) => list.reduce((sum, { provider }) => sum + WEIGHTS[provider], 0);
@@ -519,8 +539,8 @@ function settle(answers) {
   const shares = top.map(
     ({ provider }) => `${title(provider)} ${Math.round((WEIGHTS[provider] / weight(top)) * 100)}%`,
   );
-  const { confidence } = top[0].estimate;
-  const header = `Weighted average of ${shares.slice(0, -1).join(", ")} and ${shares.at(-1)}, each ${confidence} confidence. A 0 is left out of that figure's average.`;
+  const confidence = weakest(top.map(({ estimate }) => estimate.confidence));
+  const header = `Weighted average of ${shares.slice(0, -1).join(", ")} and ${shares.at(-1)}, ${footing(top)}. A 0 is left out of that figure's average.`;
   const room = Math.floor((3000 - header.length) / top.length) - 2;
   return {
     estimate: clean({
@@ -550,11 +570,10 @@ function settle(answers) {
  * that split the meal into as many dishes as the best-weighted one are
  * averaged; one that split it another way is left out, and the meal's
  * assumptions say so. Each dish keeps every answer's working for it, and the
- * totals are the dishes added up.
+ * totals are the dishes added up. keep is the same as for a whole meal.
  */
-function settleDishes(answers) {
-  const best = Math.max(...answers.map(({ estimate }) => RANK[estimate.confidence]));
-  const top = answers.filter(({ estimate }) => RANK[estimate.confidence] === best);
+function settleDishes(answers, { keep = [] } = {}) {
+  const top = kept(answers, keep);
   if (top.length === 1) return top[0];
   const [lead] = [...top].sort((a, b) => WEIGHTS[b.provider] - WEIGHTS[a.provider]);
   const same = top.filter(({ estimate }) => estimate.dishes.length === lead.estimate.dishes.length);
@@ -593,11 +612,11 @@ function settleDishes(answers) {
       confidence: weakest(each.map(({ value }) => value.confidence)),
     };
   });
-  const { confidence } = lead.estimate;
+  const confidence = weakest(same.map(({ estimate }) => estimate.confidence));
   const left = apart.length
     ? ` ${apart.map(({ provider }) => title(provider)).join(" and ")} split the meal into a different number of dishes, so ${apart.length > 1 ? "they are" : "it is"} left out.`
     : "";
-  const header = `Weighted average of ${shares(same)}, dish by dish, each ${confidence} confidence. A 0 is left out of that figure's average.${left}`;
+  const header = `Weighted average of ${shares(same)}, dish by dish, ${footing(same)}. A 0 is left out of that figure's average.${left}`;
   const notes = same.filter(({ estimate }) => estimate.assumptions);
   const room = notes.length ? Math.floor((3000 - header.length) / notes.length) - 2 : 0;
   const settled = cleanDishes({
@@ -700,14 +719,15 @@ async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK, { s
   }
 
   // Everyone at once, so the wait is the slowest answer and not the sum of
-  // them. Nobody is after them, so each has whatever time remains. A looked-up
-  // label ends it early: nothing would outrank it.
-  async function together(names) {
+  // them. Nobody is after them, so each has whatever time remains. A simple
+  // meal's fallback still stops when a label is found. A complex meal does
+  // not: Grok is usually the one still searching, and that search has to land.
+  async function together(names, { finish = false } = {}) {
     const stop = new AbortController();
     const answers = await Promise.all(
       names.map(async (name) => {
-        const answer = await ask(name, true, stop.signal);
-        if (answer?.estimate.confidence === "high") stop.abort();
+        const answer = await ask(name, true, finish ? undefined : stop.signal);
+        if (!finish && answer?.estimate.confidence === "high") stop.abort();
         return answer;
       }),
     );
@@ -715,8 +735,10 @@ async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK, { s
   }
 
   if (meal && complex(description)) {
-    const given = await together(ORDER);
-    if (given.length) return task.settle(given);
+    const given = await together(ORDER, { finish: true });
+    // Grok's search often comes back less sure than a faster label. That is
+    // not a reason to drop it.
+    if (given.length) return task.settle(given, { keep: ["grok"] });
   } else {
     for (const [index, name] of ORDER.entries()) {
       if (signal?.aborted) break;
