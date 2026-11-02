@@ -98,10 +98,15 @@ test("a complex meal asks every estimator at once, and a simple one goes in orde
   assert.equal(guessed.body.confidence, "low");
   assert.deepEqual(guessed.log.slice(0, 3).sort(), ["start claude", "start codex", "start grok"], "asked together");
 
+  // A label no longer stops the search. Grok still answers, and its lower
+  // confidence is kept. Codex's guess is not.
   const labelled = await post("zzlabel rice, beans, cheese");
-  assert.equal(labelled.provider, "claude");
-  assert.equal(labelled.body.calories, 700);
-  assert.deepEqual(labelled.log.filter((line) => line.startsWith("end")), ["end claude"], "the rest were stopped");
+  assert.equal(labelled.provider, "average");
+  assert.equal(labelled.body.calories, 866.7);
+  assert.equal(labelled.body.confidence, "low");
+  assert.match(labelled.body.assumptions, /Claude 58% and Grok 42%, Claude high confidence, Grok low confidence/);
+  assert.deepEqual(labelled.log.filter((line) => line.startsWith("start")).sort(), ["start claude", "start codex", "start grok"]);
+  assert.deepEqual(labelled.log.filter((line) => line.startsWith("end")).sort(), ["end claude", "end codex", "end grok"]);
 
   // A shared meal, asked for dish by dish, is averaged dish by dish.
   const post2 = async (body) => {
