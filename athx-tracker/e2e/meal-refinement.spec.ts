@@ -41,20 +41,26 @@ test("replying twice carries corrections forward and saves the revised meal", as
   });
   await openMeal(page);
   await firstEstimate(page);
-  const dialog = page.getByRole("dialog", { name: "Refine estimate" });
+  const dialog = page.getByRole("dialog");
   await expect(dialog.getByText(initial.assumptions)).toBeVisible();
   await page.getByLabel("Your reply").fill("It was 150 g cooked rice.");
   await dialog.getByRole("button", { name: "Send & re-estimate" }).click();
+  await expect(dialog.getByRole("heading", { name: "Estimate updated" })).toBeVisible();
+  await expect(dialog.getByText("Finished responding. Back to the meal for the new numbers.")).toBeVisible();
+  await expect(dialog.getByText("Estimator · finished")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Done, back to meal" })).toBeFocused();
   await expect(dialog.getByText(revised.assumptions)).toBeVisible();
   await page.getByLabel("Your reply").fill("No oil. Why is there still fat?");
+  await expect(dialog.getByRole("heading", { name: "Refine estimate" })).toBeVisible();
   await dialog.getByRole("button", { name: "Send & re-estimate" }).click();
+  await expect(dialog.getByRole("button", { name: "Done, back to meal" })).toBeVisible();
   await expect(dialog.getByText(final.assumptions)).toBeVisible();
   expect(requests[0]).toEqual({ description: "Chicken and rice" });
   expect(requests[2].refinement?.replies).toEqual([
     "It was 150 g cooked rice.", "No oil. Why is there still fat?",
   ]);
   expect(requests[2].refinement?.previous.assumptions).toBe(revised.assumptions);
-  await dialog.getByRole("button", { name: "Back to meal" }).click();
+  await dialog.getByRole("button", { name: "Done, back to meal" }).click();
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("410");
   await expect(page.getByLabel("Assumptions")).toHaveValue(final.assumptions);
   const assumptionsBox = await page.getByLabel("Assumptions").boundingBox();
@@ -98,6 +104,7 @@ test("a failed reply preserves the draft, supports retry, and does not offer a z
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("600");
   await expect(page.getByRole("button", { name: "Save and estimate in background", includeHidden: true })).toHaveCount(0);
   await dialog.getByRole("button", { name: "Send & re-estimate" }).click();
+  await expect(dialog.getByRole("button", { name: "Done, back to meal" })).toBeVisible();
   await expect(dialog.getByText(final.assumptions)).toBeVisible();
   await expect(page.getByLabel("Your reply")).toHaveValue("");
 });
@@ -113,7 +120,8 @@ test("starting a fresh estimate clears the earlier conversation", async ({ page 
   await page.getByLabel("Your reply").fill("No oil");
   await page.getByRole("button", { name: "Send & re-estimate" }).click();
   await expect(page.getByLabel("Your reply")).toHaveValue("");
-  await page.getByRole("button", { name: "Back to meal" }).click();
+  await expect(page.getByRole("button", { name: "Done, back to meal" })).toBeVisible();
+  await page.getByRole("button", { name: "Done, back to meal" }).click();
   await page.getByLabel("Meal description").fill("A different meal");
   await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("410");
@@ -150,9 +158,11 @@ test("a saved meal reopens with its figures as the estimate to reply to", async 
   await page.getByRole("listitem").filter({ hasText: "Saved chicken rice" }).getByLabel("Edit entry").click();
   await expect(page.getByLabel("Meal description")).toHaveValue("Saved chicken rice");
   await page.getByRole("button", { name: "Reply to estimate" }).click();
-  const dialog = page.getByRole("dialog", { name: "Refine estimate" });
+  const dialog = page.getByRole("dialog");
   await page.getByLabel("Your reply").fill("No oil");
   await dialog.getByRole("button", { name: "Send & re-estimate" }).click();
+  await expect(dialog.getByRole("heading", { name: "Estimate updated" })).toBeVisible();
+  await expect(dialog.getByText("Finished responding. Back to the meal for the new numbers.")).toBeVisible();
   await expect(dialog.getByText(final.assumptions)).toBeVisible();
   expect(requests).toHaveLength(1);
   expect(requests[0].description).toBe("Saved chicken rice");
@@ -160,7 +170,7 @@ test("a saved meal reopens with its figures as the estimate to reply to", async 
     name: "Saved chicken rice", calories: 600, protein: 40, carbs: 65, fat: 20,
   });
   expect(requests[0].refinement?.replies).toEqual(["No oil"]);
-  await dialog.getByRole("button", { name: "Back to meal" }).click();
+  await dialog.getByRole("button", { name: "Done, back to meal" }).click();
   await page.getByRole("button", { name: "Update meal" }).click();
   await expect.poll(() => page.evaluate(async (wanted) => {
     const { records } = await fetch("/api/records").then((r) => r.json());

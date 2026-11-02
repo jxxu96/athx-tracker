@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Clock, Copy, MessageCircle, Sparkles, Split, Square } from "lucide-react";
+import { Check, Clock, Copy, MessageCircle, Sparkles, Split, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -309,6 +309,10 @@ export function MealForm({
   const [reply, setReply] = useState(textOf(from?.reply, ""));
   const [replyError, setReplyError] = useState("");
   const [refineOpen, setRefineOpen] = useState(false);
+  // A reply has been answered and the dialog is still up. The send button is
+  // disabled once the box is cleared, which looked like the estimator was
+  // still working, so this is what turns the way back into the main action.
+  const [justFinished, setJustFinished] = useState(false);
   // The template this draft was filled from, so a later save updates that one
   // rather than adding a second copy. Null is a new template.
   const [kept, setKept] = useState<Kept | null>(keptOf(from?.kept));
@@ -328,6 +332,11 @@ export function MealForm({
   const eaters = who === "both" ? EATERS : ([who] as const);
   const conversationLog = useRef<HTMLDivElement>(null);
   const replyButton = useRef<HTMLButtonElement>(null);
+  const doneButton = useRef<HTMLButtonElement>(null);
+  // The request outlives the render that started it. Read this, not the
+  // closed-over flag, so a reply they already left does not reopen as finished.
+  const refineOpenRef = useRef(refineOpen);
+  refineOpenRef.current = refineOpen;
   const replies = conversation.flatMap((turn) => (turn.reply ? [turn.reply] : []));
   const conversationFull = replies.length >= MAX_REPLIES ||
     replies.join("").length + reply.trim().length > CONVERSATION_LIMIT;
@@ -338,6 +347,10 @@ export function MealForm({
     if (refineOpen && conversationLog.current)
       conversationLog.current.scrollTop = conversationLog.current.scrollHeight;
   }, [refineOpen, conversation.length, partials.length]);
+
+  useEffect(() => {
+    if (justFinished) doneButton.current?.focus();
+  }, [justFinished]);
 
   // A form that goes away, for a new meal or another draft, takes its estimate
   // with it: nothing would show the answer, so the estimators are stopped.
@@ -527,6 +540,7 @@ export function MealForm({
     setError("");
     setReplyError("");
     setRejected(false);
+    setJustFinished(false);
     setPartials([]);
     const stop = new AbortController();
     stopper.current = stop;
@@ -586,6 +600,7 @@ export function MealForm({
         ? [...current, { reply: followUp, estimate }]
         : [{ estimate }]);
       setReply("");
+      if (refining && refineOpenRef.current) setJustFinished(true);
       onEstimateComplete?.();
     } catch (problem) {
       // Stopped on purpose: the form is as it was, ready to edit.
@@ -839,6 +854,11 @@ export function MealForm({
   // Not once there is an estimate: a queued meal saves zero macros, and would
   // throw away the figures already on the form.
   const canQueue = queueReady && conversation.length === 0 && !rejected && !splitting;
+
+  function closeRefine() {
+    setRefineOpen(false);
+    setJustFinished(false);
+  }
 
   return (
     <form onSubmit={submit} className="space-y-4 pb-4">
@@ -1204,7 +1224,13 @@ export function MealForm({
           {saving ? "Saving…" : editing ? "Update meal" : "Save meal"}
         </Button>
       </fieldset>
-      <Dialog open={active && refineOpen} onOpenChange={setRefineOpen}>
+      <Dialog
+        open={active && refineOpen}
+        onOpenChange={(open) => {
+          setRefineOpen(open);
+          if (!open) setJustFinished(false);
+        }}
+      >
         <DialogContent
           className="flex max-h-[85dvh] flex-col p-4 sm:p-6"
           onCloseAutoFocus={(event) => {
@@ -1213,7 +1239,7 @@ export function MealForm({
           }}
         >
           <DialogHeader className="shrink-0 pr-6 text-left">
-            <DialogTitle>Refine estimate</DialogTitle>
+            <DialogTitle>{justFinished ? "Estimate updated" : "Refine estimate"}</DialogTitle>
           </DialogHeader>
           <div
             ref={conversationLog}
@@ -1227,34 +1253,53 @@ export function MealForm({
               <p className="mb-1 text-xs font-semibold">Meal description</p>
               <p className="whitespace-pre-wrap break-words">{description || name}</p>
             </div>
-            {conversation.map((turn, index) => (
-              <div key={index} className="space-y-2">
-                {turn.reply ? (
-                  <div className="ml-6 rounded-xl bg-accent p-3 text-sm">
-                    <p className="mb-1 text-xs font-semibold">You</p>
-                    <p className="whitespace-pre-wrap break-words">{turn.reply}</p>
+            {conversation.map((turn, index) => {
+              const finished = justFinished && index === conversation.length - 1;
+              return (
+                <div key={index} className="space-y-2">
+                  {turn.reply ? (
+                    <div className="ml-6 rounded-xl bg-accent p-3 text-sm">
+                      <p className="mb-1 text-xs font-semibold">You</p>
+                      <p className="whitespace-pre-wrap break-words">{turn.reply}</p>
+                    </div>
+                  ) : null}
+                  <div className={`mr-3 rounded-xl border bg-card p-3 text-sm${finished ? " border-primary" : ""}`}>
+                    <p className="mb-1 text-xs font-semibold">
+                      {finished ? "Estimator · finished" : "Estimator"}
+                    </p>
+                    <p className="whitespace-pre-wrap break-words">
+                      {turn.estimate.assumptions || "No assumptions supplied."}
+                    </p>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {figuresOf(turn.estimate)}
+                    </p>
                   </div>
-                ) : null}
-                <div className="mr-3 rounded-xl border bg-card p-3 text-sm">
-                  <p className="mb-1 text-xs font-semibold">Estimator</p>
-                  <p className="whitespace-pre-wrap break-words">
-                    {turn.estimate.assumptions || "No assumptions supplied."}
-                  </p>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {figuresOf(turn.estimate)}
-                  </p>
                 </div>
-              </div>
-            ))}
-            {estimating ? (
-              <>
-                <p role="status" className="text-sm text-muted-foreground">
-                  Re-estimating with your reply…
-                </p>
-                <SoFar partials={partials} />
-              </>
-            ) : null}
+              );
+            })}
+            {estimating ? <SoFar partials={partials} /> : null}
           </div>
+          {estimating ? (
+            <p role="status" className="shrink-0 text-sm text-muted-foreground">
+              Re-estimating with your reply…
+            </p>
+          ) : justFinished ? (
+            <div className="shrink-0 space-y-2">
+              <p role="status" className="rounded-xl border bg-muted/40 px-3 py-2 text-sm font-medium">
+                Finished responding. Back to the meal for the new numbers.
+              </p>
+              <Button
+                ref={doneButton}
+                type="button"
+                size="lg"
+                className="w-full"
+                onClick={closeRefine}
+              >
+                <Check />
+                Done, back to meal
+              </Button>
+            </div>
+          ) : null}
           <div className="shrink-0 space-y-2">
             <Label htmlFor="estimate-reply">Your reply</Label>
             <Textarea
@@ -1267,6 +1312,7 @@ export function MealForm({
               onChange={(event) => {
                 setReply(event.target.value);
                 setReplyError("");
+                setJustFinished(false);
               }}
             />
             {conversationFull ? (
@@ -1280,21 +1326,23 @@ export function MealForm({
               </p>
             ) : null}
           </div>
-          <DialogFooter className="shrink-0">
-            <Button type="button" variant="outline" onClick={() => setRefineOpen(false)}>
-              Back to meal
-            </Button>
-            {estimating ? (
-              <Button type="button" variant="outline" onClick={() => stopper.current?.abort()}>
-                <Square />
-                Stop
+          {justFinished ? null : (
+            <DialogFooter className="shrink-0">
+              <Button type="button" variant="outline" onClick={closeRefine}>
+                Back to meal
               </Button>
-            ) : null}
-            <Button type="button" disabled={!canReply} onClick={() => estimate(reply.trim())}>
-              <Sparkles />
-              {estimating ? "Re-estimating…" : "Send & re-estimate"}
-            </Button>
-          </DialogFooter>
+              {estimating ? (
+                <Button type="button" variant="outline" onClick={() => stopper.current?.abort()}>
+                  <Square />
+                  Stop
+                </Button>
+              ) : null}
+              <Button type="button" disabled={!canReply} onClick={() => estimate(reply.trim())}>
+                <Sparkles />
+                {estimating ? "Re-estimating…" : "Send & re-estimate"}
+              </Button>
+            </DialogFooter>
+          )}
         </DialogContent>
       </Dialog>
     </form>
