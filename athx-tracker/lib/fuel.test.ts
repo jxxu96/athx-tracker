@@ -2,13 +2,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { bodyweightHistory } from "./bodyweight.ts";
 import type { Bodyweight, Macros, Meal, RecordItem, Workout } from "./domain.ts";
+import { LB_PER_KG } from "./domain.ts";
 import {
   athleteFuel,
+  barMarkPercent,
   energyBalance,
   calorieTracking,
   formatAmount,
   fuelWindow,
   gapLabel,
+  softProteinGoal,
   targetGap,
   targetPercent,
   teamSessions,
@@ -73,6 +76,18 @@ test("the fuel window is today, yesterday, or the seven days ending today", () =
     start: "2028-02-29",
     end: "2028-02-29",
   });
+});
+
+test("gators' soft protein goal is 80% of bodyweight in pounds", () => {
+  const kg = (lb: number) => lb / LB_PER_KG;
+  assert.equal(softProteinGoal("gators", kg(185)), 148);
+  assert.equal(softProteinGoal("gators", kg(180)), 144);
+  assert.equal(softProteinGoal("hippos", kg(185)), null);
+  assert.equal(softProteinGoal("gators", 0), null);
+  // 144 g on a 180 g target is 80% of the bar. Past the target, the mark stays at the end.
+  assert.equal(barMarkPercent(144, 180), 80);
+  assert.equal(barMarkPercent(148, 100), 100);
+  assert.equal(barMarkPercent(148, 0), null);
 });
 
 test("amounts group by thousands without depending on the machine locale", () => {

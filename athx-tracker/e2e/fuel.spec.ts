@@ -99,6 +99,49 @@ test("a macro shows the percent of its target", async ({ page }) => {
   await expect(hippos.getByText(/under/)).toHaveCount(0);
 });
 
+test("gators' protein bar marks a soft goal at 80% of bodyweight", async ({ page }) => {
+  await signIn(page);
+  await page.evaluate(async () => {
+    const today = new Intl.DateTimeFormat("en-CA", {
+      year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(new Date());
+    const current = await fetch("/api/settings").then((response) => response.json());
+    const saved = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        revision: current.revision,
+        settings: {
+          ...current.settings,
+          targets: {
+            ...current.settings.targets,
+            gators: { ...current.settings.targets.gators, calories: 2200, protein: 200, carbs: 220, fat: 80 },
+          },
+          // 185 lb. 80% of that is 148 g, which is 74% of the 200 g target.
+          bodyweight: { ...current.settings.bodyweight, gators: 185 / 2.20462262 },
+        },
+      }),
+    });
+    if (!saved.ok) throw new Error("settings");
+    const meal = await fetch("/api/records", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: crypto.randomUUID(), kind: "meal", athlete: "gators", day: today,
+        name: "Gators breakfast", meal: "Breakfast", source: "manual", assumptions: "",
+        macros: { calories: 600, protein: 40, carbs: 50, fat: 20 },
+      }),
+    });
+    if (!meal.ok) throw new Error("meal");
+  });
+  await page.reload();
+  const gators = page.getByRole("group", { name: "Gators fuel" });
+  const notch = gators.getByRole("img", { name: "Soft protein goal, 148 g" });
+  await expect(notch).toBeVisible();
+  await expect(notch).toHaveAttribute("style", /left:\s*74%/);
+  await expect(page.getByRole("group", { name: "Hippos fuel" }).getByRole("img", { name: /Soft protein goal/ })).toHaveCount(0);
+});
+
 test("each person's expenditure sits under that person", async ({ page }) => {
   await signIn(page);
   await page.evaluate(async () => {
