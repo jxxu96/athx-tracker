@@ -90,12 +90,12 @@ test("each main lift shows its start, latest, best and target, at the race's rep
     "175 lb", "15 lb to go", // target
   ]);
   await expect(jerk.getByText("+25 lb since start · 91% of target · 3 sessions")).toBeVisible();
-  await expect(jerk).toContainText("79.4 kg");
-  await expect(jerk).toContainText("6.8 kg");
+  // Pounds on screen are pounds alone, with no kilograms beside them.
+  await expect(jerk).not.toContainText("kg");
   const total = page.getByRole("group", { name: "Gators total" });
   // The 175 lb jerk target is shoulder to overhead's, over the 135 lb press.
   await expect(total).toContainText("765 lb");
-  await expect(total).toContainText("347 kg");
+  await expect(total).not.toContainText("kg");
   await expect(total).toContainText("Shoulder to overhead 1RM, back squat 2RM and deadlift 3RM");
   const order = await jerk.locator("[data-progress-mark]").evaluateAll((nodes) =>
     nodes
@@ -188,17 +188,27 @@ test("a target set in Setup is what Progress measures against", async ({ page })
   await openProgress(page);
   const deadlift = page.getByRole("group", { name: "Hippos deadlift" });
   await expect(deadlift.getByRole("definition")).toContainText(["135 lb", "185 lb", "50 lb to go"]);
-  await expect(deadlift).toContainText("83.9 kg");
-  await expect(deadlift).toContainText("22.7 kg");
+  await expect(deadlift).not.toContainText("kg");
   await expect(deadlift.getByText("73% of target")).toBeVisible();
   await expect(page.getByRole("group", { name: "Hippos push press" }))
     .toContainText("Not logged yet · target 95 lb");
 
-  // The unit switch carries the targets across with it.
+  // The header's unit switch carries Setup's boxes across with it, and keeps
+  // what was typed there and not yet saved.
   await page.getByRole("button", { name: "Setup", exact: true }).click();
-  await page.getByRole("button", { name: "kg", exact: true }).click();
+  await hippos.getByLabel("Deadlift 3RM (lb)").fill("200");
+  await page.getByRole("group", { name: "Weight unit" }).getByRole("button", { name: "kg", exact: true }).click();
   await expect(page.getByRole("group", { name: "Gators", exact: true }).getByLabel("Split jerk 1RM (kg)"))
     .toHaveValue("79.4");
+  await expect(hippos.getByLabel("Deadlift 3RM (kg)")).toHaveValue("90.7");
+  await expect.poll(async () =>
+    page.evaluate(async () => (await fetch("/api/settings").then((r) => r.json())).settings.weightUnit),
+  ).toBe("kg");
+
+  // And every other screen follows it.
+  await openProgress(page);
+  await expect(deadlift.getByRole("definition")).toContainText(["61.2 kg", "83.9 kg", "22.7 kg to go"]);
+  await expect(deadlift).not.toContainText("lb");
 });
 
 test("a start older than the loaded slice is in the figures without loading it", async ({ page }) => {

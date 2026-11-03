@@ -645,7 +645,7 @@ test("one session holds lifts, a part-finished MetCon with loads, and a run", as
   await openSession(page);
   await expect(typeSelect(page)).toHaveValue("Mixed");
 
-  // Weights switched here are remembered, and the boxes read in the new unit.
+  // The header's switch is remembered, and the form's boxes read in the new unit.
   await page.getByRole("group", { name: "Weight unit" }).getByRole("button", { name: "kg" }).click();
 
   await page

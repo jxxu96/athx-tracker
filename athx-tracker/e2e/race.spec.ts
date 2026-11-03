@@ -162,8 +162,16 @@ test("the race-day estimate covers all three zones from what is logged", async (
   ]);
   await page.reload();
 
-  // Hippos 40 + 70 + 90, Gators 80 + 100 + 140: fives count at their load, never carried up.
+  // Pounds by default: each lift converted on its own, and the totals add what is shown.
   const strength = page.getByRole("group", { name: "Strength estimate" });
+  await expect(strength).toContainText("1,145 lb");
+  await expect(strength.getByRole("row", { name: /^Hippos/ })).toHaveText(/Hippos\s*88\s*154\s*198\s*440/);
+  await expect(strength.getByRole("row", { name: /^Gators/ })).toHaveText(/Gators\s*176\s*220\s*309\s*705/);
+  await expect(strength.getByRole("row", { name: /^Combined/ })).toHaveText(/Combined\s*264\s*374\s*507\s*1,145/);
+  await expect(page.getByRole("group", { name: "Strength progress" })).toContainText("1,145\u00a0lb");
+
+  // Hippos 40 + 70 + 90, Gators 80 + 100 + 140: fives count at their load, never carried up.
+  await page.getByRole("group", { name: "Weight unit" }).getByRole("button", { name: "kg", exact: true }).click();
   await expect(strength).toContainText("520 kg");
   await expect(strength.getByRole("row", { name: /^Hippos/ })).toHaveText(/Hippos\s*40\s*70\s*90\s*200/);
   await expect(strength.getByRole("row", { name: /^Gators/ })).toHaveText(/Gators\s*80\s*100\s*140\s*320/);
@@ -259,7 +267,8 @@ test("the pair's Strength is placed among 2026's mixed Lite pairs, live", async 
   await expect(strength).toContainText(
     new RegExp(`${share}(st|nd|rd|th) percentile · ahead of ${ahead} of 2026's ${field.length} mixed Lite pairs`),
   );
-  await expect(strength).toContainText("352 kg on that season's lifts (strict press, 3RM squat, 5RM deadlift)");
+  // 352 kg, in the pounds the screen is in.
+  await expect(strength).toContainText("776 lb on that season's lifts (strict press, 3RM squat, 5RM deadlift)");
   await expect(strength).not.toContainText("needs a strict press");
 
   for (const theme of ["Light", "Dark"]) {
@@ -293,6 +302,8 @@ test("Progress measures each zone from its first estimate to its goal, Strength'
             gators: { splitJerk: 80, overheadPress: 60, backSquat: 108, deadlift: 144 },
           },
           raceGoals: { endurance: 0, metcon: 900 },
+          // The arithmetic below is in the race's own kilograms.
+          weightUnit: "kg",
         },
         revision,
       }),
@@ -314,6 +325,12 @@ test("Progress measures each zone from its first estimate to its goal, Strength'
     "No goal in Setup",
   );
   await expect(page.getByRole("group", { name: "MetCon X progress" })).toContainText("Goal 15:00");
+
+  // In pounds each lift and target converts on its own; the start is one figure.
+  await page.getByRole("group", { name: "Weight unit" }).getByRole("button", { name: "lb", exact: true }).click();
+  await expect(strength).toContainText("792\u00a0lb");
+  await expect(strength).toContainText("Start 661\u00a0lb · Mon 5 Oct");
+  await expect(strength).toContainText("Goal 1,176\u00a0lb");
 
   for (const theme of ["Light", "Dark"]) {
     await page.getByRole("button", { name: theme, exact: true }).click();

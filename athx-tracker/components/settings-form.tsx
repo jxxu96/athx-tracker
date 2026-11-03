@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import { Download, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Field } from "@/components/workout-form";
 import { toast } from "sonner";
@@ -46,13 +45,6 @@ const readHeight = (text: string, unit: WeightUnit) => {
   const value = Number(text.trim());
   return unit === "lb" ? value * CM_PER_INCH : value;
 };
-
-/** Keeps a typed weight meaning the same number of kilograms across a unit switch. */
-function reunit(draft: string, from: WeightUnit, to: WeightUnit) {
-  const value = Number(draft.trim());
-  if (draft.trim() === "" || !Number.isFinite(value)) return draft;
-  return String(Math.round(fromKilograms(toKilograms(value, from), to) * 10) / 10);
-}
 
 const MACRO_FIELDS = [
   { key: "calories", label: "Calories", unit: "kcal" },
@@ -106,9 +98,6 @@ export function SettingsForm({
   const [eventName, setEventName] = useState(settings.eventName);
   const [eventDate, setEventDate] = useState(settings.eventDate);
   const [weeklyTarget, setWeeklyTarget] = useState(String(settings.weeklyTarget));
-  const [weightUnit, setWeightUnit] = useState<WeightUnit>(
-    settings.weightUnit ?? "lb",
-  );
   const [targets, setTargets] = useState<Record<"hippos" | "gators", MacroDraft>>({
     hippos: toDraft(settings.targets.hippos),
     gators: toDraft(settings.targets.gators),
@@ -143,6 +132,28 @@ export function SettingsForm({
       return { hippos: show(savedLifts.hippos), gators: show(savedLifts.gators) };
     },
   );
+  // The header's switch is the one choice of unit, and these boxes follow it.
+  // A switch while Setup is open converts what is in them, typed or not, so
+  // nothing here is lost or read in the wrong unit. A box still showing a
+  // stored weight is shown fresh in the new unit rather than converted from
+  // its rounded display.
+  const unit = settings.weightUnit ?? "lb";
+  const [weightUnit, setWeightUnit] = useState<WeightUnit>(unit);
+  if (weightUnit !== unit) {
+    setHeight((current) => ({
+      hippos: current.hippos.trim() === "" ? "" : showHeight(readHeight(current.hippos, weightUnit), unit),
+      gators: current.gators.trim() === "" ? "" : showHeight(readHeight(current.gators, weightUnit), unit),
+    }));
+    setBodyweight((current) => ({
+      hippos: reunitLoad(current.hippos, weightUnit, unit, latestKg("hippos")),
+      gators: reunitLoad(current.gators, weightUnit, unit, latestKg("gators")),
+    }));
+    setLiftTargets((current) => ({
+      hippos: eachLift((key) => reunitLoad(current.hippos[key], weightUnit, unit, savedLifts.hippos[key])),
+      gators: eachLift((key) => reunitLoad(current.gators[key], weightUnit, unit, savedLifts.gators[key])),
+    }));
+    setWeightUnit(unit);
+  }
   const [raceGoals, setRaceGoals] = useState(() => {
     const goals = settings.raceGoals ?? DEFAULT_SETTINGS.raceGoals!;
     return {
@@ -476,44 +487,6 @@ export function SettingsForm({
               onChange={(event) => setWeeklyTarget(event.target.value)}
             />
           </Field>
-        </div>
-        <div>
-          <Label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-            Weights in
-          </Label>
-          <div role="group" className="flex w-fit rounded-full bg-muted p-0.5">
-            {(["lb", "kg"] as const).map((unit) => (
-              <button
-                key={unit}
-                type="button"
-                onClick={() => {
-                  if (unit === weightUnit) return;
-                  onDirty?.(true);
-                  setHeight((current) => ({
-                    hippos: current.hippos.trim() === "" ? "" : showHeight(readHeight(current.hippos, weightUnit), unit),
-                    gators: current.gators.trim() === "" ? "" : showHeight(readHeight(current.gators, weightUnit), unit),
-                  }));
-                  setBodyweight((current) => ({
-                    hippos: reunit(current.hippos, weightUnit, unit),
-                    gators: reunit(current.gators, weightUnit, unit),
-                  }));
-                  setLiftTargets((current) => ({
-                    hippos: eachLift((key) =>
-                      reunitLoad(current.hippos[key], weightUnit, unit, savedLifts.hippos[key]),
-                    ),
-                    gators: eachLift((key) =>
-                      reunitLoad(current.gators[key], weightUnit, unit, savedLifts.gators[key]),
-                    ),
-                  }));
-                  setWeightUnit(unit);
-                }}
-                aria-pressed={weightUnit === unit}
-                className="rounded-full px-4 py-1 text-xs font-medium transition-colors aria-pressed:bg-background aria-pressed:shadow-sm"
-              >
-                {unit}
-              </button>
-            ))}
-          </div>
         </div>
       </section>
 

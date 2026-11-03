@@ -702,7 +702,6 @@ export function WorkoutForm({
   weightUnit,
   grokReady,
   active = true,
-  onWeightUnit,
   onLoggingFor,
   editing,
   draft: resumed,
@@ -713,11 +712,10 @@ export function WorkoutForm({
 }: {
   today: string;
   sides: readonly Side[];
+  /** The header's switch. The boxes follow it, whatever they were typed in. */
   weightUnit: WeightUnit;
   grokReady: boolean;
   active?: boolean;
-  /** Remembers a unit switched here, as Setup would. */
-  onWeightUnit?: (unit: WeightUnit) => void;
   /** Hippos, Gators, or both. The header switch and these buttons are one choice. */
   onLoggingFor: (next: "hippos" | "gators" | "both") => void;
   editing?: Workout | null;
@@ -732,8 +730,8 @@ export function WorkoutForm({
   // A draft's fields win over the entry being edited: they are what was
   // typed since. Its loads are in the unit it was typed in, which comes too.
   const from = resumed?.state ?? null;
-  // The form's own copy: every box here is in this unit, whether or not the
-  // switch has reached the server yet, so what is typed is read correctly.
+  // The unit every box here is in. It follows the header's switch, below; a
+  // draft opens in the unit it was typed in and is converted from there.
   const [unit, setUnit] = useState<WeightUnit>(oneOf(from?.unit, ["kg", "lb"] as const) ?? weightUnit);
   // Editing is one athlete's record, so it fills that athlete's column alone.
   // The parent remounts on a change of target, so these initialisers are enough.
@@ -1026,7 +1024,7 @@ export function WorkoutForm({
     };
   }
 
-  /** Every weight box follows the switch, and the choice is remembered. */
+  /** Every weight box follows the switch. */
   function changeUnit(next: WeightUnit) {
     if (next === unit) return;
     setLifts((current) =>
@@ -1041,8 +1039,10 @@ export function WorkoutForm({
       gators: current.gators.map((e, i) => reunitEntry(e, i, "gators", next)),
     }));
     setUnit(next);
-    onWeightUnit?.(next);
   }
+  // During render rather than in an effect, so no frame shows a box in one
+  // unit under a label in the other.
+  if (unit !== weightUnit) changeUnit(weightUnit);
 
   /** Changing the category reshapes the session, so rebuild its stations. */
   function changeCategory(next: Workout["category"]) {
@@ -1648,30 +1648,6 @@ export function WorkoutForm({
               onChange={(event) => setCustomCategory(event.target.value)}
             />
           </Field>
-        ) : null}
-        {usesLifts || hasMetcon ? (
-          <div>
-            <Label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-              Weights in
-            </Label>
-            <div
-              role="group"
-              aria-label="Weight unit"
-              className="flex w-fit rounded-full bg-muted p-0.5"
-            >
-              {(["lb", "kg"] as const).map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => changeUnit(option)}
-                  aria-pressed={unit === option}
-                  className="rounded-full px-4 py-1 text-xs font-medium transition-colors aria-pressed:bg-background aria-pressed:shadow-sm"
-                >
-                  {option}
-                </button>
-              ))}
-            </div>
-          </div>
         ) : null}
       </section>
 

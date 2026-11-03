@@ -20,6 +20,8 @@ import {
   strengthLift,
   strengthGoal,
   strengthPlan,
+  strengthShown,
+  zoneGoals,
   zoneProgress,
 } from "./race.ts";
 
@@ -130,6 +132,33 @@ test("the combined weight waits for all six lifts, and adds the whole kilograms 
   assert.equal(after.athletes.hippos.total, 40 + 70 + 90);
   assert.equal(after.athletes.gators.total, 80 + 117 + 140);
   assert.equal(after.combined, 200 + 337);
+});
+
+test("in pounds a lift reads as it was logged, and every total adds what is shown", () => {
+  const lb = (pounds: number) => pounds / 2.20462262;
+  const records = [
+    workout({ athlete: "hippos", lifts: [lift("Push press", lb(95), 1, 1), lift("Back squat", lb(155), 2, 2), lift("Deadlift", lb(185), 1, 3)] }),
+    workout({ lifts: [lift("Split jerk", lb(135), 1, 1), lift("Back squat", lb(225), 1, 2), lift("Deadlift", lb(275), 1, 3)] }),
+  ];
+  const plan = strengthPlan(records);
+  // 155 lb is 70.3 kg, shown as 70 kg; that converted back would be 154 lb.
+  assert.equal(plan.athletes.hippos.lifts.squat?.shown, 70);
+  const shown = strengthShown(plan, "lb");
+  assert.deepEqual(shown.athletes.hippos, { lifts: { overhead: 95, squat: 155, deadlift: 185 }, total: 435 });
+  assert.deepEqual(shown.athletes.gators, { lifts: { overhead: 135, squat: 225, deadlift: 275 }, total: 635 });
+  assert.equal(shown.combined, 1070);
+
+  // In kilograms it is the plan as it stands.
+  const kg = strengthShown(plan, "kg");
+  for (const athlete of ["hippos", "gators"] as const) {
+    assert.equal(kg.athletes[athlete].total, plan.athletes[athlete].total);
+    assert.equal(kg.athletes[athlete].lifts.squat, plan.athletes[athlete].lifts.squat?.shown);
+  }
+  assert.equal(kg.combined, plan.combined);
+
+  const missing = strengthShown(strengthPlan(records.slice(1)), "lb");
+  assert.equal(missing.athletes.hippos.total, null);
+  assert.equal(missing.combined, null, "waits for all six, as the plan does");
 });
 
 test("a run predicts its 2.4 km on Riegel's curve, in whatever unit it was logged", () => {
@@ -416,4 +445,15 @@ test("Strength's goal is the lift targets, each the rep max its window asks for"
   const older: Partial<typeof gators> = { ...gators };
   delete older.pushPress;
   assert.equal(strengthGoal({ hippos, gators: older as typeof gators }), 534);
+});
+
+test("in pounds Strength's goal adds the targets as they were typed", () => {
+  const lb = (pounds: number) => pounds / 2.20462262;
+  const none = { splitJerk: 0, overheadPress: 0, pushPress: 0, backSquat: 0, deadlift: 0 };
+  const hippos = { ...none, pushPress: lb(95), backSquat: lb(155), deadlift: lb(185) };
+  const gators = { ...none, splitJerk: lb(175), overheadPress: lb(135), backSquat: lb(255), deadlift: lb(335) };
+  assert.equal(strengthGoal({ hippos, gators }, "lb"), 95 + 155 + 185 + 175 + 255 + 335);
+  assert.equal(zoneGoals({ hippos, gators }, { endurance: 2000, metcon: 900 }, "lb").strength, 1200);
+  assert.equal(zoneGoals({ hippos, gators }, { endurance: 2000, metcon: 900 }).strength, strengthGoal({ hippos, gators }));
+  assert.equal(strengthGoal({ hippos: { ...hippos, deadlift: 0 }, gators }, "lb"), null);
 });

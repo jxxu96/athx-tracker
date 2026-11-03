@@ -258,10 +258,9 @@ function Bar({
   );
 }
 
-/** The screen unit, with kilograms beside it when the screen is in pounds. */
+/** What is left to the target, in the screen unit alone. */
 function targetNotes(targetKg: number, bestKg: number | null, unit: WeightUnit) {
   const notes: string[] = [];
-  if (unit !== "kg" && targetKg > 0) notes.push(formatWeight(targetKg, "kg"));
   if (!(targetKg > 0)) {
     notes.push("Set in Setup");
     return notes;
@@ -274,7 +273,6 @@ function targetNotes(targetKg: number, bestKg: number | null, unit: WeightUnit) 
     return notes;
   }
   notes.push(`${gap} ${unit} to go`);
-  if (unit !== "kg") notes.push(`${shownGap(bestKg, targetKg, "kg")} kg`);
   return notes;
 }
 
@@ -385,7 +383,7 @@ function Lift({
           <p className="text-xs text-muted-foreground">
             Not logged yet ·{" "}
             {lift.target > 0
-              ? `target ${formatWeight(lift.target, unit)}${unit === "kg" ? "" : ` · ${formatWeight(lift.target, "kg")}`}`
+              ? `target ${formatWeight(lift.target, unit)}`
               : "no target"}
           </p>
         </div>
