@@ -6,10 +6,12 @@ import {
   type ProgressLift,
   type RaceGoals,
   isDistanceUnit,
+  fromKilograms,
   standardLoad,
   toKilograms,
   toMetres,
   type RecordItem,
+  type WeightUnit,
   type Workout,
 } from "./domain.ts";
 
@@ -215,6 +217,39 @@ export function strengthPlan(records: RecordItem[], format: StrengthFormat = STR
     hippos: athleteStrength(records, "hippos", format),
     gators: athleteStrength(records, "gators", format),
   };
+  const { hippos, gators } = athletes;
+  return {
+    athletes,
+    combined: hippos.total === null || gators.total === null ? null : hippos.total + gators.total,
+  };
+}
+
+export type StrengthShown = {
+  athletes: Record<RaceAthlete, { lifts: Record<StrengthLift, number | null>; total: number | null }>;
+  combined: number | null;
+};
+
+/**
+ * The Strength figures in a display unit: each lift to the nearest whole
+ * unit, from its exact figure rather than its whole kilograms, so a 155 lb
+ * set reads 155 lb, and every total the sum of what is shown, so a table in
+ * pounds adds up as one in kilograms does. In kilograms it is the plan.
+ */
+export function strengthShown(plan: StrengthPlan, unit: WeightUnit): StrengthShown {
+  const one = (athlete: RaceAthlete) => {
+    const lifts = Object.fromEntries(
+      STRENGTH_LIFTS.map(({ key }) => {
+        const lift = plan.athletes[athlete].lifts[key];
+        return [key, lift ? Math.round(fromKilograms(lift.kg, unit)) : null];
+      }),
+    ) as Record<StrengthLift, number | null>;
+    const figures = STRENGTH_LIFTS.map(({ key }) => lifts[key]);
+    const total = figures.every((figure) => figure !== null)
+      ? figures.reduce<number>((sum, figure) => sum + figure!, 0)
+      : null;
+    return { lifts, total };
+  };
+  const athletes = { hippos: one("hippos"), gators: one("gators") };
   const { hippos, gators } = athletes;
   return {
     athletes,
@@ -568,13 +603,14 @@ export function raceStart(records: RecordItem[]): Record<RaceZone, ZoneStart | n
  * window's target, in whole kilograms as the score adds them. Null until both
  * athletes have all three, as the score is.
  */
-export function strengthGoal(targets: Record<RaceAthlete, LiftTargets>) {
+export function strengthGoal(targets: Record<RaceAthlete, LiftTargets>, unit: WeightUnit = "kg") {
   let total = 0;
   for (const athlete of RACE_ATHLETES) {
     const kg = strengthTargets(targets[athlete], athlete);
     for (const { key } of STRENGTH_LIFTS) {
       if (!(kg[key] > 0)) return null;
-      total += Math.round(kg[key]);
+      // Whole units of the screen, as strengthShown counts the lifts.
+      total += Math.round(fromKilograms(kg[key], unit));
     }
   }
   return total;
@@ -584,9 +620,11 @@ export function strengthGoal(targets: Record<RaceAthlete, LiftTargets>) {
 export function zoneGoals(
   targets: Record<RaceAthlete, LiftTargets>,
   goals: RaceGoals | undefined,
+  /** Strength's goal is in this unit; the others are metres and seconds. */
+  unit: WeightUnit = "kg",
 ): Record<RaceZone, number> {
   return {
-    strength: strengthGoal(targets) ?? 0,
+    strength: strengthGoal(targets, unit) ?? 0,
     endurance: goals?.endurance ?? 0,
     metcon: goals?.metcon ?? 0,
   };

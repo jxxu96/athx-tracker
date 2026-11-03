@@ -1,7 +1,14 @@
 "use client";
 
 import { formatDay } from "@/lib/client";
-import { ATHLETES, METCON, formatDistance, formatTime } from "@/lib/domain";
+import {
+  ATHLETES,
+  METCON,
+  formatDistance,
+  formatTime,
+  fromKilograms,
+  type WeightUnit,
+} from "@/lib/domain";
 import { FIELD, FIELD_LIFTS, type StrengthPlacing } from "@/lib/field";
 import { formatAmount } from "@/lib/fuel";
 import {
@@ -14,6 +21,7 @@ import {
   STRENGTH_LIFTS,
   raceEstimate,
   raceStart,
+  strengthShown,
   zoneProgress,
   zoneScores,
   type EndurancePlan,
@@ -83,19 +91,30 @@ function Zone({
   );
 }
 
-const kgCell = (kg: number | null | undefined) => (kg === null || kg === undefined ? "—" : formatAmount(kg));
+/** One kilogram figure in the screen's unit, whole: a start, or the field's. */
+const wholeIn = (kg: number, unit: WeightUnit) => Math.round(fromKilograms(kg, unit));
+
+const UNIT_NAME: Record<WeightUnit, string> = { kg: "kilograms", lb: "pounds" };
+
+/** Every zone's score now, Strength's in the screen's unit. */
+const scoresIn = (estimate: ReturnType<typeof raceEstimate>, unit: WeightUnit) => ({
+  ...zoneScores(estimate),
+  strength: strengthShown(estimate.strength, unit).combined,
+});
 
 /** Each lift for each of you, and the pair's sum of each. */
-function LiftTable({ plan }: { plan: StrengthPlan }) {
-  const { athletes, combined } = plan;
+function LiftTable({ plan, unit }: { plan: StrengthPlan; unit: WeightUnit }) {
+  const cell = (figure: number | null | undefined) =>
+    figure === null || figure === undefined ? "—" : formatAmount(figure);
+  const { athletes, combined } = strengthShown(plan, unit);
   const both = (key: StrengthLift) => {
     const one = athletes.hippos.lifts[key];
     const other = athletes.gators.lifts[key];
-    return one && other ? one.shown + other.shown : null;
+    return one !== null && other !== null ? one + other : null;
   };
   return (
     <table className="w-full table-fixed tabular-nums">
-      <caption className="sr-only">Estimated lifts in kilograms</caption>
+      <caption className="sr-only">Estimated lifts in {UNIT_NAME[unit]}</caption>
       <thead>
         <tr className="text-[11px]">
           <th scope="col" className="w-[30%] pb-1 text-left font-normal">
@@ -109,7 +128,7 @@ function LiftTable({ plan }: { plan: StrengthPlan }) {
           ))}
           <th scope="col" className="pb-1 text-right font-normal">
             Total
-            <span className="block">kg</span>
+            <span className="block">{unit}</span>
           </th>
         </tr>
       </thead>
@@ -124,10 +143,10 @@ function LiftTable({ plan }: { plan: StrengthPlan }) {
             </th>
             {STRENGTH_LIFTS.map((lift) => (
               <td key={lift.key} className="py-0.5 text-right">
-                {kgCell(athletes[athlete].lifts[lift.key]?.shown)}
+                {cell(athletes[athlete].lifts[lift.key])}
               </td>
             ))}
-            <td className="py-0.5 text-right font-medium">{kgCell(athletes[athlete].total)}</td>
+            <td className="py-0.5 text-right font-medium">{cell(athletes[athlete].total)}</td>
           </tr>
         ))}
         <tr className="border-t">
@@ -136,10 +155,10 @@ function LiftTable({ plan }: { plan: StrengthPlan }) {
           </th>
           {STRENGTH_LIFTS.map((lift) => (
             <td key={lift.key} className="pt-1 text-right font-medium">
-              {kgCell(both(lift.key))}
+              {cell(both(lift.key))}
             </td>
           ))}
-          <td className="pt-1 text-right font-semibold">{kgCell(combined)}</td>
+          <td className="pt-1 text-right font-semibold">{cell(combined)}</td>
         </tr>
       </tbody>
     </table>
@@ -154,7 +173,7 @@ function ordinal(n: number) {
 }
 
 /** Where the pair sits in the field: a bar from the bottom to the top, and the figures. */
-function Placing({ placing }: { placing: StrengthPlacing }) {
+function Placing({ placing, unit }: { placing: StrengthPlacing; unit: WeightUnit }) {
   const field = `${FIELD.season}'s ${formatAmount(placing.pairs)} ${FIELD.label}`;
   if (placing.total === null || placing.percentile === null) {
     // Squats and deadlifts already show under Still to log; only the strict press is new here.
@@ -186,16 +205,26 @@ function Placing({ placing }: { placing: StrengthPlacing }) {
         {" · "}ahead of {formatAmount(placing.ahead)} of {field}
       </p>
       <p>
-        {formatAmount(placing.total)} kg on that season&apos;s lifts ({FIELD_LIFTS.overhead}, 3RM
-        squat, 5RM deadlift) · median {formatAmount(placing.median)} kg
+        {formatAmount(wholeIn(placing.total, unit))} {unit} on that season&apos;s lifts (
+        {FIELD_LIFTS.overhead}, 3RM squat, 5RM deadlift) · median{" "}
+        {formatAmount(wholeIn(placing.median, unit))} {unit}
       </p>
     </div>
   );
 }
 
-function Strength({ plan, placing }: { plan: StrengthPlan; placing: StrengthPlacing }) {
-  const { athletes, combined } = plan;
-  const hippos = athletes.hippos.total;
+function Strength({
+  plan,
+  placing,
+  unit,
+}: {
+  plan: StrengthPlan;
+  placing: StrengthPlacing;
+  unit: WeightUnit;
+}) {
+  const { athletes } = plan;
+  const { athletes: shown, combined } = strengthShown(plan, unit);
+  const hippos = shown.hippos.total;
   // Whole percents that add up to a hundred, so the two read as one split.
   const share = combined && hippos !== null ? Math.round((hippos / combined) * 100) : null;
   const overhead = RACE_ATHLETES.flatMap((athlete) => {
@@ -215,7 +244,7 @@ function Strength({ plan, placing }: { plan: StrengthPlan; placing: StrengthPlac
       title="Strength"
       cap="20 min"
       figure={combined === null ? null : formatAmount(combined)}
-      unit="kg"
+      unit={unit}
     >
       {share !== null ? (
         <div>
@@ -235,10 +264,10 @@ function Strength({ plan, placing }: { plan: StrengthPlan; placing: StrengthPlac
       ) : null}
       {/* A table of dashes says less than the line underneath it. */}
       {RACE_ATHLETES.some((athlete) => STRENGTH_LIFTS.some((lift) => athletes[athlete].lifts[lift.key])) ? (
-        <LiftTable plan={plan} />
+        <LiftTable plan={plan} unit={unit} />
       ) : null}
       {overhead.length ? <p>S2OH counts {list(overhead)}.</p> : null}
-      <Placing placing={placing} />
+      <Placing placing={placing} unit={unit} />
       {missing.length ? <p>Still to log: {missing.join("; ")}.</p> : null}
     </Zone>
   );
@@ -391,18 +420,20 @@ function Metcon({ plan }: { plan: MetconPlan }) {
   );
 }
 
-const SCORE: Record<RaceZone, (score: number) => string> = {
-  strength: (kg) => `${formatAmount(kg)}\u00a0kg`,
-  endurance: (metres) => `${formatAmount(metres)}\u00a0m`,
-  metcon: (seconds) => formatTime(seconds),
-};
+/** A zone's score as it reads. Strength's is already in the screen's unit. */
+const scoreText = (zone: RaceZone, score: number, unit: WeightUnit) =>
+  zone === "strength"
+    ? `${formatAmount(score)}\u00a0${unit}`
+    : zone === "endurance"
+      ? `${formatAmount(score)}\u00a0m`
+      : formatTime(score);
 
 /** Where each zone stands now, on one line for a folded box. */
-export function raceLine(estimate: ReturnType<typeof raceEstimate>) {
-  const current = zoneScores(estimate);
+export function raceLine(estimate: ReturnType<typeof raceEstimate>, unit: WeightUnit) {
+  const current = scoresIn(estimate, unit);
   return RACE_ZONES.map(({ key, name }) => {
     const now = current[key];
-    return `${name} ${now === null ? "—" : SCORE[key](now)}`;
+    return `${name} ${now === null ? "—" : scoreText(key, now, unit)}`;
   }).join(" · ");
 }
 
@@ -416,15 +447,17 @@ export function RaceProgress({
   start,
   goals,
   today,
+  unit,
 }: {
   estimate: ReturnType<typeof raceEstimate>;
   /** Missing from a summary worked out before starts were. */
   start: ReturnType<typeof raceStart> | undefined;
-  /** Each zone's goal in its own unit, zero for none. */
+  /** Each zone's goal in its own unit, Strength's in the screen's, zero for none. */
   goals: Record<RaceZone, number>;
   today: string;
+  unit: WeightUnit;
 }) {
-  const current = zoneScores(estimate);
+  const current = scoresIn(estimate, unit);
   return (
     <div>
       {/* Clear of the box's fold button in the corner. */}
@@ -437,7 +470,9 @@ export function RaceProgress({
       <div className="space-y-3.5">
         {RACE_ZONES.map(({ key, name, lower }) => {
           const now = current[key];
-          const from = start?.[key] ?? null;
+          const first = start?.[key] ?? null;
+          // A start is a single figure, so Strength's converts as a whole.
+          const from = first && key === "strength" ? { ...first, score: wholeIn(first.score, unit) } : first;
           const goal = goals[key];
           const pct = from && now !== null ? zoneProgress(from.score, now, goal, lower) : null;
           const reached = goal > 0 && now !== null && (lower ? now <= goal : now >= goal);
@@ -446,7 +481,7 @@ export function RaceProgress({
               <div className="flex items-baseline justify-between gap-3">
                 <h3 className="text-sm font-medium">{name}</h3>
                 <p className="text-sm font-semibold tabular-nums">
-                  {now === null ? "—" : SCORE[key](now)}
+                  {now === null ? "—" : scoreText(key, now, unit)}
                   {pct !== null && !reached ? (
                     <span className="ml-1.5 text-xs font-normal text-muted-foreground">
                       {Math.round(pct)}%
@@ -465,11 +500,11 @@ export function RaceProgress({
               </div>
               <p className="mt-1 flex justify-between gap-3 text-xs tabular-nums text-muted-foreground">
                 <span>
-                  {from ? `Start ${SCORE[key](from.score)} · ${formatDay(from.day, today)}` : "No estimate yet"}
+                  {from ? `Start ${scoreText(key, from.score, unit)} · ${formatDay(from.day, today)}` : "No estimate yet"}
                 </span>
                 <span>
                   {goal > 0
-                    ? `${reached ? "Reached" : "Goal"} ${SCORE[key](goal)}`
+                    ? `${reached ? "Reached" : "Goal"} ${scoreText(key, goal, unit)}`
                     : key === "strength"
                       ? "Needs all six lift targets"
                       : "No goal in Setup"}
@@ -491,9 +526,11 @@ export function RaceProgress({
 export function RaceEstimate({
   estimate,
   placing,
+  unit,
 }: {
   estimate: ReturnType<typeof raceEstimate>;
   placing: StrengthPlacing;
+  unit: WeightUnit;
 }) {
   return (
     <div className="mt-5 border-t pt-4">
@@ -501,7 +538,7 @@ export function RaceEstimate({
         Race-day estimate
       </h2>
       <div className="divide-y">
-        <Strength plan={estimate.strength} placing={placing} />
+        <Strength plan={estimate.strength} placing={placing} unit={unit} />
         <Endurance plan={estimate.endurance} />
         <Metcon plan={estimate.metcon} />
       </div>

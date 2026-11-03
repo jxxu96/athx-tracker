@@ -645,7 +645,7 @@ test("one session holds lifts, a part-finished MetCon with loads, and a run", as
   await openSession(page);
   await expect(typeSelect(page)).toHaveValue("Mixed");
 
-  // Weights switched here are remembered, and the boxes read in the new unit.
+  // The header's switch is remembered, and the form's boxes read in the new unit.
   await page.getByRole("group", { name: "Weight unit" }).getByRole("button", { name: "kg" }).click();
 
   await page
@@ -820,4 +820,42 @@ test("an older entry with no loads is not given any when edited", async ({ page 
     (await fetch("/api/records").then((r) => r.json())).records[0],
   );
   expect(record.segments[0].kg).toBeUndefined();
+});
+
+test("the unit switches without a connection, and is sent when the server answers", async ({ page }) => {
+  const savedUnit = () =>
+    page.evaluate(async () => (await fetch("/api/settings").then((r) => r.json())).settings.weightUnit);
+  const unitSwitch = page.getByRole("group", { name: "Weight unit" });
+  await unitSwitch.getByRole("button", { name: "lb" }).click();
+  await expect.poll(savedUnit).toBe("lb");
+
+  await openSession(page);
+  await page
+    .locator("select")
+    .filter({ has: page.locator('option[value="Deadlift"]') })
+    .first()
+    .selectOption("Deadlift");
+  await page.getByLabel("lb", { exact: true }).fill("225");
+
+  // A gym with no signal: the switch still turns the boxes, and says it waits.
+  await page.route("**/api/settings", (route) =>
+    route.request().method() === "PUT" ? route.abort() : route.continue(),
+  );
+  await unitSwitch.getByRole("button", { name: "kg" }).click();
+  await expect(unitSwitch.getByRole("button", { name: "kg" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel("kg", { exact: true })).toHaveValue("102.1");
+  await expect(page.getByText("Weights in kg on this phone")).toBeVisible();
+  expect(await savedUnit()).toBe("lb");
+
+  // The next answer from the server takes it, and nothing on screen moves back.
+  await page.unroute("**/api/settings");
+  await page.getByRole("button", { name: "Refresh from the server" }).click();
+  await expect.poll(savedUnit).toBe("kg");
+  await expect(page.getByLabel("kg", { exact: true })).toHaveValue("102.1");
+
+  // Settings outlive each spec: leave it in pounds.
+  await unitSwitch.getByRole("button", { name: "lb" }).click();
+  await expect.poll(savedUnit).toBe("lb");
+  // A typed load converts at a tenth each way, so it comes back as 225.1.
+  await expect(page.getByLabel("lb", { exact: true })).toHaveValue(/^225/);
 });

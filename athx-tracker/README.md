@@ -8,7 +8,7 @@ single SQLite file on a volume.
 
 - **Today** — countdown to the event, then fuel for each athlete, then each
   zone's progress from its first estimate to its goal (Strength's from the lift
-  targets), then a race-day estimate: the pair's Strength score in kilograms, each athlete's share
+  targets), then a race-day estimate: the pair's Strength score, each athlete's share
   of it, and where it would have placed among last season's mixed Lite pairs; the
   2.4 km run times and SkiErg distance for Endurance; and the MetCon X time. Then
   the sessions logged this week and over the last 7 days against the weekly
@@ -53,12 +53,12 @@ single SQLite file on a volume.
   the weight left in its box. Editing an entry shows exactly what was saved,
   blank included. A MetCon you did not finish is logged as what you completed at
   each station, and "stopped at the time cap" records the cap; the log then
-  reads e.g. "5/7 movements · 82% of the work · time cap hit". The lb/kg switch
-  on the form is the same setting as Setup's and is remembered.
+  reads e.g. "5/7 movements · 82% of the work · time cap hit". The form's
+  weight boxes follow the lb/kg switch at the top of the screen.
   **Describe your workout** accepts typed text or browser dictation and uses the
   same subscription-backed estimator as meals to fill an editable draft. `1 x 2`
   means **1 set of 2 reps**. Include weights and units; an omitted unit follows
-  the form's lb/kg setting. Sets that differ, such as `135x5, 185x3, 225x1` (a
+  the lb/kg switch. Sets that differ, such as `135x5, 185x3, 225x1` (a
   weight, then its reps), open Advanced with a row for each. Named results stay
   with that athlete, and missing numbers stay blank for review; a lift saves
   only once its blanks, a set's reps included, are filled in. Lifts, workouts
@@ -175,7 +175,7 @@ single SQLite file on a volume.
   however many are loaded, so a journal years deep neither crosses the network
   nor reaches the screen all at once. What this phone has not sent yet is marked
   as waiting; see *Without a connection*.
-- **Setup** — event name and date, weekly session target, display units, each
+- **Setup** — event name and date, weekly session target, each
   athlete's bodyweight, height and birth year, their daily macro targets, their
   lift targets, and food notes. The bodyweight is what makes calories burned
   possible; without it that figure is withheld. A new bodyweight saved here is a
@@ -195,7 +195,10 @@ single SQLite file on a volume.
 ### Weights and older entries
 
 Every weight is stored in kilograms and converted for display, so switching
-lb/kg never rewrites a record. Opening an entry and saving it again keeps the
+lb/kg never rewrites a record. The switch sits at the top of every screen, starts
+in pounds, and is saved with the settings, so both phones read the same unit.
+Flipping it while Setup or a session form is open converts what is in their
+boxes, typed or not, and keeps it. Opening an entry and saving it again keeps the
 stored load exactly, rather than re-reading it from its rounded display.
 Stations saved before sessions could mix carry no part or load: their part is
 taken from the session's category (Endurance is endurance, anything else is
@@ -263,7 +266,8 @@ the log cannot support shows a dash and says what to log, rather than a guess.
   (37 − *r*)/36 of a 1RM, so a 100 kg single is a 97.2 kg 2RM. Either way the
   figure can only err low.
   Shoulder to overhead counts the overhead press, push press, split jerk, a typed
-  push jerk, and the clean and jerk. Figures are whole kilograms and the totals add
+  push jerk, and the clean and jerk. Figures are whole units of the screen's weight, each lift converted from its
+  exact figure so a 155 lb set reads 155 lb, and the totals add
   what is shown; nothing is combined until all six lifts have one. The race averages
   each athlete's two deadlift attempts, so the figure assumes both reach it.
 - **Endurance** has each of you run 2.4 km, then the pair skis on its one SkiErg
@@ -298,9 +302,10 @@ sends the figures; with the whole journal loaded the phone works them out itself
 
 **Progress** on Today measures each zone from its start to its goal. The start is
 the zone's estimate as of the first day the log could give one, counting only what
-was logged up to then (`raceStart` in `lib/race.ts`); now is today's estimate; the
+was logged up to then (`raceStart` in `lib/race.ts`), kept in whole kilograms, so in
+pounds Strength's start is that one figure converted; now is today's estimate; the
 goal for Strength is the lift targets Progress measures against, each already the
-race's rep max for its lift, in whole kilograms (the higher of the athlete's
+race's rep max for its lift, in whole units of the screen's weight (the higher of the athlete's
 press and split jerk targets stands for shoulder to overhead; a target for the press
 an athlete does not follow is not counted), so it needs all six; Endurance
 and MetCon X take Setup's race goals (SkiErg metres, and a time that counts down). The bar is the share of start-to-goal covered,

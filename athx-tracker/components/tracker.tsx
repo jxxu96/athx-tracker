@@ -30,6 +30,7 @@ import {
   type Meal,
   type RecordItem,
   type Settings,
+  type WeightUnit,
   type Workout,
 } from "@/lib/domain";
 import { athleteOutline } from "@/lib/athlete-outline";
@@ -258,6 +259,17 @@ export function Tracker({
   const awaitingFill = useRef(new Set<string>());
   const [settings, setSettings] = useState(initialSettings);
   const [revision, setRevision] = useState(initialRevision);
+  // Setup is keyed on this, so settings that arrive from elsewhere open it
+  // afresh. A unit switched in the header does not: Setup's boxes follow it,
+  // and what was typed there stays.
+  const [setupKey, setSetupKey] = useState(initialRevision);
+  // A unit switched here that the server does not have yet. It shows at
+  // once, and holds on this phone while there is no connection, so a session
+  // logged at the gym still switches; it is sent when the server answers.
+  const [pendingUnit, setPendingUnit] = useState<WeightUnit | null>(null);
+  const sendingUnit = useRef(false);
+  /** The last unit tapped, which a send that lands after it must not undo. */
+  const wantedUnit = useRef<WeightUnit | null>(null);
   const [problem, setProblem] = useState(loadError);
   const [refreshing, setRefreshing] = useState(false);
   // How many entries exist, against how many are in hand. The app opens with a
@@ -277,7 +289,13 @@ export function Tracker({
   // recent slice is in hand.
   const [summary, setSummary] = useState(initialSummary);
   const [fuelRefresh, setFuelRefresh] = useState(0);
-  const unit = settings.weightUnit ?? "lb";
+  const savedUnit = settings.weightUnit ?? "lb";
+  const unit = pendingUnit ?? savedUnit;
+  // What the screens read: the settings, with a switch not yet sent.
+  const shownSettings = useMemo(
+    () => (pendingUnit ? { ...settings, weightUnit: pendingUnit } : settings),
+    [pendingUnit, settings],
+  );
 
   /** What this phone has not sent yet, shown as if it had been. */
   const outbox = useSyncExternalStore(subscribeOutbox, outboxSnapshot, serverOutbox);
@@ -345,6 +363,7 @@ export function Tracker({
       if (config) {
         setSettings(config.settings);
         setRevision(config.revision);
+        setSetupKey(config.revision);
       }
       setSummary(figures.summary);
       setFuelRefresh((current) => current + 1);
@@ -659,7 +678,12 @@ export function Tracker({
   }, [complete, refreshSummary, summary, today]);
 
   const saveSettings = useCallback(
-    async (next: Settings, notice = "Settings saved", weighIns: Bodyweight[] = []) => {
+    async (
+      next: Settings,
+      notice = "Settings saved",
+      weighIns: Bodyweight[] = [],
+      { keepSetup = false, quiet = false } = {},
+    ) => {
       try {
         // Weigh-ins are journal entries, so they wait on the phone like any other.
         const logged = weighIns.length ? await persist(weighIns) : null;
@@ -667,15 +691,19 @@ export function Tracker({
           "/api/settings",
           { method: "PUT", body: JSON.stringify({ settings: next, revision }) },
         );
-        setupDirty.current = false;
+        // Setup's own edits are still in it after a unit switch, unsaved.
+        if (!keepSetup) {
+          setupDirty.current = false;
+          setSetupKey(saved.revision);
+        }
         setSettings(saved.settings);
         setRevision(saved.revision);
-        toast.success(notice);
+        if (notice) toast.success(notice);
         if (logged?.reason)
           toast("Weigh-in saved on this phone", { description: logged.reason, icon: <CloudOff className="size-4" /> });
         void refreshSummary();
       } catch (error) {
-        toast.error(message(error));
+        if (!quiet) toast.error(message(error));
         // Someone saved from the other phone: pull their version back in.
         if ((error as Error & { status?: number }).status === 409) await refresh();
         throw error;
@@ -683,6 +711,54 @@ export function Tracker({
     },
     [persist, revision, refresh, refreshSummary],
   );
+
+  /**
+   * One switch for every weight on screen, kept with the settings so both
+   * phones read the same. The forms convert what is in their boxes when it
+   * moves; nothing stored changes, since every weight is kept in kilograms.
+   * Back to the saved unit needs nothing sent.
+   */
+  const switchUnit = (next: WeightUnit) => {
+    if (next === unit) return;
+    wantedUnit.current = next;
+    setPendingUnit(next === savedUnit ? null : next);
+  };
+
+  /** Sends a switch the server does not have, one at a time. */
+  const sendUnit = useCallback(async (next: WeightUnit) => {
+    if (sendingUnit.current) return;
+    sendingUnit.current = true;
+    try {
+      // No toast for it landing: every weight on screen changing says it,
+      // and one at the top would sit over the switch just tapped.
+      await saveSettings({ ...settings, weightUnit: next }, "", [], { keepSetup: true, quiet: true });
+      // Switched again while this was on its way: that one goes next.
+      const wanted = wantedUnit.current;
+      setPendingUnit(wanted && wanted !== next ? wanted : null);
+    } catch (error) {
+      if (retryable(error)) {
+        toast(`Weights in ${next} on this phone`, {
+          description: waitingReason(error),
+          icon: <CloudOff className="size-4" />,
+        });
+        return;
+      }
+      // Refused, or the other phone saved first: the server's settings stand.
+      toast.error(message(error));
+      setPendingUnit((current) => (current === next ? null : current));
+    } finally {
+      sendingUnit.current = false;
+    }
+  }, [saveSettings, settings]);
+
+  // A switch is sent when made, and again each time the server answers a
+  // refresh, until it lands. A failed send leaves nothing changed to retry on.
+  // From a timer, so switching back and forth quickly sends only the last.
+  useEffect(() => {
+    if (!pendingUnit || pendingUnit === savedUnit) return;
+    const timer = window.setTimeout(() => void sendUnit(pendingUnit), 0);
+    return () => window.clearTimeout(timer);
+  }, [pendingUnit, savedUnit, fuelRefresh, sendUnit]);
 
   const history = useMemo(
     () => bodyweightHistory(shown, settings.bodyweight),
@@ -708,7 +784,9 @@ export function Tracker({
           <h1 className="hidden truncate text-sm font-semibold tracking-tight sm:block">
             Hippos &amp; Gators
           </h1>
-          <div className="flex shrink-0 items-center gap-1">
+          {/* Wraps rather than running off a narrow phone, as it would at
+              320 px or with entries waiting to send beside the unit switch. */}
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-1">
           <div
             role="group"
             aria-label="Logging for"
@@ -751,6 +829,24 @@ export function Tracker({
           >
             <RotateCw className={`size-4${refreshing ? " animate-spin" : ""}`} />
           </button>
+          <div
+            role="group"
+            aria-label="Weight unit"
+            className="flex shrink-0 rounded-full bg-muted p-0.5"
+          >
+            {(["lb", "kg"] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => switchUnit(option)}
+                aria-pressed={unit === option}
+                title={option === "lb" ? "Pounds" : "Kilograms"}
+                className="rounded-full px-1.5 py-0.5 text-xs font-medium transition-colors aria-pressed:bg-background aria-pressed:shadow-sm"
+              >
+                {option}
+              </button>
+            ))}
+          </div>
           <ThemeToggle />
           </div>
         </div>
@@ -772,7 +868,7 @@ export function Tracker({
         ) : tab === "today" ? (
           <Overview
             records={shown}
-            settings={settings}
+            settings={shownSettings}
             history={history}
             figures={figures}
             today={today}
@@ -784,7 +880,7 @@ export function Tracker({
         ) : tab === "progress" ? (
           <Progress
             records={shown}
-            settings={settings}
+            settings={shownSettings}
             history={history}
             figures={figures}
             today={today}
@@ -812,8 +908,8 @@ export function Tracker({
           />
         ) : tab === "settings" ? (
           <SettingsForm
-            key={revision}
-            settings={settings}
+            key={setupKey}
+            settings={shownSettings}
             history={history}
             today={today}
             grokReady={grokReady}
@@ -838,14 +934,6 @@ export function Tracker({
             sides={sides}
             onLoggingFor={setWho}
             weightUnit={unit}
-            onWeightUnit={(weightUnit) =>
-              // The form already reads its boxes in the new unit; this only
-              // remembers the choice. A failure has said so in a toast.
-              void saveSettings(
-                { ...settings, weightUnit },
-                `Weights now in ${weightUnit}`,
-              ).catch(() => {})
-            }
             active={tab === "session" && !problem}
             editing={editingWorkout}
             draft={sessionDraft}

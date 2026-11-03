@@ -107,6 +107,7 @@ export function Overview({
       : null;
   const lastScenario = lastSession ? scenarioLine(lastSession) : null;
   const daysToGo = `${countdown >= 0 ? countdown : 0} ${countdown === 1 ? "day to go" : "days to go"}`;
+  const unit = settings.weightUnit ?? "lb";
 
   return (
     <div className="space-y-4">
@@ -152,15 +153,16 @@ export function Overview({
       <CollapsibleCard
         name="Progress and race-day estimate"
         className="p-5 sm:p-6"
-        mini={`Race-day estimate: ${raceLine(figures.race)}`}
+        mini={`Race-day estimate: ${raceLine(figures.race, unit)}`}
       >
         <RaceProgress
           estimate={figures.race}
           start={figures.raceStart}
-          goals={zoneGoals(settings.liftTargets ?? DEFAULT_SETTINGS.liftTargets, settings.raceGoals)}
+          goals={zoneGoals(settings.liftTargets ?? DEFAULT_SETTINGS.liftTargets, settings.raceGoals, unit)}
           today={today}
+          unit={unit}
         />
-        <RaceEstimate estimate={figures.race} placing={figures.placing} />
+        <RaceEstimate estimate={figures.race} placing={figures.placing} unit={unit} />
       </CollapsibleCard>
 
       <Panel
@@ -234,7 +236,7 @@ export function Overview({
           records={records}
           history={history}
           today={today}
-          unit={settings.weightUnit ?? "lb"}
+          unit={unit}
           heldFrom={heldFrom}
           onLoad={onLoadSessions}
           refresh={fuelRefresh}
@@ -295,7 +297,7 @@ export function Overview({
                   {station.target} {station.unit} · {station.name}
                 </span>
                 <span className="block text-muted-foreground">
-                  {metconLoadText(station, settings.weightUnit ?? "lb")}
+                  {metconLoadText(station, unit)}
                 </span>
               </span>
             </li>
