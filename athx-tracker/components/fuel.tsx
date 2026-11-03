@@ -5,13 +5,15 @@ import { Flame } from "lucide-react";
 import { CollapsibleCard } from "@/components/collapsible-card";
 import { Input } from "@/components/ui/input";
 import { ATHLETES, type Macros, type RecordItem, type Settings } from "@/lib/domain";
-import type { BodyweightHistory } from "@/lib/bodyweight";
+import { bodyweightOn, type BodyweightHistory } from "@/lib/bodyweight";
 import { addDays, dayToDate } from "@/lib/client";
 import {
   athleteFuel,
+  barMarkPercent,
   energyBalance,
   formatAmount,
   fuelWindow,
+  softProteinGoal,
   targetPercent,
   teamSessions,
   type AthleteFuel,
@@ -82,6 +84,7 @@ function MacroRow({
   target,
   color,
   average,
+  mark,
 }: {
   label: string;
   unit: string;
@@ -89,6 +92,8 @@ function MacroRow({
   target: number;
   color: string;
   average: boolean;
+  /** A tick on the bar, as a percent of the target. Null draws none. */
+  mark: { at: number; label: string } | null;
 }) {
   const share = targetPercent(value, target);
   return (
@@ -105,11 +110,22 @@ function MacroRow({
           {share !== null ? <span className="text-muted-foreground"> · {share}%</span> : null}
         </span>
       </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-        <div
-          className="h-full rounded-full transition-[width]"
-          style={{ width: `${share === null ? 0 : Math.min(100, share)}%`, background: color }}
-        />
+      <div className="relative h-1.5">
+        <div className="absolute inset-0 overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full transition-[width]"
+            style={{ width: `${share === null ? 0 : Math.min(100, share)}%`, background: color }}
+          />
+        </div>
+        {mark ? (
+          <span
+            role="img"
+            aria-label={mark.label}
+            title={mark.label}
+            className="absolute top-1/2 z-10 h-2.5 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground"
+            style={{ left: `${mark.at}%` }}
+          />
+        ) : null}
       </div>
     </div>
   );
@@ -156,12 +172,15 @@ function AthleteFuelCard({
   span,
   today,
   mealDays,
+  softProtein,
 }: {
   athlete: FuelAthlete;
   fuel: AthleteFuel;
   span: FuelSpan;
   today: string;
   mealDays: Set<string>;
+  /** Grams. Null when this person has no soft protein line, or no weight to take it from. */
+  softProtein: number | null;
 }) {
   const multi = span === "week" || span === "overall";
   const logged =
@@ -186,17 +205,26 @@ function AthleteFuelCard({
         <p className="text-xs text-muted-foreground">No meals logged.</p>
       ) : (
         <>
-          {MACRO_KEYS.map(({ key, label, unit }) => (
-            <MacroRow
-              key={key}
-              label={label}
-              unit={unit}
-              value={fuel.shown[key]}
-              target={fuel.dailyTarget[key]}
-              color={ATHLETES[athlete].color}
-              average={multi}
-            />
-          ))}
+          {MACRO_KEYS.map(({ key, label, unit }) => {
+            const at = key === "protein" && softProtein !== null
+              ? barMarkPercent(softProtein, fuel.dailyTarget.protein)
+              : null;
+            const mark = at === null || softProtein === null
+              ? null
+              : { at, label: `Soft protein goal, ${formatAmount(softProtein)} g` };
+            return (
+              <MacroRow
+                key={key}
+                label={label}
+                unit={unit}
+                value={fuel.shown[key]}
+                target={fuel.dailyTarget[key]}
+                color={ATHLETES[athlete].color}
+                average={multi}
+                mark={mark}
+              />
+            );
+          })}
           {multi ? (
             <p className="text-xs text-muted-foreground">
               {formatAmount(fuel.eaten.calories)} kcal eaten · {logged}
@@ -298,12 +326,14 @@ export function Fuel({
   const period = span === "day" ? "today" : span;
   const referenceDay = span === "day" ? day : today;
   const multi = span === "week" || span === "overall";
+  const weightDay = fuelWindow(period, referenceDay)?.end ?? referenceDay;
   const people = PEOPLE.map((athlete) => ({
     athlete,
     fuel:
       span === "overall"
         ? figures.overall[athlete]
         : athleteFuel(records, athlete, period, referenceDay, settings, history),
+    softProtein: softProteinGoal(athlete, bodyweightOn(history, athlete, weightDay)),
   }));
   const mealDays = (athlete: FuelAthlete) => {
     const window = fuelWindow(period, referenceDay);
@@ -414,6 +444,7 @@ export function Fuel({
                 span={period}
                 today={today}
                 mealDays={mealDays(person.athlete)}
+                softProtein={person.softProtein}
               />
             ))}
           </div>

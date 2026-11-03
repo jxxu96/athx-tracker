@@ -2,6 +2,7 @@ import { bodyweightKnown, bodyweightOn, type BodyweightHistory } from "./bodywei
 import { addDays, isMeal, isWorkout } from "./client.ts";
 import {
   estimateBurn,
+  fromKilograms,
   sumMacros,
   type Macros,
   type Meal,
@@ -86,6 +87,27 @@ export function gapLabel(
 export function targetPercent(actual: number, target: number) {
   if (!(target > 0)) return null;
   return Math.round((actual / target) * 100);
+}
+
+/**
+ * Gators' soft protein line, in grams: 80% of bodyweight in pounds. Pounds,
+ * not the unit on screen, so switching Setup to kilograms does not move it.
+ * The bar's own target stays the one from Setup. Hippos has no soft line.
+ * Null without a weight, so the mark is left off rather than drawn at zero.
+ */
+export function softProteinGoal(athlete: FuelAthlete, kg: number) {
+  if (athlete !== "gators" || !(kg > 0)) return null;
+  return Math.round(fromKilograms(kg, "lb") * 0.8);
+}
+
+/**
+ * Where a mark sits on a bar scaled to a target, as a percent of that bar.
+ * Past the target it stays at the end, because the bar itself stops there.
+ * Null when either number is missing.
+ */
+export function barMarkPercent(mark: number, target: number) {
+  if (!(mark > 0) || !(target > 0)) return null;
+  return Math.min(100, Math.round((mark / target) * 1000) / 10);
 }
 
 export type AthleteFuel = {
