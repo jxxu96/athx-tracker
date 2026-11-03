@@ -41,7 +41,7 @@ export const EXERCISES: { group: string; items: string[] }[] = [
   },
   {
     group: "Upper push",
-    items: ["Bench press", "Incline bench press", "Dip", "Push-up", "Lu Raises"],
+    items: ["Bench press", "Incline bench press", "Dip", "Push-up", "Lu Raises", "Tricep kickbacks"],
   },
   {
     group: "Upper pull",
