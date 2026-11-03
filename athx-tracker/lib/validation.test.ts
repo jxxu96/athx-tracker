@@ -67,9 +67,11 @@ test("completed work cannot exceed its target", () => {
 });
 
 test("every session type the form offers is accepted", () => {
-  for (const category of ["Strength", "Endurance", "MetCon", "Solidcore", "Tennis", "YTW", "Other"]) {
+  for (const category of ["Strength", "Endurance", "MetCon", "Solidcore", "Tennis", "Other"]) {
     assert.ok(ok(workoutSchema, workout({ category })), category);
   }
+  // Saved before YTW became a lift. The journal still has to open it.
+  assert.ok(ok(workoutSchema, workout({ category: "YTW" })));
   assert.ok(!ok(workoutSchema, workout({ category: "Pilates" })));
 });
 

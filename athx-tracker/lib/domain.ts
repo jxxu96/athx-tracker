@@ -406,8 +406,8 @@ export const MET_BY_CATEGORY: Record<Workout["category"], number> = {
   // Compendium puts general play near 7, between doubles and singles. Rallying
   // is not continuous, and the stop-start is already in that number.
   Tennis: 7,
-  // Light shoulder raises. Below Solidcore: the load is small and the rest
-  // between letters is most of the session.
+  // Sessions saved when YTW was its own type. A new session logs YTWs as a lift.
+  // Below Solidcore: the load is small and the rest between letters is most of it.
   YTW: 4,
   Other: 5,
 };
@@ -511,7 +511,6 @@ export function estimateBurn(workout: Workout, bodyweightKg: number) {
 export const PRESETS = [
   { label: "Solidcore", category: "Solidcore", minutes: 50 },
   { label: "Tennis", category: "Tennis", minutes: 60 },
-  { label: "YTW", category: "YTW", minutes: 15 },
 ] as const satisfies readonly {
   label: string;
   category: Workout["category"];
