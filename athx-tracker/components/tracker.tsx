@@ -743,7 +743,9 @@ export function Tracker({
           <h1 className="hidden truncate text-sm font-semibold tracking-tight sm:block">
             Hippos &amp; Gators
           </h1>
-          <div className="flex shrink-0 items-center gap-1">
+          {/* Wraps rather than running off a narrow phone, as it would at
+              320 px or with entries waiting to send beside the unit switch. */}
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-1">
           <div
             role="group"
             aria-label="Logging for"
@@ -799,7 +801,7 @@ export function Tracker({
                 disabled={switchingUnit}
                 aria-pressed={unit === option}
                 title={option === "lb" ? "Pounds" : "Kilograms"}
-                className="rounded-full px-2 py-0.5 text-xs font-medium transition-colors aria-pressed:bg-background aria-pressed:shadow-sm"
+                className="rounded-full px-1.5 py-0.5 text-xs font-medium transition-colors aria-pressed:bg-background aria-pressed:shadow-sm"
               >
                 {option}
               </button>
