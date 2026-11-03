@@ -175,8 +175,10 @@ test("names match the way a described workout's do, and variations stay out", ()
   assert.equal(progressLift("strict press"), "overheadPress");
   assert.equal(progressLift("Push press"), "pushPress");
   assert.equal(progressLift("barbell back squats"), "backSquat");
+  assert.equal(progressLift("Squat"), "backSquat");
+  assert.equal(progressLift("squats"), "backSquat");
   assert.equal(progressLift("deadlifts"), "deadlift");
-  for (const other of ["Front squat", "Romanian deadlift", "Sumo deadlift", "Push jerk", "Squat"])
+  for (const other of ["Front squat", "Romanian deadlift", "Sumo deadlift", "Push jerk", "Overhead squat", "Squat jerk"])
     assert.equal(progressLift(other), null, other);
 });
 

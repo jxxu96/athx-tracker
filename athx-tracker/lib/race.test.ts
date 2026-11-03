@@ -72,12 +72,13 @@ test("a set is never carried up, only down on Brzycki's line", () => {
 });
 
 test("any press or jerk from the shoulders counts as shoulder to overhead, and other lifts do not", () => {
-  for (const name of ["Split jerk", "Push press", "Overhead press", "OHP", "strict press", "Clean and jerk", "Push jerk", "push jerks", "S2OH"])
+  for (const name of ["Split jerk", "Push press", "Overhead press", "OHP", "strict press", "Clean and jerk", "Push jerk", "push jerks", "S2OH", "squat jerk"])
     assert.equal(strengthLift(name), "overhead", name);
   assert.equal(strengthLift("Back squat"), "squat");
   assert.equal(strengthLift("back squats"), "squat");
+  assert.equal(strengthLift("Squat"), "squat");
   assert.equal(strengthLift("Deadlift"), "deadlift");
-  for (const name of ["Front squat", "Romanian deadlift", "RDL", "Thruster", "Bench press", "constructor"])
+  for (const name of ["Front squat", "Goblet squat", "Romanian deadlift", "RDL", "Thruster", "Bench press", "pause squat", "constructor"])
     assert.equal(strengthLift(name), null, name);
 });
 
