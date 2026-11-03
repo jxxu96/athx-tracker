@@ -108,7 +108,7 @@ type LiftRow = {
 };
 
 const CATEGORIES = [
-  "MetCon", "Strength", "Endurance", "Mixed", "Solidcore", "Tennis", "YTW", "Other",
+  "MetCon", "Strength", "Endurance", "Mixed", "Solidcore", "Tennis", "Other",
 ] as const;
 
 /** The circuit's own entry for a station, when it is one of the seven. */
@@ -121,7 +121,8 @@ const circuitStation = (station: Pick<Station, "name" | "fixed">) =>
  * calories, which is a machine. Endurance work is never loaded.
  */
 const loadable = (category: Workout["category"], station: Station) => {
-  // Solidcore, tennis and YTW stations are not lifted; MetCon, Mixed and Other may be.
+  // Solidcore and tennis stations are not lifted, and neither is a session saved
+  // when YTW was its own type. MetCon, Mixed and Other may be.
   if (category === "Solidcore" || category === "Tennis" || category === "YTW") return false;
   if (station.block !== "metcon") return false;
   if (station.fixed) return Boolean(circuitStation(station)?.kg);
@@ -738,7 +739,7 @@ export function WorkoutForm({
   const [time, setTime] = useState(textOf(from?.time, editing ? editing.time ?? "" : clockTime()));
   const [title, setTitle] = useState(textOf(from?.title, editing?.title ?? ""));
   const [category, setCategory] = useState<Workout["category"]>(
-    oneOf(from?.category, CATEGORIES) ?? editing?.category ?? "Mixed",
+    oneOf(from?.category, [...CATEGORIES, "YTW"]) ?? editing?.category ?? "Mixed",
   );
   const [customCategory, setCustomCategory] = useState(
     textOf(from?.customCategory, editing?.customCategory ?? ""),
@@ -1618,7 +1619,10 @@ export function WorkoutForm({
                 changeCategory(event.target.value as Workout["category"])
               }
             >
-              {CATEGORIES.map((value) => (
+              {(category === "YTW"
+                ? ["MetCon", "Strength", "Endurance", "Mixed", "Solidcore", "Tennis", "YTW", "Other"]
+                : CATEGORIES
+              ).map((value) => (
                 <NativeSelectOption key={value} value={value}>
                   {value}
                 </NativeSelectOption>

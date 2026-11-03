@@ -79,6 +79,10 @@ test("typos, plurals and abbreviations use the list spelling", () => {
     ["tricep kickbacks", "Tricep kickbacks"],
     ["triceps kickback", "Tricep kickbacks"],
     ["kickbacks", "Tricep kickbacks"],
+    ["ytw", "YTWs"],
+    ["YTWs", "YTWs"],
+    ["Y-T-W", "YTWs"],
+    ["y t w", "YTWs"],
   ] as const;
   for (const [heard, listed] of names) {
     const match = matchMovement(heard);
@@ -202,8 +206,10 @@ test("named workouts match Solidcore and Tennis, and an unknown one is called ou
   assert.equal(tennis.category, "Tennis");
 
   const ytw = settled({ ...base(), category: "Other", customCategory: "Y-T-W", lifts: [], stations: [] });
-  assert.equal(ytw.category, "YTW");
+  assert.equal(ytw.category, "Strength");
   assert.equal(ytw.customCategory, "");
+  assert.deepEqual(ytw.lifts.map((row) => row.name), ["YTWs"]);
+  assert.equal(ytw.notes, "");
 
   const yoga = settled({ ...base(), category: "Other", customCategory: "Yoga", lifts: [], stations: [] });
   assert.equal(yoga.category, "Other");

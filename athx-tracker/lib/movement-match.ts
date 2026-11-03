@@ -58,6 +58,7 @@ const PHRASE: Record<string, string> = {
   "assault bike": "bike erg",
   "echo bike": "bike erg",
   "air bike": "bike erg",
+  "y t w": "YTWs",
 };
 
 const SESSION_PHRASES: { phrase: string; category: Workout["category"] }[] = [
@@ -69,8 +70,6 @@ const SESSION_PHRASES: { phrase: string; category: Workout["category"] }[] = [
   { phrase: "athx", category: "MetCon" },
   { phrase: "circuit", category: "MetCon" },
   { phrase: "solidcore", category: "Solidcore" },
-  { phrase: "y t w", category: "YTW" },
-  { phrase: "ytw", category: "YTW" },
   { phrase: "tennis", category: "Tennis" },
   { phrase: "strength", category: "Strength" },
   { phrase: "lifting", category: "Strength" },
@@ -357,7 +356,6 @@ function settle(
   if (!hasLifts && !hasMetcon && !hasEndurance) {
     if (asked.has("Solidcore")) return "Solidcore";
     if (asked.has("Tennis")) return "Tennis";
-    if (asked.has("YTW")) return "YTW";
     if (asked.has("MetCon")) return "MetCon";
     if (asked.has("Endurance")) return "Endurance";
     if (asked.has("Strength")) return "Strength";
@@ -409,6 +407,14 @@ export function alignWorkoutDraft(draft: WorkoutDraft): WorkoutDraft {
     const name = take(lift.name);
     return name === null ? [] : [{ ...lift, name }];
   });
+  // Naming the session YTW means the lift, in a strength session.
+  if (draft.category === "Other" && matchMovement(draft.customCategory).name === "YTWs") {
+    asked.add("Strength");
+    if (!lifts.some((lift) => lift.name === "YTWs")) {
+      const blank = () => ({ kg: null, sets: null, reps: null, detail: [] });
+      lifts.push({ name: "YTWs", hippos: blank(), gators: blank() });
+    }
+  }
   let stations = draft.stations.flatMap((station) => {
     const name = take(station.name);
     return name === null ? [] : [{ ...station, name }];

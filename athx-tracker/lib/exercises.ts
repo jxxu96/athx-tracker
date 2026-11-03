@@ -50,6 +50,7 @@ export const EXERCISES: { group: string; items: string[] }[] = [
       "Dumbbell row",
       "Lat pulldown",
       "Face pull",
+      "YTWs",
     ],
   },
   {
