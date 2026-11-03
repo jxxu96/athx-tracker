@@ -32,8 +32,6 @@ export const EXERCISES: { group: string; items: string[] }[] = [
     items: [
       "Front squat",
       "Goblet squat",
-      "Romanian deadlift",
-      "Hip thrust",
       "Walking lunge",
       "Bulgarian split squat",
       "Step-up",
@@ -60,17 +58,12 @@ export const EXERCISES: { group: string; items: string[] }[] = [
       "Power clean",
       "Clean and jerk",
       "Snatch",
-      "Thruster",
       "Dumbbell snatch",
       "Kettlebell swing",
     ],
   },
   {
-    group: "Carries and strongman",
-    items: ["Farmer carry", "Sandbag clean", "Sled push", "Sled pull"],
-  },
-  {
     group: "Conditioning",
-    items: ["Bike erg", "Ski erg", "Run", "Burpee", "Wall ball", "Box jump", "Double under"],
+    items: ["Bike erg", "Ski erg", "Run", "Burpee"],
   },
 ];

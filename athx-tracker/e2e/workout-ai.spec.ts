@@ -126,11 +126,11 @@ test("mixed workout fills custom lifts, station volume, load and run time", asyn
     ...draft, category: "Mixed", elapsed: { hippos: 1800, gators: null },
     lifts: [{ name: "Cable reverse fly", hippos: { kg: 10, sets: 3, reps: 12 }, gators: blank }],
     stations: [
-      { name: "Wall ball", block: "metcon", unit: "reps", target: 30, hippos: { completed: 20, seconds: 120, kg: 6 }, gators: { completed: null, seconds: null, kg: null } },
+      { name: "Burpee", block: "metcon", unit: "reps", target: 30, hippos: { completed: 20, seconds: 120, kg: 6 }, gators: { completed: null, seconds: null, kg: null } },
       { name: "Run", block: "endurance", unit: "m", target: 1000, hippos: { completed: 1000, seconds: 300, kg: null }, gators: { completed: null, seconds: null, kg: null } },
     ],
   } } }));
-  await page.getByLabel("Workout description").fill("Cable reverse fly, wall balls and a run");
+  await page.getByLabel("Workout description").fill("Cable reverse fly, burpees and a run");
   await fill(page).click();
   await expect(page.getByLabel("Name it")).toHaveValue("Cable reverse fly");
   await expect(page.getByLabel("Done (reps)")).toHaveValue("20");
@@ -227,17 +227,17 @@ test("AI names snap to the exercise list and a far one is called out in the note
       { name: "cable reverse fly", hippos: { kg: 10, sets: 3, reps: 12 }, gators: blank },
     ],
     stations: [
-      { name: "wallballs", block: "metcon", unit: "reps", target: 30, hippos: { completed: 20, seconds: null, kg: 6 }, gators: { completed: null, seconds: null, kg: null } },
+      { name: "burpees", block: "metcon", unit: "reps", target: 30, hippos: { completed: 20, seconds: null, kg: 6 }, gators: { completed: null, seconds: null, kg: null } },
     ],
   } } }));
-  await page.getByLabel("Workout description").fill("deadlifts, a bak squat, wall balls and cable reverse fly");
+  await page.getByLabel("Workout description").fill("deadlifts, a bak squat, burpees and cable reverse fly");
   await fill(page).click();
   const liftNames = page.getByLabel("Lift", { exact: true });
   await expect(liftNames.nth(0)).toHaveValue("Deadlift");
   await expect(liftNames.nth(1)).toHaveValue("Back squat");
   await expect(liftNames.nth(2)).toHaveValue("Other");
   await expect(page.getByLabel("Name it")).toHaveValue("cable reverse fly");
-  await expect(page.getByLabel("Station", { exact: true })).toHaveValue("Wall ball");
+  await expect(page.getByLabel("Station", { exact: true })).toHaveValue("Burpee");
   await expect(page.getByLabel("Notes", { exact: true })).toHaveValue('Left as typed: "cable reverse fly" is not in the list.');
 });
 
