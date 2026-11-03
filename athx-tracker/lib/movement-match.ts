@@ -345,11 +345,11 @@ function circuitStations(): WorkoutDraft["stations"] {
 }
 
 function settle(
-  category: Workout["category"],
+  category: WorkoutDraft["category"],
   lifts: number,
   stations: { name: string; block: "metcon" | "endurance"; unit: string }[],
   asked: Set<Workout["category"]>,
-): Workout["category"] {
+): WorkoutDraft["category"] {
   const hasLifts = lifts > 0;
   const hasEndurance = stations.some((station) => station.block === "endurance");
   const hasMetcon = stations.some((station) => station.block === "metcon");
@@ -423,7 +423,9 @@ export function alignWorkoutDraft(draft: WorkoutDraft): WorkoutDraft {
   const wantsCircuit = asked.has("MetCon") || draft.category === "MetCon" || customSession === "MetCon";
   if (wantsCircuit && stations.length === 0) stations = circuitStations();
 
-  const category = settle(customSession ?? draft.category, lifts.length, stations, asked);
+  // Session phrases no longer name YTW. A draft category cannot be one either.
+  const hinted = customSession === "YTW" ? null : customSession;
+  const category = settle(hinted ?? draft.category, lifts.length, stations, asked);
   let customCategory = draft.customCategory;
   if (category !== "Other") customCategory = "";
   else if (customCategory.trim() && !alreadyCalledOut(draft, customCategory))

@@ -111,6 +111,11 @@ const CATEGORIES = [
   "MetCon", "Strength", "Endurance", "Mixed", "Solidcore", "Tennis", "Other",
 ] as const;
 
+/** A session saved when YTW was its own type still has to show that type. */
+const SAVED_CATEGORIES = [
+  "MetCon", "Strength", "Endurance", "Mixed", "Solidcore", "Tennis", "YTW", "Other",
+] as const;
+
 /** The circuit's own entry for a station, when it is one of the seven. */
 const circuitStation = (station: Pick<Station, "name" | "fixed">) =>
   station.fixed ? METCON.find((s) => s.name === station.name) : undefined;
@@ -739,7 +744,7 @@ export function WorkoutForm({
   const [time, setTime] = useState(textOf(from?.time, editing ? editing.time ?? "" : clockTime()));
   const [title, setTitle] = useState(textOf(from?.title, editing?.title ?? ""));
   const [category, setCategory] = useState<Workout["category"]>(
-    oneOf(from?.category, [...CATEGORIES, "YTW"]) ?? editing?.category ?? "Mixed",
+    oneOf(from?.category, SAVED_CATEGORIES) ?? editing?.category ?? "Mixed",
   );
   const [customCategory, setCustomCategory] = useState(
     textOf(from?.customCategory, editing?.customCategory ?? ""),
@@ -1619,10 +1624,7 @@ export function WorkoutForm({
                 changeCategory(event.target.value as Workout["category"])
               }
             >
-              {(category === "YTW"
-                ? ["MetCon", "Strength", "Endurance", "Mixed", "Solidcore", "Tennis", "YTW", "Other"]
-                : CATEGORIES
-              ).map((value) => (
+              {(category === "YTW" ? SAVED_CATEGORIES : CATEGORIES).map((value) => (
                 <NativeSelectOption key={value} value={value}>
                   {value}
                 </NativeSelectOption>
