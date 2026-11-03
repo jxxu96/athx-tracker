@@ -232,7 +232,8 @@ test("a best older than the loaded slice is in the estimate without loading it",
   await page.reload();
 
   const strength = page.getByRole("group", { name: "Strength estimate" });
-  await expect(strength.getByRole("row", { name: /^Hippos/ })).toHaveText(/Hippos\s*—\s*—\s*90\s*—/);
+  // 90 kg, in the pounds the screen opens in.
+  await expect(strength.getByRole("row", { name: /^Hippos/ })).toHaveText(/Hippos\s*—\s*—\s*198\s*—/);
   await expect(strength).toContainText("Still to log: Hippos shoulder to overhead and back squat;");
   await expect(page.getByText(/Using the latest/)).toHaveCount(0);
 });
