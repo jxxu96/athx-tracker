@@ -49,18 +49,14 @@ test("typos, plurals and abbreviations use the list spelling", () => {
     ["backsqaut", "Back squat"],
     ["OHP", "Overhead press"],
     ["military press", "Overhead press"],
-    ["rdl", "Romanian deadlift"],
     ["db bench", "DB bench press"],
     ["dumbbell bench press", "DB bench press"],
     ["barbell bench press", "Bench press"],
     ["incline bench", "Incline bench press"],
     ["g2oh", "DB ground to overhead"],
-    ["wall balls", "Wall ball"],
-    ["farmer's walk", "Farmer carry"],
     ["burpee over the bench", "Burpees over bench"],
     ["kipping pull-ups", "Pull-up"],
-    ["hip thrusts", "Hip thrust"],
-    ["double unders", "Double under"],
+    ["clean", "Power clean"],
     ["step-ups", "Step-up"],
     ["lat pull down", "Lat pulldown"],
     ["5k run", "Run"],
@@ -112,9 +108,23 @@ test("a bare word that is several list items stays typed and names them", () => 
   const press = matchMovement("press");
   assert.equal(press.name, "press");
   assert.match(press.note ?? "", /could be Overhead press, Push press or Bench press/);
-  const clean = matchMovement("clean");
-  assert.equal(clean.name, "clean");
-  assert.match(clean.note ?? "", /could be Power clean or Sandbag clean/);
+});
+
+test("retired movements stay off the list", () => {
+  const retired = [
+    "Wall ball", "wall balls", "Romanian deadlift", "rdl", "Hip thrust", "hip thrusts",
+    "Farmer carry", "farmer's walk", "Sandbag clean", "Sled push", "Sled pull",
+    "Thruster", "Box jump", "Double under", "double unders", "du",
+  ];
+  for (const heard of retired) {
+    const match = matchMovement(heard);
+    assert.equal(match.listed, false, heard);
+    assert.equal(match.name, heard, heard);
+  }
+  for (const name of ["Wall ball", "Romanian deadlift", "Hip thrust", "Farmer carry", "Sandbag clean", "Sled push", "Sled pull", "Thruster", "Box jump", "Double under"]) {
+    assert.equal(EXERCISES.some((group) => group.items.includes(name)), false, name);
+    assert.equal(WORKOUT_INSTRUCTIONS.includes(name), false, name);
+  }
 });
 
 test("a named squat stays that movement, and a different squat stays typed", () => {
