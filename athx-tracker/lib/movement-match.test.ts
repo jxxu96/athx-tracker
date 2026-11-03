@@ -68,6 +68,16 @@ test("typos, plurals and abbreviations use the list spelling", () => {
     ["c&j", "Clean and jerk"],
     ["pc", "Power clean"],
     ["split squats", "Bulgarian split squat"],
+    ["squat", "Back squat"],
+    ["squats", "Back squat"],
+    ["sq", "Back squat"],
+    ["barbell squat", "Back squat"],
+    ["weighted squats", "Back squat"],
+    ["bar squat", "Back squat"],
+    ["high bar squat", "Back squat"],
+    ["low bar squats", "Back squat"],
+    ["sqaut", "Back squat"],
+    ["squatt", "Back squat"],
     ["assault bike", "Bike erg"],
     ["Lu Raises", "Lu Raises"],
   ] as const;
@@ -96,15 +106,32 @@ test("a different movement stays typed and the note says it is not in the list",
 });
 
 test("a bare word that is several list items stays typed and names them", () => {
-  const squat = matchMovement("squat");
-  assert.equal(squat.name, "squat");
-  assert.match(squat.note ?? "", /could be Back squat, Sandbag squats, Front squat or Goblet squat/);
   const press = matchMovement("press");
   assert.equal(press.name, "press");
   assert.match(press.note ?? "", /could be Overhead press, Push press or Bench press/);
   const clean = matchMovement("clean");
   assert.equal(clean.name, "clean");
   assert.match(clean.note ?? "", /could be Power clean or Sandbag clean/);
+});
+
+test("a named squat stays that movement, and a different squat stays typed", () => {
+  for (const [heard, listed] of [
+    ["front squat", "Front squat"],
+    ["front squats", "Front squat"],
+    ["goblet squat", "Goblet squat"],
+    ["sandbag squats", "Sandbag squats"],
+    ["fs", "Front squat"],
+    ["fsq", "Front squat"],
+  ] as const) {
+    const match = matchMovement(heard);
+    assert.equal(match.name, listed, heard);
+    assert.equal(match.note, null, heard);
+  }
+  for (const heard of ["overhead squat", "air squat", "box squat", "pause squat", "squat jerk", "high front squat"]) {
+    const match = matchMovement(heard);
+    assert.equal(match.name, heard, heard);
+    assert.equal(match.listed, false, heard);
+  }
 });
 
 test("a draft keeps list names and records only the names that were too far off", () => {

@@ -7,6 +7,8 @@ import type { WorkoutDraft } from "./workout-draft.ts";
  * because a dictated "deadlif" or "ohp" has to land on the exercise that is
  * already in the picker. A name that is a different movement stays as typed
  * and is called out in the notes, rather than being quietly renamed.
+ * A bare squat is Back squat. Front, goblet, sandbag and split squats stay
+ * those movements.
  */
 
 const FILLER = new Set(["a", "an", "the", "some", "my", "our", "just", "of", "with"]);
@@ -45,6 +47,8 @@ const PHRASE: Record<string, string> = {
   dl: "deadlift",
   bs: "back squat",
   bsq: "back squat",
+  squat: "back squat",
+  sq: "back squat",
   fs: "front squat",
   fsq: "front squat",
   "c and j": "clean and jerk",
@@ -125,8 +129,15 @@ export function normalize(raw: string) {
 function queryTokens(raw: string) {
   const tokens = normalize(raw);
   const key = tokens.join(" ");
-  const phrase = Object.hasOwn(PHRASE, key) ? PHRASE[key] : undefined;
-  return phrase ? normalize(phrase) : tokens;
+  if (Object.hasOwn(PHRASE, key)) return normalize(PHRASE[key]);
+  // "barbell squat" is still a squat: the bar is not a different movement.
+  const core = tokens.filter((token) => !IGNORABLE.has(token));
+  const coreKey = core.join(" ");
+  if (coreKey !== key && Object.hasOwn(PHRASE, coreKey)) return normalize(PHRASE[coreKey]);
+  // High bar and low bar are back squat. They are not dropped for other lifts.
+  const bar = core.filter((token) => token !== "high" && token !== "low");
+  if (bar.length < core.length && bar.join(" ") === "squat") return normalize("back squat");
+  return tokens;
 }
 
 /** Session words keep their trailing s, so "tenis" can still reach Tennis. */
@@ -226,6 +237,11 @@ function humanList(items: string[]) {
   return `${items.slice(0, -1).join(", ")} or ${items[items.length - 1]}`;
 }
 
+/** Among an even tie, a bare squat is Back squat. Named variations are not in that tie. */
+function bareSquat(rows: { item: CatalogItem }[]) {
+  return rows.find((row) => row.item.name === "Back squat");
+}
+
 function leftAsTyped(raw: string, options: string[]) {
   const heard = raw.trim();
   if (options.length) return `Left as typed: "${heard}" could be ${humanList(options)}.`;
@@ -249,6 +265,8 @@ export function matchMovement(raw: string): MovementMatch {
     const fewest = Math.min(...exact.map((row) => row.extra.length));
     const tight = exact.filter((row) => row.extra.length === fewest);
     if (tight.length === 1) return { name: tight[0].item.name, listed: true, note: null };
+    const squat = bareSquat(tight);
+    if (squat) return { name: squat.item.name, listed: true, note: null };
     return { name: trimmed, listed: false, note: leftAsTyped(trimmed, tight.map((row) => row.item.name)) };
   }
 
@@ -271,14 +289,18 @@ export function matchMovement(raw: string): MovementMatch {
     const close = partial.filter((row) => row.missing === fewest);
     // One list item that is only a word short ("db bench" → DB bench press) is still that item.
     // Two list items at the same distance stay typed, with both names in the note.
+    // A typo of squat ("sqaut") is one word short of several squats; that one is Back squat.
     if (fewest === 1 && close.length === 1)
       return { name: close[0].item.name, listed: true, note: null };
-    if (fewest <= 2)
+    if (fewest <= 2) {
+      const squat = fewest === 1 ? bareSquat(close) : undefined;
+      if (squat) return { name: squat.item.name, listed: true, note: null };
       return {
         name: trimmed,
         listed: false,
         note: leftAsTyped(trimmed, close.map((row) => row.item.name).slice(0, 4)),
       };
+    }
   }
   return { name: trimmed, listed: false, note: leftAsTyped(trimmed, []) };
 }
