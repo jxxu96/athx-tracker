@@ -80,6 +80,9 @@ test("typos, plurals and abbreviations use the list spelling", () => {
     ["squatt", "Back squat"],
     ["assault bike", "Bike erg"],
     ["Lu Raises", "Lu Raises"],
+    ["tricep kickbacks", "Tricep kickbacks"],
+    ["triceps kickback", "Tricep kickbacks"],
+    ["kickbacks", "Tricep kickbacks"],
   ] as const;
   for (const [heard, listed] of names) {
     const match = matchMovement(heard);
