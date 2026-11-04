@@ -250,20 +250,30 @@ test("a label one estimator found is not averaged with guesses", () => {
   assert.deepEqual(settle([guess("codex", 600)]), guess("codex", 600));
 });
 
-test("a complex meal keeps Grok even when someone else found a label", () => {
+test("a label is not averaged with a guess, even when that guess would have been kept", () => {
   const label = guess("claude", 700, "Looked up.", "high");
   const grok = guess("grok", 1100, "Searched.", "low");
   const codex = guess("codex", 600);
-  const { estimate, provider } = settle([codex, label, grok], { keep: ["grok"] });
+  assert.deepEqual(settle([codex, label, grok], { keep: ["grok"] }), label);
+
+  const other = guess("codex", 600, "Looked up.", "high");
+  const { estimate, provider } = settle([other, label, grok], { keep: ["grok"] });
   assert.equal(provider, "average");
-  // 700 x 35% + 1100 x 25%, over the 60% that are kept. Codex stays out.
-  assert.equal(estimate.calories, 866.7);
-  assert.equal(estimate.confidence, "low");
-  assert.match(
-    estimate.assumptions,
-    /^Weighted average of Claude 58% and Grok 42%, Claude high confidence, Grok low confidence\./,
-  );
-  assert.doesNotMatch(estimate.assumptions, /From Codex/);
+  // 600 x 40% + 700 x 35%, over the 75% that found the label. Grok stays out.
+  assert.equal(estimate.calories, 646.7);
+  assert.equal(estimate.confidence, "high");
+  assert.match(estimate.assumptions, /^Weighted average of Codex 53% and Claude 47%, each high confidence\./);
+  assert.doesNotMatch(estimate.assumptions, /From Grok/);
+});
+
+test("without a label, a complex meal still keeps a less sure Grok", () => {
+  const codex = guess("codex", 600, "Reference.", "medium");
+  const grok = guess("grok", 1100, "Searched.", "low");
+  const { estimate, provider } = settle([codex, grok], { keep: ["grok"] });
+  assert.equal(provider, "average");
+  // 600 x 40% + 1100 x 25%, over the 65% that are kept.
+  assert.equal(estimate.calories, 792.3);
+  assert.match(estimate.assumptions, /Codex 62% and Grok 38%, Codex medium confidence, Grok low confidence/);
 });
 
 test("guesses on the same footing are averaged by weight, each one's working kept", () => {
@@ -369,8 +379,8 @@ test("shared meals average dish by dish, and an answer split another way is left
   // The best-sourced answer still wins outright.
   const label = { provider: "grok", estimate: cleanDishes(shared([dish("pizza", 700, "high")], { confidence: "high" })) };
   assert.equal(settleDishes([...answers, label]), label);
-  // Keeping Grok does not average a different split. It does keep the same split
-  // when Grok is less sure than the label.
+  // Keeping Grok does not average a different split. A label is exact, so
+  // keeping Grok does not average its guess back in when the split matches either.
   assert.equal(settleDishes(answers, { keep: ["grok"] }).provider, "average");
   const sameSplit = [
     answers[0],
@@ -378,10 +388,7 @@ test("shared meals average dish by dish, and an answer split another way is left
     { provider: "grok", estimate: cleanDishes(shared([dish("pizza", 1000), dish("salad", 200)])) },
   ];
   assert.equal(settleDishes(sameSplit).provider, "claude");
-  const kept = settleDishes(sameSplit, { keep: ["grok"] });
-  assert.equal(kept.provider, "average");
-  assert.deepEqual(kept.estimate.dishes.map((each) => [each.name, each.calories]), [["pizza", 941.7], ["salad", 258.3]]);
-  assert.equal(kept.estimate.confidence, "medium");
+  assert.equal(settleDishes(sameSplit, { keep: ["grok"] }), sameSplit[1]);
   // With nobody to average it with, the best-weighted answer stands as it is.
   const alone = [answers[0], answers[2]];
   assert.equal(settleDishes(alone), answers[0]);

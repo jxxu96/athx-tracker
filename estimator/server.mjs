@@ -495,10 +495,15 @@ function shorten(text, max) {
 }
 
 /**
- * The best confidence among these answers, plus anyone named in keep. A
- * complex meal keeps Grok, so a search that came back less sure still counts.
+ * Who the average starts from. High is a looked-up label: the exact calories,
+ * so only those answers count, and keep does not pull a guess back in.
+ * Otherwise the best footing wins, plus anyone named in keep. A complex meal
+ * keeps Grok when nobody found a label, so a search that came back less sure
+ * still counts.
  */
 function kept(answers, keep = []) {
+  const exact = answers.filter(({ estimate }) => estimate.confidence === "high");
+  if (exact.length) return exact;
   const best = Math.max(...answers.map(({ estimate }) => RANK[estimate.confidence]));
   return answers.filter(
     ({ estimate, provider }) => RANK[estimate.confidence] === best || keep.includes(provider),
@@ -515,11 +520,12 @@ function footing(list) {
 
 /**
  * The best-sourced answer wins, so a label one of them found is never diluted
- * by another's guess. Answers on the same footing are averaged by WEIGHTS, each
- * figure over the answers that gave it more than 0: a 0 beside real figures is
- * one left out, not one measured. Each one's working is kept, inside the 3000
- * characters the app holds for assumptions. keep names a provider that still
- * counts when it is less sure.
+ * by another's guess. A label is never diluted, even by a provider keep names.
+ * Answers on the same footing are averaged by WEIGHTS, each figure over the
+ * answers that gave it more than 0: a 0 beside real figures is one left out,
+ * not one measured. Each one's working is kept, inside the 3000 characters the
+ * app holds for assumptions. keep names a provider that still counts when it
+ * is less sure and nobody found a label.
  */
 function settle(answers, { keep = [] } = {}) {
   const top = kept(answers, keep);
@@ -736,8 +742,8 @@ async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK, { s
 
   if (meal && complex(description)) {
     const given = await together(ORDER, { finish: true });
-    // Grok's search often comes back less sure than a faster label. That is
-    // not a reason to drop it.
+    // A label is the exact calories, so kept() leaves the guesses out. When
+    // nobody found one, Grok's search still counts even if it came back less sure.
     if (given.length) return task.settle(given, { keep: ["grok"] });
   } else {
     for (const [index, name] of ORDER.entries()) {
