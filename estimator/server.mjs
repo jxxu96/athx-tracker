@@ -146,7 +146,7 @@ const MEAL_LINES = [
   "Scale the figures to the stated serving size, weight or count.",
   "In assumptions, name each product you matched and the page or label the figures came from, alongside the portions, oils and preparation you assumed.",
   // Each item's own figures lead, so the split is readable before the reasoning.
-  "Write assumptions one item at a time.",
+  "Write assumptions one item at a time. Give every explicitly listed ingredient its own line, even when it was mixed into one dish. Keep its stated grams and preserve enough of its name to match it to the description.",
   "Start each item with its name, its portion and its own macros in square brackets, such as 'Chicken breast, 150 g cooked [248 kcal, 47P, 0C, 5F]', adding fiber and ethanol grams inside the brackets only when they are not 0, such as '4 fiber' or '14 ethanol'.",
   "Then say how you reached that item's figures.",
   "Leave a blank line between items, and make the items add up to the totals.",

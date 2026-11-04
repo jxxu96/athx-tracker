@@ -102,9 +102,9 @@ export class BodyTooLarge extends Error {
  * there to prevent. Content-Length is checked first where it is given, but it
  * is a claim, so the read is bounded regardless.
  */
-export async function readBody(request: Request) {
+export async function readBody(request: Request, maxBytes = MAX_BODY_BYTES) {
   const declared = Number(request.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES)
+  if (Number.isFinite(declared) && declared > maxBytes)
     throw new BodyTooLarge();
 
   const reader = request.body?.getReader();
@@ -117,7 +117,7 @@ export async function readBody(request: Request) {
     const { done, value } = await reader.read();
     if (done) break;
     size += value.byteLength;
-    if (size > MAX_BODY_BYTES) {
+    if (size > maxBytes) {
       await reader.cancel();
       throw new BodyTooLarge();
     }

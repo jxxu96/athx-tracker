@@ -18,11 +18,13 @@ import { athleteOutline, type AthleteOutline } from "@/lib/athlete-outline";
 import {
   ATHLETES,
   ESTIMATORS,
+  MEAL_TEMPLATE_GRAMS_LIMIT,
   clockTime,
   isClockTime,
   type Estimator,
   type Macros,
   type Meal,
+  type MealTemplateItem,
 } from "@/lib/domain";
 import { api, message, newId } from "@/lib/client";
 import { NDJSON, readEstimate, type PartialEstimate } from "@/lib/estimate-stream";
@@ -42,6 +44,13 @@ import { useFormDraft } from "@/hooks/use-form-draft";
 import { MealTemplateList } from "@/components/meal-templates";
 import { DishShares, MealDishes } from "@/components/meal-dishes";
 import { mealKey } from "@/lib/common-meals";
+import {
+  captureIngredientNutrition,
+  hasIngredientNutrition,
+  ingredientSliderMax,
+  ingredientTotals,
+  loggedIngredients,
+} from "@/lib/meal-ingredients";
 import {
   buildTemplate,
   itemsFromText,
@@ -370,9 +379,12 @@ export function MealForm({
   const slot = picked ?? mealForTime(atTime(time));
   // A queued meal keeps what was typed in its assumptions; anything else saved
   // starts from its name, so it can be estimated again without retyping.
+  const [ingredients, setIngredients] = useState<MealTemplateItem[]>(() =>
+    Array.isArray(from?.ingredients) ? from.ingredients as MealTemplateItem[] : editing ? loggedIngredients(editing) : [],
+  );
   const [description, setDescription] = useState(textOf(
     from?.description,
-    editing?.source === "queued" ? editing.assumptions : editing?.name ?? "",
+    editing?.source === "queued" ? editing.assumptions : templateDescription(ingredients) || editing?.name || "",
   ));
   const [name, setName] = useState(textOf(from?.name, editing?.name ?? ""));
   const [macros, setMacros] = useState<MacroDraft>(() =>
@@ -504,7 +516,7 @@ export function MealForm({
     snapshot: JSON.stringify({
       day, time, picked, description, name, macros, ethanol, fiber, assumptions,
       confidence, answeredBy, source, adjusted, conversation, reply, kept, draftIds,
-      dishes, unsplit, partials, included,
+      dishes, unsplit, partials, included, ingredients,
     }),
     summary: (
       name.trim() ||
@@ -538,6 +550,7 @@ export function MealForm({
 
   function reset() {
     setDescription("");
+    setIngredients([]);
     setName("");
     setMacros(emptyMacros);
     setEthanol("");
@@ -653,7 +666,8 @@ export function MealForm({
     }
   }
 
-  function markManual() {
+  function markManual(clearIngredients = true) {
+    if (clearIngredients) setIngredients([]);
     setError("");
     if (source === "grok") {
       setSource("manual");
@@ -662,7 +676,22 @@ export function MealForm({
   }
 
   /** The figures an estimate, or a change of which answers count, writes in. */
-  function writeFields(estimate: Estimate, provider: Estimator | null) {
+  function writeFields(
+    estimate: Estimate,
+    provider: Estimator | null,
+    answers: readonly PartialEstimate[] = [],
+    answerWeights: EstimateWeights = weightsRef.current,
+  ) {
+    const items = itemsFromText(description, estimate.name);
+    setIngredients(captureIngredientNutrition(
+      items,
+      estimate,
+      estimate.assumptions,
+      answers.length > 1 ? answers.map((answer) => ({
+        assumptions: answer.estimate.assumptions,
+        weight: answerWeights[answer.provider],
+      })) : undefined,
+    ));
     setName(estimate.name.slice(0, 300));
     setEthanol(String(estimate.alcohol ?? 0));
     setFiber(String(estimate.fiber ?? 0));
@@ -690,7 +719,7 @@ export function MealForm({
     const picked = partials.filter((partial) => providers.includes(partial.provider));
     const blended = blendEstimates(picked, nextWeights);
     if (!blended) return;
-    writeFields(blended.estimate, blended.provider);
+    writeFields(blended.estimate, blended.provider, picked, nextWeights);
     setConversation((current) => current.length
       ? [...current.slice(0, -1), { ...current[current.length - 1], estimate: blended.estimate }]
       : [{ estimate: blended.estimate }]);
@@ -792,7 +821,7 @@ export function MealForm({
       const used = blended?.estimate ?? estimate;
       const usedBy = blended?.provider ?? (provider && provider in ESTIMATORS ? provider : null);
       setIncluded(choice.length ? choice.map((answer) => answer.provider) : null);
-      writeFields(used, usedBy);
+      writeFields(used, usedBy, choice);
       setConversation((current) => refining
         ? [...current, { reply: followUp, estimate: used }]
         : [{ estimate: used }]);
@@ -829,6 +858,7 @@ export function MealForm({
   function applyOffer(athlete: "hippos" | "gators", offer: MealOffer) {
     if (loggingFor !== athlete) onLoggingFor(athlete);
     setDescription(templateDescription(offer.items) || offer.name);
+    setIngredients(offer.items);
     setConversation([{ estimate: savedEstimate(offer) }]);
     setReply("");
     setReplyError("");
@@ -854,6 +884,32 @@ export function MealForm({
     setKept(offer.saved ? { id: offer.id, athlete, sourceKey: offer.sourceKey } : null);
   }
 
+  function changeIngredient(index: number, grams: number) {
+    if (!Number.isFinite(grams) || grams < 0 || grams > MEAL_TEMPLATE_GRAMS_LIMIT) return;
+    const next = ingredients.map((item, i) => i === index ? { ...item, grams: Math.round(grams * 10) / 10 } : item);
+    const totals = ingredientTotals(next);
+    if (!totals) return;
+    const nextDescription = templateDescription(next);
+    const nextAssumptions = assumptions.startsWith("Portions adjusted using saved ingredient nutrition.")
+      ? assumptions
+      : `Portions adjusted using saved ingredient nutrition.\n\n${assumptions}`.trim();
+    markManual(false);
+    setIngredients(next);
+    setDescription(nextDescription);
+    setMacros({
+      calories: String(totals.calories),
+      protein: String(totals.protein),
+      carbs: String(totals.carbs),
+      fat: String(totals.fat),
+    });
+    setFiber(String(totals.fiber ?? 0));
+    setEthanol(String(totals.alcohol ?? 0));
+    setAssumptions(nextAssumptions);
+    setPartials([]);
+    setIncluded(null);
+    setConversation([{ estimate: savedEstimate({ name, macros: totals, assumptions: nextAssumptions }) }]);
+  }
+
   /** Keep the meal on the form, portions and all, without logging it. */
   async function saveAsTemplate() {
     if (estimating || saving || templateSaving) return;
@@ -872,7 +928,7 @@ export function MealForm({
         id: reuse && athlete === reuse.athlete ? reuse.id : newId(),
         name,
         meal: slot,
-        items: itemsFromText(description.trim() || name.trim(), name.trim()),
+        items: ingredients.length ? ingredients : itemsFromText(description.trim() || name.trim(), name.trim()),
         macros: counted,
         assumptions,
         sourceKey: reuse && athlete === reuse.athlete && reuse.sourceKey
@@ -1048,6 +1104,7 @@ export function MealForm({
         macros: { ...parsedMacros, alcohol: alcoholGrams, fiber: fiberGrams },
         source,
         assumptions: assumptions.trim().slice(0, 3000),
+        ...(hasIngredientNutrition(ingredients) ? { items: ingredients } : {}),
         ...(source === "grok" && answeredBy ? { estimator: answeredBy } : {}),
       });
       reset();
@@ -1226,9 +1283,45 @@ export function MealForm({
             placeholder="Two eggs, 80 g oats with milk, banana, flat white"
             onChange={(event) => {
               setDescription(event.target.value);
+              setIngredients([]);
               setRejected(false);
             }}
           />
+          {!splitting && hasIngredientNutrition(ingredients) ? (
+            <fieldset className="space-y-2 rounded-xl border p-3">
+              <legend className="px-1 text-xs font-medium">Ingredient weights</legend>
+              {ingredients.map((item, index) => item.nutrition.grams > 0 && (
+                <div key={index} className="grid grid-cols-[1fr_5rem] items-center gap-x-3">
+                  <p className="col-span-2 text-xs">{item.name}</p>
+                  <input
+                    type="range"
+                    className="w-full accent-primary"
+                    aria-label={`${item.name} weight`}
+                    aria-valuetext={`${item.grams} g`}
+                    min={0}
+                    max={ingredientSliderMax(item.grams, item.nutrition.grams)}
+                    step={0.1}
+                    value={item.grams}
+                    onChange={(event) => changeIngredient(index, event.target.valueAsNumber)}
+                  />
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    aria-label={`${item.name} grams`}
+                    min={0}
+                    max={MEAL_TEMPLATE_GRAMS_LIMIT}
+                    step={0.1}
+                    value={item.grams}
+                    onChange={(event) => changeIngredient(index, event.target.value === "" ? 0 : event.target.valueAsNumber)}
+                  />
+                </div>
+              ))}
+            </fieldset>
+          ) : kept && !splitting ? (
+            <p className="text-xs text-muted-foreground">
+              Estimate this template once to save nutrition for each weighed ingredient.
+            </p>
+          ) : null}
         </fieldset>
         <Button
           type="button"

@@ -84,6 +84,14 @@ export const workoutSchema = z.object({
   // Optional, so sessions saved before a burn could be typed still parse.
   kcal: z.number().int().positive().max(20000).optional(),
 }).strict().refine(w => w.seconds === 0 || w.segments.reduce((n,s) => n+s.seconds,0) <= w.seconds + 1, "Station times exceed elapsed workout time");
+const mealItemsSchema = z.array(z.object({
+  name: z.string().trim().min(1).max(MEAL_TEMPLATE_ITEM_LIMIT),
+  grams: finite.max(MEAL_TEMPLATE_GRAMS_LIMIT),
+  nutrition: z.object({
+    grams: finite.max(MEAL_TEMPLATE_GRAMS_LIMIT),
+    macros: mealMacroSchema,
+  }).strict().optional(),
+}).strict()).min(1).max(MEAL_TEMPLATE_ITEMS);
 export const mealSchema = z.object({
   ...base, kind: z.literal("meal"), athlete: z.enum(["hippos", "gators"]),
   time,
@@ -91,6 +99,7 @@ export const mealSchema = z.object({
   meal: z.enum(["Breakfast","Lunch","Dinner","Snack","Alcohol"]),
   macros: mealMacroSchema,
   source: z.enum(["manual","grok","queued"]), assumptions: z.string().max(3000),
+  items: mealItemsSchema.optional(),
   // Optional, so meals saved before the answer named its model still parse.
   estimator: z.enum(["codex", "claude", "grok", "average"]).optional(),
 }).strict().superRefine((meal, context) => {
@@ -161,10 +170,7 @@ const mealTemplateSchema = z.object({
   id: z.string().uuid(),
   name: z.string().trim().min(1).max(MEAL_TEMPLATE_NAME_LIMIT),
   meal: z.enum(["Breakfast", "Lunch", "Dinner", "Snack", "Alcohol"]),
-  items: z.array(z.object({
-    name: z.string().trim().min(1).max(MEAL_TEMPLATE_ITEM_LIMIT),
-    grams: finite.max(MEAL_TEMPLATE_GRAMS_LIMIT),
-  }).strict()).min(1).max(MEAL_TEMPLATE_ITEMS),
+  items: mealItemsSchema,
   macros: mealMacroSchema,
   assumptions: z.string().max(3000),
   sourceKey: z.string().max(120).default(""),

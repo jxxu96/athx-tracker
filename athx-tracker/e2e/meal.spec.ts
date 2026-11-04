@@ -642,3 +642,51 @@ test("a meal template can be renamed, and its grams changed, and setup keeps it"
     await clear();
   }
 });
+
+test("saved ingredient weights rescale locally and the template keeps its defaults", async ({ page }) => {
+  const name = "Yogurt with peanut butter and granola";
+  const description = "225 g fage 0% greek yogurt, 11 g kirkland creamy pb, 30 g trader joe pb protein granola";
+  let estimates = 0;
+  await page.route("**/api/estimate", (route) => {
+    estimates += 1;
+    return route.fulfill({ json: {
+      estimate: {
+        name, calories: 315, protein: 30, carbs: 27, fat: 10, fiber: 4, confidence: "high",
+        assumptions: [
+          "Fage Total 0% Greek Yogurt, 225 g [120 kcal, 23P, 7C, 0F]",
+          "Kirkland Creamy Peanut Butter, 11 g [65 kcal, 3P, 2C, 5F, 1 fiber]",
+          "Trader Joe’s Peanut Butter Protein Granola, 30 g [130 kcal, 4P, 18C, 5F, 3 fiber]",
+        ].join("\n\n"),
+      },
+      provider: "codex",
+    } });
+  });
+  await loggingFor(page, "Hippos").click();
+  await page.getByLabel("Meal description").fill(description);
+  await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
+  await expect(page.getByRole("slider", { name: "fage 0% greek yogurt weight" })).toHaveValue("225");
+  await page.getByRole("button", { name: "Save this meal as a template" }).click();
+  await expect(page.getByText("Template saved", { exact: true })).toBeVisible();
+
+  await page.reload();
+  await page.getByRole("button", { name: "Meal", exact: true }).click();
+  await loggingFor(page, "Hippos").click();
+  const template = page.getByRole("button", { name: `Hippos: ${name}` });
+  await template.click();
+  await page.getByRole("slider", { name: "kirkland creamy pb weight" }).press("Home");
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("250");
+  await page.getByRole("spinbutton", { name: "trader joe pb protein granola grams" }).fill("15");
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("185");
+  await expect(page.getByLabel("Protein (g)")).toHaveValue("25");
+  await expect(page.getByLabel("Fiber (g)")).toHaveValue("1.5");
+  await expect(page.getByLabel("Meal description")).toHaveValue(
+    "225 g fage 0% greek yogurt, 0 g kirkland creamy pb, 15 g trader joe pb protein granola",
+  );
+  await page.getByRole("button", { name: "Save meal", exact: true }).click();
+  await expect(page.getByText("Meal saved", { exact: true }).first()).toBeVisible();
+  expect((await meals(page)).find((entry) => entry.name === name)?.macros.calories).toBe(185);
+  await page.getByRole("button", { name: "Meal", exact: true }).click();
+  await template.click();
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("315");
+  expect(estimates).toBe(1);
+});
