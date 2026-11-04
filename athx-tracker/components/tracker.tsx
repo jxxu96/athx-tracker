@@ -781,8 +781,8 @@ export function Tracker({
           {/* Theme buttons and a refresh leave no room for this beside the
               athlete pills on a phone, and the name is already on the tab and
               the home screen icon. */}
-          <h1 className="hidden truncate text-sm font-semibold tracking-tight sm:block">
-            Hippos &amp; Gators
+          <h1 className="hidden min-w-0 text-sm font-semibold tracking-tight sm:block">
+            Hippos &amp; Gators ATHX Adventure
           </h1>
           {/* Wraps rather than running off a narrow phone, as it would at
               320 px or with entries waiting to send beside the unit switch. */}
