@@ -119,11 +119,21 @@ test("an estimated meal expands into its items, and changing an item changes the
   await expect(item(page, 1).getByLabel("Grams")).toHaveValue("300");
   await expect(item(page, 1).getByLabel("Calories (kcal)")).toHaveValue("496");
   await expect(item(page, 3).getByLabel("Item", { exact: true })).toHaveValue("Hot sauce");
-  // And the figures stay what the items came to when it closes.
+  // A new name alone is kept through closing and opening again, and saved.
+  await item(page, 3).getByLabel("Item", { exact: true }).fill("Sriracha");
   await page.getByRole("button", { name: "Collapse into one meal" }).click();
   await expect(page.getByRole("region", { name: "Items" })).toHaveCount(0);
   await expect(figures(page).getByLabel("Calories (kcal)")).toHaveValue("761");
   await expect(figures(page).getByLabel("Calories (kcal)")).not.toHaveAttribute("readonly", "");
+  await page.getByRole("button", { name: "Expand into 3 items" }).click();
+  await expect(item(page, 3).getByLabel("Item", { exact: true })).toHaveValue("Sriracha");
+  await expect(item(page, 1).getByLabel("Grams")).toHaveValue("300");
+  await page.getByRole("button", { name: "Collapse into one meal" }).click();
+  await page.getByRole("button", { name: "Update meal", exact: true }).click();
+  await expect.poll(async () => {
+    const updated = (await meals(page)).find((meal) => meal.name === "Chicken rice bowl");
+    return [updated?.items?.map((each) => each.name) ?? null, updated?.assumptions.split("\n")[3]];
+  }).toEqual([null, "Sriracha [5 kcal, 0P, 0C, 0F]"]);
 });
 
 test("a meal with no figures opens into blank items to type in, and a weight typed in scales its item", async ({ page }) => {
@@ -149,6 +159,13 @@ test("a meal with no figures opens into blank items to type in, and a weight typ
   await expect(item(page, 2).getByLabel("Calories (kcal)")).toHaveValue("80");
   await item(page, 2).getByLabel("Grams").blur();
   await item(page, 2).getByRole("slider", { name: "toast weight" }).fill("80");
+  await expect(item(page, 2).getByLabel("Calories (kcal)")).toHaveValue("160");
+  await expect(figures(page).getByLabel("Calories (kcal)")).toHaveValue("410");
+
+  // A fresh estimate that fails leaves the items, and the meal, as they were.
+  await page.route("**/api/estimate", (route) => route.fulfill({ status: 503, json: { error: "Estimator unavailable." } }));
+  await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
+  await expect(page.locator("form").getByRole("alert")).toBeVisible();
   await expect(item(page, 2).getByLabel("Calories (kcal)")).toHaveValue("160");
   await expect(figures(page).getByLabel("Calories (kcal)")).toHaveValue("410");
 

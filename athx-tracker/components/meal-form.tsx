@@ -790,13 +790,15 @@ export function MealForm({
     setJustFinished(false);
     setPartials([]);
     setIncluded(null);
-    // A fresh estimate is a new answer for the whole meal; a reply keeps the
-    // meal open into its items, which follow the answer.
+    // A fresh estimate is a new answer for the whole meal, so its items close
+    // once it lands; until then they hold the meal, which a failed or stopped
+    // estimate leaves as it was. A reply keeps them open, following the answer.
     const keepItems = refining && expanded;
-    if (!refining) {
+    const closeItems = () => {
+      if (refining) return;
       setItems([]);
       setItemsEdited(false);
-    }
+    };
     const stop = new AbortController();
     stopper.current = stop;
     setEstimating(true);
@@ -834,6 +836,7 @@ export function MealForm({
         // after your own dishes. The per-model box is for a whole meal.
         setPartials([]);
         setIncluded(null);
+        closeItems();
         setDishes(dishesFromEstimate(estimate, provider, newId, undefined, description.trim()));
         setDescription("");
         setDishErrors({});
@@ -850,6 +853,7 @@ export function MealForm({
       const used = blended?.estimate ?? estimate;
       const usedBy = blended?.provider ?? (provider && provider in ESTIMATORS ? provider : null);
       setIncluded(choice.length ? choice.map((answer) => answer.provider) : null);
+      closeItems();
       writeFields(used, usedBy, choice, weightsRef.current, keepItems);
       setConversation((current) => refining
         ? [...current, { reply: followUp, estimate: used }]
@@ -951,13 +955,16 @@ export function MealForm({
 
   /**
    * Back to one meal. Its figures stay what the items came to, and items that
-   * were changed are listed in the assumptions, so nothing said is lost.
+   * were changed are listed in the assumptions, so nothing said is lost. That
+   * list is then what they are, so saved ingredients from before, which a
+   * new name alone would not have cleared, go.
    */
   function collapseItems() {
     setMacros(shownMacros);
     setFiber(shownFiber);
     setEthanol(shownEthanol);
     setAssumptions(listedAssumptions());
+    if (itemsEdited) setIngredients([]);
     setItems([]);
     setItemsEdited(false);
     setError("");
