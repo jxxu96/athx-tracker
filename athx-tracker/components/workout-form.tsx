@@ -16,6 +16,7 @@ import { alignWorkoutDraft } from "@/lib/movement-match";
 import { workoutDraftSchema, type WorkoutDraft } from "@/lib/workout-draft";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -90,7 +91,7 @@ type Entry = {
   prefilled?: boolean;
 };
 
-type SetDraft = { kg: string; reps: string; savedKg?: number };
+type SetDraft = { kg: string; reps: string; savedKg?: number; failed?: boolean };
 type LiftSide = {
   kg: string;
   sets: string;
@@ -560,13 +561,14 @@ function LiftSets({
   onRemove: (index: number) => void;
 }) {
   const who = ATHLETES[side].name;
-  const parsed = entry.detail.flatMap((set) => {
+  const parsed = entry.detail.flatMap((set, index) => {
     const kg = parseLoad(set.kg, unit, set.savedKg);
     const reps = Math.round(num(set.reps) || 0);
-    return kg !== null && reps >= 1 ? [{ kg, reps }] : [];
+    return kg !== null && reps >= 1 ? [{ kg, reps, failed: Boolean(set.failed), index }] : [];
   });
+  const missed = parsed.flatMap((set) => (set.failed ? [set.index + 1] : []));
   const same = parsed.length > 0 && parsed.every((set) => set.kg === parsed[0].kg && set.reps === parsed[0].reps);
-  const top = parsed.length > 0 ? liftTop(parsed) : null;
+  const top = parsed.length > 0 ? liftTop(parsed.map(({ kg, reps }) => ({ kg, reps }))) : null;
   return (
     <Column side={side}>
       <div>
@@ -604,6 +606,16 @@ function LiftSets({
                     onChange={(event) => onSet(index, { reps: event.target.value })}
                   />
                 </Field>
+                <Field label="Fail" className="w-9 shrink-0">
+                  <div className="flex h-8 items-center justify-center">
+                    <Checkbox
+                      checked={Boolean(set.failed)}
+                      aria-label={`${who} set ${index + 1} failed the final rep`}
+                      title="Failed the final rep"
+                      onCheckedChange={(value) => onSet(index, { failed: value === true })}
+                    />
+                  </div>
+                </Field>
                 {entry.detail.length > 1 ? (
                   <Button
                     type="button"
@@ -628,6 +640,9 @@ function LiftSets({
               {same
                 ? `${parsed.length}×${parsed[0].reps} at ${formatWeight(parsed[0].kg, unit)}`
                 : `Heaviest ${formatWeight(top.kg, unit)} ${top.sets}×${top.reps}`}
+              {missed.length > 0
+                ? ` · last rep failed on set ${missed.join(", ")}`
+                : ""}
             </p>
           ) : null}
         </>
@@ -846,6 +861,7 @@ export function WorkoutForm({
           kg: displayLoad(set.kg, weightUnit),
           reps: String(set.reps),
           savedKg: set.kg,
+          ...(set.failed ? { failed: true } : {}),
         })),
       },
     }));
@@ -1209,7 +1225,13 @@ export function WorkoutForm({
       current.map((lift, i) => {
         if (i !== index || lift[side].detail.length >= 50) return lift;
         const last = lift[side].detail[lift[side].detail.length - 1] ?? blankSet();
-        return { ...lift, [side]: { ...lift[side], detail: [...lift[side].detail, { ...last }] } };
+        // A new set copies the load, not the miss. The miss belongs to the set it happened on.
+        const added: SetDraft = {
+          kg: last.kg,
+          reps: last.reps,
+          ...(last.savedKg !== undefined ? { savedKg: last.savedKg } : {}),
+        };
+        return { ...lift, [side]: { ...lift[side], detail: [...lift[side].detail, added] } };
       }),
     );
   }
@@ -1294,11 +1316,16 @@ export function WorkoutForm({
       if (entry.advanced) {
         if (!entry.detail.some((set) => set.kg.trim() !== "")) return [];
         // Entered in your unit, stored in kilograms. Validated before this runs.
-        const detail = entry.detail.map((set) => ({
-          kg: parseLoad(set.kg, unit, set.savedKg) ?? 0,
-          reps: Math.round(num(set.reps) || 1),
-        }));
-        const same = detail.every((set) => set.kg === detail[0].kg && set.reps === detail[0].reps);
+        const detail = entry.detail.map((set) => {
+          const row: { kg: number; reps: number; failed?: true } = {
+            kg: parseLoad(set.kg, unit, set.savedKg) ?? 0,
+            reps: Math.round(num(set.reps) || 1),
+          };
+          if (set.failed) row.failed = true;
+          return row;
+        });
+        // Identical completed sets stay one line. A failed final rep has to stay on its set.
+        const same = detail.every((set) => set.kg === detail[0].kg && set.reps === detail[0].reps && !set.failed);
         if (same) return [{ name, kg: detail[0].kg, sets: detail.length, reps: detail[0].reps }];
         return [{ name, ...liftTop(detail), detail }];
       }

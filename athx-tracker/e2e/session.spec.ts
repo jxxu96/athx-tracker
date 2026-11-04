@@ -603,12 +603,14 @@ test("advanced sets keep their own weight and reps", async ({ page }) => {
   await reps(2).fill("3");
   await weight(3).fill("225");
   await reps(3).fill("1");
+  await page.getByRole("checkbox", { name: "Gators set 3 failed the final rep" }).check();
   await page.getByRole("button", { name: "Gators add set" }).click();
   await expect(weight(4)).toHaveValue("225");
   await expect(reps(4)).toHaveValue("1");
+  await expect(page.getByRole("checkbox", { name: "Gators set 4 failed the final rep" })).not.toBeChecked();
   await page.getByRole("button", { name: "Gators remove set 4" }).click();
   await expect(weight(4)).toHaveCount(0);
-  await expect(page.getByText("Heaviest 225 lb 1×1")).toBeVisible();
+  await expect(page.getByText("Heaviest 225 lb 1×1 · last rep failed on set 3")).toBeVisible();
   await page.getByRole("button", { name: "Save session" }).click();
 
   const read = () =>
@@ -619,16 +621,25 @@ test("advanced sets keep their own weight and reps", async ({ page }) => {
   expect(saved.lifts[0].sets).toBe(1);
   expect(saved.lifts[0].reps).toBe(1);
   expect(saved.lifts[0].kg).toBeCloseTo(225 / 2.20462262, 1);
-  expect(saved.lifts[0].detail.map((set: { reps: number }) => set.reps)).toEqual([5, 3, 1]);
+  expect(saved.lifts[0].detail.map((set: { reps: number; failed?: boolean }) => ({
+    reps: set.reps,
+    failed: set.failed ?? false,
+  }))).toEqual([
+    { reps: 5, failed: false },
+    { reps: 3, failed: false },
+    { reps: 1, failed: true },
+  ]);
 
   await openLog(page);
   const entry = page.getByRole("listitem").filter({ hasText: "Back squat" });
-  await expect(entry.getByText("Back squat 135 lb×5, 185 lb×3, 225 lb×1")).toBeVisible();
+  await expect(entry.getByText("Back squat 135 lb×5, 185 lb×3, 225 lb×1 (last rep failed)")).toBeVisible();
 
   await entry.getByLabel("Edit entry").click();
   await expect(weight(1)).toHaveValue("135");
   await expect(weight(2)).toHaveValue("185");
   await expect(reps(3)).toHaveValue("1");
+  await expect(page.getByRole("checkbox", { name: "Gators set 3 failed the final rep" })).toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "Gators set 1 failed the final rep" })).not.toBeChecked();
   const unitSwitch = page.getByRole("group", { name: "Weight unit" });
   await unitSwitch.getByRole("button", { name: "kg" }).click();
   await expect(weight(1)).toHaveValue("61.2");
@@ -638,6 +649,7 @@ test("advanced sets keep their own weight and reps", async ({ page }) => {
   await expect(weight(3)).toHaveValue("225");
   await page.getByRole("button", { name: "Update session" }).click();
   await expect.poll(async () => (await read())[0].lifts[0].kg).toBe(saved.lifts[0].kg);
+  expect((await read())[0].lifts[0].detail[2].failed).toBe(true);
 });
 
 test("one session holds lifts, a part-finished MetCon with loads, and a run", async ({ page }) => {
