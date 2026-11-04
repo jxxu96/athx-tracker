@@ -197,7 +197,7 @@ test("an oversized request is refused before it is read", async ({ page }) => {
       }).then((r) => r.status);
     return {
       records: await send("/api/records", { id: "x", notes: huge }),
-      settings: await send("/api/settings", { settings: { huge }, revision: 0 }),
+      settings: await send("/api/settings", { settings: { huge: "x".repeat(1_100_000) }, revision: 0 }),
       estimate: await send("/api/estimate", { description: huge }),
     };
   });
