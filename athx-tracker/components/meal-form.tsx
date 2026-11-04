@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, Clock, Copy, MessageCircle, Sparkles, Split, Square } from "lucide-react";
+import { Check, ChevronsDownUp, ChevronsUpDown, Clock, Copy, MessageCircle, Sparkles, Split, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -43,6 +43,8 @@ import { bothOf, isText, oneOf, textOf, type Draft } from "@/lib/drafts";
 import { useFormDraft } from "@/hooks/use-form-draft";
 import { MealTemplateList } from "@/components/meal-templates";
 import { DishShares, MealDishes } from "@/components/meal-dishes";
+import { MealItems } from "@/components/meal-items";
+import { EstimatorWeights } from "@/components/estimator-weights";
 import { mealKey } from "@/lib/common-meals";
 import {
   captureIngredientNutrition,
@@ -84,6 +86,23 @@ import {
   type DishDraft,
 } from "@/lib/meal-dishes";
 import { splitDishText } from "@/lib/dish-split";
+import {
+  anchorItem,
+  assumptionSources,
+  blankSeeds,
+  breakdown as itemBreakdown,
+  emptyItem,
+  expandDish,
+  itemDraft,
+  itemDraftsOf,
+  itemTotals,
+  looseItems,
+  readItems,
+  seedsFromIngredients,
+  withItemList,
+  type ItemDraft,
+  type ItemSeed,
+} from "@/lib/meal-items";
 
 const MACRO_FIELDS = [
   { key: "calories", label: "Calories", unit: "kcal" },
@@ -135,12 +154,6 @@ function figuresOf(estimate: Estimate) {
   ].join(" · ");
 }
 
-const WEIGHT_TEXT: Record<AnswerProvider, string> = {
-  codex: String(DEFAULT_WEIGHTS.codex),
-  claude: String(DEFAULT_WEIGHTS.claude),
-  grok: String(DEFAULT_WEIGHTS.grok),
-};
-
 /** Answers saved with a draft. Anything that is not one is left out. */
 function partialsOf(value: unknown): PartialEstimate[] {
   if (!Array.isArray(value)) return [];
@@ -190,63 +203,32 @@ function browserStorage() {
  * Each estimator that has answered. The settled figures may still average
  * them, or keep only the ones that found a label. Every model's own description
  * stays here, bold name first and a rule under the section. Once the estimate
- * has finished, each answer can be left out, and its weight is the default
- * used the next time as well.
+ * has finished, an answer left out of the meal is dimmed; which ones count,
+ * and how much, is set under Estimator weights at the foot of the form.
  */
 function SoFar({
   partials,
   included,
-  weightText,
-  onToggle,
-  onWeight,
-  onWeightBlur,
 }: {
   partials: PartialEstimate[];
+  /** Which answers the meal uses, once it has settled. */
   included?: readonly AnswerProvider[];
-  weightText?: Record<AnswerProvider, string>;
-  onToggle?: (provider: AnswerProvider) => void;
-  onWeight?: (provider: AnswerProvider, raw: string) => void;
-  onWeightBlur?: (provider: AnswerProvider) => void;
 }) {
   if (!partials.length) return null;
   const shown = [...partials].sort(
     (a, b) => ANSWER_ORDER.indexOf(a.provider) - ANSWER_ORDER.indexOf(b.provider),
   );
-  const chosen = included ?? shown.map((answer) => answer.provider);
   return (
     <div role="status" aria-label="Answers so far" className="space-y-3 rounded-xl border bg-muted/40 p-3 text-xs">
       <p className="font-medium">Answers so far</p>
       <ul className="space-y-3">
         {shown.map(({ provider, estimate }) => {
-          const on = chosen.includes(provider);
+          const on = !included || included.includes(provider);
           const name = ESTIMATORS[provider];
           return (
-            <li key={provider} className={`space-y-1 ${on || !onToggle ? "" : "opacity-60"}`}>
+            <li key={provider} className={`space-y-1 ${on ? "" : "opacity-60"}`}>
               <div className="flex items-center gap-2">
-                {onToggle ? (
-                  <input
-                    type="checkbox"
-                    checked={on}
-                    disabled={on && chosen.length === 1}
-                    aria-label={`Include ${name}`}
-                    onChange={() => onToggle(provider)}
-                    className="size-4 shrink-0 accent-primary"
-                  />
-                ) : null}
                 <p className="font-bold">{name}</p>
-                {onWeight && weightText ? (
-                  <span className="ml-auto flex items-center gap-1 text-muted-foreground">
-                    <span aria-hidden="true">weight</span>
-                    <Input
-                      aria-label={`${name} weight`}
-                      value={weightText[provider]}
-                      inputMode="numeric"
-                      onChange={(event) => onWeight(provider, event.target.value)}
-                      onBlur={() => onWeightBlur?.(provider)}
-                      className="h-8 w-14 px-2 text-center text-xs"
-                    />
-                  </span>
-                ) : null}
               </div>
               <p className="font-medium">
                 {figuresOf(estimate)}
@@ -422,7 +404,6 @@ export function MealForm({
   // The weights are this phone's defaults. The first paint uses the built-in
   // ones, and the stored ones replace them once the page can read them.
   const [weights, setWeights] = useState<EstimateWeights>(DEFAULT_WEIGHTS);
-  const [weightText, setWeightText] = useState(WEIGHT_TEXT);
   const weightsRef = useRef(weights);
   weightsRef.current = weights;
   const stopper = useRef<AbortController | null>(null);
@@ -462,6 +443,19 @@ export function MealForm({
   // Split, but with no dishes yet: the description waits to become them.
   const describing = splitting && dishes.length === 0;
   const eaters = who === "both" ? EATERS : ([who] as const);
+  // One meal opened up into its items. While it is, the meal's figures are
+  // the items added up, and its own boxes only show them.
+  const [items, setItems] = useState<ItemDraft[]>(() => (from ? itemDraftsOf(from.items) : []));
+  // Something about the items changed since they were opened, so saving lists
+  // them in the assumptions, ahead of what the estimate said.
+  const [itemsEdited, setItemsEdited] = useState(from?.itemsEdited === true);
+  const expanded = !splitting && items.length > 0;
+  const itemSums = expanded ? itemTotals(items) : null;
+  const shownMacros: MacroDraft = itemSums
+    ? { calories: itemSums.calories, protein: itemSums.protein, carbs: itemSums.carbs, fat: itemSums.fat }
+    : macros;
+  const shownFiber = itemSums ? itemSums.fiber : fiber;
+  const shownEthanol = itemSums ? itemSums.ethanol : ethanol;
   const conversationLog = useRef<HTMLDivElement>(null);
   const replyButton = useRef<HTMLButtonElement>(null);
   const doneButton = useRef<HTMLButtonElement>(null);
@@ -485,13 +479,7 @@ export function MealForm({
   }, [justFinished]);
 
   useEffect(() => {
-    const stored = readWeights(browserStorage());
-    setWeights(stored);
-    setWeightText({
-      codex: String(stored.codex),
-      claude: String(stored.claude),
-      grok: String(stored.grok),
-    });
+    setWeights(readWeights(browserStorage()));
   }, []);
 
   // A form that goes away, for a new meal or another draft, takes its estimate
@@ -516,7 +504,7 @@ export function MealForm({
     snapshot: JSON.stringify({
       day, time, picked, description, name, macros, ethanol, fiber, assumptions,
       confidence, answeredBy, source, adjusted, conversation, reply, kept, draftIds,
-      dishes, unsplit, partials, included, ingredients,
+      dishes, unsplit, partials, included, ingredients, items, itemsEdited,
     }),
     summary: (
       name.trim() ||
@@ -527,22 +515,22 @@ export function MealForm({
   });
 
   const parsedMacros = MACRO_FIELDS.reduce((out, { key }) => {
-    out[key] = Number(macros[key].trim());
+    out[key] = Number(shownMacros[key].trim());
     return out;
   }, {} as Macros);
-  const ethanolRaw = ethanol.trim();
+  const ethanolRaw = shownEthanol.trim();
   const ethanolGrams = ethanolRaw === "" ? 0 : Number(ethanolRaw);
   const alcoholGrams = slot === "Alcohol" ? ethanolGrams : 0;
   const ethanolOk = slot !== "Alcohol" || (
     Number.isFinite(ethanolGrams) && ethanolGrams >= 0 && ethanolGrams <= ETHANOL_LIMIT
   );
-  const fiberRaw = fiber.trim();
+  const fiberRaw = shownFiber.trim();
   const fiberGrams = fiberRaw === "" ? 0 : Number(fiberRaw);
   const fiberOk = Number.isFinite(fiberGrams) && fiberGrams >= 0 && fiberGrams <= FIBER_LIMIT
     && Number.isFinite(parsedMacros.carbs) && fiberGrams <= parsedMacros.carbs;
   const counted = { ...parsedMacros, alcohol: alcoholGrams, fiber: fiberGrams };
   const canCheckCalories = ethanolOk && fiberOk &&
-    MACRO_FIELDS.some(({ key }) => macros[key].trim() !== "" || (slot === "Alcohol" && ethanolRaw !== "") || fiberRaw !== "") &&
+    MACRO_FIELDS.some(({ key }) => shownMacros[key].trim() !== "" || (slot === "Alcohol" && ethanolRaw !== "") || fiberRaw !== "") &&
     MACRO_FIELDS.every(({ key }) => Number.isFinite(parsedMacros[key]) &&
       parsedMacros[key] >= 0 && parsedMacros[key] <= LIMITS[key]);
   const breakdown = macroCalories(counted);
@@ -571,6 +559,8 @@ export function MealForm({
     setDishes([]);
     setDishErrors({});
     setUnsplit(false);
+    setItems([]);
+    setItemsEdited(false);
   }
 
   /**
@@ -584,22 +574,22 @@ export function MealForm({
    */
   function splitByDish() {
     const text = description.trim() || name.trim();
-    const figured = assumptions.trim() !== "" || fiber.trim() !== "" || ethanol.trim() !== "" ||
-      MACRO_FIELDS.some(({ key }) => macros[key].trim() !== "");
+    const figured = assumptions.trim() !== "" || shownFiber.trim() !== "" || shownEthanol.trim() !== "" ||
+      MACRO_FIELDS.some(({ key }) => shownMacros[key].trim() !== "");
     const made: DishDraft[] = figured
       ? [{
           ...emptyDish(newId()),
           // Whole: the description is what the figures came from, and what
           // the dish's own estimate will read.
           name: text,
-          ...macros,
-          fiber,
-          ethanol,
+          ...shownMacros,
+          fiber: shownFiber,
+          ethanol: shownEthanol,
           source: source === "grok" ? "grok" : "manual",
           estimator: answeredBy,
           confidence,
           adjusted,
-          assumptions,
+          assumptions: listedAssumptions(),
         }]
       : splitDishText(text, DISH_LIMIT).map((part) => ({ ...emptyDish(newId()), name: part }));
     const mealName = description.trim() ? name : "";
@@ -616,6 +606,26 @@ export function MealForm({
 
   function removeDish(id: string) {
     setDishes((current) => current.filter((dish) => dish.id !== id));
+    setDishErrors((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+    setError("");
+  }
+
+  /**
+   * A dish opened up into its items, each a dish of its own that keeps the
+   * dish's share, as long as they all fit beside the rest.
+   */
+  function expandDishItems(id: string) {
+    setDishes((current) => {
+      const at = current.findIndex((dish) => dish.id === id);
+      if (at < 0) return current;
+      const made = expandDish(current[at], slot, newId);
+      if (made.length < 2 || current.length - 1 + made.length > DISH_LIMIT) return current;
+      return [...current.slice(0, at), ...made, ...current.slice(at + 1)];
+    });
     setDishErrors((current) => {
       const next = { ...current };
       delete next[id];
@@ -675,13 +685,34 @@ export function MealForm({
     }
   }
 
-  /** The figures an estimate, or a change of which answers count, writes in. */
+  /**
+   * The figures an estimate, or a change of which answers count, writes in.
+   * With the meal opened up into its items, the items follow: they are made
+   * again from the new answer, so they still add up to it, and they close
+   * when it does not list two or more.
+   */
   function writeFields(
     estimate: Estimate,
     provider: Estimator | null,
     answers: readonly PartialEstimate[] = [],
     answerWeights: EstimateWeights = weightsRef.current,
+    keepItems = false,
   ) {
+    if (keepItems) {
+      const sources = answers.length > 1
+        ? answers.map((answer) => ({ assumptions: answer.estimate.assumptions, weight: answerWeights[answer.provider] }))
+        : assumptionSources(estimate.assumptions);
+      const seeds = itemBreakdown(sources, {
+        calories: estimate.calories,
+        protein: estimate.protein,
+        carbs: estimate.carbs,
+        fat: estimate.fat,
+        fiber: estimate.fiber ?? 0,
+        alcohol: estimate.alcohol ?? 0,
+      });
+      setItems(seeds.map((seed) => itemDraft(newId(), seed)));
+      setItemsEdited(false);
+    }
     const items = itemsFromText(description, estimate.name);
     setIngredients(captureIngredientNutrition(
       items,
@@ -719,7 +750,7 @@ export function MealForm({
     const picked = partials.filter((partial) => providers.includes(partial.provider));
     const blended = blendEstimates(picked, nextWeights);
     if (!blended) return;
-    writeFields(blended.estimate, blended.provider, picked, nextWeights);
+    writeFields(blended.estimate, blended.provider, picked, nextWeights, expanded);
     setConversation((current) => current.length
       ? [...current.slice(0, -1), { ...current[current.length - 1], estimate: blended.estimate }]
       : [{ estimate: blended.estimate }]);
@@ -733,12 +764,9 @@ export function MealForm({
     applyBlend(next, weightsRef.current);
   }
 
-  function changeWeight(provider: AnswerProvider, raw: string) {
-    if (raw !== "" && !/^\d{1,3}$/.test(raw)) return;
-    if (raw !== "" && Number(raw) > 100) return;
-    setWeightText((current) => ({ ...current, [provider]: raw }));
-    if (raw === "") return;
-    const next = { ...weightsRef.current, [provider]: Number(raw) };
+  function changeWeight(provider: AnswerProvider, weight: number) {
+    if (!Number.isFinite(weight) || weight < 0 || weight > 100) return;
+    const next = { ...weightsRef.current, [provider]: Math.round(weight) };
     setWeights(next);
     weightsRef.current = next;
     writeWeights(browserStorage(), next);
@@ -746,12 +774,6 @@ export function MealForm({
     // more are included. The number is still the default for the next meal.
     if (chosen.filter((name) => partials.some((partial) => partial.provider === name)).length > 1)
       applyBlend(chosen, next);
-  }
-
-  function blurWeight(provider: AnswerProvider) {
-    setWeightText((current) => current[provider] === ""
-      ? { ...current, [provider]: String(weightsRef.current[provider]) }
-      : current);
   }
 
   /** A fresh estimate, or with a follow-up, the next turn of the conversation. */
@@ -768,6 +790,13 @@ export function MealForm({
     setJustFinished(false);
     setPartials([]);
     setIncluded(null);
+    // A fresh estimate is a new answer for the whole meal; a reply keeps the
+    // meal open into its items, which follow the answer.
+    const keepItems = refining && expanded;
+    if (!refining) {
+      setItems([]);
+      setItemsEdited(false);
+    }
     const stop = new AbortController();
     stopper.current = stop;
     setEstimating(true);
@@ -787,7 +816,7 @@ export function MealForm({
                 ...previous,
                 ...(canCheckCalories ? counted : {}),
                 name: name.trim() || previous.name,
-                assumptions,
+                assumptions: listedAssumptions(),
               },
               replies: [...replies, followUp],
             },
@@ -821,7 +850,7 @@ export function MealForm({
       const used = blended?.estimate ?? estimate;
       const usedBy = blended?.provider ?? (provider && provider in ESTIMATORS ? provider : null);
       setIncluded(choice.length ? choice.map((answer) => answer.provider) : null);
-      writeFields(used, usedBy, choice);
+      writeFields(used, usedBy, choice, weightsRef.current, keepItems);
       setConversation((current) => refining
         ? [...current, { reply: followUp, estimate: used }]
         : [{ estimate: used }]);
@@ -880,8 +909,65 @@ export function MealForm({
     setAnsweredBy(null);
     setPartials([]);
     setIncluded(null);
+    setItems([]);
+    setItemsEdited(false);
     setError("");
     setKept(offer.saved ? { id: offer.id, athlete, sourceKey: offer.sourceKey } : null);
+  }
+
+  /**
+   * What opening the meal up would give: its saved items, else the items its
+   * estimate's working lists, shared out to add up to the figures on the
+   * form. Each estimator counts as it does in the meal while the figures are
+   * still the blend. A meal with no figures yet opens into blank items where
+   * it was written as several, to type in. Fewer than two is nothing to open.
+   */
+  function itemSeeds(): ItemSeed[] {
+    if (splitting || expanded) return [];
+    const figured = MACRO_FIELDS.some(({ key }) => macros[key].trim() !== "") ||
+      fiber.trim() !== "" || (slot === "Alcohol" && ethanol.trim() !== "");
+    if (!figured) return blankSeeds(description.trim());
+    if (!canCheckCalories) return [];
+    const saved = seedsFromIngredients(ingredients, counted);
+    if (saved.length) return saved;
+    const counting = partials.filter((partial) => chosen.includes(partial.provider));
+    const sources = source === "grok" && !adjusted && counting.length > 1
+      ? counting.map((answer) => ({ assumptions: answer.estimate.assumptions, weight: weights[answer.provider] }))
+      : assumptionSources(assumptions);
+    return itemBreakdown(sources, counted);
+  }
+
+  /** The assumptions with the items listed first, once they were changed. */
+  function listedAssumptions() {
+    return expanded && itemsEdited ? withItemList(assumptions, looseItems(items, slot)) : assumptions;
+  }
+
+  function expandItems(seeds: readonly ItemSeed[]) {
+    if (seeds.length < 2) return;
+    setItems(seeds.map((seed) => itemDraft(newId(), seed)));
+    setItemsEdited(false);
+    setError("");
+  }
+
+  /**
+   * Back to one meal. Its figures stay what the items came to, and items that
+   * were changed are listed in the assumptions, so nothing said is lost.
+   */
+  function collapseItems() {
+    setMacros(shownMacros);
+    setFiber(shownFiber);
+    setEthanol(shownEthanol);
+    setAssumptions(listedAssumptions());
+    setItems([]);
+    setItemsEdited(false);
+    setError("");
+  }
+
+  /** An item changed, so the meal's figures are now your own. */
+  function changeItems(change: (current: ItemDraft[]) => ItemDraft[]) {
+    setItems(change);
+    setItemsEdited(true);
+    markManual();
   }
 
   function changeIngredient(index: number, grams: number) {
@@ -913,9 +999,11 @@ export function MealForm({
   /** Keep the meal on the form, portions and all, without logging it. */
   async function saveAsTemplate() {
     if (estimating || saving || templateSaving) return;
-    const problem = validate();
+    const read = expanded ? readItems(items, slot) : null;
+    const problem = (read && !read.ok ? read.error : "") || validate();
     setError(problem);
     if (problem) return;
+    const listed = read?.ok ? read.items : null;
     const athletes = who === "both" ? (["hippos", "gators"] as const) : ([who] as const);
     const reuse = athletes.length === 1 && kept?.athlete === athletes[0] ? kept : null;
     let next: MealTemplates = {
@@ -928,9 +1016,9 @@ export function MealForm({
         id: reuse && athlete === reuse.athlete ? reuse.id : newId(),
         name,
         meal: slot,
-        items: ingredients.length ? ingredients : itemsFromText(description.trim() || name.trim(), name.trim()),
+        items: listed ?? (ingredients.length ? ingredients : itemsFromText(description.trim() || name.trim(), name.trim())),
         macros: counted,
-        assumptions,
+        assumptions: listed && itemsEdited ? withItemList(assumptions, listed) : assumptions,
         sourceKey: reuse && athlete === reuse.athlete && reuse.sourceKey
           ? reuse.sourceKey
           : mealKey(name),
@@ -1036,7 +1124,7 @@ export function MealForm({
         ? "Ethanol looks too high."
         : "Ethanol needs a number of zero or more.";
     for (const { key, label } of MACRO_FIELDS) {
-      const raw = macros[key].trim();
+      const raw = shownMacros[key].trim();
       const value = raw === "" ? 0 : Number(raw);
       if (!Number.isFinite(value) || value < 0)
         return `${label} needs a number of zero or more.`;
@@ -1089,9 +1177,19 @@ export function MealForm({
       await submitSplit();
       return;
     }
-    const problem = validate();
+    // An item says what is wrong with it before the meal it adds up to does.
+    const read = expanded ? readItems(items, slot) : null;
+    const problem = (read && !read.ok ? read.error : "") || validate();
     setError(problem);
     if (problem) return;
+    const listed = read?.ok ? read.items : null;
+    // Saved items stay with the meal, weighed or counted, as long as every
+    // one of them still has its figures.
+    const savedItems = listed ?? (
+      hasIngredientNutrition(ingredients) || (ingredients.length > 0 && ingredients.every((item) => item.nutrition))
+        ? ingredients
+        : null
+    );
 
     setSaving(true);
     try {
@@ -1103,8 +1201,8 @@ export function MealForm({
         meal: slot,
         macros: { ...parsedMacros, alcohol: alcoholGrams, fiber: fiberGrams },
         source,
-        assumptions: assumptions.trim().slice(0, 3000),
-        ...(hasIngredientNutrition(ingredients) ? { items: ingredients } : {}),
+        assumptions: (listed && itemsEdited ? withItemList(assumptions, listed) : assumptions).trim().slice(0, 3000),
+        ...(savedItems ? { items: savedItems } : {}),
         ...(source === "grok" && answeredBy ? { estimator: answeredBy } : {}),
       });
       reset();
@@ -1116,7 +1214,8 @@ export function MealForm({
   const busy = estimating || saving || templateSaving;
   // Not once there is an estimate: a queued meal saves zero macros, and would
   // throw away the figures already on the form.
-  const canQueue = queueReady && conversation.length === 0 && !rejected && !splitting;
+  const canQueue = queueReady && conversation.length === 0 && !rejected && !splitting && !expanded;
+  const seeds = itemSeeds();
 
   function closeRefine() {
     setRefineOpen(false);
@@ -1242,6 +1341,7 @@ export function MealForm({
                 errors={dishErrors}
                 onDish={changeDish}
                 onEstimate={(id) => void estimateDish(id)}
+                onExpand={expandDishItems}
                 onRemove={removeDish}
                 onAdd={() => {
                   setDishes((current) => [...current, emptyDish(newId())]);
@@ -1287,7 +1387,7 @@ export function MealForm({
               setRejected(false);
             }}
           />
-          {!splitting && hasIngredientNutrition(ingredients) ? (
+          {!splitting && !expanded && hasIngredientNutrition(ingredients) ? (
             <fieldset className="space-y-2 rounded-xl border p-3">
               <legend className="px-1 text-xs font-medium">Ingredient weights</legend>
               {ingredients.map((item, index) => item.nutrition.grams > 0 && (
@@ -1317,7 +1417,7 @@ export function MealForm({
                 </div>
               ))}
             </fieldset>
-          ) : kept && !splitting ? (
+          ) : kept && !splitting && !expanded ? (
             <p className="text-xs text-muted-foreground">
               Estimate this template once to save nutrition for each weighed ingredient.
             </p>
@@ -1412,16 +1512,13 @@ export function MealForm({
         ) : null}
 
         {!refineOpen ? (
-          <SoFar
-            partials={partials}
-            included={chosen}
-            weightText={weightText}
-            onToggle={estimating ? undefined : toggleProvider}
-            onWeight={estimating ? undefined : changeWeight}
-            onWeightBlur={blurWeight}
-          />
+          <SoFar partials={partials} included={estimating ? undefined : chosen} />
         ) : null}
-        <section {...athleteOutline(who)} className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
+        <section
+          {...athleteOutline(who)}
+          aria-label="Meal figures"
+          className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5"
+        >
           <Field label="Meal">
             <Input
               value={name}
@@ -1433,9 +1530,11 @@ export function MealForm({
           {slot === "Alcohol" ? (
             <Field label="Ethanol (g)">
               <Input
-                value={ethanol}
+                value={shownEthanol}
                 inputMode="decimal"
                 placeholder="0"
+                readOnly={expanded}
+                className={expanded ? "bg-muted/50" : undefined}
                 onChange={(event) => {
                   setEthanol(event.target.value);
                   markManual();
@@ -1447,18 +1546,22 @@ export function MealForm({
             {MACRO_FIELDS.slice(0, 3).map(({ key, label, unit }) => (
               <Field key={key} label={`${label} (${unit})`}>
                 <Input
-                  value={macros[key]}
+                  value={shownMacros[key]}
                   inputMode="decimal"
                   placeholder="0"
+                  readOnly={expanded}
+                  className={expanded ? "bg-muted/50" : undefined}
                   onChange={(event) => setMacro(key, event.target.value)}
                 />
               </Field>
             ))}
             <Field label="Fiber (g)">
               <Input
-                value={fiber}
+                value={shownFiber}
                 inputMode="decimal"
                 placeholder="0"
+                readOnly={expanded}
+                className={expanded ? "bg-muted/50" : undefined}
                 onChange={(event) => {
                   setFiber(event.target.value);
                   markManual();
@@ -1468,14 +1571,21 @@ export function MealForm({
             {MACRO_FIELDS.slice(3).map(({ key, label, unit }) => (
               <Field key={key} label={`${label} (${unit})`}>
                 <Input
-                  value={macros[key]}
+                  value={shownMacros[key]}
                   inputMode="decimal"
                   placeholder="0"
+                  readOnly={expanded}
+                  className={expanded ? "bg-muted/50" : undefined}
                   onChange={(event) => setMacro(key, event.target.value)}
                 />
               </Field>
             ))}
           </div>
+          {expanded ? (
+            <p className="text-[11px] text-muted-foreground">
+              The items below add up to these. Change an item to change the meal.
+            </p>
+          ) : null}
 
           {canCheckCalories ? (
             <div className="space-y-2 rounded-xl border bg-muted/40 p-3">
@@ -1519,7 +1629,42 @@ export function MealForm({
               {adjusted ? " · saved as your own numbers after your edit" : null}
             </p>
           ) : null}
+          {expanded ? (
+            <Button type="button" variant="outline" className="w-full" onClick={collapseItems}>
+              <ChevronsDownUp />
+              Collapse into one meal
+            </Button>
+          ) : seeds.length >= 2 ? (
+            <Button type="button" variant="outline" className="w-full" onClick={() => expandItems(seeds)}>
+              <ChevronsUpDown />
+              Expand into {seeds.length} items
+            </Button>
+          ) : null}
         </section>
+        {expanded ? (
+          <section
+            {...athleteOutline(who)}
+            aria-label="Items"
+            className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5"
+          >
+            <h3 className="text-sm font-semibold">Items</h3>
+            <MealItems
+              items={items}
+              sitting={slot}
+              onItem={(id, change) =>
+                changeItems((current) => current.map((item) => (item.id === id ? change(item) : item)))}
+              onRename={(id, itemName) => {
+                // A new name lists the items again, and leaves the figures the estimate's.
+                setItems((current) => current.map((item) => (item.id === id ? { ...item, name: itemName } : item)));
+                setItemsEdited(true);
+              }}
+              onAnchor={(id) =>
+                setItems((current) => current.map((item) => (item.id === id ? anchorItem(item) : item)))}
+              onRemove={(id) => changeItems((current) => current.filter((item) => item.id !== id))}
+              onAdd={() => changeItems((current) => [...current, emptyItem(newId())])}
+            />
+          </section>
+        ) : null}
         </>
         )}
 
@@ -1532,6 +1677,17 @@ export function MealForm({
         <Button type="submit" size="lg" className="w-full" disabled={saving || estimatingDish !== null}>
           {saving ? "Saving…" : editing ? "Update meal" : "Save meal"}
         </Button>
+
+        {/* At the foot of the form: each estimator's totals, and how much it counts. */}
+        {!splitting && !estimating ? (
+          <EstimatorWeights
+            partials={partials}
+            included={chosen}
+            weights={weights}
+            onToggle={toggleProvider}
+            onWeight={changeWeight}
+          />
+        ) : null}
       </fieldset>
       <Dialog
         open={active && refineOpen}

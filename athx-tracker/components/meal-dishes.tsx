@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { Plus, Sparkles, X } from "lucide-react";
+import { ChevronsUpDown, Plus, Sparkles, X } from "lucide-react";
 import { Slider as SliderPrimitive } from "radix-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,7 @@ import {
   type DishDraft,
   type Eater,
 } from "@/lib/meal-dishes";
+import { expandDish } from "@/lib/meal-items";
 
 /** The same boxes, in the same places, as a meal's: three across, then fiber and fat. */
 const FIGURES = [
@@ -212,8 +213,10 @@ function DishCard({
   locked,
   disabled,
   error,
+  expandable,
   onDish,
   onEstimate,
+  onExpand,
   onRemove,
 }: {
   dish: DishDraft;
@@ -230,8 +233,11 @@ function DishCard({
    */
   disabled: boolean;
   error: string;
+  /** How many items the dish's working lists, when they would fit beside the rest. 0 when it lists none. */
+  expandable: number;
   onDish: (change: (dish: DishDraft) => DishDraft) => void;
   onEstimate: () => void;
+  onExpand: () => void;
   onRemove: () => void;
 }) {
   const label = `Dish ${index + 1}`;
@@ -328,6 +334,19 @@ function DishCard({
           {dish.adjusted ? " · saved as your own numbers after your edit" : null}
         </p>
       ) : null}
+      {expandable ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="w-full"
+          disabled={busy || locked || disabled}
+          onClick={onExpand}
+        >
+          <ChevronsUpDown />
+          Expand into {expandable} items
+        </Button>
+      ) : null}
       {explained ? (
         <Field label="Assumptions">
           <Textarea
@@ -379,6 +398,7 @@ export function MealDishes({
   errors,
   onDish,
   onEstimate,
+  onExpand,
   onRemove,
   onAdd,
 }: {
@@ -392,9 +412,17 @@ export function MealDishes({
   errors: Record<string, string>;
   onDish: (id: string, change: (dish: DishDraft) => DishDraft) => void;
   onEstimate: (id: string) => void;
+  /** Open a dish up into its items, each a dish with the same share. */
+  onExpand: (id: string) => void;
   onRemove: (id: string) => void;
   onAdd: () => void;
 }) {
+  // Each item takes the dish's place, so it has the room the dish had.
+  const room = DISH_LIMIT - dishes.length + 1;
+  const pieces = (dish: DishDraft) => {
+    const count = expandDish(dish, sitting, () => "").length;
+    return count >= 2 && count <= room ? count : 0;
+  };
   return (
     <>
       {dishes.map((dish, index) => (
@@ -408,8 +436,10 @@ export function MealDishes({
           locked={estimating !== null}
           disabled={disabled}
           error={errors[dish.id] ?? ""}
+          expandable={pieces(dish)}
           onDish={(change) => onDish(dish.id, change)}
           onEstimate={() => onEstimate(dish.id)}
+          onExpand={() => onExpand(dish.id)}
           onRemove={() => onRemove(dish.id)}
         />
       ))}
