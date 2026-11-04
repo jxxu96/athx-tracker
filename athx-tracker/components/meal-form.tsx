@@ -26,6 +26,17 @@ import {
 } from "@/lib/domain";
 import { api, message, newId } from "@/lib/client";
 import { NDJSON, readEstimate, type PartialEstimate } from "@/lib/estimate-stream";
+import {
+  ANSWER_ORDER,
+  DEFAULT_WEIGHTS,
+  blendEstimates,
+  complexMeal,
+  defaultIncluded,
+  readWeights,
+  writeWeights,
+  type AnswerProvider,
+  type EstimateWeights,
+} from "@/lib/estimate-blend";
 import { bothOf, isText, oneOf, textOf, type Draft } from "@/lib/drafts";
 import { useFormDraft } from "@/hooks/use-form-draft";
 import { MealTemplateList } from "@/components/meal-templates";
@@ -115,33 +126,128 @@ function figuresOf(estimate: Estimate) {
   ].join(" · ");
 }
 
-const ANSWER_ORDER = ["codex", "claude", "grok"] as const;
+const WEIGHT_TEXT: Record<AnswerProvider, string> = {
+  codex: String(DEFAULT_WEIGHTS.codex),
+  claude: String(DEFAULT_WEIGHTS.claude),
+  grok: String(DEFAULT_WEIGHTS.grok),
+};
+
+/** Answers saved with a draft. Anything that is not one is left out. */
+function partialsOf(value: unknown): PartialEstimate[] {
+  if (!Array.isArray(value)) return [];
+  const out: PartialEstimate[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const held = item as PartialEstimate;
+    const estimate = held.estimate;
+    if (!estimate || typeof estimate !== "object") continue;
+    if (held.provider !== "codex" && held.provider !== "claude" && held.provider !== "grok") continue;
+    if (![estimate.calories, estimate.protein, estimate.carbs, estimate.fat].every((n) => typeof n === "number"))
+      continue;
+    out.push({
+      type: "partial",
+      provider: held.provider,
+      estimate: {
+        ...estimate,
+        name: String(estimate.name ?? ""),
+        assumptions: String(estimate.assumptions ?? ""),
+        confidence: estimate.confidence === "high" || estimate.confidence === "medium" ? estimate.confidence : "low",
+        fiber: typeof estimate.fiber === "number" ? estimate.fiber : 0,
+        alcohol: typeof estimate.alcohol === "number" ? estimate.alcohol : 0,
+      },
+    });
+  }
+  return out;
+}
+
+/** Which answers the draft had switched on. Missing or damaged means not chosen yet. */
+function includedOf(value: unknown): AnswerProvider[] | null {
+  if (!Array.isArray(value) || !value.length) return null;
+  const names = value.filter(
+    (item): item is AnswerProvider => item === "codex" || item === "claude" || item === "grok",
+  );
+  return names.length === value.length ? names : null;
+}
+
+function browserStorage() {
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Each estimator that has answered. The settled figures may still average
- * them, or keep only the best-sourced one. Every model's own description stays
- * here, bold name first and a rule under the section.
+ * them, or keep only the ones that found a label. Every model's own description
+ * stays here, bold name first and a rule under the section. Once the estimate
+ * has finished, each answer can be left out, and its weight is the default
+ * used the next time as well.
  */
-function SoFar({ partials }: { partials: PartialEstimate[] }) {
+function SoFar({
+  partials,
+  included,
+  weightText,
+  onToggle,
+  onWeight,
+  onWeightBlur,
+}: {
+  partials: PartialEstimate[];
+  included?: readonly AnswerProvider[];
+  weightText?: Record<AnswerProvider, string>;
+  onToggle?: (provider: AnswerProvider) => void;
+  onWeight?: (provider: AnswerProvider, raw: string) => void;
+  onWeightBlur?: (provider: AnswerProvider) => void;
+}) {
   if (!partials.length) return null;
   const shown = [...partials].sort(
     (a, b) => ANSWER_ORDER.indexOf(a.provider) - ANSWER_ORDER.indexOf(b.provider),
   );
+  const chosen = included ?? shown.map((answer) => answer.provider);
   return (
     <div role="status" aria-label="Answers so far" className="space-y-3 rounded-xl border bg-muted/40 p-3 text-xs">
       <p className="font-medium">Answers so far</p>
       <ul className="space-y-3">
-        {shown.map(({ provider, estimate }) => (
-          <li key={provider} className="space-y-1">
-            <p className="font-bold">{ESTIMATORS[provider]}</p>
-            <p className="font-medium">
-              {figuresOf(estimate)}
-              <span className="font-normal text-muted-foreground"> · {estimate.confidence} confidence</span>
-            </p>
-            <p className="whitespace-pre-wrap break-words">{estimate.assumptions}</p>
-            <p aria-hidden="true" className="font-mono text-muted-foreground">________</p>
-          </li>
-        ))}
+        {shown.map(({ provider, estimate }) => {
+          const on = chosen.includes(provider);
+          const name = ESTIMATORS[provider];
+          return (
+            <li key={provider} className={`space-y-1 ${on || !onToggle ? "" : "opacity-60"}`}>
+              <div className="flex items-center gap-2">
+                {onToggle ? (
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    disabled={on && chosen.length === 1}
+                    aria-label={`Include ${name}`}
+                    onChange={() => onToggle(provider)}
+                    className="size-4 shrink-0 accent-primary"
+                  />
+                ) : null}
+                <p className="font-bold">{name}</p>
+                {onWeight && weightText ? (
+                  <span className="ml-auto flex items-center gap-1 text-muted-foreground">
+                    <span aria-hidden="true">weight</span>
+                    <Input
+                      aria-label={`${name} weight`}
+                      value={weightText[provider]}
+                      inputMode="numeric"
+                      onChange={(event) => onWeight(provider, event.target.value)}
+                      onBlur={() => onWeightBlur?.(provider)}
+                      className="h-8 w-14 px-2 text-center text-xs"
+                    />
+                  </span>
+                ) : null}
+              </div>
+              <p className="font-medium">
+                {figuresOf(estimate)}
+                <span className="font-normal text-muted-foreground"> · {estimate.confidence} confidence</span>
+              </p>
+              <p className="whitespace-pre-wrap break-words">{estimate.assumptions}</p>
+              <p aria-hidden="true" className="font-mono text-muted-foreground">________</p>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
@@ -298,8 +404,15 @@ export function MealForm({
   );
   const [adjusted, setAdjusted] = useState(from?.adjusted === true);
   const [estimating, setEstimating] = useState(false);
-  // Each estimator's answer as it lands, until the settled one replaces them.
-  const [partials, setPartials] = useState<PartialEstimate[]>([]);
+  // Each estimator's answer as it lands, and which of them the average uses.
+  const [partials, setPartials] = useState<PartialEstimate[]>(() => partialsOf(from?.partials));
+  const [included, setIncluded] = useState<AnswerProvider[] | null>(() => includedOf(from?.included));
+  // The weights are this phone's defaults. The first paint uses the built-in
+  // ones, and the stored ones replace them once the page can read them.
+  const [weights, setWeights] = useState<EstimateWeights>(DEFAULT_WEIGHTS);
+  const [weightText, setWeightText] = useState(WEIGHT_TEXT);
+  const weightsRef = useRef(weights);
+  weightsRef.current = weights;
   const stopper = useRef<AbortController | null>(null);
   // The estimator turned the description down. Rewording is what helps, so it
   // is not offered to the background estimate until it changes.
@@ -359,6 +472,16 @@ export function MealForm({
     if (justFinished) doneButton.current?.focus();
   }, [justFinished]);
 
+  useEffect(() => {
+    const stored = readWeights(browserStorage());
+    setWeights(stored);
+    setWeightText({
+      codex: String(stored.codex),
+      claude: String(stored.claude),
+      grok: String(stored.grok),
+    });
+  }, []);
+
   // A form that goes away, for a new meal or another draft, takes its estimate
   // with it: nothing would show the answer, so the estimators are stopped.
   useEffect(() => () => stopper.current?.abort(), []);
@@ -381,7 +504,7 @@ export function MealForm({
     snapshot: JSON.stringify({
       day, time, picked, description, name, macros, ethanol, fiber, assumptions,
       confidence, answeredBy, source, adjusted, conversation, reply, kept, draftIds,
-      dishes, unsplit,
+      dishes, unsplit, partials, included,
     }),
     summary: (
       name.trim() ||
@@ -423,6 +546,7 @@ export function MealForm({
     setConfidence(null);
     setAnsweredBy(null);
     setPartials([]);
+    setIncluded(null);
     setSource("manual");
     setAdjusted(false);
     setConversation([]);
@@ -537,6 +661,70 @@ export function MealForm({
     }
   }
 
+  /** The figures an estimate, or a change of which answers count, writes in. */
+  function writeFields(estimate: Estimate, provider: Estimator | null) {
+    setName(estimate.name.slice(0, 300));
+    setEthanol(String(estimate.alcohol ?? 0));
+    setFiber(String(estimate.fiber ?? 0));
+    if ((estimate.alcohol ?? 0) > 0) setSlot("Alcohol");
+    setMacros({
+      calories: String(estimate.calories),
+      protein: String(estimate.protein),
+      carbs: String(estimate.carbs),
+      fat: String(estimate.fat),
+    });
+    setAssumptions(estimate.assumptions);
+    setConfidence(estimate.confidence);
+    setAnsweredBy(provider && provider in ESTIMATORS ? provider : null);
+    setSource("grok");
+    setAdjusted(false);
+  }
+
+  const chosen = included ?? defaultIncluded(
+    partials,
+    complexMeal(description) ? ["grok"] : [],
+  ).map((answer) => answer.provider);
+
+  /** The meal becomes the weighted average of whichever answers are switched on. */
+  function applyBlend(providers: readonly AnswerProvider[], nextWeights: EstimateWeights) {
+    const picked = partials.filter((partial) => providers.includes(partial.provider));
+    const blended = blendEstimates(picked, nextWeights);
+    if (!blended) return;
+    writeFields(blended.estimate, blended.provider);
+    setConversation((current) => current.length
+      ? [...current.slice(0, -1), { ...current[current.length - 1], estimate: blended.estimate }]
+      : [{ estimate: blended.estimate }]);
+  }
+
+  function toggleProvider(provider: AnswerProvider) {
+    const on = chosen.includes(provider);
+    if (on && chosen.length === 1) return;
+    const next = on ? chosen.filter((name) => name !== provider) : [...chosen, provider];
+    setIncluded(next);
+    applyBlend(next, weightsRef.current);
+  }
+
+  function changeWeight(provider: AnswerProvider, raw: string) {
+    if (raw !== "" && !/^\d{1,3}$/.test(raw)) return;
+    if (raw !== "" && Number(raw) > 100) return;
+    setWeightText((current) => ({ ...current, [provider]: raw }));
+    if (raw === "") return;
+    const next = { ...weightsRef.current, [provider]: Number(raw) };
+    setWeights(next);
+    weightsRef.current = next;
+    writeWeights(browserStorage(), next);
+    // One answer is itself, so a weight only moves the figures when two or
+    // more are included. The number is still the default for the next meal.
+    if (chosen.filter((name) => partials.some((partial) => partial.provider === name)).length > 1)
+      applyBlend(chosen, next);
+  }
+
+  function blurWeight(provider: AnswerProvider) {
+    setWeightText((current) => current[provider] === ""
+      ? { ...current, [provider]: String(weightsRef.current[provider]) }
+      : current);
+  }
+
   /** A fresh estimate, or with a follow-up, the next turn of the conversation. */
   async function estimate(followUp?: string) {
     if (estimating || saving) return;
@@ -550,6 +738,7 @@ export function MealForm({
     setRejected(false);
     setJustFinished(false);
     setPartials([]);
+    setIncluded(null);
     const stop = new AbortController();
     stopper.current = stop;
     setEstimating(true);
@@ -576,12 +765,17 @@ export function MealForm({
           } : {}),
         }),
       });
-      const { estimate, provider } = await readEstimate(response, (partial) =>
-        setPartials((current) => [...current.filter((held) => held.provider !== partial.provider), partial]),
-      );
+      const landed: PartialEstimate[] = [];
+      const { estimate, provider } = await readEstimate(response, (partial) => {
+        const next = [...landed.filter((held) => held.provider !== partial.provider), partial];
+        landed.splice(0, landed.length, ...next);
+        setPartials(next);
+      });
       if (asDishes) {
         // The meal's name stays as typed: left blank, each of you is named
-        // after your own dishes.
+        // after your own dishes. The per-model box is for a whole meal.
+        setPartials([]);
+        setIncluded(null);
         setDishes(dishesFromEstimate(estimate, provider, newId, undefined, description.trim()));
         setDescription("");
         setDishErrors({});
@@ -589,24 +783,19 @@ export function MealForm({
         onEstimateComplete?.();
         return;
       }
-      setName(estimate.name.slice(0, 300));
-      setEthanol(String(estimate.alcohol ?? 0));
-      setFiber(String(estimate.fiber ?? 0));
-      if ((estimate.alcohol ?? 0) > 0) setSlot("Alcohol");
-      setMacros({
-        calories: String(estimate.calories),
-        protein: String(estimate.protein),
-        carbs: String(estimate.carbs),
-        fat: String(estimate.fat),
-      });
-      setAssumptions(estimate.assumptions);
-      setConfidence(estimate.confidence);
-      setAnsweredBy(provider && provider in ESTIMATORS ? provider : null);
-      setSource("grok");
-      setAdjusted(false);
+      // Two or more answers are blended here, so a label is used on its own
+      // and a weight saved on this phone counts. One answer, or a reply that
+      // did not stream, is the estimator's own settled meal.
+      const keep = complexMeal(description.trim()) ? (["grok"] as const) : [];
+      const choice = landed.length > 1 ? defaultIncluded(landed, keep) : landed;
+      const blended = landed.length > 1 ? blendEstimates(choice, weightsRef.current) : null;
+      const used = blended?.estimate ?? estimate;
+      const usedBy = blended?.provider ?? (provider && provider in ESTIMATORS ? provider : null);
+      setIncluded(choice.length ? choice.map((answer) => answer.provider) : null);
+      writeFields(used, usedBy);
       setConversation((current) => refining
-        ? [...current, { reply: followUp, estimate }]
-        : [{ estimate }]);
+        ? [...current, { reply: followUp, estimate: used }]
+        : [{ estimate: used }]);
       setReply("");
       if (refining && refineOpenRef.current) setJustFinished(true);
       onEstimateComplete?.();
@@ -614,6 +803,7 @@ export function MealForm({
       // Stopped on purpose: the form is as it was, ready to edit.
       if (stop.signal.aborted) return;
       setPartials([]);
+      setIncluded(null);
       onEstimateComplete?.(message(problem));
       if (refining) {
         setReplyError(`${message(problem)} Your current estimate and reply have been kept.`);
@@ -629,7 +819,10 @@ export function MealForm({
       setEstimating(false);
       // A finished estimate keeps each model's description on the form. Stop
       // throws them away with the attempt.
-      if (stop.signal.aborted) setPartials([]);
+      if (stop.signal.aborted) {
+        setPartials([]);
+        setIncluded(null);
+      }
     }
   }
 
@@ -656,6 +849,7 @@ export function MealForm({
     setConfidence(null);
     setAnsweredBy(null);
     setPartials([]);
+    setIncluded(null);
     setError("");
     setKept(offer.saved ? { id: offer.id, athlete, sourceKey: offer.sourceKey } : null);
   }
@@ -1124,7 +1318,16 @@ export function MealForm({
           </section>
         ) : null}
 
-        {!refineOpen ? <SoFar partials={partials} /> : null}
+        {!refineOpen ? (
+          <SoFar
+            partials={partials}
+            included={chosen}
+            weightText={weightText}
+            onToggle={estimating ? undefined : toggleProvider}
+            onWeight={estimating ? undefined : changeWeight}
+            onWeightBlur={blurWeight}
+          />
+        ) : null}
         <section {...athleteOutline(who)} className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
           <Field label="Meal">
             <Input
