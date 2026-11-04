@@ -218,19 +218,21 @@ const API_KEY_VARS =
 /**
  * Subscription auth only. Every API key is removed before a CLI runs, so this
  * cannot quietly switch to metered per-token billing: with no key to fall back
- * on, a CLI that is not logged in fails loudly instead of charging you.
+ * on, a CLI that is not logged in fails loudly instead of charging you. extra
+ * is a provider's own settings, which a real environment variable still wins
+ * over.
  */
-function childEnv() {
-  const env = { ...process.env };
+function childEnv(extra = {}) {
+  const env = { ...extra, ...process.env };
   for (const key of Object.keys(env)) if (API_KEY_VARS.test(key)) delete env[key];
   return env;
 }
 
-function run(bin, args, timeoutMs, signal) {
+function run(bin, args, timeoutMs, signal, extraEnv) {
   return new Promise((resolve) => {
     // stdin ignored: the CLIs otherwise wait three seconds for piped input.
     const child = spawn(bin, args, {
-      env: childEnv(),
+      env: childEnv(extraEnv),
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       // A Windows npm shim is a .cmd file, which spawn will not start directly.
@@ -264,12 +266,26 @@ function run(bin, args, timeoutMs, signal) {
 /**
  * Grok nests the validated object under structuredOutput, Claude under
  * structured_output, and either will print it bare if asked for text output.
+ * An envelope without either carries the answer as its final text, in result
+ * or text. Grok's plain and json output join every turn's text into that one
+ * string, so after a search the answer follows whatever was said on the way.
  * Take whichever is there; clean() decides whether it is usable.
  */
+function unwrap(value, nested) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const inner = value.structuredOutput ?? value.structured_output;
+  if (inner && typeof inner === "object" && !Array.isArray(inner)) return inner;
+  if (!nested)
+    for (const text of [inner, value.result, value.text]) {
+      const found = typeof text === "string" ? parseCliOutput(text, true) : null;
+      if (found) return found;
+    }
+  return value;
+}
+
 function structured(raw) {
   try {
-    const parsed = JSON.parse(raw);
-    return parsed.structuredOutput ?? parsed.structured_output ?? parsed;
+    return unwrap(JSON.parse(raw));
   } catch {
     return null;
   }
@@ -281,16 +297,23 @@ function structured(raw) {
  * object in the text: the one that ends at its last brace, found by stepping
  * back from brace to brace. The last brace that opens can belong to an object
  * inside it, such as a shared meal's last dish, so that one alone is not it.
+ * nested is the text inside an envelope, which is not opened a second time.
  */
-function parseCliOutput(raw) {
+function parseCliOutput(raw, nested = false) {
   if (typeof raw !== "string" || !raw.trim()) return null;
-  const direct = structured(raw);
-  if (direct && typeof direct === "object" && !Array.isArray(direct)) return direct;
+  const whole = (value) => value && typeof value === "object" && !Array.isArray(value);
+  let direct = null;
+  try {
+    direct = JSON.parse(raw);
+  } catch {
+    // Text around it; looked for below.
+  }
+  if (whole(direct)) return unwrap(direct, nested);
   const end = raw.lastIndexOf("}");
   for (let start = raw.lastIndexOf("{", end); start >= 0; start = raw.lastIndexOf("{", start - 1)) {
     try {
       const parsed = JSON.parse(raw.slice(start, end + 1));
-      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+      return whole(parsed) ? unwrap(parsed, nested) : null;
     } catch {
       // Not a whole object from here; an earlier brace may open it.
     }
@@ -404,6 +427,20 @@ const PROVIDERS = {
   },
   grok: {
     bin: () => GROK_BIN,
+    // Grok also reads Claude Code's setup from ~/.claude. The
+    // @aibridge/driver-grok package found Grok 1.0.5 loading CLAUDE.md as
+    // rules and attaching Claude's MCP servers, which spent a task's turns
+    // before it did any work, and switches these off to stop it. In the stack
+    // that is the same HOME the Claude login lives in, and on a laptop it is
+    // all of yours. Codex and Claude are already kept off your config, with
+    // --ignore-user-config and --strict-mcp-config. An environment variable a
+    // version does not read changes nothing.
+    env: {
+      GROK_CLAUDE_RULES_ENABLED: "0",
+      GROK_CLAUDE_SKILLS_ENABLED: "0",
+      GROK_CLAUDE_MCPS_ENABLED: "0",
+      GROK_CLAUDE_AGENTS_ENABLED: "0",
+    },
     args: (description, task = MEAL_TASK) => {
       // web_search is already allowed under dontAsk. WebFetch is not, so a meal
       // names it. The tool ids are web_search and web_fetch; the display names
@@ -667,35 +704,54 @@ function either(...signals) {
 }
 
 /**
+ * How long one provider may run. In order, whoever is not last leaves the
+ * reserve behind and nobody passes the cap. Asked together, nobody is after
+ * them, so each may use whatever the caller left: on a complex meal the cap
+ * held 40 s of a click's 130 s back for a fallback that never runs, and could
+ * cut Grok's search, the slow one, off at 90 s while that time went unused.
+ */
+function providerSlice(remaining, { meal, isLast, together = false }) {
+  if (together) return remaining;
+  return budgetSlice(
+    remaining,
+    isLast,
+    meal ? MEAL_PROVIDER_MS : PER_PROVIDER_MS,
+    meal ? MEAL_RESERVE_MS : RESERVE_MS,
+  );
+}
+
+/**
  * signal is the caller hanging up: every CLI still running is stopped, and
  * nobody else is asked. onAnswer hears each usable answer the moment it lands,
  * before it is settled with the others, so a caller can show it while the rest
- * are still working.
+ * are still working. onMiss hears each one that was asked and gave nothing,
+ * and why. Otherwise that reason only ever reached the log whenever somebody
+ * else answered, so a provider could fail on every meal without the screen
+ * ever saying so.
  */
-async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK, { signal, onAnswer } = {}) {
+async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK, { signal, onAnswer, onMiss } = {}) {
   const deadline = Date.now() + budgetMs;
   const tried = [];
   const meal = task.meal === true;
+  const miss = (name, why) => {
+    tried.push(`${name}: ${why}`);
+    onMiss?.({ provider: name, detail: why });
+  };
 
-  async function ask(name, isLast, stop) {
+  async function ask(name, isLast, stop, together = false) {
     if (signal?.aborted) return null;
     const provider = PROVIDERS[name];
     if (!provider) return null;
     const bin = provider.bin();
     if (!bin) {
-      tried.push(`${name}: no binary found`);
+      miss(name, "no binary found");
       return null;
     }
 
     // Hold time back for whoever is next, so a slow leader cannot eat the lot.
-    const slice = budgetSlice(
-      deadline - Date.now(),
-      isLast,
-      meal ? MEAL_PROVIDER_MS : PER_PROVIDER_MS,
-      meal ? MEAL_RESERVE_MS : RESERVE_MS,
-    );
+    const slice = providerSlice(deadline - Date.now(), { meal, isLast, together });
     if (slice < 4000) {
-      tried.push(`${name}: skipped, out of time`);
+      miss(name, "skipped, out of time");
       return null;
     }
 
@@ -705,6 +761,7 @@ async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK, { s
       provider.args(description, task),
       slice,
       either(stop, signal),
+      provider.env,
     );
     const value = task.clean(parseCliOutput(out));
     if (value) {
@@ -717,9 +774,9 @@ async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK, { s
     // which is not a failure.
     if (stop?.aborted || signal?.aborted) return null;
     const why = timedOut
-      ? `timed out after ${slice}ms`
+      ? `timed out after ${Math.round(slice / 1000)} s`
       : `exit ${code} ${(err || out).slice(0, 160).trim()}`;
-    tried.push(`${name}: ${why}`);
+    miss(name, why);
     console.warn(`[estimator] ${name} failed (${why})`);
     return null;
   }
@@ -732,7 +789,7 @@ async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK, { s
     const stop = new AbortController();
     const answers = await Promise.all(
       names.map(async (name) => {
-        const answer = await ask(name, true, finish ? undefined : stop.signal);
+        const answer = await ask(name, true, finish ? undefined : stop.signal, true);
         if (!finish && answer?.estimate.confidence === "high") stop.abort();
         return answer;
       }),
@@ -1049,6 +1106,10 @@ const server = createServer((request, response) => {
         signal: gone.signal,
         onAnswer: ({ estimate: answer, provider }) =>
           line({ type: "partial", provider, estimate: answer }),
+        // One that was asked and gave nothing says why, even when the others
+        // answered. An app from before this line skips a type it does not know.
+        onMiss: ({ provider, detail }) =>
+          line({ type: "missed", provider, detail: String(detail).slice(0, 300) }),
       });
       if (gone.signal.aborted) return response.end();
       if (result.error) {
@@ -1099,6 +1160,7 @@ export {
   complex,
   estimate,
   parseCliOutput,
+  providerSlice,
   settle,
   settleDishes,
   structured,

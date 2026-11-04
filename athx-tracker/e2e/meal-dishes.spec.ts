@@ -542,6 +542,27 @@ test("a meal for both is split by dish from the start, and its estimate comes ba
   await expect(page.getByRole("button", { name: "Same meal for each of you" })).toBeVisible();
 });
 
+test("a meal for both says which estimator gave nothing, and why", async ({ page }) => {
+  await page.route("**/api/estimate", async (route) => {
+    const lines = [
+      { type: "missed", provider: "grok", detail: "exit 1 Not signed in." },
+      { type: "done", provider: "codex", estimate: shared([
+        { name: "pizza", calories: 880, protein: 36, carbs: 100, fat: 30 },
+        { name: "salad", calories: 420, protein: 12, carbs: 16, fat: 34 },
+      ]) },
+    ];
+    await route.fulfill({
+      contentType: "application/x-ndjson",
+      body: lines.map((line) => `${JSON.stringify(line)}\n`).join(""),
+    });
+  });
+  await loggingFor(page, "Both").click();
+  await page.getByLabel("Meal description").fill("pizza and salad");
+  await page.getByRole("button", { name: "Estimate macros" }).click();
+  await expect(dish(page, 2).getByLabel("Dish", { exact: true })).toHaveValue("salad");
+  await expect(page.getByRole("list", { name: "No answer from" })).toHaveText("Grok did not answer: exit 1 Not signed in.");
+});
+
 test("a meal for both is cut into dishes without an estimate, or kept the same for each", async ({ page }) => {
   await loggingFor(page, "Both").click();
   await page.getByRole("group", { name: "Sitting" }).getByRole("button", { name: "Lunch" }).click();

@@ -25,6 +25,7 @@ const {
   cleanDishes,
   complex,
   parseCliOutput,
+  providerSlice,
   settle,
   settleDishes,
   structured,
@@ -118,6 +119,40 @@ test("each CLI's wrapper is unwrapped, and bare output is taken as is", () => {
   assert.deepEqual(structured(JSON.stringify(payload)), payload);
 });
 
+test("an envelope with no structured field gives up the answer in its final text", () => {
+  const meal = { ...whole };
+  // Every turn's text joined into one, the answer after the narration.
+  const searched = `I'll look up the label first.Found it on the maker's page.${JSON.stringify(meal)}`;
+  assert.deepEqual(parseCliOutput(JSON.stringify({ type: "result", result: searched })), meal);
+  assert.deepEqual(parseCliOutput(JSON.stringify({ text: JSON.stringify(meal) })), meal);
+  // A structured field that came back as a string.
+  assert.deepEqual(parseCliOutput(JSON.stringify({ structuredOutput: JSON.stringify(meal) })), meal);
+  // Streamed frames, one per line: the answer is in the last one.
+  const frames = [
+    { type: "system", subtype: "init" },
+    { type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Searching." }] } },
+    { type: "result", result: "", structuredOutput: meal },
+  ].map((frame) => JSON.stringify(frame)).join("\n");
+  assert.deepEqual(parseCliOutput(frames), meal);
+  // A shared meal keeps its dishes on the way out.
+  const dinner = shared([dish("pizza", 880), dish("salad", 420)]);
+  const unwrapped = parseCliOutput(JSON.stringify({ result: `Checked both.\n${JSON.stringify(dinner)}` }));
+  assert.deepEqual(unwrapped.dishes.map((each) => each.name), ["pizza", "salad"]);
+  // An envelope with nothing usable inside is still refused.
+  assert.equal(clean(parseCliOutput(JSON.stringify({ type: "result", result: "Not signed in." }))), null);
+  // A bare answer is taken as it is.
+  assert.deepEqual(parseCliOutput(JSON.stringify(meal)), meal);
+});
+
+test("Grok runs without Claude Code's rules, skills, MCP servers and agents", () => {
+  assert.deepEqual(PROVIDERS.grok.env, {
+    GROK_CLAUDE_RULES_ENABLED: "0",
+    GROK_CLAUDE_SKILLS_ENABLED: "0",
+    GROK_CLAUDE_MCPS_ENABLED: "0",
+    GROK_CLAUDE_AGENTS_ENABLED: "0",
+  });
+});
+
 test("output that is not JSON is not an estimate", () => {
   for (const junk of ["", "not json", "{", "<html>", "undefined"]) {
     assert.equal(structured(junk), null, junk);
@@ -199,8 +234,15 @@ test("a click leaves time to look a product up, and a fallback time to search", 
   const click = MEAL_PROVIDER_MS + MEAL_RESERVE_MS;
   assert.equal(budgetSlice(click, false, MEAL_PROVIDER_MS, MEAL_RESERVE_MS), MEAL_PROVIDER_MS);
   assert.equal(budgetSlice(MEAL_RESERVE_MS, true, MEAL_PROVIDER_MS, MEAL_RESERVE_MS), MEAL_RESERVE_MS);
-  // Asked at once, a complex meal's estimators each still get the whole cap.
-  assert.equal(budgetSlice(click, true, MEAL_PROVIDER_MS, MEAL_RESERVE_MS), MEAL_PROVIDER_MS);
+  // In order, the first meal estimator gets the cap and leaves the reserve.
+  assert.equal(providerSlice(click, { meal: true, isLast: false }), MEAL_PROVIDER_MS);
+  assert.equal(providerSlice(click, { meal: true, isLast: true }), MEAL_PROVIDER_MS);
+  // Asked at once nobody is after them, so each gets all of what is left:
+  // Grok's search is no longer cut off at 90 s with 40 s of the click unused.
+  assert.equal(providerSlice(click, { meal: true, isLast: true, together: true }), click);
+  assert.equal(providerSlice(70_000, { meal: true, isLast: true, together: true }), 70_000);
+  // The background queue's budget, likewise.
+  assert.equal(providerSlice(210_000, { meal: true, isLast: true, together: true }), 210_000);
   const route = readFileSync(
     new URL("../athx-tracker/app/api/estimate/route.ts", import.meta.url),
     "utf8",
