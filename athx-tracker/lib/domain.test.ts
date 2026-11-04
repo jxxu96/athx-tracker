@@ -158,6 +158,24 @@ test("a varied lift burns every rep, and its summary is the heaviest sets", () =
     formatLift({ name: "Back squat", kg: 100, sets: 3, reps: 5 }, "lb"),
     "Back squat 220.5 lb 3×5",
   );
+  assert.equal(
+    formatLift({
+      name: "Back squat", kg: 100, sets: 1, reps: 1,
+      detail: [{ kg: 60, reps: 5 }, { kg: 100, reps: 1, failed: true }],
+    }, "kg"),
+    "Back squat 60 kg×5, 100 kg×1 (last rep failed)",
+  );
+  assert.equal(
+    formatLift({
+      name: "Back squat", kg: 100, sets: 3, reps: 5,
+      detail: [
+        { kg: 100, reps: 5, failed: true },
+        { kg: 100, reps: 5, failed: true },
+        { kg: 100, reps: 5, failed: true },
+      ],
+    }, "kg"),
+    "Back squat 100 kg 3×5 (last rep failed)",
+  );
 });
 
 test("burn follows MET x 3.5 x kg / 200 per minute", () => {

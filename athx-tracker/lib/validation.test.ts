@@ -144,6 +144,20 @@ test("a lift can list each set, and the summary has to be the heaviest", () => {
     category: "Strength",
     lifts: [{ ...varied, detail: [] }],
   })));
+  assert.ok(ok(workoutSchema, workout({
+    category: "Strength",
+    lifts: [{
+      name: "Back squat", kg: 100, sets: 2, reps: 5,
+      detail: [{ kg: 100, reps: 5 }, { kg: 100, reps: 5, failed: true }],
+    }],
+  })), "a failed final rep is part of that set");
+  assert.ok(!ok(workoutSchema, workout({
+    category: "Strength",
+    lifts: [{
+      name: "Back squat", kg: 100, sets: 1, reps: 5,
+      detail: [{ kg: 100, reps: 5, failed: false }],
+    }],
+  })), "a completed final rep is omitted, not stored as false");
 });
 
 test("the schema cannot permit a record the server would refuse to read", () => {
@@ -151,7 +165,7 @@ test("the schema cannot permit a record the server would refuse to read", () => 
   // different days and nothing connects them, so if a max length is raised
   // later the save fails as "Request too large" with nothing on the form
   // looking wrong. This is the thread between them.
-  const MAX_BODY_BYTES = 64_000;
+  const MAX_BODY_BYTES = 96_000;
   const fill = (n: number, c: string) => c.repeat(n);
 
   const biggestWorkout = {
@@ -165,7 +179,7 @@ test("the schema cannot permit a record the server would refuse to read", () => 
     fatigue: 50, transition: 3600, goal: 86400, context: "pairs",
     lifts: Array.from({ length: 30 }, () => ({
       name: fill(80, "L"), kg: 1000, sets: 50, reps: 100,
-      detail: Array.from({ length: 50 }, () => ({ kg: 1000, reps: 100 })),
+      detail: Array.from({ length: 50 }, () => ({ kg: 1000, reps: 100, failed: true })),
     })),
   };
 

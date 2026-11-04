@@ -69,6 +69,8 @@ export const workoutSchema = z.object({
     detail: z.array(z.object({
       kg: finite.positive().max(1000),
       reps: z.number().int().min(1).max(100),
+      /** The final rep of this set was failed. Omitted when it was completed. */
+      failed: z.literal(true).optional(),
     }).strict()).min(1).max(50).optional(),
   }).strict().superRefine((lift, context) => {
     if (!lift.detail) return;

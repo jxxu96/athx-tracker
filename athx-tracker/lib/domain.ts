@@ -19,12 +19,15 @@ export type Segment = {
   /** The load carried, in kilograms like every other weight. Omitted when unloaded or not recorded. */
   kg?: number;
 };
-/** One set of a lift, when the sets were not all the same. */
-export type LiftSet = { kg: number; reps: number };
+/**
+ * One set of a lift. failed means the final rep was not completed, and is
+ * omitted when that rep was made.
+ */
+export type LiftSet = { kg: number; reps: number; failed?: true };
 /**
  * A lift as logged. kg, sets and reps are the heaviest work: more weight,
  * then more reps, and sets is how many were done that way. detail is every
- * set, in order, and only when they differ. Older lifts omit it.
+ * set, in order, when they differ or a final rep was failed. Older lifts omit it.
  */
 export type Lift = {
   name: string;
@@ -710,9 +713,16 @@ export function formatWeight(kg: number, unit: WeightUnit) {
   return `${displayLoad(kg, unit)} ${unit}`;
 }
 
+/** One set on the log line. A failed final rep stays on that set. */
+function formatSet(set: LiftSet, unit: WeightUnit) {
+  const text = `${formatWeight(set.kg, unit)}×${set.reps}`;
+  return set.failed ? `${text} (last rep failed)` : text;
+}
+
 /**
  * The log's one line for a lift. Identical sets stay "225 lb 3×5". A lift
  * whose sets differed lists each one: "135 lb×5, 185 lb×3, 225 lb×1".
+ * A failed final rep is named on the set it belongs to.
  */
 export function formatLift(
   lift: { name: string; kg: number; sets?: number; reps: number; detail?: readonly LiftSet[] },
@@ -720,9 +730,14 @@ export function formatLift(
 ) {
   const detail = lift.detail;
   if (detail && detail.length > 0) {
-    const same = detail.every((set) => set.kg === detail[0].kg && set.reps === detail[0].reps);
-    if (!same) {
-      return `${lift.name} ${detail.map((set) => `${formatWeight(set.kg, unit)}×${set.reps}`).join(", ")}`;
+    const first = detail[0];
+    const alike = detail.every((set) =>
+      set.kg === first.kg && set.reps === first.reps && Boolean(set.failed) === Boolean(first.failed));
+    if (!alike) {
+      return `${lift.name} ${detail.map((set) => formatSet(set, unit)).join(", ")}`;
+    }
+    if (first.failed) {
+      return `${lift.name} ${formatWeight(lift.kg, unit)} ${lift.sets ?? detail.length}×${lift.reps} (last rep failed)`;
     }
   }
   return `${lift.name} ${formatWeight(lift.kg, unit)} ${lift.sets ?? 1}×${lift.reps}`;
