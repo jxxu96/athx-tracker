@@ -157,6 +157,8 @@ test("an older template can recover item nutrition from its saved estimate", () 
   assert.deepEqual(ingredientTotals([{ ...oats, grams: 40 }, offer.items[1]]), {
     calories: 310, protein: 17, carbs: 28, fat: 13, fiber: 4, alcohol: 0,
   });
+  const [countFirst] = mealOffers([{ ...legacy, assumptions: assumptions.replace("Eggs, 2 large", "2 eggs") }], [], today);
+  assert.deepEqual(countFirst.items, offer.items);
   const [stale] = mealOffers([{ ...legacy, items: [{ ...items[0], grams: 50 }, items[1]] }], [], today);
   assert.equal(stale.items[0].nutrition, undefined);
 });

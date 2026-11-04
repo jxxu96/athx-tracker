@@ -64,8 +64,10 @@ function matchRows(items: readonly MealTemplateItem[], assumptions: string) {
   if (rows.length !== items.length) return;
   const matched = items.map((item) => {
     // A counted item may put its count in the name or in the portion column.
-    const name = item.grams === 0 ? item.name.replace(/^\d+(?:\.\d+)?\s+/, "") : item.name;
-    return rows.filter((row) => Math.abs(row.grams - item.grams) < 0.051 && sameFood(name, row.name));
+    const foodName = (name: string) => item.grams === 0 ? name.replace(/^\d+(?:\.\d+)?\s+/, "") : name;
+    return rows.filter((row) =>
+      Math.abs(row.grams - item.grams) < 0.051 && sameFood(foodName(item.name), foodName(row.name)),
+    );
   });
   if (matched.some((matches) => matches.length !== 1)) return;
   const ordered = matched.map(([row]) => row);
