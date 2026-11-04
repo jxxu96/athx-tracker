@@ -7,6 +7,7 @@ export type CommonMeal = {
   meal: Meal["meal"];
   macros: Meal["macros"];
   assumptions: string;
+  items?: Meal["items"];
   days: number;
 };
 
@@ -113,6 +114,7 @@ export function commonMeals(meals: Meal[], today: string, limit = 3): CommonMeal
         meal: sitting,
         macros: copyMacros(picked.macros),
         assumptions: picked.assumptions,
+        ...(picked.items ? { items: picked.items } : {}),
         days: byDay.size,
       },
     });

@@ -12,6 +12,8 @@ import {
   upsertTemplate,
 } from "./meal-templates.ts";
 
+import { ingredientTotals } from "./meal-ingredients.ts";
+
 const today = "2026-10-23";
 const macros = { calories: 455, protein: 30, carbs: 50, fat: 15, alcohol: 0, fiber: 0 };
 
@@ -133,6 +135,32 @@ test("a kept meal replaces its repeated suggestion, and a rename does not bring 
     items: [{ name: "Shake", grams: 0 }],
   })], oats, today);
   assert.deepEqual(named.map((offer) => offer.name), ["Shake", "Usual oats"]);
+});
+
+test("an older template can recover item nutrition from its saved estimate", () => {
+  const items = parseMealItems("80 g oats, 2 eggs");
+  const macros = { calories: 460, protein: 22, carbs: 55, fat: 16, fiber: 8 };
+  const assumptions = [
+    "80 g oats [300 kcal, 10P, 54C, 6F, 8 fiber]",
+    "Eggs, 2 large [160 kcal, 12P, 1C, 10F]",
+  ].join("\n\n");
+  const legacy = template({
+    id: "00000000-0000-4000-8000-000000000001",
+    name: "Oats and eggs",
+    items,
+    macros,
+    assumptions,
+  });
+  const [offer] = mealOffers([legacy], [], today);
+  const oats = offer.items[0];
+  assert.equal(oats.nutrition?.grams, 80);
+  assert.deepEqual(ingredientTotals([{ ...oats, grams: 40 }, offer.items[1]]), {
+    calories: 310, protein: 17, carbs: 28, fat: 13, fiber: 4, alcohol: 0,
+  });
+  const [countFirst] = mealOffers([{ ...legacy, assumptions: assumptions.replace("Eggs, 2 large", "2 eggs") }], [], today);
+  assert.deepEqual(countFirst.items, offer.items);
+  const [stale] = mealOffers([{ ...legacy, items: [{ ...items[0], grams: 50 }, items[1]] }], [], today);
+  assert.equal(stale.items[0].nutrition, undefined);
 });
 
 test("a snack template cannot keep another sitting's ethanol", () => {

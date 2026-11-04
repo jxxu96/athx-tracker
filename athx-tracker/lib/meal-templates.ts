@@ -7,6 +7,7 @@ import {
   MEAL_TEMPLATE_NAME_LIMIT,
 } from "./domain.ts";
 import { commonMeals, mealKey, type CommonMeal } from "./common-meals.ts";
+import { captureIngredientNutrition, loggedIngredients } from "./meal-ingredients.ts";
 
 const LEADING_GRAMS = /^(\d+(?:\.\d+)?)\s*(?:g|grams)\b\s*(?:of\s+)?(.+)$/i;
 const TRAILING_GRAMS = /^(.+?)\s+(\d+(?:\.\d+)?)\s*(?:g|grams)\b\.?$/i;
@@ -80,7 +81,7 @@ export function templateDescription(items: MealTemplateItem[]) {
     .filter((item) => item.name.trim())
     .map((item) => {
       const name = item.name.trim();
-      const grams = formatGrams(item.grams);
+      const grams = item.nutrition?.grams && item.grams === 0 ? "0" : formatGrams(item.grams);
       return grams ? `${grams} g ${name}` : name;
     })
     .join(", ");
@@ -119,6 +120,7 @@ export function buildTemplate(input: {
     .map((item) => ({
       name: item.name.trim().slice(0, MEAL_TEMPLATE_ITEM_LIMIT),
       grams: roundGrams(item.grams),
+      ...(item.nutrition ? { nutrition: item.nutrition } : {}),
     }))
     .filter((item) => item.name);
   if (!items.length) return { ok: false, error: "Add at least one item." };
@@ -173,6 +175,8 @@ export function removeTemplate(list: MealTemplate[], id: string) {
 }
 
 function itemsForCommon(suggestion: CommonMeal): MealTemplateItem[] {
+  const ingredients = loggedIngredients(suggestion);
+  if (ingredients.length) return ingredients;
   const fromAssumptions = parseMealItems(suggestion.assumptions);
   // A sentence of assumptions is not a shopping list. Use it only when it
   // actually names a portion in grams.
@@ -196,7 +200,7 @@ export function mealOffers(templates: MealTemplate[], meals: Meal[], today: stri
     saved: true,
     name: template.name,
     meal: template.meal,
-    items: template.items.map((item) => ({ ...item })),
+    items: captureIngredientNutrition(template.items, template.macros, template.assumptions),
     macros: copyMacros(template.macros),
     assumptions: template.assumptions,
     sourceKey: template.sourceKey,

@@ -70,6 +70,8 @@ export type Meal = {
    */
   macros: Macros & { alcohol?: number; fiber?: number };
   source: "manual" | "grok" | "queued"; assumptions: string;
+  /** Ingredient portions and their nutrition, when the estimate broke them out. */
+  items?: MealTemplateItem[];
   /** Which CLI produced an estimate. Older meals, and anything typed by hand, omit it. */
   estimator?: Estimator;
 };
@@ -80,7 +82,12 @@ export const MEAL_TEMPLATE_NAME_LIMIT = 80;
 export const MEAL_TEMPLATE_ITEM_LIMIT = 80;
 export const MEAL_TEMPLATE_GRAMS_LIMIT = 5000;
 /** One food in a saved meal. Zero grams means the amount lives in the name, as with "2 eggs". */
-export type MealTemplateItem = { name: string; grams: number };
+export type MealTemplateItem = {
+  name: string;
+  grams: number;
+  /** Macros at the reference portion, which stays fixed when the serving changes. */
+  nutrition?: { grams: number; macros: Meal["macros"] };
+};
 /**
  * A meal kept so it can be logged again. The name is only the label.
  * The items hold the foods and the grams, so either can change on its own.

@@ -17,6 +17,7 @@ import { ATHLETES, MEAL_TEMPLATE_GRAMS_LIMIT, MEAL_TEMPLATE_ITEMS } from "@/lib/
 import type { Meal, MealTemplateItem } from "@/lib/domain";
 import { api, message, newId } from "@/lib/client";
 import { mealKey } from "@/lib/common-meals";
+import { captureIngredientNutrition, ingredientSliderMax, ingredientTotals } from "@/lib/meal-ingredients";
 import type { MealEstimate } from "@/lib/estimate-conversation";
 import {
   buildTemplate,
@@ -31,7 +32,7 @@ import {
 
 const SITTINGS = ["Breakfast", "Lunch", "Dinner", "Snack", "Alcohol"] as const;
 
-type ItemDraft = { name: string; grams: string };
+type ItemDraft = Omit<MealTemplateItem, "grams"> & { grams: string };
 
 type Draft = {
   id: string;
@@ -42,6 +43,7 @@ type Draft = {
   assumptions: string;
   sourceKey: string;
   saved: boolean;
+  hadNutrition: boolean;
 };
 
 function storedTemplates(templates: MealTemplates | undefined): MealTemplates {
@@ -61,7 +63,7 @@ function readItems(rows: ItemDraft[]): { items: MealTemplateItem[] } | { error: 
     const grams = raw === "" ? 0 : Number(raw);
     if (!Number.isFinite(grams) || grams < 0 || grams > MEAL_TEMPLATE_GRAMS_LIMIT)
       return { error: "Grams need a number from 0 up to 5000." };
-    items.push({ name, grams });
+    items.push({ ...row, name, grams: Math.round(grams * 10) / 10 });
   }
   if (!items.length) return { error: "Add at least one item." };
   if (items.length > MEAL_TEMPLATE_ITEMS) return { error: "That meal has too many items." };
@@ -137,13 +139,14 @@ export function MealTemplateList({
         name: offer.name,
         meal: offer.meal,
         items: (offer.items.length ? offer.items : [{ name: offer.name, grams: 0 }]).map((item) => ({
-          name: item.name,
-          grams: formatGrams(item.grams),
+          ...item,
+          grams: item.nutrition?.grams ? String(item.grams) : formatGrams(item.grams),
         })),
         macros: offer.macros,
         assumptions: offer.assumptions,
         sourceKey: offer.sourceKey || mealKey(offer.name),
         saved: offer.saved,
+        hadNutrition: !!ingredientTotals(offer.items),
       },
     });
   }
@@ -185,12 +188,17 @@ export function MealTemplateList({
       setEditorError(read.error);
       return;
     }
+    const totals = ingredientTotals(read.items);
+    if (editor.draft.hadNutrition && !totals) {
+      setEditorError("Estimate the changed ingredients before saving.");
+      return;
+    }
     const built = buildTemplate({
       id: editor.draft.id,
       name: editor.draft.name,
       meal: editor.draft.meal,
       items: read.items,
-      macros: editor.draft.macros,
+      macros: totals ?? editor.draft.macros,
       assumptions: editor.draft.assumptions,
       sourceKey: editor.draft.sourceKey,
     });
@@ -257,12 +265,15 @@ export function MealTemplateList({
         method: "POST",
         body: JSON.stringify({ description }),
       });
+      const items = captureIngredientNutrition(read.items.map(({ name, grams }) => ({ name, grams })), estimate, estimate.assumptions);
       setEditor((current) => {
         if (!current) return current;
         return {
           ...current,
           draft: {
             ...current.draft,
+            items: items.map((item) => ({ ...item, grams: formatGrams(item.grams) })),
+            hadNutrition: !!ingredientTotals(items),
             meal: (estimate.alcohol ?? 0) > 0 ? "Alcohol" : current.draft.meal,
             macros: {
               calories: estimate.calories,
@@ -288,12 +299,9 @@ export function MealTemplateList({
     setEditorError("");
   }
 
-  const preview = editor
-    ? templateDescription(editor.draft.items.map((item) => ({
-        name: item.name,
-        grams: Number(item.grams) || 0,
-      })))
-    : "";
+  const read = editor ? readItems(editor.draft.items) : null;
+  const preview = read && "items" in read ? templateDescription(read.items) : "";
+  const totals = read && "items" in read ? ingredientTotals(read.items) : undefined;
 
   return (
     <section
@@ -425,7 +433,9 @@ export function MealTemplateList({
                         disabled={saving || estimating}
                         onChange={(event) => {
                           const items = editor.draft.items.slice();
-                          items[index] = { ...item, grams: event.target.value };
+                          const grams = event.target.value;
+                          const weighed = item.nutrition?.grams === 0 && Number(grams) > 0;
+                          items[index] = weighed ? { name: item.name, grams } : { ...item, grams };
                           updateDraft({ items });
                         }}
                       />
@@ -437,7 +447,7 @@ export function MealTemplateList({
                         disabled={saving || estimating}
                         onChange={(event) => {
                           const items = editor.draft.items.slice();
-                          items[index] = { ...item, name: event.target.value };
+                          items[index] = { name: event.target.value, grams: item.grams };
                           updateDraft({ items });
                         }}
                       />
@@ -454,6 +464,24 @@ export function MealTemplateList({
                       >
                         <X />
                       </Button>
+                      {item.nutrition && item.nutrition.grams > 0 ? (
+                        <input
+                          type="range"
+                          className="col-span-2 w-full accent-primary"
+                          aria-label={`${item.name} weight`}
+                          aria-valuetext={`${Number(item.grams)} g`}
+                          min={0}
+                          max={ingredientSliderMax(Number(item.grams) || 0, item.nutrition.grams)}
+                          step={0.1}
+                          value={Number(item.grams) || 0}
+                          disabled={saving || estimating}
+                          onChange={(event) => {
+                            const items = editor.draft.items.slice();
+                            items[index] = { ...item, grams: event.target.value };
+                            updateDraft({ items });
+                          }}
+                        />
+                      ) : null}
                     </div>
                   ))}
                   <Button
@@ -468,11 +496,12 @@ export function MealTemplateList({
                     Add item
                   </Button>
                 </div>
-                <p className="text-xs text-muted-foreground">{macroLine(editor.draft.macros, editor.draft.meal)}</p>
-                <p className="text-[11px] text-muted-foreground">
-                  Changing the grams does not change these figures. Estimate again
-                  when you want the macros to follow the new portions.
-                </p>
+                <p className="text-xs text-muted-foreground">{macroLine(totals ?? editor.draft.macros, editor.draft.meal)}</p>
+                {!totals ? (
+                  <p className="text-[11px] text-muted-foreground">
+                    Estimate these items to save nutrition for each weighed ingredient.
+                  </p>
+                ) : null}
                 {grokReady ? (
                   <Button
                     type="button"

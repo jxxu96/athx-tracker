@@ -22,7 +22,8 @@ export async function PUT(request: Request) {
   const rejected = await guard(request, true);
   if (rejected) return rejected;
   try {
-    const body = await readBody(request);
+    // Each settings update includes both athletes' recipes and ingredient nutrition.
+    const body = await readBody(request, 1024 * 1024);
     const settings = settingsSchema.parse(body.settings);
     if (!Number.isInteger(body.revision) || body.revision < 0) throw new Error();
     const payload = JSON.stringify(settings);
