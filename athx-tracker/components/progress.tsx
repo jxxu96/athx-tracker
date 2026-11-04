@@ -40,19 +40,72 @@ import {
 const PEOPLE = ["hippos", "gators"] as const;
 
 /**
- * Start is grey. Latest and best take the athlete's colour, and the target is
- * an open ring. A faded athlete colour vanished against the dark theme.
+ * Start stays a light grey dot. Latest is an empty ring in the athlete's
+ * colour, best is that ring with diagonal stripes, and the target is solid.
+ * These stay at full strength: a faded athlete colour vanished on dark.
  */
 const START_FILL = { background: "var(--muted-foreground)", opacity: 0.5 };
 
-function Swatch({ color, ring = false }: { color?: string; ring?: boolean }) {
+const MARK_BOX: Record<ProgressMark, string> = {
+  start: "size-2.5",
+  latest: "size-4",
+  best: "size-4",
+  target: "size-4",
+};
+
+/** A few colour stripes across a clear circle, clipped inside the outline. */
+function hatch(color: string) {
+  return `repeating-linear-gradient(-45deg, ${color} 0 1.75px, transparent 1.75px 4.5px)`;
+}
+
+function MarkFace({
+  kind,
+  color,
+  onBar = false,
+}: {
+  kind: ProgressMark;
+  color?: string;
+  /** The scale's mark. The legend uses the same face without this. */
+  onBar?: boolean;
+}) {
+  const box = `block shrink-0 rounded-full ${MARK_BOX[kind]}`;
+  if (kind === "start") {
+    return (
+      <span aria-hidden="true" data-progress-mark={onBar ? kind : undefined} className={box} style={START_FILL} />
+    );
+  }
+  if (kind === "latest") {
+    return (
+      <span
+        aria-hidden="true"
+        data-progress-mark={onBar ? kind : undefined}
+        className={`${box} border-2 bg-card`}
+        style={{ borderColor: color }}
+      />
+    );
+  }
+  if (kind === "best") {
+    return (
+      <span
+        aria-hidden="true"
+        data-progress-mark={onBar ? kind : undefined}
+        className={`${box} border-2 bg-card bg-clip-padding`}
+        style={{ borderColor: color, backgroundImage: hatch(color ?? "transparent") }}
+      />
+    );
+  }
   return (
     <span
       aria-hidden="true"
-      className={ring ? "size-2 shrink-0 rounded-full border-2" : "size-2 shrink-0 rounded-full"}
-      style={ring ? { borderColor: color } : color ? { background: color } : START_FILL}
+      data-progress-mark={onBar ? kind : undefined}
+      className={box}
+      style={{ background: color }}
     />
   );
+}
+
+function Swatch({ kind, color }: { kind: ProgressMark; color?: string }) {
+  return <MarkFace kind={kind} color={color} />;
 }
 
 function Stat({
@@ -85,38 +138,13 @@ function Stat({
 const MARK_LAYER: Record<ProgressMark, number> = { target: 1, start: 2, latest: 3, best: 4 };
 
 function Mark({ kind, at, color }: { kind: ProgressMark; at: number; color: string }) {
-  const place = {
-    left: `${at}%`,
-    zIndex: MARK_LAYER[kind],
-  };
-  if (kind === "target") {
-    return (
-      <span
-        data-progress-mark="target"
-        className="absolute top-1/2 size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-transparent"
-        style={{ ...place, borderColor: color }}
-      />
-    );
-  }
-  if (kind === "start") {
-    return (
-      <span
-        data-progress-mark="start"
-        className="absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full"
-        style={{ ...place, ...START_FILL }}
-      />
-    );
-  }
   return (
     <span
-      data-progress-mark={kind}
-      className={
-        kind === "best"
-          ? "absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-card"
-          : "absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-card"
-      }
-      style={{ ...place, background: color }}
-    />
+      className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
+      style={{ left: `${at}%`, zIndex: MARK_LAYER[kind] }}
+    >
+      <MarkFace kind={kind} color={color} onBar />
+    </span>
   );
 }
 
@@ -129,8 +157,8 @@ const BAR_HEIGHT = LANE_Y(3) + 12;
 
 /** Along the line, which is inset 8px from each side so end marks stay whole. */
 const alongLine = (at: number) => `calc(8px + (100% - 16px) * ${at / 100})`;
-/** A column's swatch, at the left of each quarter of the row. */
-const atColumn = (column: number) => `calc(25% * ${column} + 4px)`;
+/** A column's swatch, centred on each quarter of the row. */
+const atColumn = (column: number) => `calc(25% * ${column} + 8px)`;
 
 function Leader({
   from,
@@ -322,24 +350,24 @@ function Total({
       <div>
         {marks ? <Bar bar={marks} color={color} unit={unit} leaders runner={athlete} bagel={bagel} /> : null}
         <dl className="grid grid-cols-4">
-          <Stat label="Start" value={figure(total.start)} notes={[]} swatch={total.start ? <Swatch /> : null} />
+          <Stat label="Start" value={figure(total.start)} notes={[]} swatch={total.start ? <Swatch kind="start" /> : null} />
           <Stat
             label="Latest"
             value={figure(total.latest)}
             notes={[]}
-            swatch={total.latest ? <Swatch color={color} /> : null}
+            swatch={total.latest ? <Swatch kind="latest" color={color} /> : null}
           />
           <Stat
             label="Best"
             value={figure(total.best)}
             notes={[]}
-            swatch={total.best ? <Swatch color={color} /> : null}
+            swatch={total.best ? <Swatch kind="best" color={color} /> : null}
           />
           <Stat
             label="Target"
             value={figure(total.target)}
             notes={targetNotes(total.target ?? 0, total.best, unit)}
-            swatch={total.target ? <Swatch color={color} ring /> : null}
+            swatch={total.target ? <Swatch kind="target" color={color} /> : null}
           />
         </dl>
       </div>
@@ -413,25 +441,25 @@ function Lift({
             label="Start"
             value={formatWeight(start.kg, unit)}
             notes={notes(start)}
-            swatch={marks ? <Swatch /> : null}
+            swatch={marks ? <Swatch kind="start" /> : null}
           />
           <Stat
             label="Latest"
             value={formatWeight(latest.kg, unit)}
             notes={notes(latest)}
-            swatch={marks ? <Swatch color={color} /> : null}
+            swatch={marks ? <Swatch kind="latest" color={color} /> : null}
           />
           <Stat
             label="Best"
             value={formatWeight(best.kg, unit)}
             notes={notes(best)}
-            swatch={marks ? <Swatch color={color} /> : null}
+            swatch={marks ? <Swatch kind="best" color={color} /> : null}
           />
           <Stat
             label="Target"
             value={lift.target > 0 ? formatWeight(lift.target, unit) : "—"}
             notes={targetNotes(lift.target, best.kg, unit)}
-            swatch={marks && lift.target > 0 ? <Swatch color={color} ring /> : null}
+            swatch={marks && lift.target > 0 ? <Swatch kind="target" color={color} /> : null}
           />
         </dl>
       </div>
