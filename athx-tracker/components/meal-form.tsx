@@ -1407,6 +1407,9 @@ export function MealForm({
       </section>
       )}
 
+      {/* A meal for both shows its dishes, not the answers, so who gave
+          nothing is said here instead. */}
+      {splitting ? <Missed missed={missed} /> : null}
       <fieldset disabled={busy} className="min-w-0 space-y-4">
         {splitting ? null : (
         <>
