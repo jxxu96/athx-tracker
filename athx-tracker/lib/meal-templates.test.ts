@@ -141,8 +141,8 @@ test("an older template can recover item nutrition from its saved estimate", () 
   const items = parseMealItems("80 g oats, 2 eggs");
   const macros = { calories: 460, protein: 22, carbs: 55, fat: 16, fiber: 8 };
   const assumptions = [
-    "Oats, 80 g [300 kcal, 10P, 54C, 6F, 8 fiber]",
-    "2 eggs, large [160 kcal, 12P, 1C, 10F]",
+    "80 g oats [300 kcal, 10P, 54C, 6F, 8 fiber]",
+    "Eggs, 2 large [160 kcal, 12P, 1C, 10F]",
   ].join("\n\n");
   const legacy = template({
     id: "00000000-0000-4000-8000-000000000001",

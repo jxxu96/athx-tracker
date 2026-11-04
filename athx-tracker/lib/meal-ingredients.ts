@@ -47,10 +47,12 @@ function ingredientRows(assumptions: string) {
     if (!match) return [];
     const macros = readFigures(match[2]);
     if (!macros) return [];
-    const portion = match[1].match(/^(.+?),\s*(\d+(?:\.\d+)?)\s*(?:g|grams)\b/i);
+    const headingText = match[1].trim();
+    const portion = headingText.match(/^(.+?),\s*(\d+(?:\.\d+)?)\s*(?:g|grams)\b/i);
+    const leading = portion ? null : headingText.match(/^(\d+(?:\.\d+)?)\s*(?:g|grams)\b\s*(?:of\s+)?(.+)$/i);
     return [{
-      name: (portion?.[1] ?? match[1].split(",")[0]).trim(),
-      grams: Number(portion?.[2] ?? 0),
+      name: (portion?.[1] ?? leading?.[2] ?? headingText.split(",")[0]).trim(),
+      grams: Number(portion?.[2] ?? leading?.[1] ?? 0),
       macros,
     }];
   });
@@ -60,9 +62,11 @@ function ingredientRows(assumptions: string) {
 function matchRows(items: readonly MealTemplateItem[], assumptions: string) {
   const rows = ingredientRows(assumptions);
   if (rows.length !== items.length) return;
-  const matched = items.map((item) =>
-    rows.filter((row) => Math.abs(row.grams - item.grams) < 0.051 && sameFood(item.name, row.name)),
-  );
+  const matched = items.map((item) => {
+    // A counted item may put its count in the name or in the portion column.
+    const name = item.grams === 0 ? item.name.replace(/^\d+(?:\.\d+)?\s+/, "") : item.name;
+    return rows.filter((row) => Math.abs(row.grams - item.grams) < 0.051 && sameFood(name, row.name));
+  });
   if (matched.some((matches) => matches.length !== 1)) return;
   const ordered = matched.map(([row]) => row);
   if (new Set(ordered).size !== rows.length) return;

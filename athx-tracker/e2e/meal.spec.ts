@@ -688,5 +688,14 @@ test("saved ingredient weights rescale locally and the template keeps its defaul
   await page.getByRole("button", { name: "Meal", exact: true }).click();
   await template.click();
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("315");
+
+  await page.getByRole("button", { name: `Edit ${name}` }).click();
+  const editor = page.getByRole("dialog", { name: "Edit Hippos template" });
+  await editor.getByRole("slider", { name: "kirkland creamy pb weight" }).press("Home");
+  await expect(editor.getByText(/250 kcal/)).toBeVisible();
+  await editor.getByRole("button", { name: "Save template" }).click();
+  await expect(page.getByText("Template updated", { exact: true })).toBeVisible();
+  await template.click();
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("250");
   expect(estimates).toBe(1);
 });
