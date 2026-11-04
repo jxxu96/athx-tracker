@@ -27,8 +27,12 @@ The app already speaks this protocol: it is the `GROK_GATEWAY_URL` path, which
 POSTs `{"description": "..."}` with a bearer token and expects the estimate back.
 A meal request with `"stream": true` is answered as
 `application/x-ndjson`: one line `{"type":"partial","provider":"codex","estimate":{...}}`
-per estimator as it answers, then `{"type":"done","provider":"average","estimate":{...}}`
-or `{"type":"error","error":"No estimate available.","detail":"..."}`. The
+per estimator as it answers, and `{"type":"missed","provider":"grok","detail":"timed out after 130 s"}`
+for each one asked that gave nothing, with its reason, then
+`{"type":"done","provider":"average","estimate":{...}}`
+or `{"type":"error","error":"No estimate available.","detail":"..."}`. The form
+shows each missed line under the answers, so a provider that keeps failing
+says why even when the others answered. An app from before that line skips it. The
 status is sent before anyone answers, so a failure is in the last line, not the
 status. Without the flag, a meal gets one JSON body as before, so an app from
 before streaming still works. Whichever way, a caller that hangs up stops every
@@ -107,8 +111,9 @@ Everything can go in `estimator/.env`; a real environment variable overrides it.
 ## Provider order
 
 A complex meal, one that links a page or lists three or more items, asks
-Codex, Claude and Grok at once, each with up to 90 s to look a named product
-up, so the wait is the slowest answer rather than the sum of them. A simple
+Codex, Claude and Grok at once, each with all of the time the caller allowed
+to look a named product up, so the wait is the slowest answer rather than the
+sum of them. A simple
 meal goes in order, Codex, then Claude, then Grok, and a sure first answer, a
 looked-up label or reference values, ends it. If that first answer is unsure,
 everyone left is asked at once.
@@ -125,9 +130,12 @@ its assumptions give each one's figures and working. A shared meal is averaged
 dish by dish, each dish with the dish in the same place in the other answers,
 so only answers that split it into as many dishes as the best-weighted one are
 averaged; one split another way is left out, and the meal's assumptions say so. A CLI that is not
-installed or not signed in fails immediately and is simply not counted. A meal
-click allows 90 s, plus 40 s held back for a simple meal's fallback. The
-background queue allows 210 s.
+installed or not signed in fails immediately and is not counted, and the
+form says which one and why. A meal click allows 130 s. In order, the first
+provider gets up to 90 s and 40 s is held back for a simple meal's fallback.
+Asked together, nobody is after them, so each may use all 130 s: the 90 s cap
+could cut Grok's search off with 40 s of the click unused. The background
+queue allows 210 s.
 
 A workout goes in order too, and the first usable answer wins. Whoever is not last leaves a reserve of time. That is why
 Grok does not lead: it takes about 32 s, and the fallback then has nothing
@@ -196,8 +204,18 @@ per call.
 - A meal may search the web and open a page, and nothing else. Codex gets live
   web search. Claude and Grok get web search and page fetch, for up to ten
   turns. A workout stays one turn with those tools off. Looking a product up
-  has a 90s cap per provider, and a click holds 40s so a simple meal's
-  fallback can search too. The shorter cap still applies to workouts.
+  in order has a 90s cap per provider, and a click holds 40s so a simple
+  meal's fallback can search too. Providers asked together share no cap. The
+  shorter cap still applies to workouts.
+- Grok also reads Claude Code's setup from `~/.claude` (CLAUDE.md as rules,
+  and Claude's MCP servers, as reported by the `@aibridge/driver-grok`
+  package for Grok 1.0.5). It is started with `GROK_CLAUDE_RULES_ENABLED`, `GROK_CLAUDE_SKILLS_ENABLED`,
+  `GROK_CLAUDE_MCPS_ENABLED` and `GROK_CLAUDE_AGENTS_ENABLED` set to `0`, so
+  your rules, skills, MCP servers and agents do not ride along, as Codex and
+  Claude are already kept off your config. A real environment variable wins.
+- When the answer is not in a `structuredOutput` or `structured_output` field,
+  it is read from the envelope's final text, `result` or `text`, after
+  whatever was said on the way to it.
 - A reply that would not validate counts as a failure and moves to the next
   provider, rather than reaching the app as a bad estimate.
 

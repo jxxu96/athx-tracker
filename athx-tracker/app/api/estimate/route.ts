@@ -149,7 +149,7 @@ function relay(body: ReadableStream<Uint8Array>, bucket: string, upstream: Abort
         const { value, done } = await events.next();
         if (left) return;
         if (done) return controller.close();
-        if (value.type !== "partial") settle(value.type === "error");
+        if (value.type === "done" || value.type === "error") settle(value.type === "error");
         controller.enqueue(encoder.encode(`${JSON.stringify(value)}\n`));
       },
       async cancel() {

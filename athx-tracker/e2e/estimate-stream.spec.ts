@@ -103,6 +103,32 @@ test("each estimator's answer shows as it lands, and the settled one fills the m
   await expect(soFar.getByText("About 1100 kcal.")).toBeVisible();
 });
 
+test("an estimator that gave nothing says why, beside the ones that answered", async ({ page }) => {
+  await holdEstimates(page);
+  await signIn(page);
+  await section(page, "Meal").click();
+  await page.getByLabel("Meal description").fill("Rice, beans, cheese");
+  await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
+  await expect.poll(() => held(page)).toEqual({ requests: 1, stopped: false });
+
+  const missed = page.getByRole("list", { name: "No answer from" });
+  await push(page, { type: "partial", provider: "codex", estimate: bowl(600) });
+  await expect(missed).toHaveCount(0);
+  await push(page, { type: "missed", provider: "grok", detail: "timed out after 130 s" });
+  await expect(missed).toHaveText("Grok did not answer: timed out after 130 s");
+  await push(page, { type: "partial", provider: "claude", estimate: bowl(700) });
+  await push(page, { type: "done", provider: "average", estimate: bowl(646.7) });
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("646.7");
+  // Still there once the meal is filled, so it can be read after the wait.
+  await expect(missed).toHaveText("Grok did not answer: timed out after 130 s");
+  await expect(page.getByRole("status", { name: "Answers so far" }).getByRole("listitem")).toHaveCount(2);
+
+  // A fresh estimate starts clean.
+  await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
+  await expect.poll(async () => (await held(page)).requests).toBe(2);
+  await expect(missed).toHaveCount(0);
+});
+
 test("a label is the estimate, and the other answers can be included and reweighted", async ({ page }) => {
   await holdEstimates(page);
   await signIn(page);

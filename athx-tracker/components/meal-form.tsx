@@ -27,7 +27,7 @@ import {
   type MealTemplateItem,
 } from "@/lib/domain";
 import { api, message, newId } from "@/lib/client";
-import { NDJSON, readEstimate, type PartialEstimate } from "@/lib/estimate-stream";
+import { NDJSON, readEstimate, type MissedEstimate, type PartialEstimate } from "@/lib/estimate-stream";
 import {
   ANSWER_ORDER,
   DEFAULT_WEIGHTS,
@@ -184,6 +184,28 @@ function browserStorage() {
   } catch {
     return null;
   }
+}
+
+/**
+ * Each estimator that was asked and gave nothing, and the reason it gave: not
+ * signed in, timed out, out of time. The others may have answered, so this is
+ * the only place a provider that keeps failing says so.
+ */
+function Missed({ missed }: { missed: MissedEstimate[] }) {
+  if (!missed.length) return null;
+  const shown = [...missed].sort(
+    (a, b) => ANSWER_ORDER.indexOf(a.provider) - ANSWER_ORDER.indexOf(b.provider),
+  );
+  return (
+    <ul aria-label="No answer from" className="space-y-1 rounded-xl border border-dashed p-3 text-xs text-muted-foreground">
+      {shown.map(({ provider, detail }) => (
+        <li key={provider} className="break-words">
+          <span className="font-bold text-foreground">{ESTIMATORS[provider]}</span> did not answer
+          {detail ? `: ${detail}` : "."}
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 /**
@@ -418,6 +440,9 @@ export function MealForm({
   const [estimating, setEstimating] = useState(false);
   // Each estimator's answer as it lands, and which of them the average uses.
   const [partials, setPartials] = useState<PartialEstimate[]>(() => partialsOf(from?.partials));
+  // Each one asked that gave nothing, and why. Without it a provider could
+  // fail on every meal and the form would only ever show the others.
+  const [missed, setMissed] = useState<MissedEstimate[]>([]);
   const [included, setIncluded] = useState<AnswerProvider[] | null>(() => includedOf(from?.included));
   // The weights are this phone's defaults. The first paint uses the built-in
   // ones, and the stored ones replace them once the page can read them.
@@ -559,6 +584,7 @@ export function MealForm({
     setConfidence(null);
     setAnsweredBy(null);
     setPartials([]);
+    setMissed([]);
     setIncluded(null);
     setSource("manual");
     setAdjusted(false);
@@ -767,6 +793,7 @@ export function MealForm({
     setRejected(false);
     setJustFinished(false);
     setPartials([]);
+    setMissed([]);
     setIncluded(null);
     const stop = new AbortController();
     stopper.current = stop;
@@ -799,7 +826,7 @@ export function MealForm({
         const next = [...landed.filter((held) => held.provider !== partial.provider), partial];
         landed.splice(0, landed.length, ...next);
         setPartials(next);
-      });
+      }, (gave) => setMissed((current) => [...current.filter((held) => held.provider !== gave.provider), gave]));
       if (asDishes) {
         // The meal's name stays as typed: left blank, each of you is named
         // after your own dishes. The per-model box is for a whole meal.
@@ -832,6 +859,7 @@ export function MealForm({
       // Stopped on purpose: the form is as it was, ready to edit.
       if (stop.signal.aborted) return;
       setPartials([]);
+      setMissed([]);
       setIncluded(null);
       onEstimateComplete?.(message(problem));
       if (refining) {
@@ -850,6 +878,7 @@ export function MealForm({
       // throws them away with the attempt.
       if (stop.signal.aborted) {
         setPartials([]);
+        setMissed([]);
         setIncluded(null);
       }
     }
@@ -879,6 +908,7 @@ export function MealForm({
     setConfidence(null);
     setAnsweredBy(null);
     setPartials([]);
+    setMissed([]);
     setIncluded(null);
     setError("");
     setKept(offer.saved ? { id: offer.id, athlete, sourceKey: offer.sourceKey } : null);
@@ -906,6 +936,7 @@ export function MealForm({
     setEthanol(String(totals.alcohol ?? 0));
     setAssumptions(nextAssumptions);
     setPartials([]);
+    setMissed([]);
     setIncluded(null);
     setConversation([{ estimate: savedEstimate({ name, macros: totals, assumptions: nextAssumptions }) }]);
   }
@@ -1421,6 +1452,7 @@ export function MealForm({
             onWeightBlur={blurWeight}
           />
         ) : null}
+        {!refineOpen ? <Missed missed={missed} /> : null}
         <section {...athleteOutline(who)} className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
           <Field label="Meal">
             <Input
@@ -1587,6 +1619,7 @@ export function MealForm({
               );
             })}
             {estimating ? <SoFar partials={partials} /> : null}
+            {estimating ? <Missed missed={missed} /> : null}
           </div>
           {estimating ? (
             <p role="status" className="shrink-0 text-sm text-muted-foreground">

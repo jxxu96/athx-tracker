@@ -8,6 +8,7 @@ import {
   readEstimate,
   relayEstimate,
   type EstimateEvent,
+  type MissedEstimate,
   type PartialEstimate,
 } from "./estimate-stream.ts";
 import { estimateSchema } from "./validation.ts";
@@ -62,6 +63,25 @@ test("each estimator's answer is passed on as it lands, then the settled one", a
     { type: "partial", provider: "codex", estimate: bowl },
     { type: "partial", provider: "grok", estimate: { ...bowl, calories: 700 } },
     { type: "done", provider: "average", estimate: { ...bowl, calories: 650 } },
+  ]);
+});
+
+test("one that gave nothing is passed on with its reason, and the others still settle it", async () => {
+  const events = await all(relayEstimate(lines(
+    JSON.stringify({ type: "missed", provider: "grok", detail: "timed out after 130 s" }),
+    JSON.stringify({ type: "missed", provider: "gemini", detail: "nobody" }),
+    JSON.stringify({ type: "missed", provider: "average", detail: "not one" }),
+    JSON.stringify({ type: "missed", provider: "claude", detail: "x".repeat(400) }),
+    JSON.stringify({ type: "missed", provider: "codex" }),
+    JSON.stringify({ type: "partial", provider: "codex", estimate: bowl }),
+    JSON.stringify({ type: "done", provider: "codex", estimate: bowl }),
+  ), usable));
+  assert.deepEqual(events, [
+    { type: "missed", provider: "grok", detail: "timed out after 130 s" },
+    { type: "missed", provider: "claude", detail: "x".repeat(300) },
+    { type: "missed", provider: "codex", detail: "" },
+    { type: "partial", provider: "codex", estimate: bowl },
+    { type: "done", provider: "codex", estimate: bowl },
   ]);
 });
 
@@ -121,6 +141,17 @@ test("the form hears each partial, then gets the settled answer", async () => {
   ), (partial) => heard.push(partial));
   assert.deepEqual(heard, [{ type: "partial", provider: "codex", estimate: bowl }]);
   assert.deepEqual(settled, { estimate: { ...bowl, calories: 650 }, provider: "average" });
+});
+
+test("the form hears who gave nothing, and why", async () => {
+  const missed: MissedEstimate[] = [];
+  const settled = await readEstimate(stream(
+    { type: "missed", provider: "grok", detail: "exit 1 Not signed in." },
+    { type: "partial", provider: "codex", estimate: bowl },
+    { type: "done", provider: "codex", estimate: bowl },
+  ), undefined, (event) => missed.push(event));
+  assert.deepEqual(missed, [{ type: "missed", provider: "grok", detail: "exit 1 Not signed in." }]);
+  assert.deepEqual(settled, { estimate: bowl, provider: "codex" });
 });
 
 test("a streamed failure throws with its status, as api() does", async () => {
