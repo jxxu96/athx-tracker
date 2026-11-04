@@ -85,6 +85,23 @@ single SQLite file on a volume.
   a template to keep your own name, items and grams; tapping one fills the form,
   and the saved macros stay until you estimate again. A meal typed and not
   saved yet is kept as a draft; see *Drafts*.
+  A meal of two or more items offers **Expand into N items** under its
+  figures. The items come from the estimate's working, which lists each item
+  with its own figures in brackets; a blend averages the estimators that
+  listed the same foods, by their weights, and the list is shared out so the
+  items add up to the figures already on the meal (`breakdown` in
+  `lib/meal-items.ts`). Items saved with the meal open as they were saved, and
+  a meal with no figures yet opens into blank items where it was written as
+  several, to type in. Each item has a name, its grams, and its own figures:
+  a weighed item has a slider, and moving it or typing grams scales that
+  item's figures; typing a figure sets them at the grams it is at. Remove an
+  item, or add one. While expanded, the meal's figures are the items added
+  up and cannot be typed into, and changing a figure or a weight saves the
+  meal as your own numbers. Saving keeps the items with the meal, and once
+  they were changed, lists them first in the assumptions as "Adjusted item
+  by item", so a reply to the estimate reads them. **Collapse into one meal**
+  keeps the figures and writes that list in. A reply, or a change of which
+  estimates count, makes the items again from the new answer.
   Logging for both splits the meal by dish. Describe it and **Estimate
   macros**, and it comes back dish by dish, each with its own figures and
   assumptions. The phone first cuts the description where it was written as
@@ -98,7 +115,10 @@ single SQLite file on a volume.
   one. A dish estimated again on its own can come back as two, each keeping its
   share. **Split by dish** makes the phone's cut without estimating, for
   figures typed by hand; figures already on the form stay together as the
-  first dish. **Same meal for each of you** saves the same meal for each of
+  first dish. A dish whose working lists two or more items offers **Expand
+  into N items**: each item becomes a dish of its own with the dish's share,
+  its own part of the working, and, when weighed, a quantity in grams, so
+  one of you can have all of one item. **Same meal for each of you** saves the same meal for each of
   you instead, as Both used to, and the next meal is split again. An estimator
   from before dishes answers for the whole meal, which becomes one dish. Each
   dish has its own figures, typed or estimated from what the
@@ -444,8 +464,12 @@ by hand, and Setup says which mode is active. Set `XAI_API_KEY` (and optionally
 `XAI_MODEL`), or point `GROK_GATEWAY_URL` and `GROK_GATEWAY_TOKEN` at a gateway.
 Estimates are capped at 60 a day, counted in the database so a restart cannot reset it.
 
-After estimating, review the assumptions above the meal fields. **Reply to
-estimate** opens a conversation where you can correct portions or ingredients,
+After estimating, review how each estimator reached its figures under
+**Answers so far**. That is the only place it is shown: the assumptions box
+would repeat it, so it is left out while those answers are on the form, and
+appears for a meal without them, such as one reopened from the Log, a
+template, or a single answer. **Reply to
+estimate** stays either way, and opens a conversation where you can correct portions or ingredients,
 or ask how the figures were reached. Each reply includes your earlier
 clarifications and updates the meal's macros and assumptions. Failed replies
 keep the current estimate and the text you were typing.
@@ -462,6 +486,17 @@ settled answer, which may average them or keep only the best-sourced one.
 **Stop estimate** ends it, stops the estimator's CLIs, gives the daily
 estimate back, and unlocks the form to edit. A stopped estimate raises no
 popup.
+
+Once it has settled, **Estimator weights** at the very top of the form lists
+each estimator's macros alone, whether it counts, and a slider from 0 to 100
+for its weight, with the share of the meal that gives it and the weighted
+average underneath. Each figure can be typed over, and the meal is averaged
+again from it; an answer typed over is marked as edited, and a meal averaged
+from one is saved as your own numbers. A looked-up label starts on its own,
+and the others can be switched back on. Moving a slider reweighs the meal at
+once, and the weight is this phone's default for the next meal. A meal split
+by dish is settled by the estimator dish by dish, with its own fixed weights,
+so it shows none.
 
 **Save and estimate in background** saves the meal now, with zero macros and
 the description kept, and the server estimates it with the same estimators and

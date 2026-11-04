@@ -8,7 +8,7 @@ import {
 import { mealKey } from "./common-meals.ts";
 
 const FIGURES = ["calories", "protein", "carbs", "fat", "fiber", "alcohol"] as const;
-type Figures = Record<(typeof FIGURES)[number], number>;
+export type Figures = Record<(typeof FIGURES)[number], number>;
 type SavedItem = MealTemplateItem & { nutrition: NonNullable<MealTemplateItem["nutrition"]> };
 
 const FIGURE_NAMES = [/^kcal$/i, /^(p|protein)$/i, /^(c|carbs?)$/i, /^(f|fat)$/i, /^fib(?:er|re)$/i, /^(ethanol|alcohol)$/i];
@@ -33,29 +33,56 @@ function foodWords(name: string) {
   return mealKey(name.replace(/['’]s\b/gi, "").replace(/\bpb\b/gi, "peanut butter")).split(" ").filter(Boolean);
 }
 
-function sameFood(a: string, b: string) {
+/** Two names for the same food: most of each one's words are in the other. */
+export function sameFood(a: string, b: string) {
   const first = foodWords(a);
   const second = foodWords(b);
   const shared = first.filter((word) => second.includes(word)).length;
   return shared > 0 && shared >= Math.ceil(first.length * 0.6) && shared >= Math.ceil(second.length * 0.6);
 }
 
+/**
+ * One item's line, as the estimator is asked to write it: its name, its
+ * portion and its own figures in brackets, "Chicken breast, 150 g cooked
+ * [248 kcal, 47P, 0C, 5F]". label is everything before the brackets, and
+ * after is whatever the line goes on to say. Anything else is not an item.
+ */
+export function ingredientRow(line: string) {
+  const heading = line.replace(/\*\*/g, "").replace(/^\s*(?:[-*•]|\d+[.)])?\s*/, "");
+  const match = heading.match(/^([^[]+?)\s*\[([^\]]+)\]/);
+  if (!match) return null;
+  const macros = readFigures(match[2]);
+  if (!macros) return null;
+  const headingText = match[1].trim();
+  const portion = headingText.match(/^(.+?),\s*(\d+(?:\.\d+)?)\s*(?:g|grams)\b/i);
+  const leading = portion ? null : headingText.match(/^(\d+(?:\.\d+)?)\s*(?:g|grams)\b\s*(?:of\s+)?(.+)$/i);
+  return {
+    name: (portion?.[1] ?? leading?.[2] ?? headingText.split(",")[0]).trim(),
+    grams: Number(portion?.[2] ?? leading?.[1] ?? 0),
+    macros,
+    label: headingText,
+    after: heading.slice(match[0].length).replace(/^\s*[-–—:.]?\s*/, "").trim(),
+  };
+}
+
 function ingredientRows(assumptions: string) {
   return assumptions.split(/\r?\n/).flatMap((line) => {
-    const heading = line.replace(/\*\*/g, "").replace(/^\s*(?:[-*•]|\d+[.)])?\s*/, "");
-    const match = heading.match(/^([^[]+?)\s*\[([^\]]+)\]/);
-    if (!match) return [];
-    const macros = readFigures(match[2]);
-    if (!macros) return [];
-    const headingText = match[1].trim();
-    const portion = headingText.match(/^(.+?),\s*(\d+(?:\.\d+)?)\s*(?:g|grams)\b/i);
-    const leading = portion ? null : headingText.match(/^(\d+(?:\.\d+)?)\s*(?:g|grams)\b\s*(?:of\s+)?(.+)$/i);
-    return [{
-      name: (portion?.[1] ?? leading?.[2] ?? headingText.split(",")[0]).trim(),
-      grams: Number(portion?.[2] ?? leading?.[1] ?? 0),
-      macros,
-    }];
+    const row = ingredientRow(line);
+    return row ? [{ name: row.name, grams: row.grams, macros: row.macros }] : [];
   });
+}
+
+/**
+ * Each estimator's own working, with the share of the average it had. A
+ * blended estimate lists every one under its summary line; anything else is
+ * one estimate, which is all of it.
+ */
+export function providerSections(assumptions: string): { assumptions: string; weight: number }[] {
+  const sections = assumptions.split(PROVIDER_BREAKDOWN);
+  const shares = [...sections[0].matchAll(/(?:Codex|Claude|Grok) (\d+)%/g)];
+  return sections.length > 1 && shares.length === sections.length - 1
+    ? sections.slice(1).map((text, index) => ({ assumptions: text, weight: Number(shares[index][1]) }))
+    : [{ assumptions, weight: 1 }];
 }
 
 /** Match a complete breakdown to the described items before reusing its numbers. */
@@ -92,11 +119,7 @@ export function captureIngredientNutrition(
 ): MealTemplateItem[] {
   if (hasIngredientNutrition(items) || !items.some((item) => item.grams > 0)) return items;
   // Older blended estimates list each provider's breakdown below its summary.
-  const sections = assumptions.split(PROVIDER_BREAKDOWN);
-  const shares = [...sections[0].matchAll(/(?:Codex|Claude|Grok) (\d+)%/g)];
-  const candidates = sources ?? (sections.length > 1 && shares.length === sections.length - 1
-    ? sections.slice(1).map((text, index) => ({ assumptions: text, weight: Number(shares[index][1]) }))
-    : [{ assumptions, weight: 1 }]);
+  const candidates = sources ?? providerSections(assumptions);
   const complete = candidates.flatMap(({ assumptions: text, weight }) => {
     const rows = matchRows(items, text);
     return rows ? [{ rows, weight }] : [];
