@@ -107,6 +107,35 @@ test("each main lift shows its start, latest, best and target, at the race's rep
       .map((item) => item.mark),
   );
   expect(order).toEqual(["start", "latest", "best", "target"]);
+  // Start is the light grey dot. Latest is an empty ring, best is that ring
+  // hatched, and the target is solid in the athlete's colour.
+  const paint = await jerk.locator("[data-progress-mark]").evaluateAll((nodes) =>
+    nodes.map((node) => {
+      const style = getComputedStyle(node);
+      return {
+        mark: node.getAttribute("data-progress-mark"),
+        backgroundImage: style.backgroundImage,
+        backgroundColor: style.backgroundColor,
+        borderWidth: style.borderTopWidth,
+        borderColor: style.borderTopColor,
+        opacity: style.opacity,
+      };
+    }),
+  );
+  const face = Object.fromEntries(paint.map((item) => [item.mark, item]));
+  expect(face.start.opacity).toBe("0.5");
+  expect(face.start.borderWidth).toBe("0px");
+  expect(face.start.backgroundImage).toBe("none");
+  expect(face.latest.borderWidth).toBe("2px");
+  expect(face.latest.borderColor).toBe("rgb(40, 118, 83)");
+  expect(face.latest.backgroundImage).toBe("none");
+  expect(face.latest.backgroundColor).not.toBe("rgb(40, 118, 83)");
+  expect(face.best.borderWidth).toBe("2px");
+  expect(face.best.borderColor).toBe("rgb(40, 118, 83)");
+  expect(face.best.backgroundImage).toContain("linear-gradient");
+  expect(face.target.borderWidth).toBe("0px");
+  expect(face.target.backgroundImage).toBe("none");
+  expect(face.target.backgroundColor).toBe("rgb(40, 118, 83)");
 
   // Gators' other targets are there before anything is logged against them.
   await expect(page.getByRole("group", { name: "Gators overhead press" }))
