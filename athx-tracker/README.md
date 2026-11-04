@@ -464,8 +464,12 @@ by hand, and Setup says which mode is active. Set `XAI_API_KEY` (and optionally
 `XAI_MODEL`), or point `GROK_GATEWAY_URL` and `GROK_GATEWAY_TOKEN` at a gateway.
 Estimates are capped at 60 a day, counted in the database so a restart cannot reset it.
 
-After estimating, review the assumptions above the meal fields. **Reply to
-estimate** opens a conversation where you can correct portions or ingredients,
+After estimating, review how each estimator reached its figures under
+**Answers so far**. That is the only place it is shown: the assumptions box
+would repeat it, so it is left out while those answers are on the form, and
+appears for a meal without them, such as one reopened from the Log, a
+template, or a single answer. **Reply to
+estimate** stays either way, and opens a conversation where you can correct portions or ingredients,
 or ask how the figures were reached. Each reply includes your earlier
 clarifications and updates the meal's macros and assumptions. Failed replies
 keep the current estimate and the text you were typing.
@@ -483,13 +487,16 @@ settled answer, which may average them or keep only the best-sourced one.
 estimate back, and unlocks the form to edit. A stopped estimate raises no
 popup.
 
-Once it has settled, **Estimator weights** at the very foot of the form lists
-each estimator's totals, whether it counts, and a slider from 0 to 100 for its
-weight, with the share of the meal that gives it and the weighted average
-underneath. A looked-up label starts on its own, and the others can be
-switched back on. Moving a slider reweighs the meal at once, and the weight is
-this phone's default for the next meal. A meal split by dish is settled by the
-estimator dish by dish, with its own fixed weights, so it shows none.
+Once it has settled, **Estimator weights** at the very top of the form lists
+each estimator's macros alone, whether it counts, and a slider from 0 to 100
+for its weight, with the share of the meal that gives it and the weighted
+average underneath. Each figure can be typed over, and the meal is averaged
+again from it; an answer typed over is marked as edited, and a meal averaged
+from one is saved as your own numbers. A looked-up label starts on its own,
+and the others can be switched back on. Moving a slider reweighs the meal at
+once, and the weight is this phone's default for the next meal. A meal split
+by dish is settled by the estimator dish by dish, with its own fixed weights,
+so it shows none.
 
 **Save and estimate in background** saves the meal now, with zero macros and
 the description kept, and the server estimates it with the same estimators and

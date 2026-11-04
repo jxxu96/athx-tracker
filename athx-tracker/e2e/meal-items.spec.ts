@@ -255,3 +255,47 @@ test("items opened from a blend follow the estimator weights at the foot of the 
   await expect(item(page, 2).getByLabel("Calories (kcal)")).toHaveValue("300");
   await expect(page.getByText("Averaged across estimators")).toBeVisible();
 });
+
+test("an estimator's macros can be typed over at the top, and the meal is averaged from them", async ({ page }) => {
+  const answer = (calories: number) => ({
+    name: "Rice bowl", calories, protein: 30, carbs: 60, fat: 20, fiber: 0, alcohol: 0, confidence: "medium",
+    assumptions: `About ${calories} kcal.`,
+  });
+  const lines = [
+    { type: "partial", provider: "codex", estimate: answer(600) },
+    { type: "partial", provider: "claude", estimate: answer(700) },
+    { type: "done", provider: "average", estimate: answer(646.7) },
+  ];
+  await page.route("**/api/estimate", (route) => route.fulfill({
+    body: lines.map((line) => JSON.stringify(line)).join("\n") + "\n",
+    headers: { "Content-Type": "application/x-ndjson" },
+  }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await loggingFor(page, "Hippos").click();
+  await page.getByLabel("Meal description").fill("Rice bowl");
+  await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
+  const weights = page.getByRole("region", { name: "Estimator weights" });
+  await expect(figures(page).getByLabel("Calories (kcal)")).toHaveValue("646.7");
+  await expect(page.getByText(/saved as your own numbers/)).toHaveCount(0);
+
+  // 600 x 40 and 800 x 35, over 75.
+  await weights.getByLabel("Claude calories").fill("800");
+  await expect(figures(page).getByLabel("Calories (kcal)")).toHaveValue("693.3");
+  await weights.getByLabel("Claude protein").fill("40.5");
+  await expect(weights.getByLabel("Claude protein")).toHaveValue("40.5");
+  // 30 x 40 and 40.5 x 35, over 75.
+  await expect(figures(page).getByLabel("Protein (g)")).toHaveValue("34.9");
+  await expect(weights.getByRole("listitem").nth(1)).toContainText("edited");
+  await expect(page.getByRole("status", { name: "Answers so far" })).toContainText("figures edited by you");
+  await expect(page.getByText(/saved as your own numbers after your edit/)).toBeVisible();
+  await weights.screenshot({ path: "test-results/estimator-weights-mobile.png" });
+  // The weights still move the edited figures.
+  await weights.getByRole("slider", { name: "Codex weight" }).fill("0");
+  await expect(figures(page).getByLabel("Calories (kcal)")).toHaveValue("800");
+
+  await page.getByLabel("Meal", { exact: true }).fill("Typed-over rice bowl");
+  await page.getByRole("button", { name: "Save meal", exact: true }).click();
+  await expect(page.getByText("Meal saved", { exact: true }).first()).toBeVisible();
+  const saved = (await meals(page)).find((meal) => meal.name === "Typed-over rice bowl");
+  expect(saved).toMatchObject({ source: "manual", macros: { calories: 800, protein: 40.5 } });
+});

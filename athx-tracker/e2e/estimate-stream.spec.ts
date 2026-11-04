@@ -100,19 +100,30 @@ test("each estimator's answer shows as it lands, and the settled one fills the m
   await expect(weights.getByRole("checkbox", { name: "Include Claude" })).toBeChecked();
   await expect(weights.getByRole("checkbox", { name: "Include Grok" })).toBeChecked();
   await expect(weights.getByRole("slider", { name: "Codex weight" })).toHaveValue("40");
-  // Each estimator's totals sit beside its weight, at the very foot of the form.
+  // Each estimator's macros sit beside its weight, at the very top of the form.
   const answered = weights.getByRole("listitem");
   await expect(answered).toHaveCount(3);
   await expect(answered.nth(0)).toContainText("Codex");
-  await expect(answered.nth(0)).toContainText("600 kcal · 30P · 60C · 20F · medium confidence");
+  await expect(weights.getByLabel("Codex calories")).toHaveValue("600");
+  await expect(weights.getByLabel("Codex protein")).toHaveValue("30");
+  await expect(weights.getByLabel("Codex carbs")).toHaveValue("60");
+  await expect(weights.getByLabel("Codex fat")).toHaveValue("20");
   await expect(answered.nth(0)).toContainText("40% of the meal");
-  await expect(answered.nth(2)).toContainText("1100 kcal");
+  await expect(weights.getByLabel("Grok calories")).toHaveValue("1100");
   await expect(answered.nth(2)).toContainText("25% of the meal");
+  // Macros only: each one's working is said once, under Answers so far.
+  await expect(weights).not.toContainText("About 600 kcal.");
   // 600 x 40, 700 x 35 and 1100 x 25, over 100.
   await expect(weights.getByRole("status")).toHaveText("Weighted average · 760 kcal · 30P · 60C · 20F");
-  const save = page.getByRole("button", { name: "Save meal", exact: true });
-  expect((await weights.boundingBox())!.y).toBeGreaterThan((await save.boundingBox())!.y);
+  const describe = page.getByLabel("Meal description");
+  expect((await weights.boundingBox())!.y).toBeLessThan((await page.getByRole("group", { name: "Athlete" }).boundingBox())!.y);
+  expect((await weights.boundingBox())!.y).toBeLessThan((await describe.boundingBox())!.y);
   await expect(soFar.getByRole("checkbox")).toHaveCount(0);
+  // The assumptions would only repeat Answers so far, so only the reply stays.
+  await expect(page.getByRole("region", { name: "Review estimate" })).toHaveCount(0);
+  await expect(page.getByLabel("Assumptions")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Reply to estimate" })).toBeVisible();
+  await expect(soFar.getByText("About 700 kcal.")).toHaveCount(1);
   await expect(answers).toHaveCount(3);
   await expect(soFar.getByText("About 600 kcal.")).toBeVisible();
   await expect(soFar.getByText("About 700 kcal.")).toBeVisible();

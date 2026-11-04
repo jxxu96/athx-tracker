@@ -44,7 +44,7 @@ import { useFormDraft } from "@/hooks/use-form-draft";
 import { MealTemplateList } from "@/components/meal-templates";
 import { DishShares, MealDishes } from "@/components/meal-dishes";
 import { MealItems } from "@/components/meal-items";
-import { EstimatorWeights } from "@/components/estimator-weights";
+import { EstimatorWeights, type Answer, type AnswerFigure } from "@/components/estimator-weights";
 import { mealKey } from "@/lib/common-meals";
 import {
   captureIngredientNutrition,
@@ -154,13 +154,13 @@ function figuresOf(estimate: Estimate) {
   ].join(" · ");
 }
 
-/** Answers saved with a draft. Anything that is not one is left out. */
-function partialsOf(value: unknown): PartialEstimate[] {
+/** Answers saved with a draft, with any figures typed over them. Anything that is not one is left out. */
+function partialsOf(value: unknown): Answer[] {
   if (!Array.isArray(value)) return [];
-  const out: PartialEstimate[] = [];
+  const out: Answer[] = [];
   for (const item of value) {
     if (!item || typeof item !== "object") continue;
-    const held = item as PartialEstimate;
+    const held = item as Answer;
     const estimate = held.estimate;
     if (!estimate || typeof estimate !== "object") continue;
     if (held.provider !== "codex" && held.provider !== "claude" && held.provider !== "grok") continue;
@@ -177,6 +177,7 @@ function partialsOf(value: unknown): PartialEstimate[] {
         fiber: typeof estimate.fiber === "number" ? estimate.fiber : 0,
         alcohol: typeof estimate.alcohol === "number" ? estimate.alcohol : 0,
       },
+      ...(held.edited === true ? { edited: true } : {}),
     });
   }
   return out;
@@ -204,13 +205,14 @@ function browserStorage() {
  * them, or keep only the ones that found a label. Every model's own description
  * stays here, bold name first and a rule under the section. Once the estimate
  * has finished, an answer left out of the meal is dimmed; which ones count,
- * and how much, is set under Estimator weights at the foot of the form.
+ * how much, and their figures are set under Estimator weights at the top of
+ * the form. This is each one's working, which is not repeated anywhere else.
  */
 function SoFar({
   partials,
   included,
 }: {
-  partials: PartialEstimate[];
+  partials: Answer[];
   /** Which answers the meal uses, once it has settled. */
   included?: readonly AnswerProvider[];
 }) {
@@ -222,13 +224,14 @@ function SoFar({
     <div role="status" aria-label="Answers so far" className="space-y-3 rounded-xl border bg-muted/40 p-3 text-xs">
       <p className="font-medium">Answers so far</p>
       <ul className="space-y-3">
-        {shown.map(({ provider, estimate }) => {
+        {shown.map(({ provider, estimate, edited }) => {
           const on = !included || included.includes(provider);
           const name = ESTIMATORS[provider];
           return (
             <li key={provider} className={`space-y-1 ${on ? "" : "opacity-60"}`}>
               <div className="flex items-center gap-2">
                 <p className="font-bold">{name}</p>
+                {edited ? <p className="text-muted-foreground">figures edited by you</p> : null}
               </div>
               <p className="font-medium">
                 {figuresOf(estimate)}
@@ -399,7 +402,7 @@ export function MealForm({
   const [adjusted, setAdjusted] = useState(from?.adjusted === true);
   const [estimating, setEstimating] = useState(false);
   // Each estimator's answer as it lands, and which of them the average uses.
-  const [partials, setPartials] = useState<PartialEstimate[]>(() => partialsOf(from?.partials));
+  const [partials, setPartials] = useState<Answer[]>(() => partialsOf(from?.partials));
   const [included, setIncluded] = useState<AnswerProvider[] | null>(() => includedOf(from?.included));
   // The weights are this phone's defaults. The first paint uses the built-in
   // ones, and the stored ones replace them once the page can read them.
@@ -745,15 +748,36 @@ export function MealForm({
     complexMeal(description) ? ["grok"] : [],
   ).map((answer) => answer.provider);
 
-  /** The meal becomes the weighted average of whichever answers are switched on. */
-  function applyBlend(providers: readonly AnswerProvider[], nextWeights: EstimateWeights) {
-    const picked = partials.filter((partial) => providers.includes(partial.provider));
+  /**
+   * The meal becomes the weighted average of whichever answers are switched
+   * on. An answer whose figures you typed over makes the meal your own
+   * numbers, as editing the meal's own figures does.
+   */
+  function applyBlend(
+    providers: readonly AnswerProvider[],
+    nextWeights: EstimateWeights,
+    answers: readonly Answer[] = partials,
+  ) {
+    const picked = answers.filter((partial) => providers.includes(partial.provider));
     const blended = blendEstimates(picked, nextWeights);
     if (!blended) return;
     writeFields(blended.estimate, blended.provider, picked, nextWeights, expanded);
+    if (picked.some((answer) => answer.edited)) {
+      setSource("manual");
+      setAdjusted(true);
+    }
     setConversation((current) => current.length
       ? [...current.slice(0, -1), { ...current[current.length - 1], estimate: blended.estimate }]
       : [{ estimate: blended.estimate }]);
+  }
+
+  /** One estimator's figure typed over. The meal is averaged again from it, if it counts. */
+  function changeAnswerFigure(provider: AnswerProvider, figure: AnswerFigure, value: number) {
+    const next = partials.map((answer) => answer.provider === provider
+      ? { ...answer, edited: true, estimate: { ...answer.estimate, [figure]: value } }
+      : answer);
+    setPartials(next);
+    if (chosen.includes(provider)) applyBlend(chosen, weightsRef.current, next);
   }
 
   function toggleProvider(provider: AnswerProvider) {
@@ -1234,6 +1258,18 @@ export function MealForm({
       {/* Three fieldsets, not one: the form locks while an estimate runs, and
           Stop and the background estimate between them must not. */}
       <fieldset disabled={busy} className="min-w-0 space-y-4">
+        {/* At the very top: each estimator's macros, to correct, and how much it counts. */}
+        {!splitting && !estimating ? (
+          <EstimatorWeights
+            answers={partials}
+            included={chosen}
+            weights={weights}
+            sitting={slot}
+            onToggle={toggleProvider}
+            onWeight={changeWeight}
+            onFigure={changeAnswerFigure}
+          />
+        ) : null}
         {editing ? (
           <div
             {...athleteOutline(who, "muted")}
@@ -1487,7 +1523,23 @@ export function MealForm({
         {splitting ? null : (
         <>
 
-        {assumptions || conversation.length > 0 ? (
+        {/* With each estimator's answer listed under Answers so far, the
+            assumptions would only say it all again, so only the reply stays. */}
+        {partials.length > 0 ? (
+          conversation.length > 0 ? (
+            <Button
+              ref={replyButton}
+              type="button"
+              variant="outline"
+              className="w-full"
+              disabled={!grokReady}
+              onClick={() => setRefineOpen(true)}
+            >
+              <MessageCircle />
+              Reply to estimate
+            </Button>
+          ) : null
+        ) : assumptions || conversation.length > 0 ? (
           <section
             {...athleteOutline(who)}
             aria-label="Review estimate"
@@ -1684,17 +1736,6 @@ export function MealForm({
         <Button type="submit" size="lg" className="w-full" disabled={saving || estimatingDish !== null}>
           {saving ? "Saving…" : editing ? "Update meal" : "Save meal"}
         </Button>
-
-        {/* At the foot of the form: each estimator's totals, and how much it counts. */}
-        {!splitting && !estimating ? (
-          <EstimatorWeights
-            partials={partials}
-            included={chosen}
-            weights={weights}
-            onToggle={toggleProvider}
-            onWeight={changeWeight}
-          />
-        ) : null}
       </fieldset>
       <Dialog
         open={active && refineOpen}
