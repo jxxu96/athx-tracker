@@ -164,8 +164,7 @@ function grokFolder() {
 // Codex, then Claude, then Grok. A missing binary or a login that is not there
 // fails quickly and the next provider answers. Whoever is not last still leaves
 // the reserve, so a slow leader cannot spend the whole budget. A complex meal
-// asks all of them at once, waits for them, and keeps Grok's answer: its search
-// is the slow part, and that answer is not thrown out for finishing less sure.
+// asks all of them at once and waits for them: Grok's search is the slow part.
 // ESTIMATOR_ORDER overrides this.
 const ORDER = (process.env.ESTIMATOR_ORDER ?? "codex,claude,grok")
   .split(",")
@@ -436,14 +435,14 @@ function cleanDishes(value) {
   };
 }
 
-const MEAL_TASK = { schema: SCHEMA, instructions: INSTRUCTIONS, clean, name: "meal", meal: true, settle: (answers, options) => settle(answers, options) };
+const MEAL_TASK = { schema: SCHEMA, instructions: INSTRUCTIONS, clean, name: "meal", meal: true, settle: (answers) => settle(answers) };
 const DISH_TASK = {
   schema: DISH_SCHEMA,
   instructions: DISH_INSTRUCTIONS,
   clean: cleanDishes,
   name: "dishes",
   meal: true,
-  settle: (answers, options) => settleDishes(answers, options),
+  settle: (answers) => settleDishes(answers),
 };
 const PROVIDERS = {
   codex: {
@@ -571,19 +570,24 @@ function shorten(text, max) {
 }
 
 /**
- * Who the average starts from. High is a looked-up label: the exact calories,
- * so only those answers count, and keep does not pull a guess back in.
- * Otherwise the best footing wins, plus anyone named in keep. A complex meal
- * keeps Grok when nobody found a label, so a search that came back less sure
- * still counts.
+ * How much more a surer answer counts than its weight alone says: a label
+ * found counts double, a reference value as it is, and a product not found or
+ * extrapolated half. Each weight is multiplied by this before the shares are
+ * worked out, so answers on the same footing share as WEIGHTS do, and
+ * otherwise share moves from the less sure to the surer. The app's box uses
+ * the same, as CONFIDENCE_FACTOR in lib/estimate-blend.ts.
  */
-function kept(answers, keep = []) {
-  const exact = answers.filter(({ estimate }) => estimate.confidence === "high");
-  if (exact.length) return exact;
-  const best = Math.max(...answers.map(({ estimate }) => RANK[estimate.confidence]));
-  return answers.filter(
-    ({ estimate, provider }) => RANK[estimate.confidence] === best || keep.includes(provider),
-  );
+const CONFIDENCE_FACTOR = { low: 0.5, medium: 1, high: 2 };
+const counts = ({ provider, estimate }) => WEIGHTS[provider] * CONFIDENCE_FACTOR[estimate.confidence];
+
+/**
+ * Who the average starts from: everyone, except that when two or more found
+ * the label, an answer that could not find the product is left out. Anyone
+ * else less sure stays in and counts for less.
+ */
+function kept(answers) {
+  const labels = answers.filter(({ estimate }) => estimate.confidence === "high").length;
+  return labels >= 2 ? answers.filter(({ estimate }) => estimate.confidence !== "low") : answers;
 }
 
 /** One phrase for the header. Same footing stays "each low confidence". */
@@ -591,42 +595,40 @@ function footing(list) {
   const [first] = list;
   return list.every(({ estimate }) => estimate.confidence === first.estimate.confidence)
     ? `each ${first.estimate.confidence} confidence`
-    : list.map(({ provider, estimate }) => `${title(provider)} ${estimate.confidence} confidence`).join(", ");
+    : `${list.map(({ provider, estimate }) => `${title(provider)} ${estimate.confidence} confidence`).join(", ")}, a high answer counting double its weight and a low one half`;
 }
 
 /**
- * The best-sourced answer wins, so a label one of them found is never diluted
- * by another's guess. A label is never diluted, even by a provider keep names.
- * Answers on the same footing are averaged by WEIGHTS, each figure over the
- * answers that gave it more than 0: a 0 beside real figures is one left out,
- * not one measured. Each one's working is kept, inside the 3000 characters the
- * app holds for assumptions. keep names a provider that still counts when it
- * is less sure and nobody found a label.
+ * The kept answers averaged by WEIGHTS times CONFIDENCE_FACTOR, each figure
+ * over the answers that gave it more than 0: a 0 beside real figures is one
+ * left out, not one measured. The name is the answer that counts for most.
+ * Each one's working is kept, inside the 3000 characters the app holds for
+ * assumptions.
  */
-function settle(answers, { keep = [] } = {}) {
-  const top = kept(answers, keep);
+function settle(answers) {
+  const top = kept(answers);
   if (top.length === 1) return top[0];
 
-  const weight = (list) => list.reduce((sum, { provider }) => sum + WEIGHTS[provider], 0);
+  const weight = (list) => list.reduce((sum, answer) => sum + counts(answer), 0);
   const mean = (key) => {
     const given = top.filter(({ estimate }) => estimate[key] > 0);
     return given.length
-      ? given.reduce((sum, { estimate, provider }) => sum + estimate[key] * WEIGHTS[provider], 0) /
-          weight(given)
+      ? given.reduce((sum, answer) => sum + answer.estimate[key] * counts(answer), 0) / weight(given)
       : 0;
   };
   const macros = Object.fromEntries(
     ["calories", "protein", "carbs", "fat", "fiber", "alcohol"].map((key) => [key, mean(key)]),
   );
   const shares = top.map(
-    ({ provider }) => `${title(provider)} ${Math.round((WEIGHTS[provider] / weight(top)) * 100)}%`,
+    (answer) => `${title(answer.provider)} ${Math.round((counts(answer) / weight(top)) * 100)}%`,
   );
   const confidence = weakest(top.map(({ estimate }) => estimate.confidence));
   const header = `Weighted average of ${shares.slice(0, -1).join(", ")} and ${shares.at(-1)}, ${footing(top)}. A 0 is left out of that figure's average.`;
   const room = Math.floor((3000 - header.length) / top.length) - 2;
+  const lead = top.reduce((best, answer) => (counts(answer) > counts(best) ? answer : best));
   return {
     estimate: clean({
-      name: top[0].estimate.name,
+      name: lead.estimate.name,
       ...macros,
       // Fiber is averaged over fewer answers than carbs can be, so it is held
       // to them.
@@ -646,39 +648,41 @@ function settle(answers, { keep = [] } = {}) {
 
 /**
  * A shared meal settled dish by dish, by the same rule as a whole one: the
- * best-sourced answers win, and those on the same footing are averaged by
- * WEIGHTS, each figure over the answers that gave it more than 0. A dish is
- * averaged with the dish in the same place in the others, so only answers
- * that split the meal into as many dishes as the best-weighted one are
- * averaged; one that split it another way is left out, and the meal's
- * assumptions say so. Each dish keeps every answer's working for it, and the
- * totals are the dishes added up. keep is the same as for a whole meal.
+ * same answers are kept, and each dish is averaged by WEIGHTS times that
+ * answer's confidence for that dish, each figure over the answers that gave
+ * it more than 0. A dish is averaged with the dish in the same place in the
+ * others, so only answers that split the meal into as many dishes as the one
+ * that counts for most are averaged; one that split it another way is left
+ * out, and the meal's assumptions say so. Each dish keeps every answer's
+ * working for it, and the totals are the dishes added up.
  */
-function settleDishes(answers, { keep = [] } = {}) {
-  const top = kept(answers, keep);
+function settleDishes(answers) {
+  const top = kept(answers);
   if (top.length === 1) return top[0];
-  const [lead] = [...top].sort((a, b) => WEIGHTS[b.provider] - WEIGHTS[a.provider]);
+  const [lead] = [...top].sort((a, b) => counts(b) - counts(a));
   const same = top.filter(({ estimate }) => estimate.dishes.length === lead.estimate.dishes.length);
   const apart = top.filter((answer) => !same.includes(answer));
   if (same.length === 1) return lead;
 
-  const weight = (list) => list.reduce((sum, { provider }) => sum + WEIGHTS[provider], 0);
+  // Each answer for one dish counts by its weight and its confidence there.
+  const weigh = ({ value, provider }) => counts({ provider, estimate: value });
+  const weight = (list) => list.reduce((sum, item) => sum + weigh(item), 0);
   const mean = (list, key) => {
     const given = list.filter(({ value }) => value[key] > 0);
     return given.length
-      ? given.reduce((sum, { value, provider }) => sum + value[key] * WEIGHTS[provider], 0) / weight(given)
+      ? given.reduce((sum, item) => sum + item.value[key] * weigh(item), 0) / weight(given)
       : 0;
   };
   const shares = (list) => {
     const named = list.map(
-      ({ provider }) => `${title(provider)} ${Math.round((WEIGHTS[provider] / weight(list)) * 100)}%`,
+      (item) => `${title(item.provider)} ${Math.round((weigh(item) / weight(list)) * 100)}%`,
     );
     return `${named.slice(0, -1).join(", ")} and ${named.at(-1)}`;
   };
   const dishes = lead.estimate.dishes.map((dish, index) => {
     const each = same.map(({ estimate, provider }) => ({ value: estimate.dishes[index], provider }));
     const macros = Object.fromEntries(FIGURES.map((key) => [key, mean(each, key)]));
-    const header = `Weighted average of ${shares(same)}.`;
+    const header = `Weighted average of ${shares(each)}.`;
     const room = Math.floor((3000 - header.length) / each.length) - 2;
     return {
       name: dish.name,
@@ -698,7 +702,8 @@ function settleDishes(answers, { keep = [] } = {}) {
   const left = apart.length
     ? ` ${apart.map(({ provider }) => title(provider)).join(" and ")} split the meal into a different number of dishes, so ${apart.length > 1 ? "they are" : "it is"} left out.`
     : "";
-  const header = `Weighted average of ${shares(same)}, dish by dish, ${footing(same)}. A 0 is left out of that figure's average.${left}`;
+  // The meal's shares are each answer's whole-meal footing; each dish says its own.
+  const header = `Weighted average of ${shares(same.map(({ estimate, provider }) => ({ value: estimate, provider })))}, dish by dish, ${footing(same)}. A 0 is left out of that figure's average.${left}`;
   const notes = same.filter(({ estimate }) => estimate.assumptions);
   const room = notes.length ? Math.floor((3000 - header.length) / notes.length) - 2 : 0;
   const settled = cleanDishes({
@@ -877,9 +882,9 @@ async function estimate(
 
   if (meal && complex(description)) {
     const given = await together(ORDER, { finish: true });
-    // A label is the exact calories, so kept() leaves the guesses out. When
-    // nobody found one, Grok's search still counts even if it came back less sure.
-    if (given.length) return task.settle(given, { keep: ["grok"] });
+    // Everyone counts, by weight and confidence, unless two found the label,
+    // when an answer that could not find the product is left out.
+    if (given.length) return task.settle(given);
   } else {
     for (const [index, name] of ORDER.entries()) {
       if (signal?.aborted) break;

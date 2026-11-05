@@ -123,14 +123,14 @@ test("a complex meal asks every estimator at once, and a simple one goes in orde
   assert.equal(guessed.body.confidence, "low");
   assert.deepEqual(guessed.log.slice(0, 3).sort(), ["start claude", "start codex", "start grok"], "asked together");
 
-  // A label no longer stops the search. Everyone still answers. The settled
-  // meal uses only the label, so a guess is not mixed into the calories.
+  // A label does not stop the search: everyone still answers. One label alone
+  // leaves nobody out, and counts double while the guesses count half:
+  // (600 x 20 + 700 x 70 + 1100 x 12.5) / 102.5.
   const labelled = await post("zzlabel rice, beans, cheese");
-  assert.equal(labelled.provider, "claude");
-  assert.equal(labelled.body.calories, 700);
-  assert.equal(labelled.body.confidence, "high");
-  assert.match(labelled.body.assumptions, /claude guessed/);
-  assert.doesNotMatch(labelled.body.assumptions, /Weighted average/);
+  assert.equal(labelled.provider, "average");
+  assert.equal(labelled.body.calories, 729.3);
+  assert.equal(labelled.body.confidence, "low");
+  assert.match(labelled.body.assumptions, /^Weighted average of Codex 20%, Claude 68% and Grok 12%,/);
   assert.deepEqual(labelled.log.filter((line) => line.startsWith("start")).sort(), ["start claude", "start codex", "start grok"]);
   assert.deepEqual(labelled.log.filter((line) => line.startsWith("end")).sort(), ["end claude", "end codex", "end grok"]);
 

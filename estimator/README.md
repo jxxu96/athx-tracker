@@ -127,18 +127,25 @@ meal goes in order, Codex, then Claude, then Grok, and a sure first answer, a
 looked-up label or reference values, ends it. If that first answer is unsure,
 everyone left is asked at once.
 
-A complex meal waits for every provider. Grok's search is the slow one, and
-that answer is kept even when another model is more sure, so the search is
-not thrown out. A simple meal's fallback still stops when one of them finds a
-label. Otherwise the best-sourced answer is kept, so a reference value beats
-a guess. Answers on the same footing are averaged, weighted Codex 40%, Claude
-35% and Grok 25%,
-shared out again over whoever answered. A 0 beside real figures is left out of
-that figure's average. The meal then says "Averaged across estimators", and
-its assumptions give each one's figures and working. A shared meal is averaged
-dish by dish, each dish with the dish in the same place in the other answers,
-so only answers that split it into as many dishes as the best-weighted one are
-averaged; one split another way is left out, and the meal's assumptions say so. A CLI that is not
+A complex meal waits for every provider, since Grok's search is the slow one.
+A simple meal's fallback still stops when one of them finds a label.
+
+Every answer counts, except that when two or more found the label (high
+confidence), an answer that could not find the product (low) is left out.
+The answers are averaged by weight, Codex 40, Claude 35 and Grok 25, each
+multiplied by its confidence: a label counts double, a reference value
+(medium) as it is, and a low answer half. So three answers on the same
+footing share 40%, 35% and 25%, and otherwise share moves to the surer ones:
+Codex low beside two mediums gives Codex 25%, Claude 44% and Grok 31%. The
+shares are worked out again over whoever answered. A 0 beside real figures is
+left out of that figure's average. The meal then says "Averaged across
+estimators", and its assumptions give each one's share, figures and working.
+A shared meal is averaged dish by dish, each dish with the dish in the same
+place in the other answers and each answer by its confidence for that dish,
+so only answers that split it into as many dishes as the one that counts for
+most are averaged; one split another way is left out, and the meal's
+assumptions say so. The app's answer box applies the same rule to the weights
+saved on the phone. A CLI that is not
 installed or not signed in fails immediately and is not counted, and the
 form says which one and why. A meal click allows 130 s. In order, the first
 provider gets up to 90 s and 40 s is held back for a simple meal's fallback.

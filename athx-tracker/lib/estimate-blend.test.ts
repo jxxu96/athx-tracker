@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   DEFAULT_WEIGHTS,
+  CONFIDENCE_FACTOR,
   blendEstimates,
-  complexMeal,
   defaultIncluded,
   parseWeights,
   readWeights,
@@ -32,48 +32,59 @@ const answer = (
   },
 });
 
-test("a link or three items is a complex meal, and a short one is not", () => {
-  assert.equal(complexMeal("banana"), false);
-  assert.equal(complexMeal("Chicken and rice"), false);
-  assert.equal(complexMeal("Chipotle chicken burrito bowl"), false);
-  assert.equal(complexMeal("mac and cheese"), false);
-  assert.equal(complexMeal(JSON.stringify({ mealDescription: "banana", foodNotes: "yogurt, berries, granola" })), false);
-  assert.equal(complexMeal("Rice, beans, cheese"), true);
-  assert.equal(complexMeal("see https://example.com/bowl"), true);
+test("every answer counts unless two found the label, when one that could not find it is left out", () => {
+  const providers = (list: BlendAnswer[]) => defaultIncluded(list).map((item) => item.provider);
+  // Two labels and a guess: the guess is out.
+  assert.deepEqual(providers([answer("codex", 600, "high"), answer("claude", 700, "high"), answer("grok", 1100, "low")]), ["codex", "claude"]);
+  // Two labels and a reference value: it stays, and counts for less.
+  assert.deepEqual(providers([answer("codex", 600, "high"), answer("claude", 700, "high"), answer("grok", 1100, "medium")]), ["codex", "claude", "grok"]);
+  // One label: nobody is left out, low or not.
+  assert.deepEqual(providers([answer("codex", 600, "low"), answer("claude", 700, "high"), answer("grok", 1100, "low")]), ["codex", "claude", "grok"]);
+  // No label: everyone, however sure.
+  assert.deepEqual(providers([answer("codex", 600, "low"), answer("claude", 700, "medium"), answer("grok", 1100, "medium")]), ["codex", "claude", "grok"]);
+  assert.deepEqual(providers([answer("codex", 600, "high"), answer("claude", 700, "high"), answer("grok", 1100, "high")]), ["codex", "claude", "grok"]);
+  assert.deepEqual(providers([]), []);
 });
 
-test("a label is the estimate, even when a less sure answer would have been kept", () => {
-  const label = answer("claude", 700, "high", "Looked up.");
-  const answers = [answer("codex", 600), label, answer("grok", 1100, "low", "Searched.")];
-  assert.deepEqual(defaultIncluded(answers, ["grok"]), [label]);
-  assert.equal(blendEstimates(defaultIncluded(answers, ["grok"]))?.provider, "claude");
-  assert.equal(blendEstimates(defaultIncluded(answers, ["grok"]))?.estimate.calories, 700);
-});
+test("a less sure answer gives part of its share to the surer ones", () => {
+  assert.deepEqual(CONFIDENCE_FACTOR, { low: 0.5, medium: 1, high: 2 });
+  // Two references and a guess: Codex's 40 counts as 20, so 20, 35 and 25 of 80.
+  const guess = blendEstimates([answer("codex", 600, "low"), answer("claude", 700, "medium"), answer("grok", 1100, "medium")]);
+  assert.equal(guess?.provider, "average");
+  // (600 x 20 + 700 x 35 + 1100 x 25) / 80.
+  assert.equal(guess?.estimate.calories, 800);
+  assert.equal(guess?.estimate.confidence, "low");
+  assert.match(
+    guess?.estimate.assumptions ?? "",
+    /^Weighted average of Codex 25%, Claude 44% and Grok 31%, Codex low confidence, Claude medium confidence, Grok medium confidence, a high answer counting double its weight and a low one half\./,
+  );
 
-test("two labels are averaged, and the guess stays out", () => {
-  const chosen = defaultIncluded([
+  // One label among guesses: Claude's 35 counts as 70, the others as 20 and 12.5.
+  const label = blendEstimates([answer("codex", 600, "low"), answer("claude", 700, "high", "Looked up."), answer("grok", 1100, "low")]);
+  // (600 x 20 + 700 x 70 + 1100 x 12.5) / 102.5.
+  assert.equal(label?.estimate.calories, 729.3);
+  assert.match(label?.estimate.assumptions ?? "", /^Weighted average of Codex 20%, Claude 68% and Grok 12%,/);
+  // The name comes from whoever counts for most, not whoever weighs most.
+  const named = (provider: BlendAnswer["provider"], calories: number, confidence: BlendAnswer["estimate"]["confidence"]) => {
+    const each = answer(provider, calories, confidence);
+    return { ...each, estimate: { ...each.estimate, name: `${provider} bowl` } };
+  };
+  assert.equal(blendEstimates([named("codex", 600, "low"), named("claude", 700, "high")])?.estimate.name, "claude bowl");
+  assert.equal(blendEstimates([named("codex", 600, "medium"), named("claude", 700, "medium")])?.estimate.name, "codex bowl");
+
+  // Two labels, the guess left out: the labels share as their weights do.
+  const two = blendEstimates(defaultIncluded([
     answer("codex", 600, "high", "Looked up."),
     answer("claude", 700, "high", "Looked up."),
     answer("grok", 1100, "low"),
-  ], ["grok"]);
-  const blended = blendEstimates(chosen);
-  assert.equal(blended?.provider, "average");
-  assert.equal(blended?.estimate.calories, 646.7);
-  assert.equal(blended?.estimate.confidence, "high");
-  assert.match(blended?.estimate.assumptions ?? "", /^Weighted average of Codex 53% and Claude 47%, each high confidence\./);
-  assert.doesNotMatch(blended?.estimate.assumptions ?? "", /From Grok/);
+  ]));
+  assert.equal(two?.estimate.calories, 646.7);
+  assert.equal(two?.estimate.confidence, "high");
+  assert.match(two?.estimate.assumptions ?? "", /^Weighted average of Codex 53% and Claude 47%, each high confidence\./);
+  assert.doesNotMatch(two?.estimate.assumptions ?? "", /From Grok/);
 });
 
-test("without a label, a kept Grok still counts, and the same footing is the built-in weights", () => {
-  const kept = defaultIncluded([
-    answer("codex", 600, "medium", "Reference."),
-    answer("grok", 1100, "low", "Searched."),
-  ], ["grok"]);
-  assert.deepEqual(kept.map((item) => item.provider), ["codex", "grok"]);
-  const blended = blendEstimates(kept);
-  assert.equal(blended?.estimate.calories, 792.3);
-  assert.match(blended?.estimate.assumptions ?? "", /Codex 62% and Grok 38%, Codex medium confidence, Grok low confidence/);
-
+test("on the same footing the shares are the weights as they are", () => {
   const all = blendEstimates([answer("codex", 600), answer("claude", 700), answer("grok", 800)]);
   assert.equal(all?.provider, "average");
   assert.deepEqual(
@@ -82,9 +93,9 @@ test("without a label, a kept Grok still counts, and the same footing is the bui
   );
   assert.match(all?.estimate.assumptions ?? "", /^Weighted average of Codex 40%, Claude 35% and Grok 25%, each low confidence\./);
 
-  const pair = blendEstimates([answer("claude", 700), answer("grok", 800)]);
+  const pair = blendEstimates([answer("claude", 700, "high"), answer("grok", 800, "high")]);
   assert.equal(pair?.estimate.calories, 741.7);
-  assert.match(pair?.estimate.assumptions ?? "", /^Weighted average of Claude 58% and Grok 42%,/);
+  assert.match(pair?.estimate.assumptions ?? "", /^Weighted average of Claude 58% and Grok 42%, each high confidence\./);
 });
 
 test("a 0 is left out of that figure, and fiber never exceeds carbs", () => {

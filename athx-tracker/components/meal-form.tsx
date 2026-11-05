@@ -32,7 +32,6 @@ import {
   ANSWER_ORDER,
   DEFAULT_WEIGHTS,
   blendEstimates,
-  complexMeal,
   defaultIncluded,
   readWeights,
   writeWeights,
@@ -736,10 +735,7 @@ export function MealForm({
     setAdjusted(false);
   }
 
-  const chosen = included ?? defaultIncluded(
-    partials,
-    complexMeal(description) ? ["grok"] : [],
-  ).map((answer) => answer.provider);
+  const chosen = included ?? defaultIncluded(partials).map((answer) => answer.provider);
 
   /** The meal becomes the weighted average of whichever answers are switched on. */
   function applyBlend(providers: readonly AnswerProvider[], nextWeights: EstimateWeights) {
@@ -845,11 +841,10 @@ export function MealForm({
         onEstimateComplete?.();
         return;
       }
-      // Two or more answers are blended here, so a label is used on its own
-      // and a weight saved on this phone counts. One answer, or a reply that
-      // did not stream, is the estimator's own settled meal.
-      const keep = complexMeal(description.trim()) ? (["grok"] as const) : [];
-      const choice = landed.length > 1 ? defaultIncluded(landed, keep) : landed;
+      // Two or more answers are blended here, each by its confidence, and a
+      // weight saved on this phone counts. One answer, or a reply that did
+      // not stream, is the estimator's own settled meal.
+      const choice = landed.length > 1 ? defaultIncluded(landed) : landed;
       const blended = landed.length > 1 ? blendEstimates(choice, weightsRef.current) : null;
       const used = blended?.estimate ?? estimate;
       const usedBy = blended?.provider ?? (provider && provider in ESTIMATORS ? provider : null);
