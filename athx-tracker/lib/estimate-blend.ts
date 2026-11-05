@@ -16,6 +16,15 @@ export type EstimateWeights = Record<AnswerProvider, number>;
 
 const WEIGHTS_KEY = "athx-estimate-weights";
 const RANK = { low: 0, medium: 1, high: 2 } as const;
+/**
+ * How much more a surer answer counts than its weight alone says. A high
+ * answer found the label, a medium one used reference values, and a low one
+ * could not find the product or extrapolated. Each weight is multiplied by
+ * this before the shares are worked out, so with every answer on the same
+ * footing the shares are the weights as they are, and otherwise share moves
+ * from the less sure answers to the surer ones. The estimator uses the same.
+ */
+export const CONFIDENCE_FACTOR = { low: 0.5, medium: 1, high: 2 } as const;
 const FIGURES = ["calories", "protein", "carbs", "fat", "fiber", "alcohol"] as const;
 type Figure = (typeof FIGURES)[number];
 
@@ -25,40 +34,14 @@ export type BlendAnswer = {
 };
 
 /**
- * A link or a list of three or more items is a complex meal. The same rule as
- * the estimator, so the box starts from the same answers the server kept.
+ * Who the average starts from: everyone, except that when two or more found
+ * the label, an answer that could not find the product is left out. Anyone
+ * else less sure stays in, and counts for less by CONFIDENCE_FACTOR. The
+ * estimator keeps the same answers.
  */
-export function complexMeal(description: string) {
-  const wrapped = (() => {
-    try {
-      return JSON.parse(description).mealDescription as unknown;
-    } catch {
-      return undefined;
-    }
-  })();
-  const meal = typeof wrapped === "string" ? wrapped : description;
-  if (/https?:\/\/|www\./i.test(meal)) return true;
-  const items = meal.split(/[,;+&\n]|\b(?:and|with|plus)\b/i).filter((part) => part.trim());
-  return items.length >= 3;
-}
-
-/**
- * Who the average starts from. A high answer found the label, which is the
- * exact calories, so only those count and a guess is not mixed back in.
- * Otherwise the best footing wins, plus anyone named in keep: a complex meal
- * still keeps Grok when nobody found a label.
- */
-export function defaultIncluded<T extends BlendAnswer>(
-  answers: readonly T[],
-  keep: readonly AnswerProvider[] = [],
-): T[] {
-  if (!answers.length) return [];
-  const exact = answers.filter((answer) => answer.estimate.confidence === "high");
-  if (exact.length) return [...exact];
-  const best = Math.max(...answers.map((answer) => RANK[answer.estimate.confidence]));
-  return answers.filter(
-    (answer) => RANK[answer.estimate.confidence] === best || keep.includes(answer.provider),
-  );
+export function defaultIncluded<T extends BlendAnswer>(answers: readonly T[]): T[] {
+  const labels = answers.filter((answer) => answer.estimate.confidence === "high").length;
+  return labels >= 2 ? answers.filter((answer) => answer.estimate.confidence !== "low") : [...answers];
 }
 
 /** A stored weight that is not a percent from 0 to 100 is the built-in one. */
@@ -120,10 +103,11 @@ function byOrder<T extends BlendAnswer>(answers: readonly T[]) {
 }
 
 /**
- * The answers the box has switched on, averaged by weight. One answer is
- * itself. A 0 beside real figures is left out of that figure. Weights are
- * shared out again over whoever is included; when every included weight is 0
- * they count equally, so the average still has somewhere to stand.
+ * The answers the box has switched on, averaged by weight times
+ * CONFIDENCE_FACTOR. One answer is itself. A 0 beside real figures is left out
+ * of that figure. Weights are shared out again over whoever is included; when
+ * every included weight is 0 they count equally before their confidence, so
+ * the average still has somewhere to stand.
  */
 export function blendEstimates(
   answers: readonly BlendAnswer[],
@@ -137,31 +121,32 @@ export function blendEstimates(
     const value = weights[provider];
     return Number.isFinite(value) && value > 0 ? value : 0;
   };
-  const weighed = (provider: AnswerProvider, list: readonly BlendAnswer[]) => {
-    const total = list.reduce((sum, answer) => sum + weightOf(answer.provider), 0);
-    return total > 0 ? weightOf(provider) : 1;
+  // What each answer in this list counts for: its weight, or 1 each when the
+  // list has no weight at all, times its confidence.
+  const weighed = (answer: BlendAnswer, list: readonly BlendAnswer[]) => {
+    const any = list.some((each) => weightOf(each.provider) > 0);
+    return (any ? weightOf(answer.provider) : 1) * CONFIDENCE_FACTOR[answer.estimate.confidence];
   };
-  const mass = (list: readonly BlendAnswer[]) => {
-    const total = list.reduce((sum, answer) => sum + weightOf(answer.provider), 0);
-    return total > 0 ? total : list.length;
-  };
+  const mass = (list: readonly BlendAnswer[]) =>
+    list.reduce((sum, answer) => sum + weighed(answer, list), 0);
   const mean = (key: Figure) => {
     const given = top.filter((answer) => (answer.estimate[key] ?? 0) > 0);
     if (!given.length) return 0;
     return given.reduce(
-      (sum, answer) => sum + (answer.estimate[key] ?? 0) * weighed(answer.provider, given),
+      (sum, answer) => sum + (answer.estimate[key] ?? 0) * weighed(answer, given),
       0,
     ) / mass(given);
   };
   const macros = Object.fromEntries(FIGURES.map((key) => [key, mean(key)])) as Record<Figure, number>;
   const scale = mass(top);
   const shares = top.map(
-    (answer) => `${ESTIMATORS[answer.provider]} ${Math.round((weighed(answer.provider, top) / scale) * 100)}%`,
+    (answer) => `${ESTIMATORS[answer.provider]} ${Math.round((weighed(answer, top) / scale) * 100)}%`,
   );
   const [first] = top;
-  const footing = top.every((answer) => answer.estimate.confidence === first.estimate.confidence)
+  const same = top.every((answer) => answer.estimate.confidence === first.estimate.confidence);
+  const footing = same
     ? `each ${first.estimate.confidence} confidence`
-    : top.map((answer) => `${ESTIMATORS[answer.provider]} ${answer.estimate.confidence} confidence`).join(", ");
+    : `${top.map((answer) => `${ESTIMATORS[answer.provider]} ${answer.estimate.confidence} confidence`).join(", ")}, a high answer counting double its weight and a low one half`;
   const header = `Weighted average of ${shares.slice(0, -1).join(", ")} and ${shares[shares.length - 1]}, ${footing}. A 0 is left out of that figure's average.`;
   const room = Math.floor((3000 - header.length) / top.length) - 2;
   const confidence = top.reduce(
@@ -169,7 +154,7 @@ export function blendEstimates(
     "high" as MealEstimate["confidence"],
   );
   const lead = top.reduce((best, answer) =>
-    weightOf(answer.provider) > weightOf(best.provider) ? answer : best,
+    weighed(answer, top) > weighed(best, top) ? answer : best,
   );
   return {
     estimate: {

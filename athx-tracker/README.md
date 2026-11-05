@@ -471,7 +471,9 @@ the form.
 
 While a meal estimate runs, each estimator's figures appear under **Answers so
 far** as it answers. They are shown, not applied: the meal waits for the
-settled answer, which may average them or keep only the best-sourced one.
+settled answer, which averages them by weight and confidence: a label counts
+double and a low-confidence answer half, and when two found the label a low
+one is left out. Each answer can be switched on or off and reweighted.
 **Stop estimate** ends it, stops the estimator's CLIs, gives the daily
 estimate back, and unlocks the form to edit. A stopped estimate raises no
 popup.

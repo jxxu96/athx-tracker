@@ -354,36 +354,48 @@ const guess = (provider, calories, assumptions = `${provider} guessed.`, confide
   },
 });
 
-test("a label one estimator found is not averaged with guesses", () => {
-  const label = guess("claude", 700, "Looked up.", "high");
-  assert.deepEqual(settle([guess("codex", 600), label, guess("grok", 800)]), label);
+test("every answer counts unless two found the label, when one that could not find it is left out", () => {
+  const label = (provider, calories) => guess(provider, calories, "Looked up.", "high");
+  const providers = (answers) => {
+    const settled = settle(answers);
+    return settled.provider === "average"
+      ? [...settled.estimate.assumptions.matchAll(/^From (\w+)/gm)].map(([, name]) => name.toLowerCase())
+      : [settled.provider];
+  };
+  // Two labels and a guess: the guess is out, and the labels share as their weights do.
+  const two = settle([label("codex", 600), label("claude", 700), guess("grok", 1100)]);
+  assert.equal(two.estimate.calories, 646.7);
+  assert.equal(two.estimate.confidence, "high");
+  assert.match(two.estimate.assumptions, /^Weighted average of Codex 53% and Claude 47%, each high confidence\./);
+  assert.doesNotMatch(two.estimate.assumptions, /From Grok/);
+  // Two labels and a reference value: it stays.
+  assert.deepEqual(providers([label("codex", 600), label("claude", 700), guess("grok", 1100, "Reference.", "medium")]), ["codex", "claude", "grok"]);
+  // One label: nobody is left out.
+  assert.deepEqual(providers([guess("codex", 600), label("claude", 700), guess("grok", 800)]), ["codex", "claude", "grok"]);
+  // One answer is itself.
   assert.deepEqual(settle([guess("codex", 600)]), guess("codex", 600));
 });
 
-test("a label is not averaged with a guess, even when that guess would have been kept", () => {
-  const label = guess("claude", 700, "Looked up.", "high");
-  const grok = guess("grok", 1100, "Searched.", "low");
-  const codex = guess("codex", 600);
-  assert.deepEqual(settle([codex, label, grok], { keep: ["grok"] }), label);
-
-  const other = guess("codex", 600, "Looked up.", "high");
-  const { estimate, provider } = settle([other, label, grok], { keep: ["grok"] });
-  assert.equal(provider, "average");
-  // 600 x 40% + 700 x 35%, over the 75% that found the label. Grok stays out.
-  assert.equal(estimate.calories, 646.7);
-  assert.equal(estimate.confidence, "high");
-  assert.match(estimate.assumptions, /^Weighted average of Codex 53% and Claude 47%, each high confidence\./);
-  assert.doesNotMatch(estimate.assumptions, /From Grok/);
-});
-
-test("without a label, a complex meal still keeps a less sure Grok", () => {
-  const codex = guess("codex", 600, "Reference.", "medium");
-  const grok = guess("grok", 1100, "Searched.", "low");
-  const { estimate, provider } = settle([codex, grok], { keep: ["grok"] });
-  assert.equal(provider, "average");
-  // 600 x 40% + 1100 x 25%, over the 65% that are kept.
-  assert.equal(estimate.calories, 792.3);
-  assert.match(estimate.assumptions, /Codex 62% and Grok 38%, Codex medium confidence, Grok low confidence/);
+test("a less sure answer gives part of its share to the surer ones", () => {
+  // Two references and a guess: Codex's 40 counts as 20, so 20, 35 and 25 of 80.
+  const guessed = settle([guess("codex", 600), guess("claude", 700, "Reference.", "medium"), guess("grok", 1100, "Reference.", "medium")]);
+  assert.equal(guessed.provider, "average");
+  // (600 x 20 + 700 x 35 + 1100 x 25) / 80.
+  assert.equal(guessed.estimate.calories, 800);
+  assert.equal(guessed.estimate.confidence, "low");
+  assert.match(
+    guessed.estimate.assumptions,
+    /^Weighted average of Codex 25%, Claude 44% and Grok 31%, Codex low confidence, Claude medium confidence, Grok medium confidence, a high answer counting double its weight and a low one half\./,
+  );
+  // One label among guesses: Claude's 35 counts as 70, the others as 20 and 12.5.
+  const label = settle([guess("codex", 600), guess("claude", 700, "Looked up.", "high"), guess("grok", 1100)]);
+  // (600 x 20 + 700 x 70 + 1100 x 12.5) / 102.5.
+  assert.equal(label.estimate.calories, 729.3);
+  assert.match(label.estimate.assumptions, /^Weighted average of Codex 20%, Claude 68% and Grok 12%,/);
+  // The name is the answer that counts for most.
+  const named = (provider, confidence) => ({ ...guess(provider, 600, "x", confidence), estimate: { ...guess(provider, 600, "x", confidence).estimate, name: provider } });
+  assert.equal(settle([named("codex", "low"), named("claude", "high")]).estimate.name, "claude");
+  assert.equal(settle([named("codex", "low"), named("claude", "low")]).estimate.name, "codex");
 });
 
 test("guesses on the same footing are averaged by weight, each one's working kept", () => {
@@ -478,27 +490,33 @@ test("shared meals average dish by dish, and an answer split another way is left
   ];
   const { provider, estimate } = settleDishes(answers);
   assert.equal(provider, "average");
-  // 800 x 40% + 900 x 35%, over the 75% that split it in two.
-  assert.deepEqual(estimate.dishes.map((each) => [each.name, each.calories]), [["pizza", 846.7], ["salad", 353.3]]);
-  assert.equal(estimate.calories, 1200);
+  // Each dish by weight times that answer's confidence for it. Pizza: Codex
+  // 800 at 40, Claude's label 900 at 35 doubled. Salad: 400 at 40, 300 at 35.
+  assert.deepEqual(estimate.dishes.map((each) => [each.name, each.calories]), [["pizza", 863.6], ["salad", 353.3]]);
+  assert.equal(estimate.calories, 1216.9);
   assert.equal(estimate.dishes[0].confidence, "medium", "a dish is as sure as its least sure answer");
-  assert.match(estimate.assumptions, /^Weighted average of Codex 53% and Claude 47%, dish by dish/);
+  assert.match(estimate.dishes[0].assumptions, /^Weighted average of Codex 36% and Claude 64%\./);
+  assert.match(estimate.dishes[1].assumptions, /^Weighted average of Codex 53% and Claude 47%\./);
+  // The meal's shares are each answer's whole-meal footing.
+  assert.match(estimate.assumptions, /^Weighted average of Codex 53% and Claude 47%, dish by dish, each medium confidence/);
   assert.match(estimate.assumptions, /Grok split the meal into a different number of dishes, so it is left out\./);
   assert.match(estimate.dishes[0].assumptions, /From Codex \[800 kcal, 40P, 80C, 20F\]:\npizza, worked out\./);
 
-  // The best-sourced answer still wins outright.
-  const label = { provider: "grok", estimate: cleanDishes(shared([dish("pizza", 700, "high")], { confidence: "high" })) };
-  assert.equal(settleDishes([...answers, label]), label);
-  // Keeping Grok does not average a different split. A label is exact, so
-  // keeping Grok does not average its guess back in when the split matches either.
-  assert.equal(settleDishes(answers, { keep: ["grok"] }).provider, "average");
-  const sameSplit = [
-    answers[0],
-    { provider: "claude", estimate: cleanDishes(shared([dish("pizza", 900, "high"), dish("salad", 300, "high")], { confidence: "high" })) },
-    { provider: "grok", estimate: cleanDishes(shared([dish("pizza", 1000), dish("salad", 200)])) },
-  ];
-  assert.equal(settleDishes(sameSplit).provider, "claude");
-  assert.equal(settleDishes(sameSplit, { keep: ["grok"] }), sameSplit[1]);
+  // Two labels and a guess split the same way: the guess is left out.
+  const labelled = (provider, pizza, salad, confidence) => ({
+    provider,
+    estimate: cleanDishes(shared([dish("pizza", pizza, confidence), dish("salad", salad, confidence)], { confidence })),
+  });
+  const two = settleDishes([labelled("codex", 800, 400, "high"), labelled("claude", 900, 300, "high"), labelled("grok", 1000, 200, "low")]);
+  assert.equal(two.provider, "average");
+  assert.deepEqual(two.estimate.dishes.map((each) => [each.name, each.calories]), [["pizza", 846.7], ["salad", 353.3]]);
+  assert.match(two.estimate.assumptions, /^Weighted average of Codex 53% and Claude 47%, dish by dish, each high confidence/);
+  assert.doesNotMatch(two.estimate.assumptions, /From Grok/);
+  // One label: the guess stays, at half its weight, and the label's split leads.
+  const one = settleDishes([labelled("codex", 800, 400, "medium"), labelled("claude", 900, 300, "high"), labelled("grok", 1000, 200, "low")]);
+  // Pizza: (800 x 40 + 900 x 70 + 1000 x 12.5) / 122.5.
+  assert.equal(one.estimate.dishes[0].calories, 877.6);
+  assert.match(one.estimate.assumptions, /From Grok:/);
   // With nobody to average it with, the best-weighted answer stands as it is.
   const alone = [answers[0], answers[2]];
   assert.equal(settleDishes(alone), answers[0]);
