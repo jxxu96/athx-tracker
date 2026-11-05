@@ -114,6 +114,11 @@ const COMPLEX_ITEMS = 3;
 // opened showed no nutrition: search, open another, search again, and no turn
 // was left to answer in. The time cap above still bounds a long lookup.
 const MEAL_MAX_TURNS = "10";
+// The most a request may carry, in characters. A reply's description holds
+// the meal, the previous estimate, every correction and the food notes, and
+// a reply also sends each provider's own last answer. The app's test of its
+// largest valid reply holds it to this.
+const BODY_LIMIT = 128_000;
 
 // Grok's switches, from the documentation built into the Grok CLI the image
 // installs (1.0.70). Each model in its built-in catalog starts at high
@@ -768,15 +773,43 @@ function providerSlice(remaining, { meal, isLast, together = false }) {
 }
 
 /**
+ * What one provider is asked. A reply's description carries the meal's
+ * previousEstimate, the average on the form. Given that same average, all
+ * three applied the same correction to it and came back with the same
+ * figures, so the average of a reply was one answer three times. When the
+ * caller sends each provider's own last answer, that provider continues from
+ * its own instead, and the three stay three estimates. Anything else is the
+ * description as it came.
+ */
+function describedFor(description, previousEstimates, name) {
+  const own = previousEstimates?.[name];
+  if (!own || typeof own !== "object" || Array.isArray(own)) return description;
+  let parsed;
+  try {
+    parsed = JSON.parse(description);
+  } catch {
+    return description;
+  }
+  if (!parsed || typeof parsed !== "object" || !Object.hasOwn(parsed, "previousEstimate")) return description;
+  return JSON.stringify({ ...parsed, previousEstimate: own });
+}
+
+/**
  * signal is the caller hanging up: every CLI still running is stopped, and
  * nobody else is asked. onAnswer hears each usable answer the moment it lands,
  * before it is settled with the others, so a caller can show it while the rest
  * are still working. onMiss hears each one that was asked and gave nothing,
  * and why. Otherwise that reason only ever reached the log whenever somebody
  * else answered, so a provider could fail on every meal without the screen
- * ever saying so.
+ * ever saying so. previousEstimates is each provider's own last answer, for a
+ * reply; see describedFor.
  */
-async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK, { signal, onAnswer, onMiss } = {}) {
+async function estimate(
+  description,
+  budgetMs = BUDGET_MS,
+  task = MEAL_TASK,
+  { signal, onAnswer, onMiss, previousEstimates } = {},
+) {
   const deadline = Date.now() + budgetMs;
   const tried = [];
   const meal = task.meal === true;
@@ -805,7 +838,7 @@ async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK, { s
     const started = Date.now();
     const { code, out, err, timedOut } = await run(
       bin,
-      provider.args(description, task),
+      provider.args(describedFor(description, previousEstimates, name), task),
       slice,
       either(stop, signal),
       provider.env?.(task),
@@ -1092,13 +1125,14 @@ const server = createServer((request, response) => {
     if (!response.writableFinished) gone.abort();
   });
 
-  // Meal follow-ups include the previous estimate and earlier corrections.
-  // Decode across chunk boundaries so longer descriptions preserve Unicode too.
+  // Meal follow-ups include the previous estimate and earlier corrections,
+  // and each provider's own last answer as well. Decode across chunk
+  // boundaries so longer descriptions preserve Unicode too.
   request.setEncoding("utf8");
   let body = "";
   request.on("data", (chunk) => {
     body += chunk;
-    if (body.length > 64000) request.destroy();
+    if (body.length > BODY_LIMIT) request.destroy();
   });
   request.on("end", async () => {
     let description = "";
@@ -1106,6 +1140,7 @@ const server = createServer((request, response) => {
     let task = MEAL_TASK;
     let context = "";
     let streaming = false;
+    let previousEstimates;
     try {
       const parsed = JSON.parse(body);
       description = String(parsed.description ?? "").trim();
@@ -1124,6 +1159,14 @@ const server = createServer((request, response) => {
       // older estimator ignores the ask and answers for the whole meal, which
       // the app takes as one dish.
       if (task === MEAL_TASK && parsed.dishes === true) task = DISH_TASK;
+      // A reply's own last answer for each provider, by name. Only a meal
+      // continues one, and only an object of objects is taken.
+      const own = parsed.previousEstimates;
+      if (task.meal && own && typeof own === "object" && !Array.isArray(own))
+        previousEstimates = Object.fromEntries(
+          Object.entries(own).filter(([name, value]) =>
+            Object.hasOwn(PROVIDERS, name) && value && typeof value === "object" && !Array.isArray(value)),
+        );
       // Clamped, so a caller cannot pin a CLI open or starve one at birth.
       const requested = Number(parsed.budgetMs);
       if (Number.isFinite(requested))
@@ -1149,6 +1192,7 @@ const server = createServer((request, response) => {
       };
       const result = await estimate(description, budget, task, {
         signal: gone.signal,
+        previousEstimates,
         onAnswer: ({ estimate: answer, provider }) =>
           line({ type: "partial", provider, estimate: answer }),
         // One that was asked and gave nothing says why, even when the others
@@ -1164,7 +1208,7 @@ const server = createServer((request, response) => {
       return response.end();
     }
 
-    const result = await estimate(context + description, budget, task, { signal: gone.signal });
+    const result = await estimate(context + description, budget, task, { signal: gone.signal, previousEstimates });
     if (gone.signal.aborted) return response.end();
     if (result.error) {
       console.error(`[estimator] all providers failed: ${result.error}`);
@@ -1191,6 +1235,7 @@ const runDirectly =
   process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 
 export {
+  BODY_LIMIT,
   DISH_INSTRUCTIONS,
   DISH_SCHEMA,
   DISH_TASK,
@@ -1203,6 +1248,7 @@ export {
   clean,
   cleanDishes,
   complex,
+  describedFor,
   estimate,
   failure,
   parseCliOutput,

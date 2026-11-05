@@ -26,6 +26,7 @@ const {
   clean,
   cleanDishes,
   complex,
+  describedFor,
   failure,
   parseCliOutput,
   providerSlice,
@@ -181,6 +182,25 @@ test("Grok works in an empty folder outside this repository", () => {
     const inside = relative(repository, folder);
     assert.ok(inside.startsWith("..") || isAbsolute(inside), `${folder} is inside ${repository}`);
   }
+});
+
+test("a reply asks each provider to continue from its own last answer", () => {
+  const average = { ...whole, calories: 646.7, assumptions: "Weighted average." };
+  const reply = JSON.stringify({ mealDescription: "rice bowl", previousEstimate: average, replies: ["and a beer"] });
+  const own = { codex: { ...whole, calories: 600 }, claude: { ...whole, calories: 700 } };
+  const codex = describedFor(reply, own, "codex");
+  // Only the previous estimate changes, in its place, and the rest as it was.
+  assert.equal(codex, JSON.stringify({ mealDescription: "rice bowl", previousEstimate: own.codex, replies: ["and a beer"] }));
+  assert.equal(JSON.parse(describedFor(reply, own, "claude")).previousEstimate.calories, 700);
+  // Nobody sent for Grok, no answers at all, or one that is not an answer: the average.
+  assert.equal(describedFor(reply, own, "grok"), reply);
+  assert.equal(describedFor(reply, undefined, "codex"), reply);
+  assert.equal(describedFor(reply, { codex: "600" }, "codex"), reply);
+  assert.equal(describedFor(reply, { codex: [whole] }, "codex"), reply);
+  // Not a reply: a first estimate is left as it came, notes and all.
+  assert.equal(describedFor("rice bowl", own, "codex"), "rice bowl");
+  const notes = JSON.stringify({ mealDescription: "rice bowl", foodNotes: "rice is jasmine" });
+  assert.equal(describedFor(notes, own, "codex"), notes);
 });
 
 test("a timeout says what the CLI last printed", () => {

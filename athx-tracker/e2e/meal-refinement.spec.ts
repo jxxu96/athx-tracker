@@ -16,7 +16,7 @@ const final = {
 };
 type EstimateRequest = {
   description: string;
-  refinement?: { previous: typeof initial; replies: string[] };
+  refinement?: { previous: typeof initial; replies: string[]; byEstimator?: Record<string, unknown> };
 };
 
 async function openMeal(page: Page) {
@@ -75,6 +75,48 @@ test("replying twice carries corrections forward and saves the revised meal", as
   await page.getByRole("button", { name: "Meal", exact: true }).click();
   await expect(page.getByLabel("Meal description")).toHaveValue("");
   await expect(page.getByRole("button", { name: "Reply to estimate" })).toHaveCount(0);
+});
+
+test("a reply continues each estimator's own answer, until the figures are edited", async ({ page }) => {
+  const answer = (calories: number) => ({ ...initial, calories, fiber: 0, alcohol: 0, assumptions: `${calories} kcal, worked out.` });
+  const own = { codex: answer(600), claude: answer(700), grok: answer(1100) };
+  const requests: EstimateRequest[] = [];
+  await page.route("**/api/estimate", async (route) => {
+    requests.push(route.request().postDataJSON());
+    // Each answer as it lands, then the settled one: what the estimator streams.
+    const lines = [
+      ...Object.entries(own).map(([provider, estimate]) => ({ type: "partial", provider, estimate })),
+      { type: "done", provider: "average", estimate: answer(760) },
+    ];
+    await route.fulfill({
+      contentType: "application/x-ndjson",
+      body: lines.map((line) => `${JSON.stringify(line)}\n`).join(""),
+    });
+  });
+  await openMeal(page);
+  await page.getByLabel("Meal description").fill("Chicken, rice and beans");
+  await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
+  // 600 x 40% + 700 x 35% + 1100 x 25%, on this phone's default weights.
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("760");
+
+  const dialog = page.getByRole("dialog");
+  await page.getByRole("button", { name: "Reply to estimate" }).click();
+  await page.getByLabel("Your reply").fill("I also had a beer.");
+  await dialog.getByRole("button", { name: "Send & re-estimate" }).click();
+  await expect(dialog.getByRole("button", { name: "Done, back to meal" })).toBeVisible();
+  // Each gets its own last answer to continue from, beside the average on the form.
+  expect(requests[1].refinement?.previous.calories).toBe(760);
+  expect(requests[1].refinement?.byEstimator).toEqual(own);
+
+  // A figure changed by hand is a correction every estimator starts from.
+  await dialog.getByRole("button", { name: "Done, back to meal" }).click();
+  await page.getByLabel("Fat (g)").fill("12");
+  await page.getByRole("button", { name: "Reply to estimate" }).click();
+  await page.getByLabel("Your reply").fill("And no oil.");
+  await dialog.getByRole("button", { name: "Send & re-estimate" }).click();
+  await expect(dialog.getByRole("button", { name: "Done, back to meal" })).toBeVisible();
+  expect(requests[2].refinement?.previous.fat).toBe(12);
+  expect(requests[2].refinement?.byEstimator).toBeUndefined();
 });
 
 test("a failed reply preserves the draft, supports retry, and does not offer a zero-macro queue", async ({ page }) => {

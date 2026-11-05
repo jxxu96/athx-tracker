@@ -63,6 +63,7 @@ import {
   CONVERSATION_LIMIT,
   MAX_REPLIES,
   REPLY_LIMIT,
+  ownPrevious,
   type MealEstimate as Estimate,
 } from "@/lib/estimate-conversation";
 import { macroCalories } from "@/lib/meal-calories";
@@ -786,6 +787,10 @@ export function MealForm({
     const refining = followUp !== undefined;
     const previous = conversation.at(-1)?.estimate;
     if (refining && (!previous || !canReply)) return;
+    // Each estimator's own last answer, taken before this turn clears them.
+    const byEstimator = refining && previous
+      ? ownPrevious(previous, { figures: canCheckCalories ? counted : undefined, assumptions }, partials)
+      : undefined;
     // A meal for both, not split yet, is estimated dish by dish.
     const asDishes = describing && !refining;
     setError("");
@@ -817,6 +822,7 @@ export function MealForm({
                 assumptions,
               },
               replies: [...replies, followUp],
+              ...(byEstimator ? { byEstimator } : {}),
             },
           } : {}),
         }),
