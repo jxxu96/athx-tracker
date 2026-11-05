@@ -99,6 +99,22 @@ test("a meal needs an athlete who eats", () => {
   assert.ok(!ok(recordSchema, { ...meal, macros: { ...meal.macros, protein: -1 } }));
 });
 
+test("an energy check-in is a whole number from 1 to 10, for one athlete", () => {
+  const checkIn = {
+    id: "3f1a5f2e-9c4b-4d7a-8e21-6b0c9d5a1234",
+    kind: "energy", athlete: "hippos", day: "2026-10-22", time: "07:45", level: 7,
+  };
+  assert.ok(ok(recordSchema, checkIn));
+  assert.ok(ok(recordSchema, { ...checkIn, level: 1 }));
+  assert.ok(ok(recordSchema, { ...checkIn, level: 10 }));
+  assert.ok(ok(recordSchema, { ...checkIn, time: undefined }), "the time of day is optional");
+  assert.ok(!ok(recordSchema, { ...checkIn, level: 0 }));
+  assert.ok(!ok(recordSchema, { ...checkIn, level: 11 }));
+  assert.ok(!ok(recordSchema, { ...checkIn, level: 6.5 }), "whole numbers only");
+  assert.ok(!ok(recordSchema, { ...checkIn, athlete: "team" }), "energy is one person's");
+  assert.ok(!ok(recordSchema, { ...checkIn, note: "tired" }), "unknown fields are refused");
+});
+
 test("settings saved before bodyweight existed still parse", () => {
   const legacy = {
     eventDate: "2027-08-28", eventName: "ATHX New York", weeklyTarget: 4,

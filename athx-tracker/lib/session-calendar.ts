@@ -75,14 +75,14 @@ export function rangeCounts(days: ReadonlyMap<string, readonly Workout[]>) {
  * The oldest day the phone's slice of the journal reaches. The server sends
  * the newest entries whole down to a cut, and the cut can fall partway through
  * a day, so every day after this one is all there and this one may not be.
- * Weigh-ins are always sent, so they say nothing about where the cut fell.
- * Null when the slice is the whole journal.
+ * Weigh-ins and energy check-ins are always sent, so they say nothing about
+ * where the cut fell. Null when the slice is the whole journal.
  */
 export function heldFrom(slice: readonly RecordItem[], complete: boolean) {
   if (complete) return null;
   let oldest = "9999-12-31";
   for (const record of slice)
-    if (record.kind !== "bodyweight" && record.day < oldest) oldest = record.day;
+    if (record.kind !== "bodyweight" && record.kind !== "energy" && record.day < oldest) oldest = record.day;
   return oldest;
 }
 

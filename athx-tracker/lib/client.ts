@@ -1,4 +1,4 @@
-import type { Bodyweight, RecordItem, Workout, Meal } from "./domain";
+import type { Bodyweight, EnergyCheckIn, RecordItem, Workout, Meal } from "./domain";
 
 /** Same-origin JSON call. Dispatch injects the identity headers. */
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -101,3 +101,5 @@ export const isMeal = (record: RecordItem): record is Meal =>
   record.kind === "meal";
 export const isWeighIn = (record: RecordItem): record is Bodyweight =>
   record.kind === "bodyweight";
+export const isCheckIn = (record: RecordItem): record is EnergyCheckIn =>
+  record.kind === "energy";

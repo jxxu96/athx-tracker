@@ -2,6 +2,7 @@
 
 import { Dumbbell, Target } from "lucide-react";
 import { CollapsibleCard } from "@/components/collapsible-card";
+import { Energy } from "@/components/energy";
 import { Fuel } from "@/components/fuel";
 import { RaceEstimate, RaceProgress, raceLine } from "@/components/race-estimate";
 import { SessionCalendar } from "@/components/session-calendar";
@@ -17,6 +18,7 @@ import {
   estimateBurn,
   formatTimeOrDash,
   scenarioLine,
+  type EnergyCheckIn,
   type RecordItem,
   type Settings,
 } from "@/lib/domain";
@@ -76,6 +78,7 @@ export function Overview({
   fuelRefresh,
   heldFrom,
   onLoadSessions,
+  onCheckIn,
 }: {
   records: RecordItem[];
   settings: Settings;
@@ -88,6 +91,8 @@ export function Overview({
   /** The oldest day the phone holds; null when it holds the whole journal. */
   heldFrom: string | null;
   onLoadSessions: (from: string, to: string) => Promise<void>;
+  /** Today's energy for one athlete, tapped on its card. */
+  onCheckIn: (record: EnergyCheckIn) => Promise<void>;
 }) {
   const countdown = daysBetween(today, settings.eventDate);
   const thisWeek = weekStart(today);
@@ -139,6 +144,8 @@ export function Overview({
           }).format(dayToDate(settings.eventDate))}
         </p>
       </CollapsibleCard>
+
+      <Energy records={records} today={today} onCheckIn={onCheckIn} />
 
       <Fuel
         records={records}
