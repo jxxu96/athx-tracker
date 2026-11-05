@@ -457,6 +457,25 @@ test("a time box opens a keyboard that has a colon", async ({ page }) => {
     await expect(box).not.toHaveAttribute("inputmode", /.*/);
 });
 
+test("a MetCon asks for no goal time and saves none", async ({ page }) => {
+  await openSession(page);
+  await typeSelect(page).selectOption("Strength");
+  await expect(page.getByLabel("Goal time")).toBeVisible();
+  // Typed under another type, then out of sight: it must not ride along.
+  await page.getByLabel("Goal time").fill("12:00");
+  await typeSelect(page).selectOption("MetCon");
+  await expect(page.getByLabel("Goal time")).toHaveCount(0);
+  await page.getByLabel("Done (reps)").first().fill("30");
+  await page.getByRole("button", { name: "Save session" }).click();
+
+  const read = () =>
+    page.evaluate(async () => (await fetch("/api/records").then((r) => r.json())).records);
+  await expect.poll(async () => (await read()).length).toBe(1);
+  const [saved] = await read();
+  expect(saved.category).toBe("MetCon");
+  expect(saved.goal).toBeNull();
+});
+
 test("a lift can be added from the bottom of the list", async ({ page }) => {
   await openSession(page);
   await typeSelect(page).selectOption("Strength");
@@ -832,6 +851,31 @@ test("an older entry with no loads is not given any when edited", async ({ page 
     (await fetch("/api/records").then((r) => r.json())).records[0],
   );
   expect(record.segments[0].kg).toBeUndefined();
+});
+
+test("an older MetCon keeps the goal it was saved with when edited", async ({ page }) => {
+  await page.evaluate(async () => {
+    await fetch("/api/records", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: "7b2e4c1d-5a3f-4e8b-9c6d-2f1a0e9b8c77", kind: "workout", athlete: "gators",
+        day: "2026-10-20", title: "Old circuit", category: "MetCon", seconds: 600, notes: "",
+        segments: [{ name: "DB ground to overhead", unit: "reps", completed: 30, target: 30, seconds: 120 }],
+        fatigue: 10, transition: 0, goal: 900, context: "solo", lifts: [],
+      }),
+    });
+  });
+  await page.reload();
+  await openLog(page);
+  await page.getByLabel("Edit entry").first().click();
+  await expect(page.getByLabel("Goal time")).toHaveCount(0);
+  await title(page).fill("Renamed circuit");
+  await page.getByRole("button", { name: "Update session" }).click();
+  const read = () =>
+    page.evaluate(async () => (await fetch("/api/records").then((r) => r.json())).records[0]);
+  await expect.poll(async () => (await read()).title).toBe("Renamed circuit");
+  expect((await read()).goal).toBe(900);
 });
 
 test("the unit switches without a connection, and is sent when the server answers", async ({ page }) => {
