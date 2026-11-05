@@ -418,7 +418,11 @@ test("a slider shares each dish, a slice at a time once the dish is counted", as
     const { violations } = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
       .analyze();
-    expect(violations.map((v) => v.id), theme).toEqual([]);
+    // Each failing element, so a failure says what to fix and not just which rule.
+    const described = violations.flatMap((v) =>
+      v.nodes.map((n) => `${theme}: ${v.id} ${n.target.join(" ")} ${n.html.slice(0, 200)} ${n.any.map((a) => a.message).join("; ")}`),
+    );
+    expect(described, described.join("\n")).toEqual([]);
     await pie.screenshot({ path: `test-results/meal-dish-slider-${theme.toLowerCase()}.png` });
   }
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

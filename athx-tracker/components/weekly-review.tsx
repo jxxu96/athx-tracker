@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ATHLETES, formatTime, fromKilograms, type Macros, type RecordItem, type WeightUnit } from "@/lib/domain";
+import { ATHLETES, ENERGY_MAX, formatTime, fromKilograms, type Macros, type RecordItem, type WeightUnit } from "@/lib/domain";
+import { formatEnergy } from "@/lib/energy-level";
 import { addDays, dayToDate, weekStart } from "@/lib/client";
 import { formatAmount } from "@/lib/fuel";
 import { benchmarkImprovements } from "@/lib/benchmarks";
@@ -13,6 +14,9 @@ const MACROS = [{ key: "calories", name: "Calories", unit: "kcal" }, { key: "pro
 const date = (day: string) => new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(dayToDate(day));
 const range = (start: string, end: string) => `${date(start)} – ${date(end)}`;
 const signed = (value: number) => value === 0 ? "No change" : `${value > 0 ? "+" : "−"}${formatAmount(Math.abs(value))}`;
+/** Energy moves by tenths, which formatAmount would round away. */
+const signedEnergy = (value: number) => value === 0 ? "No change" : `${value > 0 ? "+" : "−"}${formatEnergy(Math.abs(value))}`;
+const tenths = (value: number) => Math.round(value * 10) / 10;
 
 function AthleteReview({ records, athlete, selected, today, unit }: { records: RecordItem[]; athlete: ReviewAthlete; selected: string; today: string; unit: WeightUnit }) {
   const windows = reviewWindows(selected, today);
@@ -41,6 +45,14 @@ function AthleteReview({ records, athlete, selected, today, unit }: { records: R
         <h4 className="mb-2 text-xs font-medium">Training mix <span className="font-normal text-muted-foreground">· selected / previous</span></h4>
         <div className="flex flex-wrap gap-2">{categories.map((name) => <span key={name} className="rounded-lg bg-muted px-2.5 py-1.5 text-xs">{name} <span className="ml-1 tabular-nums">{current.mix.find((item) => item.name === name)?.count ?? 0} / {previous.mix.find((item) => item.name === name)?.count ?? 0}</span></span>)}</div>
       </div> : <p className="text-xs text-muted-foreground">No training logged in either period.</p>}
+      <div>
+        <table className="w-full table-fixed text-xs tabular-nums">
+          <caption className="mb-2 text-left text-sm font-medium">Energy · daily average</caption>
+          <thead className="text-muted-foreground"><tr><th scope="col" className="w-[28%] pb-2 text-left font-normal"><span className="sr-only">Measure</span></th><th scope="col" className="pb-2 text-right font-normal">Selected</th><th scope="col" className="pb-2 text-right font-normal">Previous</th><th scope="col" className="pb-2 text-right font-normal">Change</th></tr></thead>
+          <tbody><tr className="border-t"><th scope="row" className="py-2 text-left font-normal">Energy<span className="block text-[10px] text-muted-foreground">out of {ENERGY_MAX}</span></th><td className="py-2 text-right font-medium">{current.energy.average === null ? "—" : formatEnergy(current.energy.average)}</td><td className="py-2 text-right text-muted-foreground">{previous.energy.average === null ? "—" : formatEnergy(previous.energy.average)}</td><td className="py-2 text-right">{current.energy.average !== null && previous.energy.average !== null ? signedEnergy(tenths(current.energy.average) - tenths(previous.energy.average)) : "—"}</td></tr></tbody>
+        </table>
+        <p className="mt-2 text-[11px] text-muted-foreground">Days checked in: {current.energy.days} selected, {previous.energy.days} previous.</p>
+      </div>
       <div>
         <h4 className="text-sm font-medium">Benchmark improvements</h4>
         {improvements.length ? <ul className="mt-2 space-y-2 text-xs">{improvements.slice(0, 4).map(({ series, saved, current: attempt }) => <li key={series.key}>{series.name} · {series.context === "pairs" ? "Pairs" : "Solo"}: <span className="font-medium">{formatTime(saved)} faster</span> ({formatTime(attempt.seconds)})</li>)}</ul> : <p className="mt-1 text-xs text-muted-foreground">No faster benchmarks.</p>}

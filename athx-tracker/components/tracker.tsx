@@ -27,6 +27,7 @@ import {
   localDay,
   RECENT_LIMIT,
   type Bodyweight,
+  type EnergyCheckIn,
   type Meal,
   type RecordItem,
   type Settings,
@@ -35,6 +36,7 @@ import {
 } from "@/lib/domain";
 import { athleteOutline } from "@/lib/athlete-outline";
 import { bodyweightHistory } from "@/lib/bodyweight";
+import { sameCheckInDay } from "@/lib/energy-level";
 import { bestLine, type NewBest } from "@/lib/bests";
 import { api, isMeal, message, sortRecords } from "@/lib/client";
 import {
@@ -423,7 +425,7 @@ export function Tracker({
     setRecords((current) =>
       sortRecords([
         ...batch,
-        ...current.filter((item) => !batch.some((r) => r.id === item.id)),
+        ...current.filter((item) => !batch.some((r) => r.id === item.id || sameCheckInDay(r, item))),
       ]),
     );
   }, []);
@@ -501,8 +503,8 @@ export function Tracker({
     [announceBests, editingMeal, editingWorkout, navigate, persist, refreshSummary],
   );
 
-  /** A weigh-in edited in the Log: saved where it stands, without leaving it. */
-  const update = useCallback(async (record: Bodyweight) => {
+  /** A weigh-in or check-in edited in the Log: saved where it stands, without leaving it. */
+  const update = useCallback(async (record: Bodyweight | EnergyCheckIn) => {
     try {
       const result = await persist([record]);
       if (result.reason) toast("Saved on this phone", { description: result.reason, icon: <CloudOff className="size-4" /> });
@@ -515,6 +517,20 @@ export function Tracker({
       throw error;
     }
   }, [persist, refreshSummary]);
+
+  /**
+   * Today's energy, tapped on its card. No notice when it lands: the level
+   * it shows chosen says so. One that waits on the phone, or is refused, does say.
+   */
+  const checkIn = useCallback(async (record: EnergyCheckIn) => {
+    try {
+      const result = await persist([record]);
+      if (result.reason) toast("Saved on this phone", { description: result.reason, icon: <CloudOff className="size-4" /> });
+    } catch (error) {
+      toast.error(message(error));
+      throw error;
+    }
+  }, [persist]);
 
   const remove = useCallback(async (id: string) => {
     try {
@@ -876,6 +892,7 @@ export function Tracker({
             fuelRefresh={fuelRefresh}
             heldFrom={heldFrom}
             onLoadSessions={loadSessions}
+            onCheckIn={checkIn}
           />
         ) : tab === "progress" ? (
           <Progress
@@ -901,7 +918,7 @@ export function Tracker({
             onLoadAll={scope === "all" ? undefined : loadAll}
             onSendNow={() => void catchUp(true)}
             onEdit={(record) => {
-              if (record.kind !== "bodyweight") openEdit(record);
+              if (record.kind === "meal" || record.kind === "workout") openEdit(record);
             }}
             onUpdate={update}
             onDelete={remove}

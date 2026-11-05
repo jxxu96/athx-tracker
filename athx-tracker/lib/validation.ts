@@ -2,6 +2,8 @@ import { z } from "zod";
 import { CONVERSATION_LIMIT, FOOD_NOTES_LIMIT, MAX_REPLIES, REPLY_LIMIT } from "./estimate-conversation.ts";
 import {
   DEFAULT_SETTINGS,
+  ENERGY_MAX,
+  ENERGY_MIN,
   MEAL_TEMPLATE_GRAMS_LIMIT,
   MEAL_TEMPLATE_ITEM_LIMIT,
   MEAL_TEMPLATE_ITEMS,
@@ -156,7 +158,13 @@ export const bodyweightSchema = z.object({
   time,
   kg: finite.positive().max(500),
 }).strict();
-export const recordSchema = z.union([workoutSchema, mealSchema, bodyweightSchema]);
+/** How someone feels on a day, a whole number out of 10. */
+export const energySchema = z.object({
+  ...base, kind: z.literal("energy"), athlete: z.enum(["hippos", "gators"]),
+  time,
+  level: z.number().int().min(ENERGY_MIN).max(ENERGY_MAX),
+}).strict();
+export const recordSchema = z.union([workoutSchema, mealSchema, bodyweightSchema, energySchema]);
 const pastTargetsSchema = z.array(z.object({ until: daySchema, macros: macroSchema }).strict())
   .max(TARGET_HISTORY_LIMIT);
 const birthYear = z.union([z.literal(0), z.number().int().min(1900).max(2100)]);

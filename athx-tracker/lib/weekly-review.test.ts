@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { type Meal, type Workout } from "./domain.ts";
+import { type EnergyCheckIn, type Meal, type Workout } from "./domain.ts";
 import { reviewPeriod, reviewWindows } from "./weekly-review.ts";
 
 const window = { start: "2026-10-19", end: "2026-10-25" };
@@ -55,4 +55,19 @@ test("both date boundaries are inclusive and other athletes, team and out-of-win
   assert.equal(summary.sessions, 2);
   assert.equal(summary.daysWithMeals, 0);
   assert.deepEqual(summary.average, { calories: 0, protein: 0, carbs: 0, fat: 0 });
+});
+
+test("energy averages the days with a check-in, and only that athlete's", () => {
+  const checkIn = (day: string, level: number, over: Partial<EnergyCheckIn> = {}): EnergyCheckIn => ({
+    id: `${day}-${level}`, kind: "energy", athlete: "gators", day, level, ...over,
+  });
+  const summary = reviewPeriod([
+    checkIn("2026-10-19", 5),
+    checkIn("2026-10-21", 8),
+    checkIn("2026-10-21", 6, { athlete: "hippos" }),
+    // Outside the week.
+    checkIn("2026-10-26", 1),
+  ], "gators", window);
+  assert.deepEqual(summary.energy, { average: 6.5, days: 2 });
+  assert.deepEqual(reviewPeriod([], "gators", window).energy, { average: null, days: 0 });
 });

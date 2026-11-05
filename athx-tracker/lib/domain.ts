@@ -122,7 +122,20 @@ export type Bodyweight = {
   /** Kilograms, like every other weight here. */
   kg: number;
 };
-export type RecordItem = Workout | Meal | Bodyweight;
+/**
+ * How someone feels on a day, out of 10: 1 is exhausted, 10 is full of
+ * energy. Subjective, so it is a whole number and nothing is worked out from
+ * it. Today takes one a day for each athlete, and setting it again replaces it.
+ */
+export type EnergyCheckIn = {
+  id: string; kind: "energy"; athlete: Exclude<Athlete, "team">; day: string;
+  time?: ClockTime;
+  /** 1 to 10. */
+  level: number;
+};
+export const ENERGY_MIN = 1;
+export const ENERGY_MAX = 10;
+export type RecordItem = Workout | Meal | Bodyweight | EnergyCheckIn;
 /**
  * The lifts Progress follows, in the order it shows them. The name is the
  * picker's spelling; the key is what a target is stored under.

@@ -6,7 +6,8 @@ single SQLite file on a volume.
 
 ## What it does
 
-- **Today** — countdown to the event, then fuel for each athlete, then each
+- **Today** — countdown to the event, then each athlete's energy, then fuel
+  for each athlete, then each
   zone's progress from its first estimate to its goal (Strength's from the lift
   targets), then a race-day estimate: the pair's Strength score, each athlete's share
   of it, and where it would have placed among last season's mixed Lite pairs; the
@@ -32,6 +33,16 @@ single SQLite file on a volume.
   stations support one, and so does the ATHX Lite running order.
   Tap any box away from its buttons to fold it to one line, such as the days to
   go or this week's counts, and see what is under it; tap again to open it.
+  **Energy** is how each of you feels, out of 10, from 1 (exhausted) to 10
+  (full of energy): one tap on that athlete's row logs it for today at the
+  phone's clock, and tapping another number changes it, so a day keeps one
+  check-in each. The server holds to that too: a check-in saved from another
+  phone, or moved onto a day in the Log, replaces the one that day had. Under the rows, the last 7 days for both of you and each
+  one's average over the days that have a check-in: a day nobody logged is
+  left out, not counted as no energy. It is subjective and nothing else is
+  worked out from it. Check-ins are journal entries, so they wait on the phone
+  without a connection like anything else, and, being small, are always sent
+  whole, like weigh-ins, however much of the journal the phone holds.
 - **Session** — log a workout as MetCon, Strength, Endurance, Solidcore, Tennis or
   Other, with Solidcore and tennis a tap away under Quick start. YTWs is a lift.
   Load the seven
@@ -160,8 +171,9 @@ single SQLite file on a volume.
   capped/unfinished attempts compare the average station completion share only
   when their elapsed times match. Nothing is projected to a finish.
   **Weekly review** compares each athlete's sessions, training mix, timed work,
-  endurance distance, lift volume, benchmark improvements and daily macro
-  averages with the previous week. The current week compares the same weekdays
+  endurance distance, lift volume, energy, benchmark improvements and daily macro
+  averages with the previous week. Energy is the average of the days with a
+  check-in. The current week compares the same weekdays
   through today; earlier weeks run Monday to Sunday. Lift volume counts every
   set's load times reps. Nutrition averages use days with known meal macros;
   unlogged days and pending estimates are excluded, while partial days count.
@@ -170,7 +182,8 @@ single SQLite file on a volume.
   and offer the rest.
 - **Log** — everything logged, newest first and, inside a day, latest time of day
   first, filterable, with edit and delete, each session showing what it burned.
-  Weigh-ins are entries too, corrected where they stand. It opens with the most
+  Weigh-ins and energy check-ins are entries too, corrected where they stand:
+  a check-in's level, day and time. It opens with the most
   recent entries and fetches the rest when asked, and draws a hundred at a time
   however many are loaded, so a journal years deep neither crosses the network
   nor reaches the screen all at once. What this phone has not sent yet is marked
