@@ -476,6 +476,14 @@ test("a MetCon asks for no goal time and saves none", async ({ page }) => {
   expect(saved.goal).toBeNull();
 });
 
+test("a circuit station shows its loads, not its target", async ({ page }) => {
+  await openSession(page);
+  await typeSelect(page).selectOption("MetCon");
+  const station = page.locator("li").filter({ hasText: "DB ground to overhead" });
+  await expect(station.getByText(/^Hippos .* · Gators /)).toBeVisible();
+  await expect(station.getByText(/Target/)).toHaveCount(0);
+});
+
 test("a lift can be added from the bottom of the list", async ({ page }) => {
   await openSession(page);
   await typeSelect(page).selectOption("Strength");
