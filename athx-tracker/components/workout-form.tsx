@@ -1008,7 +1008,7 @@ export function WorkoutForm({
     gators: null,
   });
 
-  const { usesStations, usesLifts, usesCustomStations, isRun, isMixed, takesKcal } =
+  const { usesStations, usesLifts, usesCustomStations, isRun, isMixed, takesKcal, takesGoal } =
     categoryShape(category);
   // Whether the session has MetCon work to have been capped on.
   const hasMetcon = usesStations && stations.some((s) => s.block === "metcon") &&
@@ -1478,7 +1478,9 @@ export function WorkoutForm({
     if (active.length === 0)
       return setError("Fill in at least one athlete before saving.");
 
-    const goalSeconds = goal.trim() === "" ? null : parseTime(goal);
+    // A goal typed before switching to MetCon is out of sight, so it neither
+    // blocks the save nor lands on the session.
+    const goalSeconds = !takesGoal || goal.trim() === "" ? null : parseTime(goal);
     if (goalSeconds !== null && (!Number.isFinite(goalSeconds) || goalSeconds <= 0))
       return setError("Write the goal time as mm:ss, or leave it empty.");
 
@@ -1658,13 +1660,15 @@ export function WorkoutForm({
               ))}
             </NativeSelect>
           </Field>
-          <Field label="Goal time">
-            <Input
-              value={goal}
-              placeholder="mm:ss"
-              onChange={(event) => setGoal(event.target.value)}
-            />
-          </Field>
+          {takesGoal ? (
+            <Field label="Goal time">
+              <Input
+                value={goal}
+                placeholder="mm:ss"
+                onChange={(event) => setGoal(event.target.value)}
+              />
+            </Field>
+          ) : null}
         </div>
         {category === "Other" ? (
           <Field label="What was it?">

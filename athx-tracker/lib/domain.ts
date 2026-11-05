@@ -598,6 +598,11 @@ export function categoryShape(category: Workout["category"]) {
      * is a guess that a watch or a machine can do better than.
      */
     takesKcal: category === "Other",
+    /**
+     * A goal time for the whole session. MetCon has its circuit and its cap,
+     * so a goal on top of them is one more box nobody fills.
+     */
+    takesGoal: category !== "MetCon",
   };
 }
 

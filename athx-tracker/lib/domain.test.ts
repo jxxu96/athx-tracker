@@ -315,6 +315,11 @@ test("only Other takes a typed burn", () => {
     assert.equal(categoryShape(category).takesKcal, category === "Other", category);
 });
 
+test("every category but MetCon takes a goal time", () => {
+  for (const category of CATEGORIES)
+    assert.equal(categoryShape(category).takesGoal, category !== "MetCon", category);
+});
+
 test("only the run category is treated as a run", () => {
   for (const category of CATEGORIES) {
     assert.equal(categoryShape(category).isRun, category === "Endurance", category);

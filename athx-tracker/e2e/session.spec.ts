@@ -457,6 +457,25 @@ test("a time box opens a keyboard that has a colon", async ({ page }) => {
     await expect(box).not.toHaveAttribute("inputmode", /.*/);
 });
 
+test("a MetCon asks for no goal time and saves none", async ({ page }) => {
+  await openSession(page);
+  await typeSelect(page).selectOption("Strength");
+  await expect(page.getByLabel("Goal time")).toBeVisible();
+  // Typed under another type, then out of sight: it must not ride along.
+  await page.getByLabel("Goal time").fill("12:00");
+  await typeSelect(page).selectOption("MetCon");
+  await expect(page.getByLabel("Goal time")).toHaveCount(0);
+  await page.getByLabel("Done (reps)").first().fill("30");
+  await page.getByRole("button", { name: "Save session" }).click();
+
+  const read = () =>
+    page.evaluate(async () => (await fetch("/api/records").then((r) => r.json())).records);
+  await expect.poll(async () => (await read()).length).toBe(1);
+  const [saved] = await read();
+  expect(saved.category).toBe("MetCon");
+  expect(saved.goal).toBeNull();
+});
+
 test("a lift can be added from the bottom of the list", async ({ page }) => {
   await openSession(page);
   await typeSelect(page).selectOption("Strength");
