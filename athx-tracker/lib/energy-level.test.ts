@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { EnergyCheckIn, RecordItem } from "./domain.ts";
-import { averageEnergy, energyDays, energyOn, formatEnergy } from "./energy-level.ts";
+import { averageEnergy, energyDays, energyOn, formatEnergy, sameCheckInDay } from "./energy-level.ts";
 
 const checkIn = (day: string, level: number, over: Partial<EnergyCheckIn> = {}): EnergyCheckIn => ({
   id: `${day}-${level}`, kind: "energy", athlete: "hippos", day, level, ...over,
@@ -44,6 +44,14 @@ test("the average leaves out days without a check-in, rather than reading them a
   const records = [checkIn("2026-11-05", 7), checkIn("2026-11-03", 6), checkIn("2026-10-01", 1)];
   assert.deepEqual(averageEnergy(records, "hippos", "2026-10-30", "2026-11-05"), { average: 6.5, days: 2 });
   assert.deepEqual(averageEnergy(records, "gators", "2026-10-30", "2026-11-05"), { average: null, days: 0 });
+});
+
+test("a check-in replaces only another for the same athlete and day", () => {
+  const today = checkIn("2026-11-05", 7, { id: "a" });
+  assert.equal(sameCheckInDay(today, checkIn("2026-11-05", 4, { id: "b" })), true);
+  assert.equal(sameCheckInDay(today, checkIn("2026-11-05", 4, { id: "b", athlete: "gators" })), false);
+  assert.equal(sameCheckInDay(today, checkIn("2026-11-04", 4, { id: "b" })), false);
+  assert.equal(sameCheckInDay(today, { id: "w", kind: "bodyweight", athlete: "hippos", day: "2026-11-05", kg: 60 }), false);
 });
 
 test("energy shows to one decimal, without a trailing zero", () => {

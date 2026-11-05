@@ -63,18 +63,28 @@ export async function POST(request: Request) {
   try {
     const record = recordSchema.parse(await readBody(request));
     const bests = record.kind === "workout" ? bestsFor(record) : [];
-    database()
-      .prepare(
-        "INSERT INTO records (id, kind, athlete, day, payload, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET athlete=excluded.athlete, day=excluded.day, payload=excluded.payload WHERE records.kind=excluded.kind",
-      )
-      .run(
-        record.id,
-        record.kind,
-        record.athlete,
-        record.day,
-        JSON.stringify(record),
-        new Date().toISOString(),
-      );
+    const sqlite = database();
+    sqlite.transaction(() => {
+      const { changes } = sqlite
+        .prepare(
+          "INSERT INTO records (id, kind, athlete, day, payload, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET athlete=excluded.athlete, day=excluded.day, payload=excluded.payload WHERE records.kind=excluded.kind",
+        )
+        .run(
+          record.id,
+          record.kind,
+          record.athlete,
+          record.day,
+          JSON.stringify(record),
+          new Date().toISOString(),
+        );
+      // One energy check-in a day for each athlete. Two phones that had not
+      // seen each other's would each make its own, and a check-in moved in
+      // the Log can land on a day that has one: whichever is saved last stands.
+      if (record.kind === "energy" && changes > 0)
+        sqlite
+          .prepare("DELETE FROM records WHERE kind = 'energy' AND athlete = ? AND day = ? AND id != ?")
+          .run(record.athlete, record.day, record.id);
+    })();
     // Saved to be estimated in the background: start now, not at the timer.
     if (record.kind === "meal" && record.source === "queued") kickQueue();
     return json({ record, ...(bests.length ? { newBests: bests } : {}) });

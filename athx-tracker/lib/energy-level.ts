@@ -19,6 +19,14 @@ export function energyOn(records: readonly RecordItem[], athlete: Person, day: s
   return found;
 }
 
+/**
+ * Whether two entries are check-ins for the same athlete and day, of which
+ * the server keeps only the one saved last. The phone drops the other at once
+ * too, so it does not show both until the next refresh.
+ */
+export const sameCheckInDay = (a: RecordItem, b: RecordItem) =>
+  a.kind === "energy" && b.kind === "energy" && a.athlete === b.athlete && a.day === b.day;
+
 /** Each day's level from one day to another, both included, oldest first; null where none was logged. */
 export function energyDays(records: readonly RecordItem[], athlete: Person, from: string, to: string) {
   const days: { day: string; level: number | null }[] = [];

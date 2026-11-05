@@ -101,9 +101,21 @@ test("the last seven days list each day's level and average the days that have o
   await expect(gators.getByRole("cell")).toHaveText([/none/, /none/, /none/, /none/, "6", "9", /none/, "7.5"]);
 });
 
+test("the server keeps one check-in a day for each athlete, the one saved last", async ({ page }) => {
+  // Two phones that had not seen each other's check-in, each with its own id.
+  await checkIn(page, "hippos", 3, 0);
+  await checkIn(page, "hippos", 8, 0);
+  await checkIn(page, "gators", 5, 0);
+  await checkIn(page, "hippos", 6, 1);
+  const kept = (await saved(page)).map(({ athlete, level }) => `${athlete} ${level}`).sort();
+  expect(kept).toEqual(["gators 5", "hippos 6", "hippos 8"]);
+});
+
 test("a check-in is corrected where it stands in the log", async ({ page }) => {
+  // Yesterday already has one, which the check-in moved there replaces.
+  await checkIn(page, "gators", 3, 1);
   await card(page).getByRole("group", { name: "Gators energy today" }).getByRole("button", { name: "5 out of 10" }).click();
-  await expect.poll(async () => (await saved(page)).length).toBe(1);
+  await expect.poll(async () => (await saved(page)).length).toBe(2);
 
   await nav(page, "Log");
   await page.getByRole("combobox", { name: "Filter by entry type" }).selectOption("energy");
@@ -117,6 +129,8 @@ test("a check-in is corrected where it stands in the log", async ({ page }) => {
   await expect(page.getByText("Entry updated", { exact: true })).toBeVisible();
   await expect(page.getByRole("listitem").filter({ hasText: "Energy 8/10" })).toContainText("06:30 · Gators · check-in");
   await expect(page.getByRole("heading", { name: "Yesterday" })).toBeVisible();
+  await expect(page.getByRole("listitem").filter({ hasText: "Energy 3/10" })).toHaveCount(0);
+  await expect.poll(async () => (await saved(page)).map(({ level }) => level)).toEqual([8]);
 
   // Moved to yesterday, today is open again.
   await nav(page, "Today");

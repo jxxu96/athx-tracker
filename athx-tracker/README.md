@@ -36,7 +36,8 @@ single SQLite file on a volume.
   **Energy** is how each of you feels, out of 10, from 1 (exhausted) to 10
   (full of energy): one tap on that athlete's row logs it for today at the
   phone's clock, and tapping another number changes it, so a day keeps one
-  check-in each. Under the rows, the last 7 days for both of you and each
+  check-in each. The server holds to that too: a check-in saved from another
+  phone, or moved onto a day in the Log, replaces the one that day had. Under the rows, the last 7 days for both of you and each
   one's average over the days that have a check-in: a day nobody logged is
   left out, not counted as no energy. It is subjective and nothing else is
   worked out from it. Check-ins are journal entries, so they wait on the phone

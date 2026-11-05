@@ -36,6 +36,7 @@ import {
 } from "@/lib/domain";
 import { athleteOutline } from "@/lib/athlete-outline";
 import { bodyweightHistory } from "@/lib/bodyweight";
+import { sameCheckInDay } from "@/lib/energy-level";
 import { bestLine, type NewBest } from "@/lib/bests";
 import { api, isMeal, message, sortRecords } from "@/lib/client";
 import {
@@ -424,7 +425,7 @@ export function Tracker({
     setRecords((current) =>
       sortRecords([
         ...batch,
-        ...current.filter((item) => !batch.some((r) => r.id === item.id)),
+        ...current.filter((item) => !batch.some((r) => r.id === item.id || sameCheckInDay(r, item))),
       ]),
     );
   }, []);
