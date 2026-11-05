@@ -46,6 +46,15 @@ added up. The estimator keeps the phone's cut unless a dish is plainly two,
 such as "burger fries" written with only a space, or two are plainly one. An
 estimator from before dishes ignores the flag and answers for the whole meal,
 which the app takes as one dish.
+A reply's description is JSON with the meal, `previousEstimate` (the average
+on the form) and the replies. The app also sends `"previousEstimates"`, each
+estimator's own last answer by name, while the form still shows that average
+as it came, and each estimator then continues from its own answer in place of
+the average. Given the same average, all three applied the same correction to
+it and came back with the same figures, so a reply's average was one answer
+three times. Once a figure or the assumptions are edited by hand, the app
+sends none, and every estimator starts from the edited average. An estimator
+from before this ignores the field. A request may be up to 128,000 characters.
 Workout drafts use the same authenticated service and provider fallback with
 `{"task":"workout","description":"Deadlift 1 x 2 at 185 lb","athletes":["hippos"],"weightUnit":"lb"}`.
 They return editable workout fields instead of meal macros. Sets precede reps in

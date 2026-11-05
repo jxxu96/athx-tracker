@@ -136,6 +136,10 @@ export const estimateSchema = answerSchema.extend({
 }).superRefine((estimate, context) => {
   rejectFiberAboveCarbs(estimate, context, ["fiber"]);
 });
+/** One estimator's own answer for a whole meal, which has no dishes. */
+const ownAnswerSchema = answerSchema.superRefine((answer, context) => {
+  rejectFiberAboveCarbs(answer, context, ["fiber"]);
+});
 /** Keep the latest estimate and every user correction within a bounded request. */
 export const estimateRequestSchema = z.object({
   description: z.string().trim().min(3).max(4000),
@@ -150,6 +154,12 @@ export const estimateRequestSchema = z.object({
     previous: estimateSchema,
     replies: z.array(z.string().trim().min(1).max(REPLY_LIMIT)).min(1).max(MAX_REPLIES)
       .refine((replies) => replies.join("").length <= CONVERSATION_LIMIT, "Conversation is too long."),
+    // Each estimator's own last answer for the whole meal, with no dishes.
+    byEstimator: z.object({
+      codex: ownAnswerSchema.optional(),
+      claude: ownAnswerSchema.optional(),
+      grok: ownAnswerSchema.optional(),
+    }).strict().optional(),
   }).strict().optional(),
 }).strict();
 /** A weigh-in. The same bounds as the weight Setup held before weigh-ins were dated. */
