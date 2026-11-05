@@ -21,12 +21,20 @@ const label = name === "claude" && description.includes("zzlabel");
 const confidence = name === "codex" && description.includes("zzsure") ? "medium" : label ? "high" : "low";
 appendFileSync(process.env.FAKE_LOG, "start " + name + "\\n");
 // A Grok that is not signed in fails at once, and says which of Claude Code's
-// setup it was told to leave alone.
+// setup it was told to leave alone and the effort it was given.
 if (name === "grok" && description.includes("zzgrokdown")) {
-  process.stderr.write("Not signed in. mcps " + process.env.GROK_CLAUDE_MCPS_ENABLED);
+  const { models } = JSON.parse(process.env.GROK_CONFIG ?? "{}");
+  process.stderr.write("Not signed in. mcps " + process.env.GROK_CLAUDE_MCPS_ENABLED
+    + ", effort " + models?.default_reasoning_effort + ", cwd " + require("node:path").basename(process.argv[process.argv.indexOf("--cwd") + 1]));
   process.exit(1);
 }
-setTimeout(() => {
+// A Grok still working when its time runs out, having said what it is doing.
+const slow = name === "grok" && description.includes("zzgrokslow");
+if (slow) {
+  process.stderr.write("warning: starting\\nStill searching.\\n");
+  setInterval(() => {}, 60000);
+}
+if (!slow) setTimeout(() => {
   appendFileSync(process.env.FAKE_LOG, "end " + name + "\\n");
   const figures = (share) => ({
     calories: calories * share, protein: calories * share / 20, carbs: calories * share / 10,
@@ -172,7 +180,9 @@ test("a complex meal asks every estimator at once, and a simple one goes in orde
     body: JSON.stringify({ description: "zzgrokdown rice, beans, cheese", budgetMs: 130000, stream: true }),
   });
   const downLines = (await down.text()).trim().split("\n").map((line) => JSON.parse(line));
-  assert.deepEqual(downLines[0], { type: "missed", provider: "grok", detail: "exit 1 Not signed in. mcps 0" });
+  assert.deepEqual(downLines[0], {
+    type: "missed", provider: "grok", detail: "exit 1 Not signed in. mcps false, effort low, cwd athx-estimator-grok",
+  });
   assert.deepEqual(
     downLines.slice(1).map(({ type, provider }) => [type, provider]).sort(),
     [["done", "average"], ["partial", "claude"], ["partial", "codex"]],
@@ -180,6 +190,21 @@ test("a complex meal asks every estimator at once, and a simple one goes in orde
   assert.equal(downLines.at(-1).type, "done");
   // 600 x 40% + 700 x 35%, over the 75% that answered.
   assert.equal(downLines.at(-1).estimate.calories, 646.7);
+
+  // One that runs out of time says what it last printed. The shortest budget
+  // a caller may set is 8 s, which is all Grok gets when asked with the rest.
+  const late = await fetch(`http://127.0.0.1:${port}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ description: "zzgrokslow rice, beans, cheese", budgetMs: 8000, stream: true }),
+  });
+  const lateLines = (await late.text()).trim().split("\n").map((line) => JSON.parse(line));
+  assert.deepEqual(
+    lateLines.filter(({ type }) => type === "missed"),
+    [{ type: "missed", provider: "grok", detail: "timed out after 8 s, last said: Still searching." }],
+  );
+  assert.equal(lateLines.at(-1).type, "done");
+  assert.equal(lateLines.at(-1).estimate.calories, 646.7);
 
   // Hanging up stops every CLI still running: none of them finishes.
   writeFileSync(log, "");

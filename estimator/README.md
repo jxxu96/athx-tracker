@@ -202,17 +202,34 @@ per call.
   47P, 0C, 5F]`, then how those figures were reached. Meal-wide notes, and the
   answer to a reply, come after the items.
 - A meal may search the web and open a page, and nothing else. Codex gets live
-  web search. Claude and Grok get web search and page fetch, for up to ten
-  turns. A workout stays one turn with those tools off. Looking a product up
-  in order has a 90s cap per provider, and a click holds 40s so a simple
-  meal's fallback can search too. Providers asked together share no cap. The
-  shorter cap still applies to workouts.
-- Grok also reads Claude Code's setup from `~/.claude` (CLAUDE.md as rules,
-  and Claude's MCP servers, as reported by the `@aibridge/driver-grok`
-  package for Grok 1.0.5). It is started with `GROK_CLAUDE_RULES_ENABLED`, `GROK_CLAUDE_SKILLS_ENABLED`,
-  `GROK_CLAUDE_MCPS_ENABLED` and `GROK_CLAUDE_AGENTS_ENABLED` set to `0`, so
-  your rules, skills, MCP servers and agents do not ride along, as Codex and
-  Claude are already kept off your config. A real environment variable wins.
+  web search. Claude gets web search and page fetch, and Grok web search
+  alone, which opens a page as well as searching, each for up to ten turns.
+  Grok's page fetch is off by default, and where it is on, every page fetched
+  costs another whole round of the model. A workout stays one turn
+  with those tools off. Looking a product up in order has a 90s cap per
+  provider, and a click holds 40s so a simple meal's fallback can search too.
+  Providers asked together share no cap. The shorter cap still applies to
+  workouts.
+- Grok runs a meal at low reasoning effort. Each model in its built-in
+  catalog starts at high, and every round of a lookup pays for that: one
+  estimate with no tools took about 32 s, and a complex meal ran past the
+  whole 130 s click. The effort is set with
+  `GROK_CONFIG={"models":{"default_reasoning_effort":"low"}}`, which the CLI
+  applies only when the model supports that level, so a model without it
+  keeps its own rather than failing. A workout keeps the model's default.
+- Grok also loads Claude Code's and Cursor's setup by default: CLAUDE.md and
+  their rules, skills, MCP servers and hooks. It is started with
+  `GROK_CLAUDE_*_ENABLED` and `GROK_CURSOR_*_ENABLED` set to `false` for
+  rules, skills, agents, MCPs and hooks, and `GROK_MEMORY=0`, so none of that
+  rides along and one meal leaves no notes for the next, as Codex and Claude
+  are already kept off your config. It works in an empty folder,
+  `athx-estimator-grok` in the temp directory: Grok takes the nearest `.git`
+  above its folder as the project and scopes AGENTS.md, skills and git
+  history to it, so run from a checkout it had the whole repository in scope.
+  A real environment variable wins over any of these settings.
+- A provider that runs out of time says what it last printed, such as
+  `timed out after 130 s, last said: ...`, so a run still searching reads
+  differently from one held up by a rate limit or a sign-in.
 - When the answer is not in a `structuredOutput` or `structured_output` field,
   it is read from the envelope's final text, `result` or `text`, after
   whatever was said on the way to it.

@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
+import { dirname, relative, isAbsolute } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // Importing used to start a listener; it exits on a short token, so this is
 // set before the module is pulled in.
@@ -24,6 +26,7 @@ const {
   clean,
   cleanDishes,
   complex,
+  failure,
   parseCliOutput,
   providerSlice,
   settle,
@@ -144,13 +147,56 @@ test("an envelope with no structured field gives up the answer in its final text
   assert.deepEqual(parseCliOutput(JSON.stringify(meal)), meal);
 });
 
-test("Grok runs without Claude Code's rules, skills, MCP servers and agents", () => {
-  assert.deepEqual(PROVIDERS.grok.env, {
-    GROK_CLAUDE_RULES_ENABLED: "0",
-    GROK_CLAUDE_SKILLS_ENABLED: "0",
-    GROK_CLAUDE_MCPS_ENABLED: "0",
-    GROK_CLAUDE_AGENTS_ENABLED: "0",
-  });
+test("Grok runs a meal at low effort, off Claude Code's and Cursor's setup, with no memory", () => {
+  const isolation = {
+    GROK_CLAUDE_RULES_ENABLED: "false",
+    GROK_CLAUDE_SKILLS_ENABLED: "false",
+    GROK_CLAUDE_AGENTS_ENABLED: "false",
+    GROK_CLAUDE_MCPS_ENABLED: "false",
+    GROK_CLAUDE_HOOKS_ENABLED: "false",
+    GROK_CURSOR_RULES_ENABLED: "false",
+    GROK_CURSOR_SKILLS_ENABLED: "false",
+    GROK_CURSOR_AGENTS_ENABLED: "false",
+    GROK_CURSOR_MCPS_ENABLED: "false",
+    GROK_CURSOR_HOOKS_ENABLED: "false",
+    GROK_MEMORY: "0",
+  };
+  // The overlay key and value the Grok CLI documents for reasoning effort.
+  const low = JSON.stringify({ models: { default_reasoning_effort: "low" } });
+  assert.deepEqual(PROVIDERS.grok.env(), { ...isolation, GROK_CONFIG: low });
+  assert.deepEqual(PROVIDERS.grok.env(DISH_TASK), { ...isolation, GROK_CONFIG: low });
+  // A workout keeps the model's own effort.
+  assert.deepEqual(PROVIDERS.grok.env(WORKOUT_TASK), isolation);
+  // Only Grok has settings of its own.
+  assert.equal(PROVIDERS.codex.env, undefined);
+  assert.equal(PROVIDERS.claude.env, undefined);
+});
+
+test("Grok works in an empty folder outside this repository", () => {
+  for (const task of [undefined, DISH_TASK, WORKOUT_TASK]) {
+    const args = PROVIDERS.grok.args("pizza, salad", task);
+    const folder = args[args.indexOf("--cwd") + 1];
+    assert.ok(statSync(folder).isDirectory(), folder);
+    const repository = dirname(dirname(fileURLToPath(import.meta.url)));
+    const inside = relative(repository, folder);
+    assert.ok(inside.startsWith("..") || isAbsolute(inside), `${folder} is inside ${repository}`);
+  }
+});
+
+test("a timeout says what the CLI last printed", () => {
+  assert.equal(
+    failure({ timedOut: true, code: null, out: "", err: "warning: one\nrate limit exceeded; sleeping.\n\n" }, 130_000),
+    "timed out after 130 s, last said: rate limit exceeded; sleeping.",
+  );
+  // Nothing on stderr: the last line of stdout, then nothing at all.
+  assert.equal(failure({ timedOut: true, code: null, out: "Searching.\r\n", err: "" }, 89_600), "timed out after 90 s, last said: Searching.");
+  assert.equal(failure({ timedOut: true, code: null, out: "", err: "  \n" }, 130_000), "timed out after 130 s");
+  assert.equal(failure({ timedOut: true, code: null, out: undefined, err: undefined }, 130_000), "timed out after 130 s");
+  // A long line is cut, so the reason still fits what the form shows.
+  const said = failure({ timedOut: true, code: null, out: "", err: "x".repeat(500) }, 130_000);
+  assert.equal(said, `timed out after 130 s, last said: ${"x".repeat(160)}`);
+  // An exit is reported as before.
+  assert.equal(failure({ timedOut: false, code: 1, out: "", err: "Not signed in.\n" }, 130_000), "exit 1 Not signed in.");
 });
 
 test("output that is not JSON is not an estimate", () => {
@@ -208,8 +254,10 @@ test("a named product is looked up, and a workout is not", () => {
 
   const mealGrok = PROVIDERS.grok.args("Chobani flip");
   assert.equal(mealGrok.includes("--disable-web-search"), false);
-  assert.equal(mealGrok[mealGrok.indexOf("--tools") + 1], "web_search,web_fetch");
-  assert.equal(mealGrok[mealGrok.indexOf("--allow") + 1], "WebFetch");
+  // web_search alone: it opens pages itself, and a fetched page costs a round.
+  assert.equal(mealGrok[mealGrok.indexOf("--tools") + 1], "web_search");
+  assert.equal(mealGrok.includes("--allow"), false);
+  assert.equal(mealGrok.some((arg) => /web_?fetch/i.test(arg)), false);
   assert.equal(mealGrok[mealGrok.indexOf("--max-turns") + 1], "10");
 
   const workoutGrok = PROVIDERS.grok.args("easy 5k", WORKOUT_TASK);
@@ -378,7 +426,7 @@ test("a shared meal is the meal's question, and then dish by dish", () => {
   // Still a meal: it searches as a meal does.
   assert.ok(PROVIDERS.codex.args("pizza, salad", DISH_TASK).includes("--search"));
   const grok = PROVIDERS.grok.args("pizza, salad", DISH_TASK);
-  assert.equal(grok[grok.indexOf("--tools") + 1], "web_search,web_fetch");
+  assert.equal(grok[grok.indexOf("--tools") + 1], "web_search");
   assert.ok(JSON.parse(grok[grok.indexOf("--json-schema") + 1]).required.includes("dishes"));
   const claude = PROVIDERS.claude.args("pizza, salad", DISH_TASK);
   assert.equal(claude[claude.indexOf("--tools") + 1], "WebSearch,WebFetch");
