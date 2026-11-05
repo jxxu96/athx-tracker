@@ -415,6 +415,8 @@ test("a slider shares each dish, a slice at a time once the dish is counted", as
   // The shares written on the bar read in both themes.
   for (const theme of ["Light", "Dark"]) {
     await page.getByRole("button", { name: theme, exact: true }).click();
+    // Let the theme's colour transitions land before reading contrast.
+    await page.waitForTimeout(500);
     const { violations } = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
       .analyze();
