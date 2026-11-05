@@ -5,6 +5,7 @@ import {
   CalendarDays,
   CloudOff,
   Dumbbell,
+  Keyboard,
   RotateCw,
   Settings as SettingsIcon,
   TrendingUp,
@@ -20,6 +21,11 @@ import { History } from "@/components/history";
 import { Progress } from "@/components/progress";
 import { SettingsForm } from "@/components/settings-form";
 import { ThemeToggle } from "@/components/theme-toggle";
+import {
+  setKeyboardShortcutsEnabled,
+  useKeyboardShortcutSetting,
+  useKeyboardShortcuts,
+} from "@/hooks/use-keyboard-shortcuts";
 import { DraftBoundary } from "@/components/draft-boundary";
 import { Drafts } from "@/components/drafts";
 import {
@@ -156,6 +162,8 @@ export function Tracker({
   }, [today]);
 
   const [tab, setTab] = useState<Tab>("today");
+  const shortcutSetting = useKeyboardShortcutSetting();
+  const shortcutsEnabled = shortcutSetting === "on";
   // Zero means unopened; advancing a form's key starts a fresh draft after save.
   const [formKeys, setFormKeys] = useState({ meal: 0, session: 0 });
   const activeTab = useRef(tab);
@@ -199,6 +207,14 @@ export function Tracker({
     }
     window.scrollTo(0, 0);
   }, [openDraftOnForm]);
+
+  useKeyboardShortcuts(shortcutsEnabled, {
+    g: () => setWho("gators"),
+    h: () => setWho("hippos"),
+    m: () => navigate("meal"),
+    t: () => navigate("today"),
+    p: () => navigate("progress"),
+  }, (action) => action());
 
   /** An entry from the Log, picking up any unsaved edit of it. */
   const openEdit = useCallback((record: Meal | Workout) => {
@@ -803,6 +819,18 @@ export function Tracker({
           {/* Wraps rather than running off a narrow phone, as it would at
               320 px or with entries waiting to send beside the unit switch. */}
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-1">
+          {/* Two people on two phones: one logs, the other wants it without
+              hunting for the browser's own reload. */}
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            disabled={refreshing}
+            aria-label="Refresh from the server"
+            title="Refresh from the server"
+            className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+          >
+            <RotateCw className={`size-4${refreshing ? " animate-spin" : ""}`} />
+          </button>
           <div
             role="group"
             aria-label="Logging for"
@@ -833,18 +861,6 @@ export function Tracker({
               {waiting}
             </button>
           ) : null}
-          {/* Two people on two phones: one logs, the other wants it without
-              hunting for the browser's own reload. */}
-          <button
-            type="button"
-            onClick={() => void refresh()}
-            disabled={refreshing}
-            aria-label="Refresh from the server"
-            title="Refresh from the server"
-            className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-          >
-            <RotateCw className={`size-4${refreshing ? " animate-spin" : ""}`} />
-          </button>
           <div
             role="group"
             aria-label="Weight unit"
@@ -864,6 +880,18 @@ export function Tracker({
             ))}
           </div>
           <ThemeToggle />
+          {shortcutSetting !== "unavailable" ? (
+            <button
+              type="button"
+              onClick={() => setKeyboardShortcutsEnabled(!shortcutsEnabled)}
+              aria-label="Keyboard shortcuts"
+              aria-pressed={shortcutsEnabled}
+              title="Keyboard shortcuts · G Gators, H Hippos, M Meal, T Today, P Progress · In Meal: B Breakfast, L Lunch, D Dinner, S Snack, A Alcohol"
+              className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-pressed:bg-primary aria-pressed:text-primary-foreground aria-pressed:hover:bg-primary/85"
+            >
+              <Keyboard className="size-4" />
+            </button>
+          ) : null}
           </div>
         </div>
       </header>
@@ -981,6 +1009,7 @@ export function Tracker({
             grokReady={grokReady}
             queueReady={queueReady}
             active={tab === "meal" && !problem}
+            shortcutsEnabled={shortcutsEnabled}
             editing={editingMeal}
             draft={mealDraft}
             onLoggingFor={setWho}
