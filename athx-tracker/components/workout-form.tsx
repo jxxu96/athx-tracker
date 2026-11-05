@@ -1778,14 +1778,14 @@ export function WorkoutForm({
                         <p className="text-sm font-medium">
                           {index + 1}. {station.name}
                         </p>
-                        <p className="text-[11px] text-muted-foreground">
-                          Target {station.target} {station.unit}
-                          {(() => {
-                            const circuit = circuitStation(station);
-                            const text = circuit ? metconLoadText(circuit, unit) : "";
-                            return text ? ` · ${text}` : "";
-                          })()}
-                        </p>
+                        {/* The circuit's reps are fixed and known, so only its loads and notes are shown. */}
+                        {(() => {
+                          const circuit = circuitStation(station);
+                          const text = circuit ? metconLoadText(circuit, unit) : "";
+                          return text ? (
+                            <p className="text-[11px] text-muted-foreground">{text}</p>
+                          ) : null;
+                        })()}
                       </div>
                       {isMixed ? (
                         <Button
