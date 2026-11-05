@@ -115,6 +115,47 @@ const COMPLEX_ITEMS = 3;
 // was left to answer in. The time cap above still bounds a long lookup.
 const MEAL_MAX_TURNS = "10";
 
+// Grok's switches, from the documentation built into the Grok CLI the image
+// installs (1.0.70). Each model in its built-in catalog starts at high
+// reasoning effort, and every round of a lookup pays for it: one estimate with
+// no tools took about 32 s, and a complex meal ran past the whole 130 s click.
+// A meal asks for low effort through the config overlay, which applies it only
+// "when the model supports it", so a model without that level keeps its own
+// instead of failing. A workout keeps the default: one turn, no tools.
+const GROK_MEAL_CONFIG = JSON.stringify({ models: { default_reasoning_effort: "low" } });
+// Grok also loads Claude Code's and Cursor's setup by default: CLAUDE.md and
+// their rules, skills, MCP servers and hooks. In the stack that is the same
+// HOME the Claude login lives in, and on a laptop it is all of yours. Codex
+// and Claude are already kept off your config, with --ignore-user-config and
+// --strict-mcp-config. false is the value the CLI documents. Cross-session
+// memory is off by default but can be switched on remotely, and one meal must
+// not carry notes into the next.
+const GROK_ISOLATION = {
+  GROK_CLAUDE_RULES_ENABLED: "false",
+  GROK_CLAUDE_SKILLS_ENABLED: "false",
+  GROK_CLAUDE_AGENTS_ENABLED: "false",
+  GROK_CLAUDE_MCPS_ENABLED: "false",
+  GROK_CLAUDE_HOOKS_ENABLED: "false",
+  GROK_CURSOR_RULES_ENABLED: "false",
+  GROK_CURSOR_SKILLS_ENABLED: "false",
+  GROK_CURSOR_AGENTS_ENABLED: "false",
+  GROK_CURSOR_MCPS_ENABLED: "false",
+  GROK_CURSOR_HOOKS_ENABLED: "false",
+  GROK_MEMORY: "0",
+};
+/**
+ * An empty folder outside any repository. Grok takes the nearest .git above
+ * its working folder as the project, and scopes AGENTS.md, skills and git
+ * history to it, which its documentation says can make startup slow. Run from
+ * a checkout, this file's own folder made the whole repository the project.
+ * Made on each call, in case something cleared the temp folder in between.
+ */
+function grokFolder() {
+  const folder = join(tmpdir(), "athx-estimator-grok");
+  mkdirSync(folder, { recursive: true });
+  return folder;
+}
+
 // Codex, then Claude, then Grok. A missing binary or a login that is not there
 // fails quickly and the next provider answers. Whoever is not last still leaves
 // the reserve, so a slow leader cannot spend the whole budget. A complex meal
@@ -427,28 +468,21 @@ const PROVIDERS = {
   },
   grok: {
     bin: () => GROK_BIN,
-    // Grok also reads Claude Code's setup from ~/.claude. The
-    // @aibridge/driver-grok package found Grok 1.0.5 loading CLAUDE.md as
-    // rules and attaching Claude's MCP servers, which spent a task's turns
-    // before it did any work, and switches these off to stop it. In the stack
-    // that is the same HOME the Claude login lives in, and on a laptop it is
-    // all of yours. Codex and Claude are already kept off your config, with
-    // --ignore-user-config and --strict-mcp-config. An environment variable a
-    // version does not read changes nothing.
-    env: {
-      GROK_CLAUDE_RULES_ENABLED: "0",
-      GROK_CLAUDE_SKILLS_ENABLED: "0",
-      GROK_CLAUDE_MCPS_ENABLED: "0",
-      GROK_CLAUDE_AGENTS_ENABLED: "0",
-    },
+    env: (task = MEAL_TASK) => ({
+      ...GROK_ISOLATION,
+      ...(task.meal === true ? { GROK_CONFIG: GROK_MEAL_CONFIG } : {}),
+    }),
     args: (description, task = MEAL_TASK) => {
-      // web_search is already allowed under dontAsk. WebFetch is not, so a meal
-      // names it. The tool ids are web_search and web_fetch; the display names
-      // do not restrict the tool list. A workout keeps both off.
+      // A meal gets web_search alone. It opens a page as well as searching,
+      // and it never asks for approval, dontAsk included. web_fetch is off
+      // unless the CLI is told otherwise, and it runs here rather than at
+      // xAI, so where it is on, every page fetched costs another whole round
+      // of the model. The tool ids are web_search and web_fetch; the display
+      // names do not restrict the tool list. A workout has neither.
       const meal = task.meal === true;
       return [
       "--cwd",
-      here,
+      grokFolder(),
       "--no-subagents",
       "--no-plan",
       "--permission-mode",
@@ -456,7 +490,7 @@ const PROVIDERS = {
       "--max-turns",
       meal ? MEAL_MAX_TURNS : "1",
       ...(meal
-        ? ["--tools", "web_search,web_fetch", "--allow", "WebFetch"]
+        ? ["--tools", "web_search"]
         : ["--tools", "", "--disable-web-search"]),
       "--system-prompt-override",
       task.instructions,
@@ -704,6 +738,19 @@ function either(...signals) {
 }
 
 /**
+ * Why a run gave nothing. A timeout adds the last line the CLI printed, when it
+ * printed one, since "timed out" alone cannot tell a run still searching from
+ * one stuck behind a rate limit or a sign-in. That reaches the form too.
+ */
+function failure({ code, out, err, timedOut }, sliceMs) {
+  if (!timedOut) return `exit ${code} ${(err || out).slice(0, 160).trim()}`;
+  const last = (text) =>
+    String(text ?? "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean).at(-1) ?? "";
+  const said = (last(err) || last(out)).slice(0, 160);
+  return `timed out after ${Math.round(sliceMs / 1000)} s${said ? `, last said: ${said}` : ""}`;
+}
+
+/**
  * How long one provider may run. In order, whoever is not last leaves the
  * reserve behind and nobody passes the cap. Asked together, nobody is after
  * them, so each may use whatever the caller left: on a complex meal the cap
@@ -761,7 +808,7 @@ async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK, { s
       provider.args(description, task),
       slice,
       either(stop, signal),
-      provider.env,
+      provider.env?.(task),
     );
     const value = task.clean(parseCliOutput(out));
     if (value) {
@@ -773,9 +820,7 @@ async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK, { s
     // Stopped because another found the label, or because the caller left,
     // which is not a failure.
     if (stop?.aborted || signal?.aborted) return null;
-    const why = timedOut
-      ? `timed out after ${Math.round(slice / 1000)} s`
-      : `exit ${code} ${(err || out).slice(0, 160).trim()}`;
+    const why = failure({ code, out, err, timedOut }, slice);
     miss(name, why);
     console.warn(`[estimator] ${name} failed (${why})`);
     return null;
@@ -1159,6 +1204,7 @@ export {
   cleanDishes,
   complex,
   estimate,
+  failure,
   parseCliOutput,
   providerSlice,
   settle,
