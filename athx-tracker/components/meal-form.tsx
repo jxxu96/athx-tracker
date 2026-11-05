@@ -40,6 +40,7 @@ import {
 } from "@/lib/estimate-blend";
 import { bothOf, isText, oneOf, textOf, type Draft } from "@/lib/drafts";
 import { useFormDraft } from "@/hooks/use-form-draft";
+import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { MealTemplateList } from "@/components/meal-templates";
 import { DishShares, MealDishes } from "@/components/meal-dishes";
 import { mealKey } from "@/lib/common-meals";
@@ -92,7 +93,15 @@ const MACRO_FIELDS = [
   { key: "fat", label: "Fat", unit: "g" },
 ] as const satisfies readonly { key: keyof Macros; label: string; unit: string }[];
 
-const MEALS = ["Breakfast", "Lunch", "Dinner", "Snack", "Alcohol"] as const;
+const MEAL_SHORTCUTS = {
+  b: "Breakfast",
+  l: "Lunch",
+  d: "Dinner",
+  s: "Snack",
+  a: "Alcohol",
+} as const satisfies Record<string, Meal["meal"]>;
+
+const MEALS = Object.values(MEAL_SHORTCUTS);
 
 type MacroDraft = Record<keyof Macros, string>;
 const emptyMacros: MacroDraft = { calories: "", protein: "", carbs: "", fat: "" };
@@ -356,6 +365,7 @@ export function MealForm({
   grokReady,
   queueReady,
   active = true,
+  shortcutsEnabled = false,
   editing,
   draft,
   onLoggingFor,
@@ -373,6 +383,7 @@ export function MealForm({
   /** The background worker can estimate. It asks the gateway, never the direct API. */
   queueReady: boolean;
   active?: boolean;
+  shortcutsEnabled?: boolean;
   editing?: Meal | null;
   /** What was typed here before and not saved, which the form opens with. */
   draft?: Draft | null;
@@ -1146,6 +1157,7 @@ export function MealForm({
   }
 
   const busy = estimating || saving || templateSaving;
+  useKeyboardShortcuts(active && !busy && shortcutsEnabled, MEAL_SHORTCUTS, setSlot);
   // Not once there is an estimate: a queued meal saves zero macros, and would
   // throw away the figures already on the form.
   const canQueue = queueReady && conversation.length === 0 && !rejected && !splitting;
