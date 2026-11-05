@@ -1479,8 +1479,11 @@ export function WorkoutForm({
       return setError("Fill in at least one athlete before saving.");
 
     // A goal typed before switching to MetCon is out of sight, so it neither
-    // blocks the save nor lands on the session.
-    const goalSeconds = !takesGoal || goal.trim() === "" ? null : parseTime(goal);
+    // blocks the save nor lands on the session. A MetCon saved with a goal,
+    // before the box went, keeps it through an edit.
+    const goalSeconds = !takesGoal
+      ? (editing?.category === "MetCon" ? editing.goal : null)
+      : goal.trim() === "" ? null : parseTime(goal);
     if (goalSeconds !== null && (!Number.isFinite(goalSeconds) || goalSeconds <= 0))
       return setError("Write the goal time as mm:ss, or leave it empty.");
 
