@@ -13,6 +13,7 @@ import {
   energyBalance,
   formatAmount,
   fuelWindow,
+  inFuelWindow,
   softProteinGoal,
   targetPercent,
   teamSessions,
@@ -54,10 +55,12 @@ function weekdayLetter(day: string) {
   }).format(dayToDate(day));
 }
 
+/** The averages count complete days only, so they say where they stop. */
 function spanNote(span: FuelSpan, today: string) {
-  if (span !== "week") return null;
-  const window = fuelWindow("week", today);
-  return `${shortDate(window!.start)} to ${shortDate(window!.end)}`;
+  const window = fuelWindow(span, today);
+  if (span === "week") return `${shortDate(window.start!)} to ${shortDate(window.end)}, complete days`;
+  if (span === "overall") return `Every complete day, up to ${shortDate(window.end)}`;
+  return null;
 }
 
 function dayCaption(day: string) {
@@ -96,6 +99,12 @@ function MacroRow({
   mark: { at: number; label: string } | null;
 }) {
   const share = targetPercent(value, target);
+  // Past the target the bar stands for everything eaten, so the target moves
+  // in from the end, a tick marks it, and the part beyond it is striped. It
+  // used to stop at the end, and 130% looked the same as 100%.
+  const over = share !== null && share > 100;
+  const targetAt = over ? (100 / share) * 100 : 100;
+  const fill = share === null ? 0 : over ? targetAt : share;
   return (
     <div className="space-y-1.5">
       <div className="flex items-baseline justify-between gap-3 text-xs">
@@ -113,17 +122,33 @@ function MacroRow({
       <div className="relative h-1.5">
         <div className="absolute inset-0 overflow-hidden rounded-full bg-muted">
           <div
-            className="h-full rounded-full transition-[width]"
-            style={{ width: `${share === null ? 0 : Math.min(100, share)}%`, background: color }}
+            className={`h-full transition-[width] ${over ? "rounded-l-full" : "rounded-full"}`}
+            style={{ width: `${fill}%`, background: color }}
           />
+          {over ? (
+            <div
+              data-fuel-over=""
+              className="absolute inset-y-0 right-0"
+              style={{ left: `${targetAt}%`, backgroundImage: overHatch(color) }}
+            />
+          ) : null}
         </div>
+        {over ? (
+          <span
+            aria-hidden="true"
+            data-fuel-target=""
+            className="absolute top-1/2 h-3 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground/70"
+            style={{ left: `${targetAt}%` }}
+          />
+        ) : null}
         {mark ? (
           <span
             role="img"
             aria-label={mark.label}
             title={mark.label}
             className="absolute top-1/2 z-10 h-2.5 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground"
-            style={{ left: `${mark.at}%` }}
+            // A mark is placed against the target, which has moved in.
+            style={{ left: `${(mark.at * targetAt) / 100}%` }}
           />
         ) : null}
       </div>
@@ -131,10 +156,15 @@ function MacroRow({
   );
 }
 
+/** Stripes in the athlete's colour for what is past the target, so it reads apart from the fill. */
+const overHatch = (color: string) =>
+  `repeating-linear-gradient(-45deg, ${color} 0 2px, transparent 2px 4px)`;
+
 /** Estimates to the nearest ten, which is all the methods are worth. */
 const tens = (kcal: number) => Math.round(kcal / 10) * 10;
 const signed = (kcal: number) => (kcal > 0 ? `+${formatAmount(kcal)}` : formatAmount(kcal));
 
+/** The seven days of the week's average, ending yesterday, a dot on each with a meal. */
 function WeekDots({
   today,
   days,
@@ -144,7 +174,7 @@ function WeekDots({
   days: Set<string>;
   color: string;
 }) {
-  const start = addDays(today, -6);
+  const start = fuelWindow("week", today).start!;
   return (
     <div aria-hidden="true" className="grid grid-cols-7 gap-1">
       {Array.from({ length: 7 }, (_, index) => {
@@ -153,7 +183,7 @@ function WeekDots({
         return (
           <div key={day} className="text-center">
             <div
-              className={`mx-auto size-2 rounded-full ${logged ? "" : "bg-muted"} ${day === today ? "ring-2 ring-foreground/30" : ""}`}
+              className={`mx-auto size-2 rounded-full ${logged ? "" : "bg-muted"}`}
               style={logged ? { background: color } : undefined}
             />
             <div className="mt-1 text-[10px] text-muted-foreground">
@@ -326,7 +356,7 @@ export function Fuel({
   const period = span === "day" ? "today" : span;
   const referenceDay = span === "day" ? day : today;
   const multi = span === "week" || span === "overall";
-  const weightDay = fuelWindow(period, referenceDay)?.end ?? referenceDay;
+  const weightDay = fuelWindow(period, referenceDay).end;
   const people = PEOPLE.map((athlete) => ({
     athlete,
     fuel:
@@ -343,7 +373,7 @@ export function Fuel({
           (record) =>
             record.kind === "meal" &&
             record.athlete === athlete &&
-            (window === null || (record.day >= window.start && record.day <= window.end)),
+            inFuelWindow(record.day, window),
         )
         .map((record) => record.day),
     );

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Field } from "@/components/workout-form";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { toast } from "sonner";
 import { api, formatDay, message, newId } from "@/lib/client";
 import { currentBodyweight, type BodyweightHistory } from "@/lib/bodyweight";
@@ -27,6 +28,7 @@ import {
   parseLoad,
   parseTime,
   reunitLoad,
+  typedClock,
   toKilograms,
   type Bodyweight,
   type LiftTargets,
@@ -77,6 +79,7 @@ export function SettingsForm({
   onRefresh,
   onSave,
   onDirty,
+  onDiscard,
 }: {
   settings: Settings;
   /** The weigh-ins, whose latest is the bodyweight shown here. */
@@ -88,9 +91,13 @@ export function SettingsForm({
   onSave: (next: Settings, notice?: string, weighIns?: Bodyweight[]) => Promise<void>;
   /** Whether anything has been typed, so a refresh can leave the form alone. */
   onDirty?: (dirty: boolean) => void;
+  /** Throw away what was typed and open the settings as they are. */
+  onDiscard?: () => void;
 }) {
-  // A form keyed on the settings revision starts clean, and leaving it drops
-  // what was typed, so it is only dirty while it is open.
+  // A form keyed on the settings revision starts clean. It stays mounted on
+  // other tabs, so what was typed waits there until it is saved or
+  // discarded, both of which open a fresh one.
+  const [dirty, setDirty] = useState(false);
   useEffect(() => () => onDirty?.(false), [onDirty]);
   /** The weight shown for an athlete: the latest weigh-in, or Setup's undated one. */
   const latestKg = (athlete: "hippos" | "gators") =>
@@ -102,14 +109,16 @@ export function SettingsForm({
     hippos: toDraft(settings.targets.hippos),
     gators: toDraft(settings.targets.gators),
   });
-  const [bodyweight, setBodyweight] = useState<Record<"hippos" | "gators", string>>(
-    () => {
-      const unit = settings.weightUnit ?? "lb";
-      const show = (kg: number) =>
-        kg > 0 ? String(Math.round(fromKilograms(kg, unit) * 10) / 10) : "";
-      return { hippos: show(latestKg("hippos")), gators: show(latestKg("gators")) };
-    },
-  );
+  // What was typed in each bodyweight box; null until it is typed in, and the
+  // box then shows the latest weigh-in as it is now. Setup stays mounted on
+  // other tabs, so a weigh-in corrected in the Log, or logged on the other
+  // phone, lands here meanwhile, and only a weight typed here is a new one: a
+  // box that held the weight from when Setup opened saved it back as a new
+  // weigh-in today, undoing the correction.
+  const [bodyweight, setBodyweight] = useState<Record<"hippos" | "gators", string | null>>({
+    hippos: null,
+    gators: null,
+  });
   const [height, setHeight] = useState<Record<"hippos" | "gators", string>>(() => {
     const unit = settings.weightUnit ?? "lb";
     return {
@@ -145,8 +154,8 @@ export function SettingsForm({
       gators: current.gators.trim() === "" ? "" : showHeight(readHeight(current.gators, weightUnit), unit),
     }));
     setBodyweight((current) => ({
-      hippos: reunitLoad(current.hippos, weightUnit, unit, latestKg("hippos")),
-      gators: reunitLoad(current.gators, weightUnit, unit, latestKg("gators")),
+      hippos: current.hippos === null ? null : reunitLoad(current.hippos, weightUnit, unit, latestKg("hippos")),
+      gators: current.gators === null ? null : reunitLoad(current.gators, weightUnit, unit, latestKg("gators")),
     }));
     setLiftTargets((current) => ({
       hippos: eachLift((key) => reunitLoad(current.hippos[key], weightUnit, unit, savedLifts.hippos[key])),
@@ -300,6 +309,14 @@ export function SettingsForm({
     }
   }
 
+  /** The bodyweight box: what was typed, or the latest weigh-in in the screen's unit. */
+  const shownWeight = (athlete: "hippos" | "gators") => {
+    const typed = bodyweight[athlete];
+    if (typed !== null) return typed;
+    const kg = latestKg(athlete);
+    return kg > 0 ? String(Math.round(fromKilograms(kg, weightUnit) * 10) / 10) : "";
+  };
+
   /** A lift target box in kilograms: zero for none, null when it is not a weight. */
   function liftKg(athlete: "hippos" | "gators", key: ProgressLift) {
     const raw = liftTargets[athlete][key].trim();
@@ -324,7 +341,7 @@ export function SettingsForm({
     if (!Number.isInteger(weekly) || weekly < 1 || weekly > 21)
       return "Set a weekly session target between 1 and 21.";
     for (const athlete of ["hippos", "gators"] as const) {
-      const raw = bodyweight[athlete].trim();
+      const raw = shownWeight(athlete).trim();
       if (raw !== "") {
         const kg = toKilograms(Number(raw), weightUnit);
         if (!Number.isFinite(kg) || kg <= 0 || kg > 500)
@@ -387,7 +404,10 @@ export function SettingsForm({
     const weighIns: Bodyweight[] = [];
     const baseline = { ...(settings.bodyweight ?? { hippos: 0, gators: 0 }) };
     for (const athlete of ["hippos", "gators"] as const) {
-      const raw = bodyweight[athlete].trim();
+      // A box nobody typed in shows the latest weigh-in; it is not a new one.
+      const typed = bodyweight[athlete];
+      if (typed === null) continue;
+      const raw = typed.trim();
       if (raw === "") {
         if (!currentBodyweight(history, athlete)) baseline[athlete] = 0;
         continue;
@@ -447,7 +467,8 @@ export function SettingsForm({
 
   /** Resting energy from what is in the boxes, so the figure answers as you type. */
   function restingFor(athlete: "hippos" | "gators") {
-    const kg = bodyweight[athlete].trim() === "" ? 0 : toKilograms(Number(bodyweight[athlete]), weightUnit);
+    const shown = shownWeight(athlete).trim();
+    const kg = shown === "" ? 0 : toKilograms(Number(shown), weightUnit);
     const cm = height[athlete].trim() === "" ? 0 : readHeight(height[athlete], weightUnit);
     const year = Number(birthYear[athlete].trim() || 0);
     if (![kg, cm, year].every(Number.isFinite)) return null;
@@ -462,7 +483,14 @@ export function SettingsForm({
   }
 
   return (
-    <form onSubmit={submit} onChange={() => onDirty?.(true)} className="space-y-4 pb-4">
+    <form
+      onSubmit={submit}
+      onChange={() => {
+        setDirty(true);
+        onDirty?.(true);
+      }}
+      className="space-y-4 pb-4"
+    >
       <section className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
         <h3 className="text-sm font-semibold">The event</h3>
         <Field label="Name">
@@ -504,7 +532,7 @@ export function SettingsForm({
           </h3>
           <Field label={`Bodyweight (${weightUnit})`} hint={weightHint(athlete)}>
             <Input
-              value={bodyweight[athlete]}
+              value={shownWeight(athlete)}
               inputMode="decimal"
               placeholder="Not set"
               onChange={(event) =>
@@ -600,7 +628,7 @@ export function SettingsForm({
           {(
             [
               { key: "endurance", label: "Endurance (m SkiErg)", mode: "numeric", placeholder: "Not set" },
-              { key: "metcon", label: "MetCon X (m:ss)", mode: "text", placeholder: "Not set" },
+              { key: "metcon", label: "MetCon X (m:ss)", mode: "numeric", placeholder: "Not set" },
             ] as const
           ).map(({ key, label, mode, placeholder }) => (
             <Field key={key} label={label}>
@@ -609,7 +637,11 @@ export function SettingsForm({
                 inputMode={mode}
                 placeholder={placeholder}
                 onChange={(event) =>
-                  setRaceGoals((current) => ({ ...current, [key]: event.target.value }))
+                  setRaceGoals((current) => ({
+                    ...current,
+                    // The number pad has no colon, so the time box puts it in.
+                    [key]: key === "metcon" ? typedClock(event.target.value) : event.target.value,
+                  }))
                 }
               />
             </Field>
@@ -636,9 +668,39 @@ export function SettingsForm({
         </p>
       ) : null}
 
-      <Button type="submit" size="lg" className="w-full" disabled={saving}>
-        {saving ? "Saving…" : "Save settings"}
-      </Button>
+      {/* Sticks above the bottom bar while the settings scroll past, so Save
+          is never a long scroll away, and says whether anything is unsaved. */}
+      <div className="sticky bottom-[calc(var(--nav-height)+0.75rem)] z-10 flex items-center justify-between gap-3 rounded-2xl border bg-card/95 p-3 shadow-lg backdrop-blur">
+        <p role="status" className="min-w-0 text-xs text-muted-foreground">
+          {dirty ? (
+            <span className="font-medium text-foreground">Unsaved changes</span>
+          ) : (
+            "No unsaved changes"
+          )}
+        </p>
+        <div className="flex shrink-0 gap-1.5">
+          {dirty && onDiscard ? (
+            <Button type="button" variant="ghost" disabled={saving} onClick={onDiscard}>
+              Discard
+            </Button>
+          ) : null}
+          <Button type="submit" variant={dirty ? "default" : "outline"} disabled={saving}>
+            {saving ? "Saving…" : "Save settings"}
+          </Button>
+        </div>
+      </div>
+
+      <section className="rounded-2xl border bg-card p-4 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold">Theme</h3>
+            <p className="text-[11px] text-muted-foreground">
+              Kept on this phone and applied at once, without Save.
+            </p>
+          </div>
+          <ThemeToggle />
+        </div>
+      </section>
 
       <section className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
         <h3 className="text-sm font-semibold">Your data</h3>
@@ -669,6 +731,8 @@ export function SettingsForm({
             accept="application/json,.json"
             className="hidden"
             onChange={(event) => {
+              // Picking a file restores a journal; it is not typing in Setup.
+              event.stopPropagation();
               const file = event.target.files?.[0];
               event.target.value = "";
               if (file) void importJournal(file);

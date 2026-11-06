@@ -18,21 +18,21 @@ export const metadata: Metadata = {
 };
 
 // viewportFit "cover" lets the safe-area insets reach the sticky header and nav.
+// No themeColor here: the script below writes it, because it follows the
+// theme chosen on this phone, which the server cannot know.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  // The page defaults to dark, including on a light device, so the browser
-  // chrome matches that instead of the operating system.
-  themeColor: "#0a0a0a",
 };
 
 /**
  * Runs before anything paints, so the page never shows one theme and then
  * swaps. Only a stored light choice is light. Anything else, including an
- * older device choice, is dark.
+ * older device choice, is dark. The browser's bar takes the same background,
+ * so a light page no longer sits under a black status bar.
  */
-const THEME_SCRIPT = `try{var s=localStorage.getItem('athx-theme');document.documentElement.dataset.theme=s==='light'?'light':'dark'}catch(e){document.documentElement.dataset.theme='dark'}`;
+const THEME_SCRIPT = `(function(){var t='dark';try{if(localStorage.getItem('athx-theme')==='light')t='light'}catch(e){}document.documentElement.dataset.theme=t;var m=document.querySelector('meta[name="theme-color"]');if(!m){m=document.createElement('meta');m.name='theme-color';document.head.appendChild(m)}m.content=t==='light'?'#ffffff':'#0a0a0a'})()`;
 
 export default function RootLayout({
   children,

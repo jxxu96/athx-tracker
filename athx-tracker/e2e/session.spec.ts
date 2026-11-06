@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { DEFAULT_SETTINGS, formatTime, projectWorkout, type Workout } from "../lib/domain.ts";
 import { PASSPHRASE } from "../playwright.config.ts";
+import { openSetup } from "./theme.ts";
 
 // These cover the paths that have actually broken. Every bug that reached the
 // user in this app was wiring or rendering, which the unit tests cannot see:
@@ -159,23 +160,27 @@ test.describe("a first visit", () => {
     await expect(page.locator("body")).toHaveCSS("background-color", "rgb(10, 10, 10)");
     await page.getByLabel("Passphrase").fill(PASSPHRASE);
     await page.getByRole("button", { name: "Open journal" }).click();
+    await openSetup(page);
     await expect(page.getByRole("button", { name: "Dark" })).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator("body")).toHaveCSS("background-color", "rgb(10, 10, 10)");
   });
 
   test("has no control that follows the device", async ({ page }) => {
+    await openSetup(page);
     await expect(page.getByRole("button", { name: "Device" })).toHaveCount(0);
     await expect(page.getByRole("group", { name: "Theme" }).getByRole("button")).toHaveCount(2);
     await page.evaluate(() => localStorage.setItem("athx-theme", "system"));
     await page.reload();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
     await expect(page.locator("body")).toHaveCSS("background-color", "rgb(10, 10, 10)");
+    await openSetup(page);
     await expect(page.getByRole("button", { name: "Dark" })).toHaveAttribute("aria-pressed", "true");
   });
 });
 
 test("the theme buttons change the page, not just themselves", async ({ page }) => {
   const body = page.locator("body");
+  await openSetup(page);
   await page.getByRole("button", { name: "Light" }).click();
   await expect(body).toHaveCSS("background-color", "rgb(255, 255, 255)");
   await page.getByRole("button", { name: "Dark" }).click();
@@ -187,7 +192,9 @@ test("the theme buttons change the page, not just themselves", async ({ page }) 
 
 test("a theme chosen in one tab follows into the other", async ({ page, context }) => {
   // The bug: the second tab's control moved to Dark while its page stayed
-  // white, because only the tab doing the choosing applied it.
+  // white, because only the tab doing the choosing applied it. The second tab
+  // never opens Setup, where the buttons are: the whole app follows.
+  await openSetup(page);
   await page.getByRole("button", { name: "Light" }).click();
   const second = await context.newPage();
   await second.goto("/");
@@ -444,17 +451,21 @@ test("an Other session's burn is the one typed, with or without a bodyweight", a
     .toEqual(["Tennis:"]);
 });
 
-test("a time box opens a keyboard that has a colon", async ({ page }) => {
+test("a time box opens the number pad and puts the colon in", async ({ page }) => {
   await openSession(page);
   await typeSelect(page).selectOption("Other");
   await page.getByRole("button", { name: "Station", exact: true }).click();
-  // A number pad has no colon, and every one of these is written mm:ss.
+  // A number pad has no colon, so every box written mm:ss puts it in: the
+  // last two digits are the seconds.
   for (const box of [
     page.getByLabel("Goal time"),
     elapsed(page).first(),
     page.getByLabel("Time", { exact: true }).first(),
-  ])
-    await expect(box).not.toHaveAttribute("inputmode", /.*/);
+  ]) {
+    await expect(box).toHaveAttribute("inputmode", "numeric");
+    await box.pressSequentially("1230");
+    await expect(box).toHaveValue("12:30");
+  }
 });
 
 test("a MetCon asks for no goal time and saves none", async ({ page }) => {

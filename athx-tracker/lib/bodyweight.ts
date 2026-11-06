@@ -64,3 +64,28 @@ export function currentBodyweight(history: BodyweightHistory, athlete: Person) {
 export function bodyweightKnown(history: BodyweightHistory, athlete: Person) {
   return history.baseline[athlete] > 0 || history.weighIns[athlete].length > 0;
 }
+
+/**
+ * Each weigh-in with the mean of the weigh-ins in the seven days up to it,
+ * itself included: a day's weight moves with water and food by more than a
+ * week's training does, so the trend is the average, not the dots. Days
+ * without a weigh-in add nothing, rather than being guessed at.
+ */
+export function weeklyAverage(weighIns: readonly Bodyweight[]) {
+  return weighIns.map((weighIn, index) => {
+    let sum = 0;
+    let count = 0;
+    for (let back = index; back >= 0; back -= 1) {
+      const earlier = weighIns[back];
+      if (daysApart(earlier.day, weighIn.day) > 6) break;
+      sum += earlier.kg;
+      count += 1;
+    }
+    return { day: weighIn.day, kg: weighIn.kg, average: sum / count };
+  });
+}
+
+/** Whole days from one day to a later one. */
+function daysApart(from: string, to: string) {
+  return Math.round((Date.parse(`${to}T12:00:00Z`) - Date.parse(`${from}T12:00:00Z`)) / 86_400_000);
+}

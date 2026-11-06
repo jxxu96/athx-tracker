@@ -6,7 +6,7 @@ test("food notes typed in Setup are kept after a reload", async ({ page }) => {
   await page.getByLabel("Passphrase").fill(PASSPHRASE);
   await page.getByRole("button", { name: "Open journal" }).click();
   const openSetup = () =>
-    page.getByRole("navigation", { name: "Sections" })
+    page.locator("header")
       .getByRole("button", { name: "Setup", exact: true })
       .click();
 

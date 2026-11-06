@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { DEFAULT_SETTINGS, METCON, type RecordItem, type Workout, type Meal } from "../lib/domain.ts";
 import { addDays, weekStart } from "../lib/client.ts";
 import { PASSPHRASE } from "../playwright.config.ts";
+import { chooseTheme } from "./theme.ts";
 
 const workout = (over: Partial<Workout> = {}): Workout => ({
   id: "", kind: "workout", athlete: "hippos", day: "2026-10-19", title: "ATHX practice", category: "MetCon", customCategory: "",
@@ -97,7 +98,9 @@ test("new Progress views fit a phone and are accessible in both themes", async (
   for (const view of ["ATHX benchmarks", "Weekly review"]) {
     await page.getByRole("button", { name: view, exact: true }).click();
     for (const theme of ["Light", "Dark"]) {
-      await page.getByRole("button", { name: theme, exact: true }).click();
+      await chooseTheme(page, theme as "Light" | "Dark");
+      // Progress opens on its main lifts again after Setup.
+      await page.getByRole("button", { name: view, exact: true }).click();
       await page.waitForTimeout(500);
       const { violations } = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
       expect(violations.map((item) => `${item.id}: ${item.help}`)).toEqual([]);

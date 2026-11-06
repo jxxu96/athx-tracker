@@ -306,6 +306,16 @@ export function parseTime(text: string) {
   return m * 60 + s;
 }
 /**
+ * A time box as it is typed: digits from a phone's number pad, which has no
+ * colon, put in mm:ss with the last two as the seconds, so 2530 reads 25:30.
+ * A colon typed on a keyboard is fine but not needed. Leading zeros before
+ * the minutes go, and four digits of minutes is the most parseTime reads.
+ */
+export function typedClock(text: string) {
+  const digits = text.replace(/\D/g, "").replace(/^0+(?=\d{3})/, "").slice(0, 6);
+  return digits.length <= 2 ? digits : `${digits.slice(0, -2)}:${digits.slice(-2)}`;
+}
+/**
  * A workout-only scenario, not a physiological prediction.
  * Keeps observed time intact. Applies adjustable slowdown only to unperformed work.
  * An unobserved station cannot inherit the pace of another movement.
@@ -744,28 +754,30 @@ function formatSet(set: LiftSet, unit: WeightUnit) {
   return set.failed ? `${text} (last rep failed)` : text;
 }
 
+type LiftLine = { name: string; kg: number; sets?: number; reps: number; detail?: readonly LiftSet[] };
+
 /**
- * The log's one line for a lift. Identical sets stay "225 lb 3×5". A lift
+ * A lift's sets without its name. Identical sets stay "225 lb 3×5". A lift
  * whose sets differed lists each one: "135 lb×5, 185 lb×3, 225 lb×1".
  * A failed final rep is named on the set it belongs to.
  */
-export function formatLift(
-  lift: { name: string; kg: number; sets?: number; reps: number; detail?: readonly LiftSet[] },
-  unit: WeightUnit,
-) {
+export function formatLiftSets(lift: Omit<LiftLine, "name">, unit: WeightUnit) {
   const detail = lift.detail;
   if (detail && detail.length > 0) {
     const first = detail[0];
     const alike = detail.every((set) =>
       set.kg === first.kg && set.reps === first.reps && Boolean(set.failed) === Boolean(first.failed));
-    if (!alike) {
-      return `${lift.name} ${detail.map((set) => formatSet(set, unit)).join(", ")}`;
-    }
+    if (!alike) return detail.map((set) => formatSet(set, unit)).join(", ");
     if (first.failed) {
-      return `${lift.name} ${formatWeight(lift.kg, unit)} ${lift.sets ?? detail.length}×${lift.reps} (last rep failed)`;
+      return `${formatWeight(lift.kg, unit)} ${lift.sets ?? detail.length}×${lift.reps} (last rep failed)`;
     }
   }
-  return `${lift.name} ${formatWeight(lift.kg, unit)} ${lift.sets ?? 1}×${lift.reps}`;
+  return `${formatWeight(lift.kg, unit)} ${lift.sets ?? 1}×${lift.reps}`;
+}
+
+/** The log's one line for a lift: its name, then its sets. */
+export function formatLift(lift: LiftLine, unit: WeightUnit) {
+  return `${lift.name} ${formatLiftSets(lift, unit)}`;
 }
 
 /** A stored load as the number a weight box shows, to a tenth. */

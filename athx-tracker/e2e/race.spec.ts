@@ -1,6 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { PASSPHRASE } from "../playwright.config.ts";
+import { chooseTheme } from "./theme.ts";
 import { DEFAULT_SETTINGS, METCON } from "../lib/domain.ts";
 import { FIELD_DATA } from "../lib/field-data.ts";
 
@@ -203,7 +204,7 @@ test("the race-day estimate covers all three zones from what is logged", async (
   await expect(metcon).toContainText("Includes 1:00 moving between stations.");
 
   for (const theme of ["Light", "Dark"]) {
-    await page.getByRole("button", { name: theme, exact: true }).click();
+    await chooseTheme(page, theme as "Light" | "Dark");
     await audit(page, `${theme} theme`);
   }
 });
@@ -273,7 +274,7 @@ test("the pair's Strength is placed among 2026's mixed Lite pairs, live", async 
   await expect(strength).not.toContainText("needs a strict press");
 
   for (const theme of ["Light", "Dark"]) {
-    await page.getByRole("button", { name: theme, exact: true }).click();
+    await chooseTheme(page, theme as "Light" | "Dark");
     await audit(page, `${theme} theme`);
   }
 });
@@ -334,7 +335,7 @@ test("Progress measures each zone from its first estimate to its goal, Strength'
   await expect(strength).toContainText("Goal 1,176\u00a0lb");
 
   for (const theme of ["Light", "Dark"]) {
-    await page.getByRole("button", { name: theme, exact: true }).click();
+    await chooseTheme(page, theme as "Light" | "Dark");
     await audit(page, `${theme} theme`);
   }
 });

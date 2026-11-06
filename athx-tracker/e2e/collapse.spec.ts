@@ -37,11 +37,14 @@ test("a control inside a box does its job without folding it", async ({ page }) 
   await expect(fuel.getByRole("button", { name: "Collapse Fuel" })).toBeVisible();
 });
 
-test("the countdown box folds to the days left", async ({ page }) => {
+test("the days to go are a chip in the header, read out in full", async ({ page }) => {
   await signIn(page);
-  await page.getByText("days to go", { exact: true }).click();
-  await expect(page.getByText(/^\d+ days? to go$/)).toBeVisible();
-  await expect(page.getByRole("button", { name: /^Expand ATHX/ })).toBeVisible();
+  const header = page.locator("header");
+  await expect(header.getByText(/^\d+ d$/)).toBeVisible();
+  await expect(header.getByText(/^\d+ days? to ATHX New York, /)).toBeAttached();
+  // Today no longer spends a box on it, so Fuel leads.
+  await expect(page.getByRole("button", { name: /^(Expand|Collapse) ATHX New York$/ })).toHaveCount(0);
+  await expect(page.locator("main section").first().getByRole("heading", { name: "Fuel" })).toBeVisible();
 });
 
 test("the race box folds to where each zone stands", async ({ page }) => {
