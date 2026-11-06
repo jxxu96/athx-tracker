@@ -68,8 +68,8 @@ test("fields, open calendars, and modifier keys take priority over shortcuts", a
   const breakfast = sittings.getByRole("button", { name: "Breakfast" });
   await expect(breakfast).toHaveAttribute("aria-pressed", "true");
   const description = page.getByRole("textbox", { name: "Meal description" });
-  await description.pressSequentially("g h m t p b l d s a");
-  await expect(description).toHaveValue("g h m t p b l d s a");
+  await description.pressSequentially("g h w m t p b l d s a");
+  await expect(description).toHaveValue("g h w m t p b l d s a");
   await expect(breakfast).toHaveAttribute("aria-pressed", "true");
   await expect(meal).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("banner").getByRole("button", { name: "Hippos" })).toHaveAttribute("aria-pressed", "true");
@@ -80,13 +80,15 @@ test("fields, open calendars, and modifier keys take priority over shortcuts", a
   const calendar = page.getByRole("dialog");
   await expect(calendar).toBeVisible();
   await page.keyboard.press("p");
+  await page.keyboard.press("w");
   await page.keyboard.press("l");
   await expect(calendar).toBeVisible();
   await expect(breakfast).toHaveAttribute("aria-pressed", "true");
   await expect(meal).toHaveAttribute("aria-current", "page");
   await page.keyboard.press("Escape");
 
-  await session.click();
+  await page.keyboard.press("w");
+  await expect(session).toHaveAttribute("aria-current", "page");
   const workout = page.getByRole("textbox", { name: "Workout description" });
   await workout.pressSequentially("m t p");
   await expect(workout).toHaveValue("m t p");
