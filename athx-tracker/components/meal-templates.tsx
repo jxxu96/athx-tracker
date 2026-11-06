@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles, X } from "lucide-react";
+import { Plus, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -113,6 +113,8 @@ export function MealTemplateList({
   const [listError, setListError] = useState("");
   const [saving, setSaving] = useState(false);
   const [estimating, setEstimating] = useState(false);
+  // The compact row is for logging; managing the templates opens the full list.
+  const [managing, setManaging] = useState(false);
   const sides = loggingFor === "both"
     ? (["hippos", "gators"] as const)
     : ([loggingFor] as const);
@@ -303,27 +305,83 @@ export function MealTemplateList({
   const preview = read && "items" in read ? templateDescription(read.items) : "";
   const totals = read && "items" in read ? ingredientTotals(read.items) : undefined;
 
+  const busy = disabled || saving || estimating;
+  const offers = groups.flatMap((group) => group.offers.map((offer) => ({ athlete: group.athlete, offer })));
+
   return (
+    <>
+    {offers.length > 0 || onSaveForm ? (
     <section
       {...athleteOutline(loggingFor)}
+      aria-label="Meal templates"
       className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5"
     >
-      <h3 className="text-sm font-semibold">Meal templates</h3>
-      {onSaveForm ? (
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">Templates</h3>
+        {offers.length > 0 ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            aria-expanded={managing}
+            onClick={() => setManaging((current) => !current)}
+          >
+            {managing ? "Done" : "Manage templates"}
+          </Button>
+        ) : null}
+      </div>
+      {listError ? (
+        <p role="alert" className="text-sm text-destructive">{listError}</p>
+      ) : null}
+      {managing ? null : (
+        // One row that scrolls sideways: tap a meal to fill the form. Saving,
+        // editing and removing are under Manage, out of the way of logging.
+        <div role="group" aria-label="Fill from a template" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5 scrollbar-none">
+          {offers.map(({ athlete, offer }) => {
+            const summary = templateDescription(offer.items);
+            return (
+              <button
+                key={`${athlete}-${offer.id}`}
+                type="button"
+                aria-label={`${ATHLETES[athlete].name}: ${offer.name}`}
+                title={`${offer.meal}${summary ? ` · ${summary}` : ""}${offer.saved ? "" : " · from your log"}`}
+                disabled={busy}
+                onClick={() => onApply(athlete, offer)}
+                // A meal offered from the log, not kept yet, has a dashed edge.
+                className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-accent disabled:opacity-50 ${offer.saved ? "" : "border-dashed"}`}
+              >
+                {sides.length > 1 ? (
+                  <span aria-hidden="true" className="size-2 shrink-0 rounded-full" style={{ background: ATHLETES[athlete].color }} />
+                ) : null}
+                <span className="max-w-44 truncate">{offer.name}</span>
+              </button>
+            );
+          })}
+          {onSaveForm ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onSaveForm}
+              className="inline-flex shrink-0 items-center gap-1 rounded-full border border-dashed px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+            >
+              <Plus className="size-3.5" aria-hidden="true" />
+              {formLabel}
+            </button>
+          ) : null}
+        </div>
+      )}
+      {managing && onSaveForm ? (
         <Button
           type="button"
           variant="outline"
           className="w-full"
-          disabled={disabled || saving || estimating}
+          disabled={busy}
           onClick={onSaveForm}
         >
           {formLabel}
         </Button>
       ) : null}
-      {listError ? (
-        <p role="alert" className="text-sm text-destructive">{listError}</p>
-      ) : null}
-      {groups.map((group) => (
+      {managing ? groups.map((group) => (
         <div key={group.athlete} className="space-y-1.5">
           {groups.length > 1 ? (
             <p className="text-xs font-medium" style={{ color: ATHLETES[group.athlete].ink }}>
@@ -377,7 +435,9 @@ export function MealTemplateList({
             );
           })}
         </div>
-      ))}
+      )) : null}
+    </section>
+    ) : null}
 
       <Dialog
         open={editor !== null}
@@ -550,6 +610,6 @@ export function MealTemplateList({
           ) : null}
         </DialogContent>
       </Dialog>
-    </section>
+    </>
   );
 }

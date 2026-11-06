@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Benchmarks } from "@/components/benchmarks";
 import { Creature, RUNNER_BOX, RUNNER_GAP } from "@/components/creatures";
 import { WeeklyReview } from "@/components/weekly-review";
+import { BodyweightChart, LiftChart, ProteinChart } from "@/components/lazy-charts";
 import { Button } from "@/components/ui/button";
 import {
   ATHLETES,
@@ -15,7 +16,7 @@ import {
   type Settings,
   type WeightUnit,
 } from "@/lib/domain";
-import type { BodyweightHistory } from "@/lib/bodyweight";
+import { weeklyAverage, type BodyweightHistory } from "@/lib/bodyweight";
 import { formatDay } from "@/lib/client";
 import { formatAmount, targetPercent } from "@/lib/fuel";
 import { wearsProteinBagel } from "@/lib/protein-week";
@@ -464,6 +465,14 @@ function Lift({
         </dl>
       </div>
       <p className="text-xs text-muted-foreground">{summary}</p>
+      <LiftChart
+        athlete={athlete}
+        name={lift.name}
+        reps={lift.reps}
+        history={lift.history ?? []}
+        target={lift.target}
+        unit={unit}
+      />
       <Volume weeks={lift.weeks} unit={unit} color={color} name={label} />
     </div>
   );
@@ -516,7 +525,10 @@ function Volume({
   );
 }
 
-/** The weigh-ins as a trend: where it started, where it is, and how far it has moved. */
+/**
+ * The weigh-ins as a trend: where it started, where it is, how far it has
+ * moved, and the chart of them with their seven-day average.
+ */
 function BodyweightTrend({
   athlete,
   history,
@@ -533,15 +545,19 @@ function BodyweightTrend({
   const first = weighIns[0];
   const last = weighIns[weighIns.length - 1];
   const change = shownGap(first.kg, last.kg, unit);
+  const average = weeklyAverage(weighIns).at(-1)?.average ?? last.kg;
   return (
-    <p className="mb-4 text-xs text-muted-foreground">
-      Bodyweight{" "}
-      <span className="font-medium text-foreground tabular-nums">{formatWeight(last.kg, unit)}</span>{" "}
-      on {formatDay(last.day, today)}
-      {weighIns.length > 1
-        ? ` · ${change > 0 ? "+" : ""}${change} ${unit} since ${formatDay(first.day, today)} · ${weighIns.length} weigh-ins`
-        : ""}
-    </p>
+    <div className="mb-4 space-y-2">
+      <p className="text-xs text-muted-foreground">
+        Bodyweight{" "}
+        <span className="font-medium text-foreground tabular-nums">{formatWeight(last.kg, unit)}</span>{" "}
+        on {formatDay(last.day, today)}
+        {weighIns.length > 1
+          ? ` · 7-day average ${formatWeight(average, unit)} · ${change > 0 ? "+" : ""}${change} ${unit} since ${formatDay(first.day, today)} · ${weighIns.length} weigh-ins`
+          : ""}
+      </p>
+      <BodyweightChart athlete={athlete} weighIns={weighIns} unit={unit} />
+    </div>
   );
 }
 
@@ -613,6 +629,11 @@ export function Progress({
               {ATHLETES[athlete].name}
             </h2>
             <BodyweightTrend athlete={athlete} history={history} unit={unit} today={today} />
+            {figures.protein ? (
+              <div className="mb-4">
+                <ProteinChart athlete={athlete} weeks={figures.protein[athlete]} />
+              </div>
+            ) : null}
             <div className="divide-y">
               {rows.map((lift) => (
                 <Lift key={lift.key} athlete={athlete} lift={lift} unit={unit} today={today} bagel={bagel} />

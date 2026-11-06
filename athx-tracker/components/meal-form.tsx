@@ -1169,8 +1169,9 @@ export function MealForm({
 
   return (
     <form onSubmit={submit} className="space-y-4 pb-4">
-      {/* Three fieldsets, not one: the form locks while an estimate runs, and
+      {/* Fieldsets, not one: the form locks while an estimate runs, and
           Stop and the background estimate between them must not. */}
+      {editing || dirty || draft ? (
       <fieldset disabled={busy} className="min-w-0 space-y-4">
         {editing ? (
           <div
@@ -1221,53 +1222,8 @@ export function MealForm({
             </div>
           </div>
         ) : null}
-        {splitting && !describing ? null : (
-        <MealTemplateList
-          loggingFor={who}
-          templates={templates}
-          meals={meals}
-          today={today}
-          grokReady={grokReady}
-          disabled={estimating || saving || templateSaving}
-          showOffers={!editing}
-          formLabel={
-            who !== "both" && kept?.athlete === who
-              ? "Update this template"
-              : "Save this meal as a template"
-          }
-          onApply={applyOffer}
-          onSaveForm={describing ? undefined : () => void saveAsTemplate()}
-          onSaveTemplates={onSaveTemplates}
-        />
-        )}
-        <section {...athleteOutline(who)} className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
-          <Choice
-            label="Athlete"
-            value={who}
-            onChange={(next) => {
-              // An edit is one record. Switching here would move the header and
-              // leave the open meal looking like it changed athlete.
-              if (!editing) onLoggingFor(next);
-            }}
-            options={(editing
-              ? (["hippos", "gators"] as const)
-              : (["hippos", "gators", "both"] as const)
-            ).map((key) => ({
-              value: key,
-              label: key === "both" ? "Both" : ATHLETES[key].name,
-              outline: key,
-            }))}
-          />
-          <Choice
-            label="Sitting"
-            value={slot}
-            onChange={setSlot}
-            options={MEALS.map((value) => ({ value, label: value }))}
-            fit
-          />
-          <DayButtons today={today} day={day} onChange={setDay} time={time} onTimeChange={setTime} />
-        </section>
       </fieldset>
+      ) : null}
 
       {splitting && !describing ? (
         <fieldset disabled={busy} className="min-w-0 space-y-4">
@@ -1419,6 +1375,57 @@ export function MealForm({
 
       </section>
       )}
+
+      {/* Describing the meal comes first; the templates and when it was eaten
+          follow, since both start out right for most meals. */}
+      <fieldset disabled={busy} className="min-w-0 space-y-4">
+        {splitting && !describing ? null : (
+        <MealTemplateList
+          loggingFor={who}
+          templates={templates}
+          meals={meals}
+          today={today}
+          grokReady={grokReady}
+          disabled={estimating || saving || templateSaving}
+          showOffers={!editing}
+          formLabel={
+            who !== "both" && kept?.athlete === who
+              ? "Update this template"
+              : "Save this meal as a template"
+          }
+          onApply={applyOffer}
+          onSaveForm={describing ? undefined : () => void saveAsTemplate()}
+          onSaveTemplates={onSaveTemplates}
+        />
+        )}
+        <section {...athleteOutline(who)} className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
+          <Choice
+            label="Athlete"
+            value={who}
+            onChange={(next) => {
+              // An edit is one record. Switching here would move the header and
+              // leave the open meal looking like it changed athlete.
+              if (!editing) onLoggingFor(next);
+            }}
+            options={(editing
+              ? (["hippos", "gators"] as const)
+              : (["hippos", "gators", "both"] as const)
+            ).map((key) => ({
+              value: key,
+              label: key === "both" ? "Both" : ATHLETES[key].name,
+              outline: key,
+            }))}
+          />
+          <Choice
+            label="Sitting"
+            value={slot}
+            onChange={setSlot}
+            options={MEALS.map((value) => ({ value, label: value }))}
+            fit
+          />
+          <DayButtons today={today} day={day} onChange={setDay} time={time} onTimeChange={setTime} />
+        </section>
+      </fieldset>
 
       {/* A meal for both shows its dishes, not the answers, so who gave
           nothing is said here instead. */}

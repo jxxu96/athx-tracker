@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Field } from "@/components/workout-form";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { toast } from "sonner";
 import { api, formatDay, message, newId } from "@/lib/client";
 import { currentBodyweight, type BodyweightHistory } from "@/lib/bodyweight";
@@ -27,6 +28,7 @@ import {
   parseLoad,
   parseTime,
   reunitLoad,
+  typedClock,
   toKilograms,
   type Bodyweight,
   type LiftTargets,
@@ -77,6 +79,7 @@ export function SettingsForm({
   onRefresh,
   onSave,
   onDirty,
+  onDiscard,
 }: {
   settings: Settings;
   /** The weigh-ins, whose latest is the bodyweight shown here. */
@@ -88,9 +91,13 @@ export function SettingsForm({
   onSave: (next: Settings, notice?: string, weighIns?: Bodyweight[]) => Promise<void>;
   /** Whether anything has been typed, so a refresh can leave the form alone. */
   onDirty?: (dirty: boolean) => void;
+  /** Throw away what was typed and open the settings as they are. */
+  onDiscard?: () => void;
 }) {
-  // A form keyed on the settings revision starts clean, and leaving it drops
-  // what was typed, so it is only dirty while it is open.
+  // A form keyed on the settings revision starts clean. It stays mounted on
+  // other tabs, so what was typed waits there until it is saved or
+  // discarded, both of which open a fresh one.
+  const [dirty, setDirty] = useState(false);
   useEffect(() => () => onDirty?.(false), [onDirty]);
   /** The weight shown for an athlete: the latest weigh-in, or Setup's undated one. */
   const latestKg = (athlete: "hippos" | "gators") =>
@@ -462,7 +469,14 @@ export function SettingsForm({
   }
 
   return (
-    <form onSubmit={submit} onChange={() => onDirty?.(true)} className="space-y-4 pb-4">
+    <form
+      onSubmit={submit}
+      onChange={() => {
+        setDirty(true);
+        onDirty?.(true);
+      }}
+      className="space-y-4 pb-4"
+    >
       <section className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
         <h3 className="text-sm font-semibold">The event</h3>
         <Field label="Name">
@@ -600,7 +614,7 @@ export function SettingsForm({
           {(
             [
               { key: "endurance", label: "Endurance (m SkiErg)", mode: "numeric", placeholder: "Not set" },
-              { key: "metcon", label: "MetCon X (m:ss)", mode: "text", placeholder: "Not set" },
+              { key: "metcon", label: "MetCon X (m:ss)", mode: "numeric", placeholder: "Not set" },
             ] as const
           ).map(({ key, label, mode, placeholder }) => (
             <Field key={key} label={label}>
@@ -609,7 +623,11 @@ export function SettingsForm({
                 inputMode={mode}
                 placeholder={placeholder}
                 onChange={(event) =>
-                  setRaceGoals((current) => ({ ...current, [key]: event.target.value }))
+                  setRaceGoals((current) => ({
+                    ...current,
+                    // The number pad has no colon, so the time box puts it in.
+                    [key]: key === "metcon" ? typedClock(event.target.value) : event.target.value,
+                  }))
                 }
               />
             </Field>
@@ -636,9 +654,39 @@ export function SettingsForm({
         </p>
       ) : null}
 
-      <Button type="submit" size="lg" className="w-full" disabled={saving}>
-        {saving ? "Saving…" : "Save settings"}
-      </Button>
+      {/* Sticks above the bottom bar while the settings scroll past, so Save
+          is never a long scroll away, and says whether anything is unsaved. */}
+      <div className="sticky bottom-[calc(var(--nav-height)+0.75rem)] z-10 flex items-center justify-between gap-3 rounded-2xl border bg-card/95 p-3 shadow-lg backdrop-blur">
+        <p role="status" className="min-w-0 text-xs text-muted-foreground">
+          {dirty ? (
+            <span className="font-medium text-foreground">Unsaved changes</span>
+          ) : (
+            "No unsaved changes"
+          )}
+        </p>
+        <div className="flex shrink-0 gap-1.5">
+          {dirty && onDiscard ? (
+            <Button type="button" variant="ghost" disabled={saving} onClick={onDiscard}>
+              Discard
+            </Button>
+          ) : null}
+          <Button type="submit" variant={dirty ? "default" : "outline"} disabled={saving}>
+            {saving ? "Saving…" : "Save settings"}
+          </Button>
+        </div>
+      </div>
+
+      <section className="rounded-2xl border bg-card p-4 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold">Theme</h3>
+            <p className="text-[11px] text-muted-foreground">
+              Kept on this phone and applied at once, without Save.
+            </p>
+          </div>
+          <ThemeToggle />
+        </div>
+      </section>
 
       <section className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
         <h3 className="text-sm font-semibold">Your data</h3>
@@ -669,6 +717,8 @@ export function SettingsForm({
             accept="application/json,.json"
             className="hidden"
             onChange={(event) => {
+              // Picking a file restores a journal; it is not typing in Setup.
+              event.stopPropagation();
               const file = event.target.files?.[0];
               event.target.value = "";
               if (file) void importJournal(file);

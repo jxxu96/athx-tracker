@@ -102,6 +102,15 @@
  */
 :root {
   /*
+   * The bottom bar: its row of tabs, and all of it with the border and the
+   * phone's home indicator. Setup's sticky save bar sits just above it.
+   */
+  --nav-row: 3.75rem;
+  --nav-height: calc(var(--nav-row) + 1px + env(safe-area-inset-bottom));
+}
+
+:root {
+  /*
    * The athlete colours identify a person; these are the readable versions of
    * them for text. The identity colour stays for dots and bars, where it is
    * decoration, but as 12px text it failed contrast in both themes: the pink

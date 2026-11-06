@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { BatteryMedium } from "lucide-react";
 import { CollapsibleCard } from "@/components/collapsible-card";
+import { DayButtons } from "@/components/workout-form";
 import { athleteOutline } from "@/lib/athlete-outline";
-import { addDays, dayToDate, newId } from "@/lib/client";
+import { addDays, dayToDate, formatDay, newId } from "@/lib/client";
 import {
   ATHLETES,
   ENERGY_MAX,
@@ -67,9 +68,11 @@ export function EnergyLevels({
 }
 
 /**
- * How each athlete feels today, out of 10, set with one tap and changed with
+ * How each athlete feels, out of 10, set with one tap and changed with
  * another, and the last seven days under it. One a day: a second tap replaces
- * the first rather than adding to it.
+ * the first rather than adding to it. Today is where it starts; the date
+ * buttons reach a day that was missed. Once both of you have checked in
+ * today, the box opens folded to that one line.
  */
 export function Energy({
   records,
@@ -83,11 +86,16 @@ export function Energy({
   // The level tapped while it is being saved. The row waits for it, so a
   // second tap cannot race the first and leave two for one day.
   const [pending, setPending] = useState<Record<Person, number | null>>({ hippos: null, gators: null });
+  // Which day the rows set. A day that turned while the app was open
+  // follows today rather than staying on yesterday.
+  const [chosen, setChosen] = useState<{ day: string; asOf: string }>({ day: today, asOf: today });
+  const day = chosen.asOf === today ? chosen.day : today;
+  const onToday = day === today;
   const from = addDays(today, -6);
   const days = Array.from({ length: 7 }, (_, index) => addDays(from, index));
 
   async function choose(athlete: Person, level: number) {
-    const current = energyOn(records, athlete, today);
+    const current = energyOn(records, athlete, day);
     if (current?.level === level) return;
     setPending((now) => ({ ...now, [athlete]: level }));
     try {
@@ -95,8 +103,10 @@ export function Energy({
         id: current?.id ?? newId(),
         kind: "energy",
         athlete,
-        day: today,
-        time: clockTime(),
+        day,
+        // Today's is at the clock. Another day's keeps the time it had, and a
+        // new one has none: the clock now is not when that day was felt.
+        ...(onToday ? { time: clockTime() } : current?.time ? { time: current.time } : {}),
         level,
       });
     } catch {
@@ -110,11 +120,16 @@ export function Energy({
     const level = energyOn(records, athlete, today)?.level;
     return `${ATHLETES[athlete].name} ${level ?? "—"}`;
   };
+  const both = PEOPLE.every((athlete) => energyOn(records, athlete, today) !== null);
+  // "Today", "Yesterday" or "Wed 4 Nov", and the same inside a sentence.
+  const dayLabel = formatDay(day, today);
+  const dayName = onToday ? "today" : day === addDays(today, -1) ? "yesterday" : `on ${dayLabel}`;
 
   return (
     <CollapsibleCard
       name="Energy"
       className="p-4 sm:p-5"
+      defaultOpen={!both}
       mini={`Today: ${PEOPLE.map(todayLine).join(" · ")}`}
       heading={
         <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold group-data-[collapsed]:mb-0">
@@ -124,11 +139,19 @@ export function Energy({
       }
     >
       <p className="-mt-1 mb-3 text-xs text-muted-foreground">
-        How each of you feels today, out of {ENERGY_MAX}. Tap again to change it.
+        How each of you feels, out of {ENERGY_MAX}. Tap again to change it.
       </p>
+      <div className="mb-4">
+        <DayButtons
+          today={today}
+          day={day}
+          subject="Energy"
+          onChange={(next) => setChosen({ day: next, asOf: today })}
+        />
+      </div>
       <div className="space-y-4">
         {PEOPLE.map((athlete) => {
-          const saved = energyOn(records, athlete, today);
+          const saved = energyOn(records, athlete, day);
           return (
             <div key={athlete}>
               <p className="mb-1.5 flex items-baseline justify-between gap-2 text-xs">
@@ -137,13 +160,13 @@ export function Energy({
                 </span>
                 <span className="tabular-nums text-muted-foreground">
                   {saved
-                    ? `Today ${saved.level}/${ENERGY_MAX}${saved.time ? ` · ${saved.time}` : ""}`
-                    : "Not logged today"}
+                    ? `${dayLabel} ${saved.level}/${ENERGY_MAX}${saved.time ? ` · ${saved.time}` : ""}`
+                    : `Not logged ${dayName}`}
                 </span>
               </p>
               <EnergyLevels
                 athlete={athlete}
-                label={`${ATHLETES[athlete].name} energy today`}
+                label={`${ATHLETES[athlete].name} energy ${dayName}`}
                 value={pending[athlete] ?? saved?.level ?? null}
                 disabled={pending[athlete] !== null}
                 onChoose={(level) => void choose(athlete, level)}

@@ -1,3 +1,19 @@
+/** How many sets a lift's one-line boxes start at once the lift is chosen. */
+export const DEFAULT_SETS = 3;
+
+/**
+ * Reps a lift's one-line boxes start at once the lift is chosen, so leaving
+ * them alone saves what they show. Every lift not named here starts at five.
+ */
+const DEFAULT_REPS: Record<string, number> = {
+  "Split jerk": 1,
+  Deadlift: 3,
+  "Back squat": 5,
+  "Bench press": 5,
+};
+
+export const defaultReps = (name: string) => DEFAULT_REPS[name] ?? 5;
+
 /** Picking beats typing on a phone, with a way out for anything not listed. */
 export const EXERCISES: { group: string; items: string[] }[] = [
   {

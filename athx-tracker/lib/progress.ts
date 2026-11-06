@@ -62,7 +62,27 @@ export type LiftProgress = RepMaxProgress & {
    * week, which may not be over, last. Empty without a day to count from.
    */
   weeks: number[];
+  /**
+   * The figure over time, for the trend: each Monday week's best, on the day
+   * it was first reached, oldest first. A week a point keeps the summary a
+   * few kilobytes however long the season. Older summaries omit it.
+   */
+  history?: { day: string; kg: number }[];
 };
+
+/** Each Monday week's best figure, on the first day it reached it, oldest first. */
+export function weeklyBests(days: Iterable<EstimatedMax>) {
+  const byWeek = new Map<string, EstimatedMax>();
+  for (const figure of days) {
+    const week = weekStart(figure.day);
+    const held = byWeek.get(week);
+    if (!held || figure.kg > held.kg || (figure.kg === held.kg && figure.day < held.day))
+      byWeek.set(week, figure);
+  }
+  return [...byWeek.values()]
+    .sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0))
+    .map(({ day, kg }) => ({ day, kg }));
+}
 
 const BY_NAME = new Map<string, ProgressLift>(
   PROGRESS_LIFTS.map(({ key, name }) => [name, key]),
@@ -177,6 +197,7 @@ export function liftProgress(
     sessions: sessions.get(key) ?? 0,
     target: targets[key] ?? 0,
     weeks: today ? volume.get(key) ?? Array.from({ length: VOLUME_WEEKS }, () => 0) : [],
+    history: weeklyBests(days.get(key)?.values() ?? []),
   }));
 }
 

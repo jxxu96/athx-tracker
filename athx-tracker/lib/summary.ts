@@ -9,6 +9,7 @@ import {
   type LiftProgress,
   type StrengthProgress,
 } from "./progress.ts";
+import { proteinWeeks, type ProteinWeek } from "./protein-week.ts";
 import { raceEstimate, raceStart } from "./race.ts";
 
 /**
@@ -32,6 +33,8 @@ export type JournalSummary = {
   togetherLifts: number;
   overall: Record<"hippos" | "gators", AthleteFuel>;
   togetherOverall: number;
+  /** Protein against the target, a Monday week at a time. Older summaries omit it. */
+  protein?: Record<"hippos" | "gators", ProteinWeek[]>;
 };
 
 export function journalSummary(
@@ -61,5 +64,9 @@ export function journalSummary(
       gators: athleteFuel(records, "gators", "overall", today, settings, history),
     },
     togetherOverall: teamSessions(records, "overall", today),
+    protein: {
+      hippos: proteinWeeks(records, settings, "hippos", today),
+      gators: proteinWeeks(records, settings, "gators", today),
+    },
   };
 }

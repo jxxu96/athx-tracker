@@ -67,8 +67,10 @@ async function tennis(page: Page, daysAgo: number) {
   }, daysAgo);
 }
 
+// Setup is the gear in the header; the rest are the bottom bar's tabs.
 const nav = (page: Page, name: string) =>
-  page.getByRole("navigation", { name: "Sections" }).getByRole("button", { name, exact: true }).click();
+  (name === "Setup" ? page.locator("header") : page.getByRole("navigation", { name: "Sections" }))
+    .getByRole("button", { name, exact: true }).click();
 
 const openLog = async (page: Page) => {
   await nav(page, "Log");
@@ -130,7 +132,9 @@ test("a weigh-in is corrected where it stands in the log", async ({ page }) => {
   await openLog(page);
   const entry = page.getByRole("listitem").filter({ hasText: "Bodyweight 201 lb" });
   await entry.getByRole("button", { name: "Edit entry" }).click();
-  await page.getByLabel("Bodyweight (lb)").fill("199.5");
+  // Setup stays mounted once opened, so its own bodyweight boxes are on the
+  // page too, hidden; the one being edited is in the Log's list.
+  await page.getByRole("listitem").getByLabel("Bodyweight (lb)").fill("199.5");
   await page.getByRole("group", { name: "Date" }).getByRole("button", { name: "Yesterday" }).click();
   await page.getByLabel("Time of day").fill("06:30");
   await page.getByRole("button", { name: "Save weigh-in" }).click();

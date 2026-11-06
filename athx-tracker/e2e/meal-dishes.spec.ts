@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { PASSPHRASE } from "../playwright.config.ts";
+import { chooseTheme } from "./theme.ts";
 
 type SavedMeal = {
   id: string; kind: "meal"; athlete: string; day: string; time?: string; name: string; meal: string; source: string;
@@ -414,7 +415,7 @@ test("a slider shares each dish, a slice at a time once the dish is counted", as
 
   // The shares written on the bar read in both themes.
   for (const theme of ["Light", "Dark"]) {
-    await page.getByRole("button", { name: theme, exact: true }).click();
+    await chooseTheme(page, theme as "Light" | "Dark");
     // Let the theme's colour transitions land before reading contrast.
     await page.waitForTimeout(500);
     const { violations } = await new AxeBuilder({ page })

@@ -619,6 +619,9 @@ test("a meal template can be renamed, and its grams changed, and setup keeps it"
     await expect(page.getByRole("button", { name: "Hippos: Morning oats" })).toHaveCount(0);
     await loggingFor(page, "Hippos").click();
 
+    // Editing is under Manage; the row itself only fills the form.
+    await expect(page.getByRole("button", { name: "Edit Morning oats" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Manage templates" }).click();
     await page.getByRole("button", { name: "Edit Morning oats" }).click();
     await expect(page.getByRole("dialog", { name: "Edit Hippos template" })).toBeVisible();
     await page.getByLabel("Template name").fill("Hippos breakfast");
@@ -689,6 +692,7 @@ test("saved ingredient weights rescale locally and the template keeps its defaul
   await template.click();
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("315");
 
+  await page.getByRole("button", { name: "Manage templates" }).click();
   await page.getByRole("button", { name: `Edit ${name}` }).click();
   const editor = page.getByRole("dialog", { name: "Edit Hippos template" });
   await editor.getByRole("slider", { name: "kirkland creamy pb weight" }).press("Home");

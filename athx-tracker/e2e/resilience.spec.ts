@@ -223,7 +223,7 @@ test("a body within the cap is judged on its contents", async ({ page }) => {
 test("coming back to the app brings in what the other phone logged, and leaves Setup's typing alone", async ({ page }) => {
   await page.clock.install();
   await signIn(page);
-  await page.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: "Setup", exact: true }).click();
+  await page.locator("header").getByRole("button", { name: "Setup", exact: true }).click();
   await page.getByLabel("Name", { exact: true }).fill("ATHX Somewhere");
 
   // The other phone logs a meal and saves a setting meanwhile.

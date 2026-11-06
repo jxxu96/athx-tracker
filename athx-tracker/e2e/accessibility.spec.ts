@@ -43,9 +43,13 @@ test.describe("signed in", () => {
   }
 
   test("both themes carry enough contrast", async ({ page }) => {
+    // The theme is chosen in Setup now, and Today is audited in each.
     for (const theme of ["Light", "Dark"]) {
+      await page.getByRole("button", { name: "Setup", exact: true }).click();
       await page.getByRole("button", { name: theme, exact: true }).click();
-      await audit(page, `${theme} theme`);
+      await audit(page, `${theme} theme, Setup`);
+      await page.getByRole("button", { name: "Today", exact: true }).click();
+      await audit(page, `${theme} theme, Today`);
     }
   });
 });
