@@ -109,14 +109,16 @@ export function SettingsForm({
     hippos: toDraft(settings.targets.hippos),
     gators: toDraft(settings.targets.gators),
   });
-  const [bodyweight, setBodyweight] = useState<Record<"hippos" | "gators", string>>(
-    () => {
-      const unit = settings.weightUnit ?? "lb";
-      const show = (kg: number) =>
-        kg > 0 ? String(Math.round(fromKilograms(kg, unit) * 10) / 10) : "";
-      return { hippos: show(latestKg("hippos")), gators: show(latestKg("gators")) };
-    },
-  );
+  // What was typed in each bodyweight box; null until it is typed in, and the
+  // box then shows the latest weigh-in as it is now. Setup stays mounted on
+  // other tabs, so a weigh-in corrected in the Log, or logged on the other
+  // phone, lands here meanwhile, and only a weight typed here is a new one: a
+  // box that held the weight from when Setup opened saved it back as a new
+  // weigh-in today, undoing the correction.
+  const [bodyweight, setBodyweight] = useState<Record<"hippos" | "gators", string | null>>({
+    hippos: null,
+    gators: null,
+  });
   const [height, setHeight] = useState<Record<"hippos" | "gators", string>>(() => {
     const unit = settings.weightUnit ?? "lb";
     return {
@@ -152,8 +154,8 @@ export function SettingsForm({
       gators: current.gators.trim() === "" ? "" : showHeight(readHeight(current.gators, weightUnit), unit),
     }));
     setBodyweight((current) => ({
-      hippos: reunitLoad(current.hippos, weightUnit, unit, latestKg("hippos")),
-      gators: reunitLoad(current.gators, weightUnit, unit, latestKg("gators")),
+      hippos: current.hippos === null ? null : reunitLoad(current.hippos, weightUnit, unit, latestKg("hippos")),
+      gators: current.gators === null ? null : reunitLoad(current.gators, weightUnit, unit, latestKg("gators")),
     }));
     setLiftTargets((current) => ({
       hippos: eachLift((key) => reunitLoad(current.hippos[key], weightUnit, unit, savedLifts.hippos[key])),
@@ -307,6 +309,14 @@ export function SettingsForm({
     }
   }
 
+  /** The bodyweight box: what was typed, or the latest weigh-in in the screen's unit. */
+  const shownWeight = (athlete: "hippos" | "gators") => {
+    const typed = bodyweight[athlete];
+    if (typed !== null) return typed;
+    const kg = latestKg(athlete);
+    return kg > 0 ? String(Math.round(fromKilograms(kg, weightUnit) * 10) / 10) : "";
+  };
+
   /** A lift target box in kilograms: zero for none, null when it is not a weight. */
   function liftKg(athlete: "hippos" | "gators", key: ProgressLift) {
     const raw = liftTargets[athlete][key].trim();
@@ -331,7 +341,7 @@ export function SettingsForm({
     if (!Number.isInteger(weekly) || weekly < 1 || weekly > 21)
       return "Set a weekly session target between 1 and 21.";
     for (const athlete of ["hippos", "gators"] as const) {
-      const raw = bodyweight[athlete].trim();
+      const raw = shownWeight(athlete).trim();
       if (raw !== "") {
         const kg = toKilograms(Number(raw), weightUnit);
         if (!Number.isFinite(kg) || kg <= 0 || kg > 500)
@@ -394,7 +404,10 @@ export function SettingsForm({
     const weighIns: Bodyweight[] = [];
     const baseline = { ...(settings.bodyweight ?? { hippos: 0, gators: 0 }) };
     for (const athlete of ["hippos", "gators"] as const) {
-      const raw = bodyweight[athlete].trim();
+      // A box nobody typed in shows the latest weigh-in; it is not a new one.
+      const typed = bodyweight[athlete];
+      if (typed === null) continue;
+      const raw = typed.trim();
       if (raw === "") {
         if (!currentBodyweight(history, athlete)) baseline[athlete] = 0;
         continue;
@@ -454,7 +467,8 @@ export function SettingsForm({
 
   /** Resting energy from what is in the boxes, so the figure answers as you type. */
   function restingFor(athlete: "hippos" | "gators") {
-    const kg = bodyweight[athlete].trim() === "" ? 0 : toKilograms(Number(bodyweight[athlete]), weightUnit);
+    const shown = shownWeight(athlete).trim();
+    const kg = shown === "" ? 0 : toKilograms(Number(shown), weightUnit);
     const cm = height[athlete].trim() === "" ? 0 : readHeight(height[athlete], weightUnit);
     const year = Number(birthYear[athlete].trim() || 0);
     if (![kg, cm, year].every(Number.isFinite)) return null;
@@ -518,7 +532,7 @@ export function SettingsForm({
           </h3>
           <Field label={`Bodyweight (${weightUnit})`} hint={weightHint(athlete)}>
             <Input
-              value={bodyweight[athlete]}
+              value={shownWeight(athlete)}
               inputMode="decimal"
               placeholder="Not set"
               onChange={(event) =>

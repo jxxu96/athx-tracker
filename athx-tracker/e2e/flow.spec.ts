@@ -186,6 +186,26 @@ test("five tabs below, Setup on the gear, and what is typed there waits for Save
   await expect(gear(page)).not.toHaveAttribute("aria-describedby", /./);
 });
 
+test("a weigh-in corrected in the Log shows in Setup, and saving Setup logs no old weight again", async ({ page }) => {
+  await post(page, { kind: "bodyweight", athlete: "gators", day: await dayAgo(page, 1), kg: 84 });
+  await page.reload();
+  await gear(page).click();
+  const gators = page.getByRole("textbox", { name: "Bodyweight (lb)" }).nth(1);
+  await expect(gators).toHaveValue("185.2");
+  // Corrected in the Log while Setup waits on its own tab.
+  await nav(page, "Log");
+  await page.getByRole("listitem").filter({ hasText: "Bodyweight 185.2 lb" }).getByRole("button", { name: "Edit entry" }).click();
+  await page.getByRole("listitem").getByLabel("Bodyweight (lb)").fill("183");
+  await page.getByRole("button", { name: "Save weigh-in" }).click();
+  await expect(page.getByText("Entry updated", { exact: true })).toBeVisible();
+  await gear(page).click();
+  await expect(gators).toHaveValue("183");
+  await page.getByRole("button", { name: "Save settings" }).click();
+  await expect(page.getByText("Settings saved", { exact: true })).toBeVisible();
+  const weighIns = (await records(page)).filter((record) => record.kind === "bodyweight");
+  expect(weighIns).toEqual([expect.objectContaining({ athlete: "gators", kg: expect.closeTo(83.01, 1) })]);
+});
+
 test("the theme is chosen in Setup, and the browser's bar takes it", async ({ page }) => {
   const themeColor = () => page.evaluate(() => document.querySelector('meta[name="theme-color"]')?.getAttribute("content"));
   await expect(page.locator("header").getByRole("button", { name: "Light" })).toHaveCount(0);
