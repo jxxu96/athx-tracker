@@ -167,19 +167,26 @@ const insideOf = (match: RegExpMatchArray) => match[1] ?? match[2] ?? match[3] ?
 /** Taken out where a share was, until the line it was on is tidied. */
 const GAP = "\u0001";
 
+/** Every pair of brackets in a text, in order, and whether to take each out. */
+type Step = { whole: string; take: boolean };
+const stepsOf = (text: string, take: (whole: string) => boolean): Step[] =>
+  [...text.matchAll(BRACKETS)].map(([whole]) => ({ whole, take: take(whole) }));
+
 /**
- * The text with these brackets taken out, each the first of its kind after
- * the last, and the lines they were on tidied: no double spaces, and no comma
- * left dangling or doubled.
+ * The text with some of its brackets taken out, and the lines they were on
+ * tidied: no double spaces, and no comma left dangling or doubled. Every pair
+ * is passed over in order, the ones kept as well, so a share taken out of one
+ * dish is never mistaken for the same words kept in another.
  */
-function cutOut(text: string, brackets: readonly string[]) {
+function cutOut(text: string, steps: readonly Step[]) {
+  if (!steps.some((step) => step.take)) return text;
   let out = "";
   let rest = text;
-  for (const bracket of brackets) {
-    const at = rest.indexOf(bracket);
+  for (const { whole, take } of steps) {
+    const at = rest.indexOf(whole);
     if (at < 0) continue;
-    out += rest.slice(0, at) + GAP;
-    rest = rest.slice(at + bracket.length);
+    out += rest.slice(0, at) + (take ? GAP : whole);
+    rest = rest.slice(at + whole.length);
   }
   return (out + rest).replace(/[^\r\n]*\u0001[^\r\n]*/g, (line) =>
     line
@@ -232,7 +239,7 @@ export function readDishShare(text: string, counted?: number): DishShare {
     .map((match) => ({ whole: match[0], shape: shapeOf(insideOf(match)) }))
     .filter((bracket): bracket is { whole: string; shape: Shape } => bracket.shape !== null);
   if (!found.length) return { name: text, share: null, taken: [] };
-  const own = countOf(cutOut(text, found.map(({ whole }) => whole)));
+  const own = countOf(cutOut(text, stepsOf(text, (whole) => found.some((bracket) => bracket.whole === whole))));
   let share: WrittenShare = {};
   let quantity: string | undefined;
   const taken: string[] = [];
@@ -250,7 +257,7 @@ export function readDishShare(text: string, counted?: number): DishShare {
   }
   if (!taken.length) return { name: text, share: null, taken: [] };
   return {
-    name: cutOut(text, taken).replace(/^[\s.,;:+&/-]+|[\s.,;:+&/-]+$/g, ""),
+    name: cutOut(text, stepsOf(text, (whole) => taken.includes(whole))).replace(/^[\s.,;:+&/-]+|[\s.,;:+&/-]+$/g, ""),
     share,
     ...(quantity ? { quantity } : {}),
     taken,
@@ -259,7 +266,11 @@ export function readDishShare(text: string, counted?: number): DishShare {
 
 /** The description with every share written in it taken out: what an estimate is given to read. */
 export function withoutShares(text: string) {
-  return cutOut(text, splitDishText(text, Number.MAX_SAFE_INTEGER).flatMap((dish) => readDishShare(dish).taken));
+  return cutOut(text, splitDishText(text, Number.MAX_SAFE_INTEGER).flatMap((dish) => {
+    // The same words in brackets read the same way within one dish, so what was taken is known by its words.
+    const { taken } = readDishShare(dish);
+    return stepsOf(dish, (whole) => taken.includes(whole));
+  }));
 }
 
 /**

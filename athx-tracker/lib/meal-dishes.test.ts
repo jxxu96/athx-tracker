@@ -509,4 +509,5 @@ test("an estimate's dishes take the shares written in the description", () => {
 test("the cut sent with an estimate leaves the shares off", () => {
   assert.deepEqual(dishHint("sandwich (60% g 40% h)\nfries (80% h)\ncoke"), ["sandwich", "fries", "coke"]);
   assert.deepEqual(dishHint("(70% g)"), []);
+  assert.deepEqual(dishHint("dumplings (3 pc g), 8 buns (3 pc g)"), ["dumplings (3 pc g)", "8 buns"]);
 });

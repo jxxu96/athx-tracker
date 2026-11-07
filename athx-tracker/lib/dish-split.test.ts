@@ -132,6 +132,8 @@ test("a description is cut into dishes with their shares, and an estimate reads 
     withoutShares("5 shengjianbao (3 pc gators, 2 pc hippos), dumplings (3 pc g)"),
     "5 shengjianbao, dumplings (3 pc g)",
   );
+  // The same words kept in one dish and taken from a later one: only the later goes.
+  assert.equal(withoutShares("dumplings (3 pc g), 8 buns (3 pc g)"), "dumplings (3 pc g), 8 buns");
   // Brackets that are not a share are left alone.
   assert.equal(withoutShares("pizza (ham and pineapple)"), "pizza (ham and pineapple)");
 });
