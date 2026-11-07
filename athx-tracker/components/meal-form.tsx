@@ -82,8 +82,8 @@ import {
   dishesFromEstimate,
   dishesOf,
   emptyDish,
-  fillDish,
   readDishes,
+  replaceDishEstimate,
   shareAsWritten,
   shareText,
   splitMeal,
@@ -480,7 +480,13 @@ export function MealForm({
   // split meal; removing the last goes back to one meal. An edit is one
   // person's record, so it never splits.
   const [dishes, setDishes] = useState<DishDraft[]>(() => (editing ? [] : dishesOf(from?.dishes)));
-  const [estimatingDish, setEstimatingDish] = useState<string | null>(null);
+  // Which dishes are being estimated. Several can be, and a finished one
+  // only takes itself off, so it cannot clear one that is still out.
+  const estimatingDishes = useRef(new Set<string>());
+  const [estimatingDishIds, setEstimatingDishIds] = useState<ReadonlySet<string>>(() => new Set());
+  // Bumped when the form is cleared, so an answer that comes back afterwards
+  // is dropped instead of written onto the next meal.
+  const dishEpoch = useRef(0);
   const [dishErrors, setDishErrors] = useState<Record<string, string>>({});
   // A meal for both is split by dish unless you say it was the same meal for
   // each of you. Dishes already written stay split whoever it is for.
@@ -583,6 +589,9 @@ export function MealForm({
   const formatCalories = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 1 });
 
   function reset() {
+    dishEpoch.current += 1;
+    estimatingDishes.current = new Set();
+    setEstimatingDishIds(new Set());
     setDescription("");
     setPrompt("");
     setIngredients([]);
@@ -662,6 +671,7 @@ export function MealForm({
   }
 
   function removeDish(id: string) {
+    if (estimatingDishes.current.has(id)) return;
     const next = dishes.filter((dish) => dish.id !== id);
     setDishes(next);
     // Back to one box: the words the dishes came from are what it opens with.
@@ -679,6 +689,7 @@ export function MealForm({
    * dish's share, as long as they all fit beside the rest.
    */
   function expandDishItems(id: string) {
+    if (estimatingDishes.current.has(id)) return;
     setDishes((current) => {
       const at = current.findIndex((dish) => dish.id === id);
       if (at < 0) return current;
@@ -697,15 +708,20 @@ export function MealForm({
   /**
    * One dish's own estimate. The dish's text is the description, as typed,
    * less a share written in it, which goes into the share boxes instead.
+   * Another dish can be estimated at the same time. The answer is written
+   * onto this dish by its id, so the two cannot land on each other, and a
+   * second click on this one while it is out does not start a second ask.
    */
   async function estimateDish(id: string) {
-    if (estimatingDish || saving) return;
+    if (saving || estimatingDishes.current.has(id)) return;
     const typed = dishes.find((dish) => dish.id === id);
     const taken = typed ? takeWrittenShare(typed) : null;
     const text = taken?.name.trim() ?? "";
     if (text.length < 3) return;
     if (taken !== typed) changeDish(id, takeWrittenShare);
-    setEstimatingDish(id);
+    estimatingDishes.current.add(id);
+    setEstimatingDishIds(new Set(estimatingDishes.current));
+    const epoch = dishEpoch.current;
     setError("");
     setDishErrors((current) => {
       const next = { ...current };
@@ -717,28 +733,27 @@ export function MealForm({
         method: "POST",
         body: JSON.stringify({ description: text, dishes: dishHint(text) }),
       });
+      if (dishEpoch.current !== epoch) return;
       // One dish keeps its words, its count and its share. One that comes
       // back as several takes its place, each with its share, unless they
-      // would not fit beside the rest, when it stays one dish.
-      setDishes((current) => {
-        const at = current.findIndex((dish) => dish.id === id);
-        if (at < 0) return current;
-        const made = dishesFromEstimate(estimate, provider, newId, current[at]);
-        const fits = current.length - 1 + made.length <= DISH_LIMIT;
-        return [
-          ...current.slice(0, at),
-          ...(fits ? made : [fillDish(current[at], estimate, provider)]),
-          ...current.slice(at + 1),
-        ];
-      });
+      // would not fit beside the rest, when it stays one dish. Read from the
+      // dishes as they are now, not as they were when this was asked, so an
+      // answer that lands second still finds its own dish.
+      setDishes((current) => (
+        dishEpoch.current === epoch ? replaceDishEstimate(current, id, estimate, provider, newId) : current
+      ));
+      if (dishEpoch.current !== epoch) return;
       // Ethanol belongs to an Alcohol sitting, as it does for a whole meal.
       if ((estimate.alcohol ?? 0) > 0) setSlot("Alcohol");
       onEstimateComplete?.();
     } catch (problem) {
+      if (dishEpoch.current !== epoch) return;
       onEstimateComplete?.(message(problem));
       setDishErrors((current) => ({ ...current, [id]: message(problem) }));
     } finally {
-      setEstimatingDish(null);
+      if (dishEpoch.current !== epoch) return;
+      estimatingDishes.current.delete(id);
+      setEstimatingDishIds(new Set(estimatingDishes.current));
     }
   }
 
@@ -1282,7 +1297,7 @@ export function MealForm({
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (estimating || saving || estimatingDish) return;
+    if (estimating || saving || estimatingDishes.current.size > 0) return;
     if (splitting) {
       await submitSplit();
       return;
@@ -1428,7 +1443,7 @@ export function MealForm({
                 dishes={dishes}
                 sitting={slot}
                 grokReady={grokReady}
-                estimating={estimatingDish}
+                estimating={estimatingDishIds}
                 disabled={busy}
                 errors={dishErrors}
                 onDish={changeDish}
@@ -1837,7 +1852,7 @@ export function MealForm({
           </p>
         ) : null}
 
-        <Button type="submit" size="lg" className="w-full" disabled={saving || estimatingDish !== null}>
+        <Button type="submit" size="lg" className="w-full" disabled={saving || estimatingDishIds.size > 0}>
           {saving ? "Saving…" : editing ? "Update meal" : "Save meal"}
         </Button>
       </fieldset>

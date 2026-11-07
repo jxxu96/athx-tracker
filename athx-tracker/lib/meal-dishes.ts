@@ -302,6 +302,29 @@ export function dishesFromEstimate(
   );
 }
 
+/**
+ * Puts one dish's estimate back on that dish, and leaves every other dish
+ * alone. Answered as several, they take its place when they fit beside the
+ * rest; when they would not, it stays one dish with the whole answer. A dish
+ * removed while it was being estimated stays removed. Run one after another,
+ * each answer stays on the dish it was asked for, whichever comes back first.
+ */
+export function replaceDishEstimate(
+  dishes: readonly DishDraft[],
+  id: string,
+  estimate: MealEstimate,
+  provider: Estimator | undefined,
+  nextId: () => string,
+): DishDraft[] {
+  const at = dishes.findIndex((dish) => dish.id === id);
+  if (at < 0) return dishes as DishDraft[];
+  const made = dishesFromEstimate(estimate, provider, nextId, dishes[at]);
+  const placed = dishes.length - 1 + made.length <= DISH_LIMIT
+    ? made
+    : [fillDish(dishes[at], estimate, provider)];
+  return [...dishes.slice(0, at), ...placed, ...dishes.slice(at + 1)];
+}
+
 /** A box as a number. Blank is 0; NaN is something that is not a number at all. */
 function amount(text: string) {
   const typed = text.trim();

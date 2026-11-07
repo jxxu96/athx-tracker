@@ -211,7 +211,6 @@ function DishCard({
   sitting,
   grokReady,
   busy,
-  locked,
   disabled,
   error,
   expandable,
@@ -226,8 +225,6 @@ function DishCard({
   grokReady: boolean;
   /** This dish is being estimated, so its boxes wait for the answer. */
   busy: boolean;
-  /** Another dish is being estimated, and one estimate runs at a time. */
-  locked: boolean;
   /**
    * The whole form is busy, saving. Its fieldset holds the boxes, but the
    * slider is not a form control, so it is told directly.
@@ -283,7 +280,7 @@ function DishCard({
             type="button"
             variant="outline"
             className="shrink-0"
-            disabled={busy || locked || dish.name.trim().length < 3}
+            disabled={busy || dish.name.trim().length < 3}
             onClick={onEstimate}
           >
             <Sparkles />
@@ -345,7 +342,7 @@ function DishCard({
           variant="outline"
           size="sm"
           className="w-full"
-          disabled={busy || locked || disabled}
+          disabled={busy || disabled}
           onClick={onExpand}
         >
           <ChevronsUpDown />
@@ -410,8 +407,8 @@ export function MealDishes({
   dishes: DishDraft[];
   sitting: Meal["meal"];
   grokReady: boolean;
-  /** The dish being estimated, if one is. */
-  estimating: string | null;
+  /** The dishes being estimated. Several can be at once. */
+  estimating: ReadonlySet<string>;
   /** The form is saving, so nothing on it should change. */
   disabled: boolean;
   errors: Record<string, string>;
@@ -437,8 +434,7 @@ export function MealDishes({
           index={index}
           sitting={sitting}
           grokReady={grokReady}
-          busy={estimating === dish.id}
-          locked={estimating !== null}
+          busy={estimating.has(dish.id)}
           disabled={disabled}
           error={errors[dish.id] ?? ""}
           expandable={pieces(dish)}
