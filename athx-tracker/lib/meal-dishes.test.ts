@@ -9,6 +9,7 @@ import {
   dishHint,
   dishesFromEstimate,
   dishesOf,
+  replaceDishEstimate,
   emptyDish,
   fillDish,
   looseDishes,
@@ -438,6 +439,52 @@ test("a dish estimated again keeps its share, and its count while it stays one d
     ["burger", "", "30", "600"],
     ["fries", "", "30", "300"],
   ]);
+});
+
+test("two dishes estimated together keep each answer, whichever comes back first", () => {
+  const table = [
+    dish("a", { name: "burger fries", share: { hippos: "30", gators: "70" } }),
+    dish("b", { name: "salad", quantity: "1 bowl", share: { hippos: "10", gators: "90" } }),
+  ];
+  const split = { ...answer("Burger and fries", 900), dishes: [answer("burger", 600), answer("fries", 300)] };
+  const saladAnswer = { ...answer("salad meal", 200), dishes: [answer("salad", 200)] };
+  const names = (rows: DishDraft[]) => rows.map((each) => [each.name, each.calories, each.share.hippos, each.quantity]);
+  // The salad lands first, then the other dish comes back as two in front of it.
+  const saladFirst = replaceDishEstimate(table, "b", saladAnswer, "claude", counter());
+  const thenSplit = replaceDishEstimate(saladFirst, "a", split, "codex", counter());
+  assert.deepEqual(names(thenSplit), [
+    ["burger", "600", "30", ""],
+    ["fries", "300", "30", ""],
+    ["salad", "200", "10", "1 bowl"],
+  ]);
+  assert.equal(thenSplit[2].id, "b");
+  assert.equal(thenSplit[2].estimator, "claude");
+  assert.equal(thenSplit[0].estimator, "codex");
+  // The split lands first. The salad still finds itself after the insert.
+  const splitFirst = replaceDishEstimate(table, "a", split, "codex", counter());
+  const thenSalad = replaceDishEstimate(splitFirst, "b", saladAnswer, "claude", counter());
+  assert.deepEqual(names(thenSalad), names(thenSplit));
+  // A dish that was removed while its estimate was out stays removed.
+  assert.equal(replaceDishEstimate(table, "gone", saladAnswer, "claude", counter()), table);
+});
+
+test("two dishes that would not both fit stay within the meal", () => {
+  const table = Array.from({ length: DISH_LIMIT - 1 }, (_, index) => dish(`d${index}`, { name: `dish ${index}`, calories: "1" }));
+  const grow = (name: string, calories: number) => ({
+    ...answer(name, calories),
+    dishes: [answer(`${name} a`, calories / 2), answer(`${name} b`, calories / 2)],
+  });
+  const first = replaceDishEstimate(table, "d0", grow("left", 100), "codex", counter());
+  assert.equal(first.length, DISH_LIMIT);
+  assert.deepEqual(first.slice(0, 2).map((each) => each.name), ["left a", "left b"]);
+  // The second would make 21, so it stays the one dish, with the whole answer.
+  const second = replaceDishEstimate(first, "d1", grow("right", 80), "claude", counter());
+  assert.equal(second.length, DISH_LIMIT);
+  const kept = second.find((each) => each.id === "d1");
+  assert.equal(kept?.name, "dish 1");
+  assert.equal(kept?.calories, "80");
+  assert.equal(kept?.estimator, "claude");
+  assert.equal(second.filter((each) => each.name === "left a" || each.name === "left b").length, 2);
 });
 
 test("the cut sent with an estimate is the phone's, within what the server takes", () => {

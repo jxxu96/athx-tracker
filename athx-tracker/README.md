@@ -159,7 +159,9 @@ single SQLite file on a volume.
   needs to know food: it splits what is plainly two dishes however it was
   written, such as "burger fries" with only a space, and joins what is plainly
   one. A dish estimated again on its own can come back as two, each keeping its
-  share. A dish can say how it was shared in brackets after it: "sandwich
+  share. Several dishes can be estimated again at the same time: each answer
+  goes back on the dish it was asked for, including when one comes back as
+  two or one of them fails. A dish can say how it was shared in brackets after it: "sandwich
   (60% gators 40% hippos)", "fries (80% h 20% g)", "coke (75% g)", "sprouts
   (50% each)", or in pieces, "8pc hongshaorou (5.5pc gators)". Either name,
   singular or plural, or its first letter, before or after the number; the %

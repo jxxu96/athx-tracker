@@ -191,9 +191,9 @@ test("a complex meal asks every estimator at once, and a simple one goes in orde
     body: JSON.stringify({ description: "zzgrokdown rice, beans, cheese", budgetMs: 130000, stream: true }),
   });
   const downLines = (await down.text()).trim().split("\n").map((line) => JSON.parse(line));
-  assert.deepEqual(downLines[0], {
-    type: "missed", provider: "grok", detail: "exit 1 Not signed in. mcps false, effort low, cwd athx-estimator-grok",
-  });
+  assert.equal(downLines[0].type, "missed");
+  assert.equal(downLines[0].provider, "grok");
+  assert.match(downLines[0].detail, /^exit 1 Not signed in\. mcps false, effort low, cwd athx-estimator-grok-[0-9a-f]+$/);
   assert.deepEqual(
     downLines.slice(1).map(({ type, provider }) => [type, provider]).sort(),
     [["done", "average"], ["partial", "claude"], ["partial", "codex"]],
