@@ -453,6 +453,7 @@ export function MealForm({
   const weightsRef = useRef(weights);
   weightsRef.current = weights;
   const stopper = useRef<AbortController | null>(null);
+  const acceptProvisional = useRef<(() => void) | null>(null);
   // The estimator turned the description down. Rewording is what helps, so it
   // is not offered to the background estimate until it changes.
   const [rejected, setRejected] = useState(false);
@@ -908,6 +909,8 @@ export function MealForm({
     };
     const stop = new AbortController();
     stopper.current = stop;
+    let accepted = false;
+    acceptProvisional.current = null;
     setEstimating(true);
     try {
       const response = await fetch("/api/estimate", {
@@ -933,45 +936,57 @@ export function MealForm({
           } : {}),
         }),
       });
+      const applyResult = (estimate: Estimate, provider: Estimator | undefined, landed: PartialEstimate[]) => {
+        if (asDishes) {
+          // The meal's name stays as typed: left blank, each of you is named
+          // after your own dishes. The per-model box is for a whole meal.
+          setPartials([]);
+          setIncluded(null);
+          closeItems();
+          setDishes(shareAsWritten(
+            dishesFromEstimate(estimate, provider, newId, undefined, described),
+            writtenDishes(description, DISH_LIMIT),
+          ));
+          if (description.trim()) setPrompt(description.trim());
+          setDescription("");
+          setDishErrors({});
+          if ((estimate.alcohol ?? 0) > 0) setSlot("Alcohol");
+          onEstimateComplete?.();
+          return;
+        }
+        // Two or more answers are blended here, each by its confidence, and a
+        // weight saved on this phone counts. One answer, or a reply that did
+        // not stream, is the estimator's own settled meal.
+        const choice = landed.length > 1 ? defaultIncluded(landed) : landed;
+        const blended = landed.length > 1 ? blendEstimates(choice, weightsRef.current) : null;
+        const used = blended?.estimate ?? estimate;
+        const usedBy = blended?.provider ?? (provider && provider in ESTIMATORS ? provider : null);
+        setIncluded(choice.length ? choice.map((answer) => answer.provider) : null);
+        closeItems();
+        writeFields(used, usedBy, choice, weightsRef.current, keepItems);
+        setConversation((current) => refining
+          ? [...current, { reply: followUp, estimate: used }]
+          : [{ estimate: used }]);
+        setReply("");
+        if (refining && refineOpenRef.current) setJustFinished(true);
+        onEstimateComplete?.();
+      };
       const landed: PartialEstimate[] = [];
       const { estimate, provider } = await readEstimate(response, (partial) => {
+        if (stop.signal.aborted || accepted) return;
         const next = [...landed.filter((held) => held.provider !== partial.provider), partial];
         landed.splice(0, landed.length, ...next);
         setPartials(next);
+        acceptProvisional.current = () => {
+          if (stop.signal.aborted) return;
+          accepted = true;
+          const latest = next[next.length - 1];
+          applyResult(latest.estimate, latest.provider, next);
+          acceptProvisional.current = null;
+          stop.abort();
+        };
       }, (gave) => setMissed((current) => [...current.filter((held) => held.provider !== gave.provider), gave]));
-      if (asDishes) {
-        // The meal's name stays as typed: left blank, each of you is named
-        // after your own dishes. The per-model box is for a whole meal.
-        setPartials([]);
-        setIncluded(null);
-        closeItems();
-        setDishes(shareAsWritten(
-          dishesFromEstimate(estimate, provider, newId, undefined, described),
-          writtenDishes(description, DISH_LIMIT),
-        ));
-        if (description.trim()) setPrompt(description.trim());
-        setDescription("");
-        setDishErrors({});
-        if ((estimate.alcohol ?? 0) > 0) setSlot("Alcohol");
-        onEstimateComplete?.();
-        return;
-      }
-      // Two or more answers are blended here, each by its confidence, and a
-      // weight saved on this phone counts. One answer, or a reply that did
-      // not stream, is the estimator's own settled meal.
-      const choice = landed.length > 1 ? defaultIncluded(landed) : landed;
-      const blended = landed.length > 1 ? blendEstimates(choice, weightsRef.current) : null;
-      const used = blended?.estimate ?? estimate;
-      const usedBy = blended?.provider ?? (provider && provider in ESTIMATORS ? provider : null);
-      setIncluded(choice.length ? choice.map((answer) => answer.provider) : null);
-      closeItems();
-      writeFields(used, usedBy, choice, weightsRef.current, keepItems);
-      setConversation((current) => refining
-        ? [...current, { reply: followUp, estimate: used }]
-        : [{ estimate: used }]);
-      setReply("");
-      if (refining && refineOpenRef.current) setJustFinished(true);
-      onEstimateComplete?.();
+      if (!stop.signal.aborted) applyResult(estimate, provider, landed);
     } catch (problem) {
       // Stopped on purpose: the form is as it was, ready to edit.
       if (stop.signal.aborted) return;
@@ -989,11 +1004,14 @@ export function MealForm({
       // which spends no quota, so a capped meal still gets filled.
       setRejected((problem as Error & { status?: number }).status === 400);
     } finally {
-      if (stopper.current === stop) stopper.current = null;
+      if (stopper.current === stop) {
+        stopper.current = null;
+        acceptProvisional.current = null;
+      }
       setEstimating(false);
       // A finished estimate keeps each model's description on the form. Stop
       // throws them away with the attempt.
-      if (stop.signal.aborted) {
+      if (stop.signal.aborted && !accepted) {
         setPartials([]);
         setMissed([]);
         setIncluded(null);
@@ -1540,6 +1558,12 @@ export function MealForm({
           <Sparkles />
           {estimating ? "Estimating…" : "Estimate macros"}
         </Button>
+        {estimating && partials.length > 0 ? (
+          <div className="space-y-2" role="region" aria-label="Provisional estimate">
+            <p className="text-sm text-muted-foreground">Provisional answer available. Use the answers received so far, or wait for the remaining estimators.</p>
+            <Button type="button" className="w-full" onClick={() => acceptProvisional.current?.()}>Use this estimate</Button>
+          </div>
+        ) : null}
         {estimating ? (
           <Button type="button" variant="outline" className="w-full" onClick={() => stopper.current?.abort()}>
             <Square />
@@ -1910,6 +1934,9 @@ export function MealForm({
               );
             })}
             {estimating ? <SoFar partials={partials} /> : null}
+            {estimating && partials.length > 0 ? (
+              <Button type="button" onClick={() => acceptProvisional.current?.()}>Use this estimate</Button>
+            ) : null}
             {estimating ? <Missed missed={missed} /> : null}
           </div>
           {estimating ? (

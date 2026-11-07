@@ -47,6 +47,8 @@ services:
       # next one answers, and whoever is not last still leaves time for the
       # fallback, which is why Grok no longer leads.
       ESTIMATOR_ORDER: ${ESTIMATOR_ORDER:-codex,claude,grok}
+      # Source records survive redeploys in the existing config volume.
+      NUTRITION_CACHE_FILE: ${NUTRITION_CACHE_FILE:-/config/.athx/nutrition-sources.json}
       # Auto-redeploy. GitHub Actions cannot reach a tailnet address, so CI
       # cannot call Portainer. This container can: it watches ghcr.io for a new
       # image and calls the webhook below. It runs beside Portainer and is
