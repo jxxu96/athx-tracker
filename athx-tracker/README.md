@@ -149,7 +149,8 @@ single SQLite file on a volume.
   estimates count, makes the items again from the new answer.
   Logging for both splits the meal by dish. Describe it and **Estimate
   macros**, and it comes back dish by dish, each with its own figures and
-  assumptions. The phone first cuts the description where it was written as
+  assumptions. What you wrote stays at the top, folded to one line, and opens
+  again. The phone first cuts the description where it was written as
   dishes: at line breaks and bullets, commas, semicolons, "and" and "plus",
   and a "+", "&" or "/" with space around it, keeping a name that is one dish
   with "and" in it together, such as mac and cheese, and a size or a change,

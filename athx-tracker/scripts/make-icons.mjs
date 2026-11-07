@@ -37,7 +37,8 @@ const art = LAYERS.flatMap(([fill, boxes]) =>
 
 /**
  * The art spans x 3–15 and y 2–14, centred on (9, 8). size is the square of
- * sprite pixels the icon shows: more of them is more room around the hippo.
+ * sprite pixels the icon shows: fewer of them is a bigger hippo. The shadow
+ * under its feet is left off, so the hippo itself can take the room.
  */
 function svg(size, rounded) {
   const x = 9 - size / 2;
@@ -45,11 +46,11 @@ function svg(size, rounded) {
   const corner = rounded ? size * 0.2 : 0;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x} ${y} ${size} ${size}" shape-rendering="crispEdges">` +
     `<rect x="${x}" y="${y}" width="${size}" height="${size}" rx="${corner}" fill="${BACKGROUND}"/>` +
-    `<ellipse cx="8" cy="14.5" rx="6" ry="1.5" fill="rgba(255,255,255,0.08)" shape-rendering="auto"/>${art}</svg>`;
+    `${art}</svg>`;
 }
 
 // The browser tab's icon: rounded, with the hippo filling most of it.
-writeFileSync("public/favicon.svg", `${svg(17, true)}\n`);
+writeFileSync("public/favicon.svg", `${svg(14.5, true)}\n`);
 
 const browser = await chromium.launch();
 const page = await browser.newPage();
@@ -62,10 +63,12 @@ async function png(file, pixels, size) {
   await page.locator("img").screenshot({ path: file, omitBackground: false });
 }
 // Square and opaque: iPhones round the corners themselves, and fill a
-// transparent icon with black.
-await png("public/apple-touch-icon.png", 180, 18);
-await png("public/icon-192.png", 192, 18);
-await png("public/icon-512.png", 512, 18);
-// Android crops to a circle 80% across; the hippo sits well inside it.
-await png("public/icon-maskable-512.png", 512, 25);
+// transparent icon with black, so the background stays and the hippo grows
+// instead: it fills about 83% of the square, its ears clear of the rounding.
+await png("public/apple-touch-icon.png", 180, 14.5);
+await png("public/icon-192.png", 192, 14.5);
+await png("public/icon-512.png", 512, 14.5);
+// Android crops to a circle 80% across. The hippo's farthest corner is 8.5
+// sprite pixels from its centre, so 22 keeps it inside that circle.
+await png("public/icon-maskable-512.png", 512, 22);
 await browser.close();

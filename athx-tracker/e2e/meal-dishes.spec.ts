@@ -505,6 +505,15 @@ test("a meal for both is split by dish from the start, and its estimate comes ba
   });
   await expect(dish(page, 3).getByLabel("Dish", { exact: true })).toHaveValue("tiramisu");
   await expect(page.getByLabel("Meal description")).toHaveCount(0);
+  // What was estimated stays at the top, folded, and opens again.
+  const wrote = page.getByRole("button", { name: "Expand original prompt" });
+  await expect(wrote).toBeVisible();
+  await expect(page.getByText("Margherita pizza, Caesar salad and tiramisu")).toBeVisible();
+  expect((await wrote.boundingBox())!.y).toBeLessThan((await dish(page, 1).boundingBox())!.y);
+  await wrote.click();
+  await expect(page.getByRole("button", { name: "Collapse original prompt" })).toBeVisible();
+  await page.getByRole("button", { name: "Collapse original prompt" }).click();
+  await expect(wrote).toBeVisible();
   await expect(dish(page, 1).getByLabel("Calories (kcal)")).toHaveValue("880");
   await expect(dish(page, 1).getByLabel("Assumptions")).toHaveValue("Margherita pizza, worked out.");
   await expect(dish(page, 1)).toContainText("Averaged across estimators · Confidence: high");
