@@ -187,45 +187,54 @@ export function shareText(share: WrittenShare): Record<Eater, string> {
   return setShare(emptyDish(""), eater, String(share[eater] ?? 50)).share;
 }
 
-/** A dish whose name has a share written in it, with the share taken into the boxes. */
+/**
+ * A dish whose name has a share written in it, with the share taken into the
+ * boxes. A share in pieces is of the count in the quantity box, if there is
+ * one, and otherwise fills it in, so each of you reads as "5.5 of 8 pc".
+ */
 export function takeWrittenShare(dish: DishDraft): DishDraft {
-  const { name, share } = readDishShare(dish.name);
-  return share ? { ...dish, name, share: shareText(share) } : dish;
+  const { name, share, quantity } = readDishShare(dish.name, readQuantity(dish.quantity)?.amount);
+  if (!share) return dish;
+  return { ...dish, name, share: shareText(share), ...(quantity && !dish.quantity.trim() ? { quantity } : {}) };
 }
 
 const wordsOf = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 const within = (some: string[], all: string[]) => some.length > 0 && some.every((word) => all.includes(word));
 /** Two written shares that come to the same split, however each was written: "70% h" is "30% g". */
-function sameShare(a: WrittenShare | null, b: WrittenShare | null) {
-  if (!a || !b) return a === b;
+function sameShare(a: WrittenShare, b: WrittenShare) {
   const [one, two] = [shareText(a), shareText(b)];
   return one.hippos === two.hippos && one.gators === two.gators;
 }
 
 /**
- * The share written for the dish an estimate came back with. The estimate
+ * What was written for the dish an estimate came back with. The estimate
  * keeps the dishes as they were written where it can, so when it gives as
- * many, each takes the share written in its place. When it split or joined
- * some, a dish takes the share written with the same name, or with a name
- * that holds it or that it holds, so "burger fries (70% h)" split in two
- * gives each 70%. Dishes joined from different shares, or matching none,
- * get none.
+ * many, each takes what was written in its place. When it split or joined
+ * some, a dish takes what was written with the same name, or the share
+ * written with a name that holds it or that it holds: "burger fries (70% h)"
+ * split in two gives each 70%, and "3 blue crabs, fried with scallion (70% g)",
+ * which the phone cut at the comma and the estimate joined again, takes the
+ * 70% written at its end. Dishes joined from different shares get none. A
+ * count of pieces goes only where the dish is the one that was counted.
  */
-function writtenFor(name: string, index: number, count: number, written: readonly WrittenDish[]) {
-  if (count === written.length) return written[index].share;
+function writtenFor(name: string, index: number, count: number, written: readonly WrittenDish[]): Omit<WrittenDish, "name"> {
+  if (count === written.length) return written[index];
   const words = wordsOf(name);
   const same = written.find((dish) => wordsOf(dish.name).join(" ") === words.join(" "));
-  if (same) return same.share;
-  const near = written.filter((dish) => within(words, wordsOf(dish.name)) || within(wordsOf(dish.name), words));
-  return near.length && near.every((dish) => sameShare(dish.share, near[0].share)) ? near[0].share : null;
+  if (same) return same;
+  const shares = written
+    .filter((dish) => within(words, wordsOf(dish.name)) || within(wordsOf(dish.name), words))
+    .flatMap((dish) => (dish.share ? [dish.share] : []));
+  return { share: shares.length && shares.every((share) => sameShare(share, shares[0])) ? shares[0] : null };
 }
 
 /** Dishes shared the way the description said, where it said; the rest stay as they were. */
 export function shareAsWritten(drafts: DishDraft[], written: readonly WrittenDish[]): DishDraft[] {
   if (!written.some((dish) => dish.share)) return drafts;
   return drafts.map((draft, index) => {
-    const share = writtenFor(draft.name, index, drafts.length, written);
-    return share ? { ...draft, share: shareText(share) } : draft;
+    const { share, quantity } = writtenFor(draft.name, index, drafts.length, written);
+    if (!share) return draft;
+    return { ...draft, share: shareText(share), ...(quantity && !draft.quantity.trim() ? { quantity } : {}) };
   });
 }
 

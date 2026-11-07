@@ -87,7 +87,7 @@ import {
   takeWrittenShare,
   type DishDraft,
 } from "@/lib/meal-dishes";
-import { readDishShare, withoutShares, writtenDishes } from "@/lib/dish-split";
+import { withoutShares, writtenDishes } from "@/lib/dish-split";
 
 const MACRO_FIELDS = [
   { key: "calories", label: "Calories", unit: "kcal" },
@@ -647,6 +647,7 @@ export function MealForm({
           ...emptyDish(newId()),
           name: dish.name,
           ...(dish.share ? { share: shareText(dish.share) } : {}),
+          ...(dish.quantity ? { quantity: dish.quantity } : {}),
         }));
     const mealName = description.trim() ? name : "";
     reset();
@@ -676,10 +677,11 @@ export function MealForm({
    */
   async function estimateDish(id: string) {
     if (estimatingDish || saving) return;
-    const typed = readDishShare(dishes.find((dish) => dish.id === id)?.name.trim() ?? "");
-    const text = typed.name;
+    const typed = dishes.find((dish) => dish.id === id);
+    const taken = typed ? takeWrittenShare(typed) : null;
+    const text = taken?.name.trim() ?? "";
     if (text.length < 3) return;
-    if (typed.share) changeDish(id, takeWrittenShare);
+    if (taken !== typed) changeDish(id, takeWrittenShare);
     setEstimatingDish(id);
     setError("");
     setDishErrors((current) => {
