@@ -462,6 +462,11 @@ test("a share typed into a dish's name moves into its boxes", () => {
   assert.deepEqual([takeWrittenShare(typed).name, takeWrittenShare(typed).share], ["fries", { hippos: "80", gators: "20" }]);
   const plain = dish("p", { name: "fries" });
   assert.equal(takeWrittenShare(plain), plain);
+  // Pieces fill an empty quantity box, so each of you reads as a count; a typed one is the count.
+  const pieces = takeWrittenShare(dish("h", { name: "8pc hongshaorou (5.5pc gators)" }));
+  assert.deepEqual([pieces.name, pieces.quantity, pieces.share], ["8pc hongshaorou", "8 pc", { hippos: "31.25", gators: "68.75" }]);
+  const boxed = takeWrittenShare(dish("b", { name: "pizza (3 pc h)", quantity: "8 slices" }));
+  assert.deepEqual([boxed.name, boxed.quantity, boxed.share], ["pizza", "8 slices", { hippos: "37.5", gators: "62.5" }]);
 });
 
 test("an estimate's dishes take the shares written in the description", () => {
@@ -489,6 +494,14 @@ test("an estimate's dishes take the shares written in the description", () => {
     shares(shareAsWritten(joined, writtenDishes("steak (70% h), fries (30% g), wine, water"))),
     [["steak with fries", "70", "30"], ["wine", "50", "50"]],
   );
+  // A dish the phone cut at a comma and the estimate joined takes the share written at its end.
+  const crabs = writtenDishes("3 blue crabs, fried with scallion (70% g), 5 shengjianbao (3 pc gators, 2 pc hippos), rice");
+  const back = ["3 blue crabs, fried with scallion", "5 shengjianbao", "rice"].map((name, index) => dish(`${index}`, { name }));
+  assert.deepEqual(shareAsWritten(back, crabs).map((each) => [each.name, each.share.hippos, each.share.gators, each.quantity]), [
+    ["3 blue crabs, fried with scallion", "30", "70", ""],
+    ["5 shengjianbao", "40", "60", "5 pc"],
+    ["rice", "50", "50", ""],
+  ]);
   // Nothing written leaves every dish as it was.
   assert.equal(shareAsWritten(same, writtenDishes("a, b, c, d")), same);
 });

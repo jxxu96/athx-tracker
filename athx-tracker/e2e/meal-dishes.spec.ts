@@ -647,3 +647,39 @@ test("a share written with a dish is taken into its boxes, and no estimate reads
     await expect(dish(page, n).getByLabel("Gators (%)")).toHaveValue(gators);
   }
 });
+
+test("the meal as it was written that night: pieces, each, and a dish joined back together", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const requests: { description: string; dishes?: string[] }[] = [];
+  await page.route("**/api/estimate", async (route) => {
+    requests.push(route.request().postDataJSON() as { description: string; dishes?: string[] });
+    // The estimator joins what the phone cut at commas, as it did that night.
+    await route.fulfill({ json: { estimate: shared([
+      { name: "3 blue crabs, fried congjiang with some starchy thing to firm up the outside", calories: 586, protein: 36, carbs: 33, fat: 34 },
+      { name: "stir fried bean sprouts + chives, 2 servings", calories: 411, protein: 13, carbs: 29, fat: 31 },
+      { name: "250g shanghainese cai fan", calories: 423, protein: 9, carbs: 70, fat: 12 },
+      { name: "5 shengjianbao", calories: 697, protein: 27, carbs: 82, fat: 30 },
+      { name: "8pc hongshaorou", calories: 1060, protein: 33, carbs: 26, fat: 92 },
+    ]), provider: "average" } });
+  });
+  await loggingFor(page, "Both").click();
+  await page.getByLabel("Meal description").fill(
+    "3 blue crabs, fried congjiang with some starchy thing to firm up the outside (70% g), stir fried bean sprouts + chives, 2 servings (50% ea), 250g shanghainese cai fan (75% g), 5 shengjianbao (3 pc gators, 2 pc hippos), 8pc hongshaorou (5.5pc gators)",
+  );
+  await page.getByRole("button", { name: "Estimate macros" }).click();
+  await expect(dish(page, 5).getByLabel("Dish", { exact: true })).toHaveValue("8pc hongshaorou");
+  // Nothing in brackets reaches the estimator.
+  expect(requests.at(-1)?.description).not.toMatch(/[()]/);
+  expect(requests.at(-1)?.dishes?.join(" ")).not.toMatch(/[()%]/);
+  for (const [n, hippos, gators] of [[1, "30", "70"], [2, "50", "50"], [3, "25", "75"], [4, "40", "60"], [5, "31.3", "68.8"]] as const) {
+    await expect(dish(page, n).getByLabel("Hippos (%)")).toHaveValue(hippos);
+    await expect(dish(page, n).getByLabel("Gators (%)")).toHaveValue(gators);
+  }
+  // 5.5 of 8 for Gators, 2.5 of 8 for Hippos, under the bar.
+  await expect(dish(page, 5).getByLabel("Quantity (whole dish)")).toHaveValue("8 pc");
+  await expect(dish(page, 5)).toContainText("2.5 of 8 pc");
+  await expect(dish(page, 5)).toContainText("5.5 of 8 pc");
+  await expect(dish(page, 4)).toContainText("3 of 5 pc");
+  await page.getByRole("status", { name: "Shares" }).scrollIntoViewIfNeeded();
+  await page.locator("form").screenshot({ path: "test-results/meal-written-shares-mobile.png" });
+});

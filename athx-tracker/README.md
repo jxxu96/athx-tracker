@@ -142,20 +142,32 @@ single SQLite file on a volume.
   written, such as "burger fries" with only a space, and joins what is plainly
   one. A dish estimated again on its own can come back as two, each keeping its
   share. A dish can say how it was shared in brackets after it: "sandwich
-  (60% gators 40% hippos)", "fries (80% h 20% g)", "coke (75% g)". Either name,
-  singular or plural, or its first letter, before or after the percentage; the
-  % is needed, since "60 g" is grams. Written for one of you, the other has
+  (60% gators 40% hippos)", "fries (80% h 20% g)", "coke (75% g)", "sprouts
+  (50% each)", or in pieces, "8pc hongshaorou (5.5pc gators)". Either name,
+  singular or plural, or its first letter, before or after the number; the %
+  or the "pc" is needed, since "60 g" is grams. Pieces are a part of the
+  dish's count, the number it starts with ("8pc", "5 shengjianbao", but not
+  "250g" or "12 inch") or the one in its quantity box, so 5.5 pc of 8 is
+  68.75% and the other has 2.5 of 8; with no count, the pieces written for
+  both of you are the count. A dish counted that way gets that count as its
+  quantity when it has none, so each part reads "5.5 of 8 pc". Pieces for one
+  of you of nothing counted, or more pieces than the dish had, cannot be
+  worked out and stay part of the dish. Written for one of you, the other has
   the rest; written for both, the boxes say what was written, and saving says
   so if they do not make 100. Brackets that hold anything else stay part of the
   dish. The share is taken off the dish and into its boxes (`readDishShare` in
   `lib/dish-split.ts`), and no estimate ever reads it, since "gators" could be
-  read as food. An estimate that keeps the dishes gives each the share written
-  in its place; one that split or joined them gives a dish the share written
-  with its name, or with a name that holds it or that it holds, so "burger
-  fries (70% h)" split in two gives each 70%, and dishes joined from different
-  shares stay half each (`shareAsWritten` in `lib/meal-dishes.ts`). A share
-  typed into a dish's own name moves into its boxes on leaving the name, on
-  estimating that dish, or on saving. **Split by dish** makes the phone's cut without estimating, for
+  read as food and "3 pc" as a portion. "2 servings", "3 orders" and "8 pieces"
+  after a comma say how much of the dish before them, like a size. An estimate
+  that keeps the dishes gives each the share written in its place; one that
+  split or joined them gives a dish the share written with its name, or with a
+  name that holds it or that it holds. So "burger fries (70% h)" split in two
+  gives each 70%, and "3 blue crabs, fried with scallion (70% g)", cut at the
+  comma by the phone and joined again by the estimate, takes the 70% written at
+  its end; dishes joined from different shares stay half each
+  (`shareAsWritten` in `lib/meal-dishes.ts`). A share typed into a dish's own
+  name moves into its boxes on leaving the name, on estimating that dish, or
+  on saving. **Split by dish** makes the phone's cut without estimating, for
   figures typed by hand; figures already on the form stay together as the
   first dish. **Same meal for each of you** saves the same meal for each of
   you instead, as Both used to, and the next meal is split again. An estimator
