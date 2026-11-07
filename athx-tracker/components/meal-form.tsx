@@ -13,6 +13,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { CollapsibleCard } from "@/components/collapsible-card";
 import { DayButtons, Field } from "@/components/workout-form";
 import { athleteOutline, type AthleteOutline } from "@/lib/athlete-outline";
 import {
@@ -422,6 +423,9 @@ export function MealForm({
     from?.description,
     editing?.source === "queued" ? editing.assumptions : templateDescription(ingredients) || editing?.name || "",
   ));
+  // The words the dishes were estimated from. The box they were typed in goes
+  // away once they are dishes, and this keeps them at the top, folded.
+  const [prompt, setPrompt] = useState(textOf(from?.prompt, ""));
   const [name, setName] = useState(textOf(from?.name, editing?.name ?? ""));
   const [macros, setMacros] = useState<MacroDraft>(() =>
     macroDraftOf(from?.macros) ?? (editing
@@ -553,7 +557,7 @@ export function MealForm({
     editing: editing ?? null,
     who,
     snapshot: JSON.stringify({
-      day, time, picked, description, name, macros, ethanol, fiber, assumptions,
+      day, time, picked, description, prompt, name, macros, ethanol, fiber, assumptions,
       confidence, answeredBy, source, adjusted, conversation, reply, kept, draftIds,
       dishes, unsplit, partials, included, ingredients,
     }),
@@ -589,6 +593,7 @@ export function MealForm({
 
   function reset() {
     setDescription("");
+    setPrompt("");
     setIngredients([]);
     setName("");
     setMacros(emptyMacros);
@@ -649,8 +654,10 @@ export function MealForm({
           ...(dish.share ? { share: shareText(dish.share) } : {}),
           ...(dish.quantity ? { quantity: dish.quantity } : {}),
         }));
-    const mealName = description.trim() ? name : "";
+    const typedPrompt = description.trim();
+    const mealName = typedPrompt ? name : "";
     reset();
+    if (typedPrompt) setPrompt(typedPrompt);
     setName(mealName);
     setError("");
     setDishes(made.length ? made : [emptyDish(newId())]);
@@ -662,7 +669,10 @@ export function MealForm({
   }
 
   function removeDish(id: string) {
-    setDishes((current) => current.filter((dish) => dish.id !== id));
+    const next = dishes.filter((dish) => dish.id !== id);
+    setDishes(next);
+    // Back to one box: the words the dishes came from are what it opens with.
+    if (!next.length && prompt && !description.trim()) setDescription(prompt);
     setDishErrors((current) => {
       const next = { ...current };
       delete next[id];
@@ -868,6 +878,7 @@ export function MealForm({
           dishesFromEstimate(estimate, provider, newId, undefined, described),
           writtenDishes(description, DISH_LIMIT),
         ));
+        if (description.trim()) setPrompt(description.trim());
         setDescription("");
         setDishErrors({});
         if ((estimate.alcohol ?? 0) > 0) setSlot("Alcohol");
@@ -1249,6 +1260,18 @@ export function MealForm({
           </div>
         ) : null}
       </fieldset>
+      ) : null}
+
+      {splitting && !describing && prompt ? (
+        <CollapsibleCard
+          name="original prompt"
+          defaultOpen={false}
+          className="p-4 sm:p-5"
+          heading={<h3 className="mb-3 text-sm font-semibold group-data-[collapsed]:mb-0">What you wrote</h3>}
+          mini={prompt}
+        >
+          <p className="whitespace-pre-wrap break-words text-sm">{prompt}</p>
+        </CollapsibleCard>
       ) : null}
 
       {splitting && !describing ? (
