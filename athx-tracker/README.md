@@ -151,17 +151,19 @@ single SQLite file on a volume.
   macros**, and it comes back dish by dish, each with its own figures and
   assumptions. What you wrote stays at the top, folded to one line, and opens
   again. The phone first cuts the description where it was written as
-  dishes: at line breaks and bullets, commas, semicolons, "and" and "plus",
-  and a "+", "&" or "/" with space around it, keeping a name that is one dish
-  with "and" in it together, such as mac and cheese, and a size or a change,
-  such as "12 inch" or "no cheese", with its dish (`splitDishText` in
+  dishes: at line breaks and bullets, and at commas, including a Chinese
+  comma or an enumeration comma, and a semicolon. "with" is not a new dish,
+  and neither is "and", "plus", "+", "&" or "/", so "beef with broccoli" and
+  "bean sprouts + chives" stay one dish, and a size or a change, such as
+  "12 inch" or "no cheese", stays with its dish (`splitDishText` in
   `lib/dish-split.ts`). The estimate keeps that cut, and makes the one that
-  needs to know food: it splits what is plainly two dishes however it was
-  written, such as "burger fries" with only a space, and joins what is plainly
-  one. A dish estimated again on its own can come back as two, each keeping its
-  share. Several dishes can be estimated again at the same time: each answer
-  goes back on the dish it was asked for, including when one comes back as
-  two or one of them fails. A dish can say how it was shared in brackets after it: "sandwich
+  needs to know food: it splits what is plainly two dishes written with only
+  a space between them, such as "burger fries", and joins what is plainly
+  one. It does not read "with" as a separator. A dish estimated again on its
+  own can come back as two, each keeping its share. Several dishes can be
+  estimated again at the same time: each answer goes back on the dish it was
+  asked for, including when one comes back as two or one of them fails. A
+  dish can say how it was shared in brackets after it: "sandwich
   (60% gators 40% hippos)", "fries (80% h 20% g)", "coke (75% g)", "sprouts
   (50% each)", or in pieces, "8pc hongshaorou (5.5pc gators)". Either name,
   singular or plural, or its first letter, before or after the number; the %

@@ -501,7 +501,7 @@ test("a meal for both is split by dish from the start, and its estimate comes ba
   // The phone's cut goes with the description, for the estimator to keep.
   await expect.poll(() => requests.at(-1)).toEqual({
     description: "Margherita pizza, Caesar salad and tiramisu",
-    dishes: ["Margherita pizza", "Caesar salad", "tiramisu"],
+    dishes: ["Margherita pizza", "Caesar salad and tiramisu"],
   });
   await expect(dish(page, 3).getByLabel("Dish", { exact: true })).toHaveValue("tiramisu");
   await expect(page.getByLabel("Meal description")).toHaveCount(0);
@@ -582,10 +582,10 @@ test("a meal for both says which estimator gave nothing, and why", async ({ page
 test("a meal for both is cut into dishes without an estimate, or kept the same for each", async ({ page }) => {
   await loggingFor(page, "Both").click();
   await page.getByRole("group", { name: "Sitting" }).getByRole("button", { name: "Lunch" }).click();
-  await page.getByLabel("Meal description").fill("pad thai\n- green curry, no peanuts\nmac and cheese & 2 beers");
+  await page.getByLabel("Meal description").fill("pad thai\n- green curry with rice, no peanuts\nbeef and broccoli\n2 beers");
   await page.getByRole("button", { name: "Split by dish" }).click();
   await expect(page.getByRole("group", { name: /^Dish \d+$/ })).toHaveCount(4);
-  for (const [n, name] of ["pad thai", "green curry, no peanuts", "mac and cheese", "2 beers"].entries())
+  for (const [n, name] of ["pad thai", "green curry with rice, no peanuts", "beef and broccoli", "2 beers"].entries())
     await expect(dish(page, n + 1).getByLabel("Dish", { exact: true })).toHaveValue(name);
   await expect(dish(page, 1).getByLabel("Calories (kcal)")).toHaveValue("");
 

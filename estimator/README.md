@@ -43,7 +43,8 @@ JSON with the meal and how the phone cut it into dishes:
 The answer is the same estimate with a `dishes` list, each dish an estimate of
 its own with its own working and confidence, and the totals are the dishes
 added up. The estimator keeps the phone's cut unless a dish is plainly two,
-such as "burger fries" written with only a space, or two are plainly one. An
+such as "burger fries" written with only a space, or two are plainly one.
+"with" is not a separator, and a Chinese dish is not cut into its ingredients. An
 estimator from before dishes ignores the flag and answers for the whole meal,
 which the app takes as one dish.
 A reply's description is JSON with the meal, `previousEstimate` (the average

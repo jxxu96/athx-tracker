@@ -287,9 +287,9 @@ export function seedsFromIngredients(items: readonly MealTemplateItem[], totals:
   }));
 }
 
-/** A meal with no figures yet, as items to type in: cut where it was written as several. */
+/** A meal with no figures yet, as items to type in: cut where it was written as several, including on "and". */
 export function blankSeeds(description: string): ItemSeed[] {
-  const parts = splitDishText(description, MEAL_TEMPLATE_ITEMS);
+  const parts = splitDishText(description, MEAL_TEMPLATE_ITEMS, true);
   if (parts.length < 2) return [];
   return parts.map((part) => ({ name: clipName(part), label: part, grams: 0, macros: null, per: null, working: "" }));
 }

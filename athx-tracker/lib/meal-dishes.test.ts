@@ -488,7 +488,8 @@ test("two dishes that would not both fit stay within the meal", () => {
 });
 
 test("the cut sent with an estimate is the phone's, within what the server takes", () => {
-  assert.deepEqual(dishHint("pizza, salad and wine"), ["pizza", "salad", "wine"]);
+  assert.deepEqual(dishHint("pizza, salad and wine"), ["pizza", "salad and wine"]);
+  assert.deepEqual(dishHint("beef with broccoli, rice"), ["beef with broccoli", "rice"]);
   assert.deepEqual(dishHint("burger fries shake"), ["burger fries shake"]);
   const long = "x".repeat(3990) + ",y,z";
   const hint = dishHint(long);
