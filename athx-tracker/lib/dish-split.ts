@@ -2,8 +2,9 @@ import type { Eater } from "./meal-dishes.ts";
 
 /*
  * A shared meal's description cut into dishes as it was written: a line, or a
- * bullet, for each, or a comma between them. A Chinese comma and an
- * enumeration comma count, and so does a semicolon. "with" is not a new dish,
+ * bullet, for each, or a comma or a period between them. A Chinese comma, an
+ * enumeration comma, and a Chinese period count, and so does a semicolon.
+ * A decimal point does not: "8.5 oz" is one weight. "with" is not a new dish,
  * and neither is "and", "plus", "+", "&" or "/": "beef with broccoli",
  * "tomato and egg" and "bean sprouts + chives" are one dish each. This is the
  * first cut, made on the phone without asking anyone. The estimate makes the
@@ -30,8 +31,8 @@ const DETAIL = new RegExp(
 );
 
 const LIST_MARK = /^\s*(?:[-*•·▪◦‣]|\d+[.)])\s+/;
-/** A comma, a Chinese comma, an enumeration comma, a semicolon, or a bar. "and" right after a comma belongs to that comma. */
-const LINE_BETWEEN = /\s*[;；|｜]\s*|\s*[,，、]\s*(?:(?:and|plus|&)\s+)?/iu;
+/** A comma, a Chinese comma, an enumeration comma, a period, a Chinese period, a semicolon, or a bar. A decimal point stays put. "and" right after a comma or a period belongs to that mark. */
+const LINE_BETWEEN = /\s*[;；|｜]\s*|\s*[,，、]\s*(?:(?:and|plus|&)\s+)?|\s*(?<!\d)[.。．](?!\d)\s*(?:(?:and|plus|&)\s+)?/iu;
 /** A comma that is part of the name, not a new dish: "bacon, egg and cheese". */
 const COMMA_IN_THE_NAME = /(?:bacon|sausage|ham), egg and cheese/gi;
 

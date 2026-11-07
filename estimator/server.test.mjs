@@ -459,7 +459,7 @@ test("a shared meal is the meal's question, and then dish by dish", () => {
   assert.ok(DISH_INSTRUCTIONS.startsWith(INSTRUCTIONS.replace(/ Output only the required JSON\.$/, " ")));
   assert.ok(DISH_INSTRUCTIONS.endsWith("Output only the required JSON."));
   for (const phrase of [
-    "dish by dish in dishes", "'burger fries', which is two dishes", "'with' is not a separator", "'mac and cheese'",
+    "dish by dish in dishes", "'burger fries', which is two dishes", "'with' is not a separator", "A decimal point does not", "'mac and cheese'",
     "When the description contains dishes", "household's own words", "The dishes add up to the totals",
   ])
     assert.ok(DISH_INSTRUCTIONS.includes(phrase), phrase);

@@ -151,8 +151,9 @@ single SQLite file on a volume.
   macros**, and it comes back dish by dish, each with its own figures and
   assumptions. What you wrote stays at the top, folded to one line, and opens
   again. The phone first cuts the description where it was written as
-  dishes: at line breaks and bullets, and at commas, including a Chinese
-  comma or an enumeration comma, and a semicolon. "with" is not a new dish,
+  dishes: at line breaks and bullets, and at commas and periods, including a
+  Chinese comma, an enumeration comma, or a Chinese period, and a semicolon.
+  A decimal point stays in the name. "with" is not a new dish,
   and neither is "and", "plus", "+", "&" or "/", so "beef with broccoli" and
   "bean sprouts + chives" stay one dish, and a size or a change, such as
   "12 inch" or "no cheese", stays with its dish (`splitDishText` in
