@@ -159,8 +159,11 @@ single SQLite file on a volume.
   `lib/dish-split.ts`). The estimate keeps that cut, and makes the one that
   needs to know food: it splits what is plainly two dishes written with only
   a space between them, such as "burger fries", and joins what is plainly
-  one. It does not read "with" as a separator. A dish estimated again on its own can come back as two, each keeping its
-  share. A dish can say how it was shared in brackets after it: "sandwich
+  one. It does not read "with" as a separator. A dish estimated again on its
+  own can come back as two, each keeping its share. Several dishes can be
+  estimated again at the same time: each answer goes back on the dish it was
+  asked for, including when one comes back as two or one of them fails. A
+  dish can say how it was shared in brackets after it: "sandwich
   (60% gators 40% hippos)", "fries (80% h 20% g)", "coke (75% g)", "sprouts
   (50% each)", or in pieces, "8pc hongshaorou (5.5pc gators)". Either name,
   singular or plural, or its first letter, before or after the number; the %

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, statSync } from "node:fs";
-import { dirname, relative, isAbsolute } from "node:path";
+import { basename, dirname, relative, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // Importing used to start a listener; it exits on a short token, so this is
@@ -178,10 +178,20 @@ test("Grok works in an empty folder outside this repository", () => {
     const args = PROVIDERS.grok.args("pizza, salad", task);
     const folder = args[args.indexOf("--cwd") + 1];
     assert.ok(statSync(folder).isDirectory(), folder);
+    assert.match(basename(folder), /^athx-estimator-grok-[0-9a-f]+$/);
     const repository = dirname(dirname(fileURLToPath(import.meta.url)));
     const inside = relative(repository, folder);
     assert.ok(inside.startsWith("..") || isAbsolute(inside), `${folder} is inside ${repository}`);
   }
+});
+
+test("two Grok runs get two folders, so meals estimated together do not share one", () => {
+  const folder = (args) => args[args.indexOf("--cwd") + 1];
+  const first = folder(PROVIDERS.grok.args("pizza", DISH_TASK));
+  const second = folder(PROVIDERS.grok.args("salad", DISH_TASK));
+  assert.notEqual(first, second);
+  assert.ok(statSync(first).isDirectory());
+  assert.ok(statSync(second).isDirectory());
 });
 
 test("a reply asks each provider to continue from its own last answer", () => {

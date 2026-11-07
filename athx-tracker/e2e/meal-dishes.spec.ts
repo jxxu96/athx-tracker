@@ -692,3 +692,94 @@ test("the meal as it was written that night: pieces, each, and a dish joined bac
   await page.getByRole("status", { name: "Shares" }).scrollIntoViewIfNeeded();
   await page.locator("form").screenshot({ path: "test-results/meal-written-shares-mobile.png" });
 });
+
+test("several dishes are estimated again at once, and each answer stays on its dish", async ({ page }) => {
+  let releasePizza = () => {};
+  let releaseSalad = () => {};
+  const held = {
+    pizza: new Promise<void>((resolve) => {
+      releasePizza = resolve;
+    }),
+    salad: new Promise<void>((resolve) => {
+      releaseSalad = resolve;
+    }),
+  };
+  const requests: string[] = [];
+  await page.route("**/api/estimate", async (route) => {
+    const body = route.request().postDataJSON() as { description: string };
+    requests.push(body.description);
+    const pizza = body.description === "pizza";
+    await (pizza ? held.pizza : held.salad);
+    const dishes = pizza
+      ? [
+          { name: "crust", calories: 500, protein: 20, carbs: 60, fat: 18, fiber: 2, alcohol: 0, confidence: "medium", assumptions: "crust, worked out." },
+          { name: "cheese", calories: 380, protein: 16, carbs: 4, fat: 32, fiber: 0, alcohol: 0, confidence: "medium", assumptions: "cheese, worked out." },
+        ]
+      : [
+          { name: "salad", calories: 200, protein: 8, carbs: 12, fat: 14, fiber: 3, alcohol: 0, confidence: "high", assumptions: "salad, worked out." },
+        ];
+    const total = (key: "calories" | "protein" | "carbs" | "fat" | "fiber" | "alcohol") =>
+      dishes.reduce((sum, each) => sum + each[key], 0);
+    await route.fulfill({
+      json: {
+        estimate: {
+          name: body.description,
+          calories: total("calories"),
+          protein: total("protein"),
+          carbs: total("carbs"),
+          fat: total("fat"),
+          fiber: total("fiber"),
+          alcohol: total("alcohol"),
+          assumptions: "Worked out.",
+          confidence: "medium",
+          dishes,
+        },
+        provider: pizza ? "codex" : "claude",
+      },
+    });
+  });
+
+  await loggingFor(page, "Both").click();
+  await page.getByLabel("Meal description").fill("pizza\nsalad");
+  await page.getByRole("button", { name: "Split by dish" }).click();
+  await dish(page, 1).getByLabel("Calories (kcal)").fill("111");
+  await dish(page, 2).getByLabel("Calories (kcal)").fill("222");
+  await dish(page, 2).getByLabel("Gators (%)").fill("80");
+
+  await dish(page, 1).getByRole("button", { name: "Estimate" }).click();
+  await dish(page, 2).getByRole("button", { name: "Estimate" }).click();
+  await expect(dish(page, 1).getByRole("button", { name: "Estimating…" })).toBeVisible();
+  await expect(dish(page, 2).getByRole("button", { name: "Estimating…" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save meal", exact: true })).toBeDisabled();
+  // A third dish can still be written, and asked, while those two are out.
+  await page.getByRole("button", { name: "Add dish" }).click();
+  await dish(page, 3).getByLabel("Dish", { exact: true }).fill("bread");
+  await expect(dish(page, 3).getByRole("button", { name: "Estimate" })).toBeEnabled();
+  await expect(dish(page, 1).getByLabel("Calories (kcal)")).toHaveValue("111");
+  await expect(dish(page, 2).getByLabel("Calories (kcal)")).toHaveValue("222");
+
+  // The salad comes back first. The pizza is still the pizza, still waiting.
+  releaseSalad();
+  await expect(dish(page, 2).getByLabel("Calories (kcal)")).toHaveValue("200");
+  await expect(dish(page, 2)).toContainText("Answered by Claude");
+  await expect(dish(page, 2).getByLabel("Gators (%)")).toHaveValue("80");
+  await expect(dish(page, 1).getByRole("button", { name: "Estimating…" })).toBeVisible();
+  await expect(dish(page, 1).getByLabel("Calories (kcal)")).toHaveValue("111");
+  await expect(dish(page, 3).getByLabel("Dish", { exact: true })).toHaveValue("bread");
+
+  // The pizza comes back as two dishes in its place. The salad and the bread stay put.
+  releasePizza();
+  await expect(dish(page, 1).getByLabel("Dish", { exact: true })).toHaveValue("crust");
+  await expect(dish(page, 1).getByLabel("Calories (kcal)")).toHaveValue("500");
+  await expect(dish(page, 1)).toContainText("Answered by Codex");
+  await expect(dish(page, 2).getByLabel("Dish", { exact: true })).toHaveValue("cheese");
+  await expect(dish(page, 2).getByLabel("Calories (kcal)")).toHaveValue("380");
+  await expect(dish(page, 3).getByLabel("Dish", { exact: true })).toHaveValue("salad");
+  await expect(dish(page, 3).getByLabel("Calories (kcal)")).toHaveValue("200");
+  await expect(dish(page, 3).getByLabel("Gators (%)")).toHaveValue("80");
+  await expect(dish(page, 3)).toContainText("Answered by Claude");
+  await expect(dish(page, 4).getByLabel("Dish", { exact: true })).toHaveValue("bread");
+  await expect(dish(page, 4).getByLabel("Calories (kcal)")).toHaveValue("");
+  expect(requests).toEqual(["pizza", "salad"]);
+  await expect(page.getByRole("button", { name: "Save meal", exact: true })).toBeEnabled();
+});

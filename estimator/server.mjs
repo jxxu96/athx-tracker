@@ -11,7 +11,7 @@
  */
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { request as httpsRequest } from "node:https";
 import {
   existsSync,
@@ -21,7 +21,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { homedir, tmpdir } from "node:os";
 import { WORKOUT_TASK } from "./workout.mjs";
@@ -153,10 +153,11 @@ const GROK_ISOLATION = {
  * its working folder as the project, and scopes AGENTS.md, skills and git
  * history to it, which its documentation says can make startup slow. Run from
  * a checkout, this file's own folder made the whole repository the project.
- * Made on each call, in case something cleared the temp folder in between.
+ * A new folder every call: two meals estimated at once must not share one,
+ * and the run removes it when the CLI has exited.
  */
 function grokFolder() {
-  const folder = join(tmpdir(), "athx-estimator-grok");
+  const folder = join(tmpdir(), `athx-estimator-grok-${randomBytes(6).toString("hex")}`);
   mkdirSync(folder, { recursive: true });
   return folder;
 }
@@ -278,8 +279,17 @@ function childEnv(extra = {}) {
 
 function run(bin, args, timeoutMs, signal, extraEnv) {
   return new Promise((resolve) => {
+    // Grok's own folder when it has one; otherwise a folder just for this
+    // run. Either way the CLI is not standing in a folder another estimate
+    // is using, and it is removed once the process has gone.
+    const asked = args.indexOf("--cwd");
+    const folder = asked >= 0 && typeof args[asked + 1] === "string"
+      ? args[asked + 1]
+      : join(tmpdir(), `athx-estimator-run-${randomBytes(6).toString("hex")}`);
+    if (asked < 0) mkdirSync(folder, { recursive: true });
     // stdin ignored: the CLIs otherwise wait three seconds for piped input.
     const child = spawn(bin, args, {
+      cwd: folder,
       env: childEnv(extraEnv),
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
@@ -294,20 +304,29 @@ function run(bin, args, timeoutMs, signal, extraEnv) {
       timedOut = true;
       child.kill();
     }, timeoutMs);
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      const name = basename(folder);
+      if (name.startsWith("athx-estimator-grok-") || name.startsWith("athx-estimator-run-")) {
+        try {
+          rmSync(folder, { recursive: true, force: true });
+        } catch {
+          // The answer is already in hand. A temp folder left behind is not it.
+        }
+      }
+      resolve(result);
+    };
     child.stdout.on("data", (chunk) => {
       out += chunk;
     });
     child.stderr.on("data", (chunk) => {
       err += chunk;
     });
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      resolve({ code: -1, out: "", err: String(error), timedOut });
-    });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      resolve({ code, out, err, timedOut });
-    });
+    child.on("error", (error) => finish({ code: -1, out: "", err: String(error), timedOut }));
+    child.on("close", (code) => finish({ code, out, err, timedOut }));
   });
 }
 
