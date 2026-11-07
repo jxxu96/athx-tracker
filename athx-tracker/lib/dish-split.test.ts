@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { splitDishText } from "./dish-split.ts";
+import { readDishShare, splitDishText, withoutShares, writtenDishes } from "./dish-split.ts";
 
 const cases: [string, string[]][] = [
   // What separates dishes.
@@ -45,4 +45,59 @@ test("nothing typed is lost, and past the limit the rest share the last dish", (
   assert.equal(dishes[18], "dish 19");
   assert.equal(dishes[19], "dish 20, dish 21, dish 22, dish 23, dish 24, dish 25");
   assert.deepEqual(splitDishText("a, b, c", 2), ["a", "b, c"]);
+});
+
+test("a share written in brackets is read for either of you, by name or by letter", () => {
+  const cases: [string, ReturnType<typeof readDishShare>][] = [
+    ["sandwich (60% gators 40% hippos)", { name: "sandwich", share: { gators: 60, hippos: 40 } }],
+    ["fries (80% h 20% g)", { name: "fries", share: { hippos: 80, gators: 20 } }],
+    ["coke (75% g)", { name: "coke", share: { gators: 75 } }],
+    ["Pizza [Gators 62.5%, Hippos: 37.5%]", { name: "Pizza", share: { gators: 62.5, hippos: 37.5 } }],
+    ["salad {100%h}", { name: "salad", share: { hippos: 100 } }],
+    ["wings (60% hippo / 40% gator) with ranch", { name: "wings with ranch", share: { hippos: 60, gators: 40 } }],
+    ["pizza, 12 inch, (70% g)", { name: "pizza, 12 inch", share: { gators: 70 } }],
+  ];
+  for (const [text, read] of cases) assert.deepEqual(readDishShare(text), read, text);
+});
+
+test("brackets that say anything else keep every word, and give no share", () => {
+  for (const text of [
+    "pizza (ham and pineapple)",
+    "chicken (60 g)",
+    "dark chocolate (85%)",
+    "milk (2% fat)",
+    "drink (60% gatorade)",
+    "pasta (60% g 30% g)",
+    "pasta (120% h)",
+    "pasta 60% g",
+    "pasta ()",
+  ]) assert.deepEqual(readDishShare(text), { name: text, share: null }, text);
+  // Saying the same thing twice is still one share.
+  assert.deepEqual(readDishShare("pasta (60% g, g 60%)").share, { gators: 60 });
+});
+
+test("a description is cut into dishes with their shares, and an estimate reads it without them", () => {
+  const text = "sandwich (60% gators 40% hippos)\nfries (80% h 20% g)\ncoke (75% g)\npickle";
+  assert.deepEqual(writtenDishes(text), [
+    { name: "sandwich", share: { gators: 60, hippos: 40 } },
+    { name: "fries", share: { hippos: 80, gators: 20 } },
+    { name: "coke", share: { gators: 75 } },
+    { name: "pickle", share: null },
+  ]);
+  assert.equal(withoutShares(text), "sandwich\nfries\ncoke\npickle");
+  assert.equal(withoutShares("burger (70% h), fries and a coke (g 100%)"), "burger, fries and a coke");
+  // A share with "and" in it stays in its brackets, and does not cut the dish.
+  assert.deepEqual(writtenDishes("ramen (60% g and 40% h), gyoza"), [
+    { name: "ramen", share: { gators: 60, hippos: 40 } },
+    { name: "gyoza", share: null },
+  ]);
+  // A share on its own belongs to the dish before it, and a size after one still does.
+  assert.deepEqual(writtenDishes("pizza\n(70% g)\nsalad"), [
+    { name: "pizza", share: { gators: 70 } },
+    { name: "salad", share: null },
+  ]);
+  assert.deepEqual(writtenDishes("pizza (70% g), 12 inch"), [{ name: "pizza, 12 inch", share: { gators: 70 } }]);
+  assert.deepEqual(writtenDishes("(70% g)"), []);
+  // Brackets that are not a share are left alone.
+  assert.equal(withoutShares("pizza (ham and pineapple)"), "pizza (ham and pineapple)");
 });

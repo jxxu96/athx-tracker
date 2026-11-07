@@ -594,3 +594,56 @@ test("a meal for both is cut into dishes without an estimate, or kept the same f
   await page.getByRole("button", { name: "Meal", exact: true }).click();
   await expect(page.getByRole("button", { name: "Same meal for each of you" })).toBeVisible();
 });
+
+test("a share written with a dish is taken into its boxes, and no estimate reads it", async ({ page }) => {
+  const requests: { description: string; dishes?: string[] }[] = [];
+  await page.route("**/api/estimate", async (route) => {
+    const body = route.request().postDataJSON() as { description: string; dishes?: string[] };
+    requests.push(body);
+    const dishes = body.dishes?.length === 1
+      ? [{ name: "fries", calories: 380, protein: 4, carbs: 48, fat: 19 }]
+      : [
+          { name: "Turkey sandwich", calories: 500, protein: 30, carbs: 50, fat: 18 },
+          { name: "fries", calories: 400, protein: 5, carbs: 50, fat: 20 },
+          { name: "Coca-Cola", calories: 140, protein: 0, carbs: 39, fat: 0 },
+        ];
+    await route.fulfill({ json: { estimate: shared(dishes), provider: "average" } });
+  });
+  await loggingFor(page, "Both").click();
+  await page.getByLabel("Meal description").fill("sandwich (60% gators 40% hippos)\nfries (80% h 20% g)\ncoke (75% g)");
+  await page.getByRole("button", { name: "Estimate macros" }).click();
+  await expect.poll(() => requests.at(-1)).toEqual({
+    description: "sandwich\nfries\ncoke",
+    dishes: ["sandwich", "fries", "coke"],
+  });
+  await expect(dish(page, 3).getByLabel("Dish", { exact: true })).toHaveValue("Coca-Cola");
+  for (const [n, hippos, gators] of [[1, "40", "60"], [2, "80", "20"], [3, "25", "75"]] as const) {
+    await expect(dish(page, n).getByLabel("Hippos (%)")).toHaveValue(hippos);
+    await expect(dish(page, n).getByLabel("Gators (%)")).toHaveValue(gators);
+  }
+
+  // Typed into a dish's name, the share moves into the boxes on leaving it,
+  // and its own estimate reads only the food.
+  await dish(page, 2).getByLabel("Dish", { exact: true }).fill("fries (g 100%)");
+  await dish(page, 2).getByLabel("Calories (kcal)").focus();
+  await expect(dish(page, 2).getByLabel("Dish", { exact: true })).toHaveValue("fries");
+  await expect(dish(page, 2).getByLabel("Gators (%)")).toHaveValue("100");
+  await expect(dish(page, 2).getByLabel("Hippos (%)")).toHaveValue("0");
+  await dish(page, 2).getByLabel("Dish", { exact: true }).fill("fries (30% h)");
+  await dish(page, 2).getByRole("button", { name: "Estimate" }).click();
+  await expect(dish(page, 2).getByLabel("Calories (kcal)")).toHaveValue("380");
+  expect(requests.at(-1)).toEqual({ description: "fries", dishes: ["fries"] });
+  await expect(dish(page, 2).getByLabel("Dish", { exact: true })).toHaveValue("fries");
+  await expect(dish(page, 2).getByLabel("Hippos (%)")).toHaveValue("30");
+  await expect(dish(page, 2).getByLabel("Gators (%)")).toHaveValue("70");
+
+  // Split by dish, with no estimate, shares the same way.
+  for (let n = 3; n >= 1; n -= 1) await page.getByRole("button", { name: `Remove dish ${n}` }).click();
+  await page.getByLabel("Meal description").fill("ramen (60% g and 40% h), gyoza (100% hippos), tea");
+  await page.getByRole("button", { name: "Split by dish" }).click();
+  for (const [n, name, hippos, gators] of [[1, "ramen", "40", "60"], [2, "gyoza", "100", "0"], [3, "tea", "50", "50"]] as const) {
+    await expect(dish(page, n).getByLabel("Dish", { exact: true })).toHaveValue(name);
+    await expect(dish(page, n).getByLabel("Hippos (%)")).toHaveValue(hippos);
+    await expect(dish(page, n).getByLabel("Gators (%)")).toHaveValue(gators);
+  }
+});

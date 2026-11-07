@@ -2,7 +2,7 @@ import { ATHLETES, ESTIMATORS, type Estimator, type Macros, type Meal } from "./
 import type { MealEstimate } from "./estimate-conversation.ts";
 import type { MealDraftIds } from "./meal-fanout.ts";
 import { bothOf, isText, oneOf, textOf } from "./drafts.ts";
-import { splitDishText } from "./dish-split.ts";
+import { withoutShares, writtenDishes, readDishShare, type WrittenDish, type WrittenShare } from "./dish-split.ts";
 
 /*
  * A meal the two of you shared, written down dish by dish. Each dish has its
@@ -174,6 +174,57 @@ export function slideShare(dish: DishDraft, value: number): DishDraft {
   return setShare(dish, "hippos", String(Math.round(percent * 10000) / 10000));
 }
 
+/**
+ * A share written with a dish, as the two boxes show it. Written for one of
+ * you, the other has the rest, as typing it into the box would give; written
+ * for both, each box says what was written, so two that do not make 100 are
+ * pointed out on saving rather than quietly changed.
+ */
+export function shareText(share: WrittenShare): Record<Eater, string> {
+  const { hippos, gators } = share;
+  if (hippos !== undefined && gators !== undefined) return { hippos: String(hippos), gators: String(gators) };
+  const eater: Eater = hippos !== undefined ? "hippos" : "gators";
+  return setShare(emptyDish(""), eater, String(share[eater] ?? 50)).share;
+}
+
+/** A dish whose name has a share written in it, with the share taken into the boxes. */
+export function takeWrittenShare(dish: DishDraft): DishDraft {
+  const { name, share } = readDishShare(dish.name);
+  return share ? { ...dish, name, share: shareText(share) } : dish;
+}
+
+const wordsOf = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+const within = (some: string[], all: string[]) => some.length > 0 && some.every((word) => all.includes(word));
+const sameShare = (a: WrittenShare | null, b: WrittenShare | null) =>
+  a?.hippos === b?.hippos && a?.gators === b?.gators;
+
+/**
+ * The share written for the dish an estimate came back with. The estimate
+ * keeps the dishes as they were written where it can, so when it gives as
+ * many, each takes the share written in its place. When it split or joined
+ * some, a dish takes the share written with the same name, or with a name
+ * that holds it or that it holds, so "burger fries (70% h)" split in two
+ * gives each 70%. Dishes joined from different shares, or matching none,
+ * get none.
+ */
+function writtenFor(name: string, index: number, count: number, written: readonly WrittenDish[]) {
+  if (count === written.length) return written[index].share;
+  const words = wordsOf(name);
+  const same = written.find((dish) => wordsOf(dish.name).join(" ") === words.join(" "));
+  if (same) return same.share;
+  const near = written.filter((dish) => within(words, wordsOf(dish.name)) || within(wordsOf(dish.name), words));
+  return near.length && near.every((dish) => sameShare(dish.share, near[0].share)) ? near[0].share : null;
+}
+
+/** Dishes shared the way the description said, where it said; the rest stay as they were. */
+export function shareAsWritten(drafts: DishDraft[], written: readonly WrittenDish[]): DishDraft[] {
+  if (!written.some((dish) => dish.share)) return drafts;
+  return drafts.map((draft, index) => {
+    const share = writtenFor(draft.name, index, drafts.length, written);
+    return share ? { ...draft, share: shareText(share) } : draft;
+  });
+}
+
 /** A figure typed into. An estimate's figures stop being the estimate's once one is changed. */
 export function setFigure(dish: DishDraft, figure: Figure, text: string): DishDraft {
   const edited = dish.source === "grok";
@@ -205,11 +256,14 @@ export function fillDish(dish: DishDraft, estimate: MealEstimate, provider?: Est
 /**
  * How the phone cut a description into dishes, sent with its estimate so the
  * estimator keeps that cut where it can, and every estimator asked cuts it
- * the same way. Never more than the server takes.
+ * the same way. The shares written with them are left off: they are not food.
+ * Never more than the server takes.
  */
 export function dishHint(text: string) {
-  const parts = splitDishText(text, DISH_LIMIT);
-  return parts.length && parts.join("").length <= DISH_TEXT_LIMIT ? parts : [text.slice(0, DISH_TEXT_LIMIT)];
+  const parts = writtenDishes(text, DISH_LIMIT).map((dish) => dish.name);
+  if (parts.length && parts.join("").length <= DISH_TEXT_LIMIT) return parts;
+  const whole = withoutShares(text).trim().slice(0, DISH_TEXT_LIMIT);
+  return whole ? [whole] : [];
 }
 
 /**
