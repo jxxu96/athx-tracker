@@ -220,6 +220,7 @@ export function Tracker({
   useKeyboardShortcuts(shortcutsEnabled, {
     g: () => setWho("gators"),
     h: () => setWho("hippos"),
+    v: () => setWho("both"),
     w: () => navigate("session"),
     m: () => navigate("meal"),
     t: () => navigate("today"),
@@ -920,7 +921,7 @@ export function Tracker({
               onClick={() => setKeyboardShortcutsEnabled(!shortcutsEnabled)}
               aria-label="Keyboard shortcuts"
               aria-pressed={shortcutsEnabled}
-              title="Keyboard shortcuts · G Gators, H Hippos, W Session, M Meal, T Today, P Progress · In Meal: B Breakfast, L Lunch, D Dinner, S Snack, A Alcohol"
+              title="Keyboard shortcuts · G Gators, H Hippos, V Both, W Session, M Meal, T Today, P Progress · In Meal: B Breakfast, L Lunch, D Dinner, S Snack, A Alcohol"
               className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-pressed:bg-primary aria-pressed:text-primary-foreground aria-pressed:hover:bg-primary/85"
             >
               <Keyboard className="size-4" />
