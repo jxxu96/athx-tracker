@@ -79,6 +79,7 @@ export function Overview({
   heldFrom,
   onLoadSessions,
   onCheckIn,
+  shortcutsEnabled = false,
 }: {
   records: RecordItem[];
   settings: Settings;
@@ -93,6 +94,7 @@ export function Overview({
   onLoadSessions: (from: string, to: string) => Promise<void>;
   /** Today's energy for one athlete, tapped on its card. */
   onCheckIn: (record: EnergyCheckIn) => Promise<void>;
+  shortcutsEnabled?: boolean;
 }) {
   const thisWeek = weekStart(today);
   const workouts = records.filter(isWorkout);
@@ -126,7 +128,7 @@ export function Overview({
         refresh={fuelRefresh}
       />
 
-      <Energy records={records} today={today} onCheckIn={onCheckIn} />
+      <Energy records={records} today={today} onCheckIn={onCheckIn} shortcutsEnabled={shortcutsEnabled} />
 
       <CollapsibleCard
         name="Progress and race-day estimate"

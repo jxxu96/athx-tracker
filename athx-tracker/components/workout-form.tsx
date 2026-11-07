@@ -28,6 +28,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { athleteOutline, type AthleteOutline } from "@/lib/athlete-outline";
+import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { addDays, api, dayToDate, formatDay, message, newId } from "@/lib/client";
 import { bothOf, isText, oneOf, textOf, type Draft } from "@/lib/drafts";
 import { useFormDraft } from "@/hooks/use-form-draft";
@@ -759,6 +760,7 @@ export function WorkoutForm({
   weightUnit,
   grokReady,
   active = true,
+  shortcutsEnabled = false,
   workouts = [],
   onLoggingFor,
   editing,
@@ -776,6 +778,7 @@ export function WorkoutForm({
   weightUnit: WeightUnit;
   grokReady: boolean;
   active?: boolean;
+  shortcutsEnabled?: boolean;
   /** Hippos, Gators, or both. The header switch and these buttons are one choice. */
   onLoggingFor: (next: "hippos" | "gators" | "both") => void;
   editing?: Workout | null;
@@ -798,6 +801,11 @@ export function WorkoutForm({
   const editSide = editing ? sideOf(editing.athlete) : null;
 
   const [day, setDay] = useState(textOf(from?.day, editing?.day ?? today));
+  // D is Today here only: on the Meal tab it is Dinner.
+  useKeyboardShortcuts(active && shortcutsEnabled, {
+    d: () => setDay(today),
+    y: () => setDay(addDays(today, -1)),
+  }, (action) => action());
   // A new session starts at the clock; an older one without a time stays without.
   const [time, setTime] = useState(textOf(from?.time, editing ? editing.time ?? "" : clockTime()));
   const [title, setTitle] = useState(textOf(from?.title, editing?.title ?? ""));

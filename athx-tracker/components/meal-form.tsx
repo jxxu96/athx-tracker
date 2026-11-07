@@ -26,7 +26,7 @@ import {
   type Meal,
   type MealTemplateItem,
 } from "@/lib/domain";
-import { api, message, newId } from "@/lib/client";
+import { addDays, api, message, newId } from "@/lib/client";
 import { NDJSON, readEstimate, type MissedEstimate, type PartialEstimate } from "@/lib/estimate-stream";
 import {
   ANSWER_ORDER,
@@ -1181,6 +1181,7 @@ export function MealForm({
 
   const busy = estimating || saving || templateSaving;
   useKeyboardShortcuts(active && !busy && shortcutsEnabled, MEAL_SHORTCUTS, setSlot);
+  useKeyboardShortcuts(active && !busy && shortcutsEnabled, { y: () => setDay(addDays(today, -1)) }, (action) => action());
   // Not once there is an estimate: a queued meal saves zero macros, and would
   // throw away the figures already on the form.
   const canQueue = queueReady && conversation.length === 0 && !rejected && !splitting;
