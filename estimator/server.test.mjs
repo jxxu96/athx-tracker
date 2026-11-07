@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
+import { dirname, relative, isAbsolute } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // Importing used to start a listener; it exits on a short token, so this is
 // set before the module is pulled in.
@@ -24,7 +26,10 @@ const {
   clean,
   cleanDishes,
   complex,
+  describedFor,
+  failure,
   parseCliOutput,
+  providerSlice,
   settle,
   settleDishes,
   structured,
@@ -118,6 +123,102 @@ test("each CLI's wrapper is unwrapped, and bare output is taken as is", () => {
   assert.deepEqual(structured(JSON.stringify(payload)), payload);
 });
 
+test("an envelope with no structured field gives up the answer in its final text", () => {
+  const meal = { ...whole };
+  // Every turn's text joined into one, the answer after the narration.
+  const searched = `I'll look up the label first.Found it on the maker's page.${JSON.stringify(meal)}`;
+  assert.deepEqual(parseCliOutput(JSON.stringify({ type: "result", result: searched })), meal);
+  assert.deepEqual(parseCliOutput(JSON.stringify({ text: JSON.stringify(meal) })), meal);
+  // A structured field that came back as a string.
+  assert.deepEqual(parseCliOutput(JSON.stringify({ structuredOutput: JSON.stringify(meal) })), meal);
+  // Streamed frames, one per line: the answer is in the last one.
+  const frames = [
+    { type: "system", subtype: "init" },
+    { type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Searching." }] } },
+    { type: "result", result: "", structuredOutput: meal },
+  ].map((frame) => JSON.stringify(frame)).join("\n");
+  assert.deepEqual(parseCliOutput(frames), meal);
+  // A shared meal keeps its dishes on the way out.
+  const dinner = shared([dish("pizza", 880), dish("salad", 420)]);
+  const unwrapped = parseCliOutput(JSON.stringify({ result: `Checked both.\n${JSON.stringify(dinner)}` }));
+  assert.deepEqual(unwrapped.dishes.map((each) => each.name), ["pizza", "salad"]);
+  // An envelope with nothing usable inside is still refused.
+  assert.equal(clean(parseCliOutput(JSON.stringify({ type: "result", result: "Not signed in." }))), null);
+  // A bare answer is taken as it is.
+  assert.deepEqual(parseCliOutput(JSON.stringify(meal)), meal);
+});
+
+test("Grok runs a meal at low effort, off Claude Code's and Cursor's setup, with no memory", () => {
+  const isolation = {
+    GROK_CLAUDE_RULES_ENABLED: "false",
+    GROK_CLAUDE_SKILLS_ENABLED: "false",
+    GROK_CLAUDE_AGENTS_ENABLED: "false",
+    GROK_CLAUDE_MCPS_ENABLED: "false",
+    GROK_CLAUDE_HOOKS_ENABLED: "false",
+    GROK_CURSOR_RULES_ENABLED: "false",
+    GROK_CURSOR_SKILLS_ENABLED: "false",
+    GROK_CURSOR_AGENTS_ENABLED: "false",
+    GROK_CURSOR_MCPS_ENABLED: "false",
+    GROK_CURSOR_HOOKS_ENABLED: "false",
+    GROK_MEMORY: "0",
+  };
+  // The overlay key and value the Grok CLI documents for reasoning effort.
+  const low = JSON.stringify({ models: { default_reasoning_effort: "low" } });
+  assert.deepEqual(PROVIDERS.grok.env(), { ...isolation, GROK_CONFIG: low });
+  assert.deepEqual(PROVIDERS.grok.env(DISH_TASK), { ...isolation, GROK_CONFIG: low });
+  // A workout keeps the model's own effort.
+  assert.deepEqual(PROVIDERS.grok.env(WORKOUT_TASK), isolation);
+  // Only Grok has settings of its own.
+  assert.equal(PROVIDERS.codex.env, undefined);
+  assert.equal(PROVIDERS.claude.env, undefined);
+});
+
+test("Grok works in an empty folder outside this repository", () => {
+  for (const task of [undefined, DISH_TASK, WORKOUT_TASK]) {
+    const args = PROVIDERS.grok.args("pizza, salad", task);
+    const folder = args[args.indexOf("--cwd") + 1];
+    assert.ok(statSync(folder).isDirectory(), folder);
+    const repository = dirname(dirname(fileURLToPath(import.meta.url)));
+    const inside = relative(repository, folder);
+    assert.ok(inside.startsWith("..") || isAbsolute(inside), `${folder} is inside ${repository}`);
+  }
+});
+
+test("a reply asks each provider to continue from its own last answer", () => {
+  const average = { ...whole, calories: 646.7, assumptions: "Weighted average." };
+  const reply = JSON.stringify({ mealDescription: "rice bowl", previousEstimate: average, replies: ["and a beer"] });
+  const own = { codex: { ...whole, calories: 600 }, claude: { ...whole, calories: 700 } };
+  const codex = describedFor(reply, own, "codex");
+  // Only the previous estimate changes, in its place, and the rest as it was.
+  assert.equal(codex, JSON.stringify({ mealDescription: "rice bowl", previousEstimate: own.codex, replies: ["and a beer"] }));
+  assert.equal(JSON.parse(describedFor(reply, own, "claude")).previousEstimate.calories, 700);
+  // Nobody sent for Grok, no answers at all, or one that is not an answer: the average.
+  assert.equal(describedFor(reply, own, "grok"), reply);
+  assert.equal(describedFor(reply, undefined, "codex"), reply);
+  assert.equal(describedFor(reply, { codex: "600" }, "codex"), reply);
+  assert.equal(describedFor(reply, { codex: [whole] }, "codex"), reply);
+  // Not a reply: a first estimate is left as it came, notes and all.
+  assert.equal(describedFor("rice bowl", own, "codex"), "rice bowl");
+  const notes = JSON.stringify({ mealDescription: "rice bowl", foodNotes: "rice is jasmine" });
+  assert.equal(describedFor(notes, own, "codex"), notes);
+});
+
+test("a timeout says what the CLI last printed", () => {
+  assert.equal(
+    failure({ timedOut: true, code: null, out: "", err: "warning: one\nrate limit exceeded; sleeping.\n\n" }, 130_000),
+    "timed out after 130 s, last said: rate limit exceeded; sleeping.",
+  );
+  // Nothing on stderr: the last line of stdout, then nothing at all.
+  assert.equal(failure({ timedOut: true, code: null, out: "Searching.\r\n", err: "" }, 89_600), "timed out after 90 s, last said: Searching.");
+  assert.equal(failure({ timedOut: true, code: null, out: "", err: "  \n" }, 130_000), "timed out after 130 s");
+  assert.equal(failure({ timedOut: true, code: null, out: undefined, err: undefined }, 130_000), "timed out after 130 s");
+  // A long line is cut, so the reason still fits what the form shows.
+  const said = failure({ timedOut: true, code: null, out: "", err: "x".repeat(500) }, 130_000);
+  assert.equal(said, `timed out after 130 s, last said: ${"x".repeat(160)}`);
+  // An exit is reported as before.
+  assert.equal(failure({ timedOut: false, code: 1, out: "", err: "Not signed in.\n" }, 130_000), "exit 1 Not signed in.");
+});
+
 test("output that is not JSON is not an estimate", () => {
   for (const junk of ["", "not json", "{", "<html>", "undefined"]) {
     assert.equal(structured(junk), null, junk);
@@ -173,8 +274,10 @@ test("a named product is looked up, and a workout is not", () => {
 
   const mealGrok = PROVIDERS.grok.args("Chobani flip");
   assert.equal(mealGrok.includes("--disable-web-search"), false);
-  assert.equal(mealGrok[mealGrok.indexOf("--tools") + 1], "web_search,web_fetch");
-  assert.equal(mealGrok[mealGrok.indexOf("--allow") + 1], "WebFetch");
+  // web_search alone: it opens pages itself, and a fetched page costs a round.
+  assert.equal(mealGrok[mealGrok.indexOf("--tools") + 1], "web_search");
+  assert.equal(mealGrok.includes("--allow"), false);
+  assert.equal(mealGrok.some((arg) => /web_?fetch/i.test(arg)), false);
   assert.equal(mealGrok[mealGrok.indexOf("--max-turns") + 1], "10");
 
   const workoutGrok = PROVIDERS.grok.args("easy 5k", WORKOUT_TASK);
@@ -199,8 +302,15 @@ test("a click leaves time to look a product up, and a fallback time to search", 
   const click = MEAL_PROVIDER_MS + MEAL_RESERVE_MS;
   assert.equal(budgetSlice(click, false, MEAL_PROVIDER_MS, MEAL_RESERVE_MS), MEAL_PROVIDER_MS);
   assert.equal(budgetSlice(MEAL_RESERVE_MS, true, MEAL_PROVIDER_MS, MEAL_RESERVE_MS), MEAL_RESERVE_MS);
-  // Asked at once, a complex meal's estimators each still get the whole cap.
-  assert.equal(budgetSlice(click, true, MEAL_PROVIDER_MS, MEAL_RESERVE_MS), MEAL_PROVIDER_MS);
+  // In order, the first meal estimator gets the cap and leaves the reserve.
+  assert.equal(providerSlice(click, { meal: true, isLast: false }), MEAL_PROVIDER_MS);
+  assert.equal(providerSlice(click, { meal: true, isLast: true }), MEAL_PROVIDER_MS);
+  // Asked at once nobody is after them, so each gets all of what is left:
+  // Grok's search is no longer cut off at 90 s with 40 s of the click unused.
+  assert.equal(providerSlice(click, { meal: true, isLast: true, together: true }), click);
+  assert.equal(providerSlice(70_000, { meal: true, isLast: true, together: true }), 70_000);
+  // The background queue's budget, likewise.
+  assert.equal(providerSlice(210_000, { meal: true, isLast: true, together: true }), 210_000);
   const route = readFileSync(
     new URL("../athx-tracker/app/api/estimate/route.ts", import.meta.url),
     "utf8",
@@ -244,36 +354,48 @@ const guess = (provider, calories, assumptions = `${provider} guessed.`, confide
   },
 });
 
-test("a label one estimator found is not averaged with guesses", () => {
-  const label = guess("claude", 700, "Looked up.", "high");
-  assert.deepEqual(settle([guess("codex", 600), label, guess("grok", 800)]), label);
+test("every answer counts unless two found the label, when one that could not find it is left out", () => {
+  const label = (provider, calories) => guess(provider, calories, "Looked up.", "high");
+  const providers = (answers) => {
+    const settled = settle(answers);
+    return settled.provider === "average"
+      ? [...settled.estimate.assumptions.matchAll(/^From (\w+)/gm)].map(([, name]) => name.toLowerCase())
+      : [settled.provider];
+  };
+  // Two labels and a guess: the guess is out, and the labels share as their weights do.
+  const two = settle([label("codex", 600), label("claude", 700), guess("grok", 1100)]);
+  assert.equal(two.estimate.calories, 646.7);
+  assert.equal(two.estimate.confidence, "high");
+  assert.match(two.estimate.assumptions, /^Weighted average of Codex 53% and Claude 47%, each high confidence\./);
+  assert.doesNotMatch(two.estimate.assumptions, /From Grok/);
+  // Two labels and a reference value: it stays.
+  assert.deepEqual(providers([label("codex", 600), label("claude", 700), guess("grok", 1100, "Reference.", "medium")]), ["codex", "claude", "grok"]);
+  // One label: nobody is left out.
+  assert.deepEqual(providers([guess("codex", 600), label("claude", 700), guess("grok", 800)]), ["codex", "claude", "grok"]);
+  // One answer is itself.
   assert.deepEqual(settle([guess("codex", 600)]), guess("codex", 600));
 });
 
-test("a label is not averaged with a guess, even when that guess would have been kept", () => {
-  const label = guess("claude", 700, "Looked up.", "high");
-  const grok = guess("grok", 1100, "Searched.", "low");
-  const codex = guess("codex", 600);
-  assert.deepEqual(settle([codex, label, grok], { keep: ["grok"] }), label);
-
-  const other = guess("codex", 600, "Looked up.", "high");
-  const { estimate, provider } = settle([other, label, grok], { keep: ["grok"] });
-  assert.equal(provider, "average");
-  // 600 x 40% + 700 x 35%, over the 75% that found the label. Grok stays out.
-  assert.equal(estimate.calories, 646.7);
-  assert.equal(estimate.confidence, "high");
-  assert.match(estimate.assumptions, /^Weighted average of Codex 53% and Claude 47%, each high confidence\./);
-  assert.doesNotMatch(estimate.assumptions, /From Grok/);
-});
-
-test("without a label, a complex meal still keeps a less sure Grok", () => {
-  const codex = guess("codex", 600, "Reference.", "medium");
-  const grok = guess("grok", 1100, "Searched.", "low");
-  const { estimate, provider } = settle([codex, grok], { keep: ["grok"] });
-  assert.equal(provider, "average");
-  // 600 x 40% + 1100 x 25%, over the 65% that are kept.
-  assert.equal(estimate.calories, 792.3);
-  assert.match(estimate.assumptions, /Codex 62% and Grok 38%, Codex medium confidence, Grok low confidence/);
+test("a less sure answer gives part of its share to the surer ones", () => {
+  // Two references and a guess: Codex's 40 counts as 20, so 20, 35 and 25 of 80.
+  const guessed = settle([guess("codex", 600), guess("claude", 700, "Reference.", "medium"), guess("grok", 1100, "Reference.", "medium")]);
+  assert.equal(guessed.provider, "average");
+  // (600 x 20 + 700 x 35 + 1100 x 25) / 80.
+  assert.equal(guessed.estimate.calories, 800);
+  assert.equal(guessed.estimate.confidence, "low");
+  assert.match(
+    guessed.estimate.assumptions,
+    /^Weighted average of Codex 25%, Claude 44% and Grok 31%, Codex low confidence, Claude medium confidence, Grok medium confidence, a high answer counting double its weight and a low one half\./,
+  );
+  // One label among guesses: Claude's 35 counts as 70, the others as 20 and 12.5.
+  const label = settle([guess("codex", 600), guess("claude", 700, "Looked up.", "high"), guess("grok", 1100)]);
+  // (600 x 20 + 700 x 70 + 1100 x 12.5) / 102.5.
+  assert.equal(label.estimate.calories, 729.3);
+  assert.match(label.estimate.assumptions, /^Weighted average of Codex 20%, Claude 68% and Grok 12%,/);
+  // The name is the answer that counts for most.
+  const named = (provider, confidence) => ({ ...guess(provider, 600, "x", confidence), estimate: { ...guess(provider, 600, "x", confidence).estimate, name: provider } });
+  assert.equal(settle([named("codex", "low"), named("claude", "high")]).estimate.name, "claude");
+  assert.equal(settle([named("codex", "low"), named("claude", "low")]).estimate.name, "codex");
 });
 
 test("guesses on the same footing are averaged by weight, each one's working kept", () => {
@@ -336,7 +458,7 @@ test("a shared meal is the meal's question, and then dish by dish", () => {
   // Still a meal: it searches as a meal does.
   assert.ok(PROVIDERS.codex.args("pizza, salad", DISH_TASK).includes("--search"));
   const grok = PROVIDERS.grok.args("pizza, salad", DISH_TASK);
-  assert.equal(grok[grok.indexOf("--tools") + 1], "web_search,web_fetch");
+  assert.equal(grok[grok.indexOf("--tools") + 1], "web_search");
   assert.ok(JSON.parse(grok[grok.indexOf("--json-schema") + 1]).required.includes("dishes"));
   const claude = PROVIDERS.claude.args("pizza, salad", DISH_TASK);
   assert.equal(claude[claude.indexOf("--tools") + 1], "WebSearch,WebFetch");
@@ -368,27 +490,33 @@ test("shared meals average dish by dish, and an answer split another way is left
   ];
   const { provider, estimate } = settleDishes(answers);
   assert.equal(provider, "average");
-  // 800 x 40% + 900 x 35%, over the 75% that split it in two.
-  assert.deepEqual(estimate.dishes.map((each) => [each.name, each.calories]), [["pizza", 846.7], ["salad", 353.3]]);
-  assert.equal(estimate.calories, 1200);
+  // Each dish by weight times that answer's confidence for it. Pizza: Codex
+  // 800 at 40, Claude's label 900 at 35 doubled. Salad: 400 at 40, 300 at 35.
+  assert.deepEqual(estimate.dishes.map((each) => [each.name, each.calories]), [["pizza", 863.6], ["salad", 353.3]]);
+  assert.equal(estimate.calories, 1216.9);
   assert.equal(estimate.dishes[0].confidence, "medium", "a dish is as sure as its least sure answer");
-  assert.match(estimate.assumptions, /^Weighted average of Codex 53% and Claude 47%, dish by dish/);
+  assert.match(estimate.dishes[0].assumptions, /^Weighted average of Codex 36% and Claude 64%\./);
+  assert.match(estimate.dishes[1].assumptions, /^Weighted average of Codex 53% and Claude 47%\./);
+  // The meal's shares are each answer's whole-meal footing.
+  assert.match(estimate.assumptions, /^Weighted average of Codex 53% and Claude 47%, dish by dish, each medium confidence/);
   assert.match(estimate.assumptions, /Grok split the meal into a different number of dishes, so it is left out\./);
   assert.match(estimate.dishes[0].assumptions, /From Codex \[800 kcal, 40P, 80C, 20F\]:\npizza, worked out\./);
 
-  // The best-sourced answer still wins outright.
-  const label = { provider: "grok", estimate: cleanDishes(shared([dish("pizza", 700, "high")], { confidence: "high" })) };
-  assert.equal(settleDishes([...answers, label]), label);
-  // Keeping Grok does not average a different split. A label is exact, so
-  // keeping Grok does not average its guess back in when the split matches either.
-  assert.equal(settleDishes(answers, { keep: ["grok"] }).provider, "average");
-  const sameSplit = [
-    answers[0],
-    { provider: "claude", estimate: cleanDishes(shared([dish("pizza", 900, "high"), dish("salad", 300, "high")], { confidence: "high" })) },
-    { provider: "grok", estimate: cleanDishes(shared([dish("pizza", 1000), dish("salad", 200)])) },
-  ];
-  assert.equal(settleDishes(sameSplit).provider, "claude");
-  assert.equal(settleDishes(sameSplit, { keep: ["grok"] }), sameSplit[1]);
+  // Two labels and a guess split the same way: the guess is left out.
+  const labelled = (provider, pizza, salad, confidence) => ({
+    provider,
+    estimate: cleanDishes(shared([dish("pizza", pizza, confidence), dish("salad", salad, confidence)], { confidence })),
+  });
+  const two = settleDishes([labelled("codex", 800, 400, "high"), labelled("claude", 900, 300, "high"), labelled("grok", 1000, 200, "low")]);
+  assert.equal(two.provider, "average");
+  assert.deepEqual(two.estimate.dishes.map((each) => [each.name, each.calories]), [["pizza", 846.7], ["salad", 353.3]]);
+  assert.match(two.estimate.assumptions, /^Weighted average of Codex 53% and Claude 47%, dish by dish, each high confidence/);
+  assert.doesNotMatch(two.estimate.assumptions, /From Grok/);
+  // One label: the guess stays, at half its weight, and the label's split leads.
+  const one = settleDishes([labelled("codex", 800, 400, "medium"), labelled("claude", 900, 300, "high"), labelled("grok", 1000, 200, "low")]);
+  // Pizza: (800 x 40 + 900 x 70 + 1000 x 12.5) / 122.5.
+  assert.equal(one.estimate.dishes[0].calories, 877.6);
+  assert.match(one.estimate.assumptions, /From Grok:/);
   // With nobody to average it with, the best-weighted answer stands as it is.
   const alone = [answers[0], answers[2]];
   assert.equal(settleDishes(alone), answers[0]);

@@ -102,7 +102,7 @@ test("signing out leaves no copy of the journal behind", async ({ page }) => {
   await signIn(page);
   await page.reload();
   await expect.poll(() => kept(page), { timeout: 15_000 }).toBe(true);
-  await page.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: "Setup", exact: true }).click();
+  await page.locator("header").getByRole("button", { name: "Setup", exact: true }).click();
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page.getByLabel("Passphrase")).toBeVisible();
   await expect.poll(() => kept(page)).toBe(false);

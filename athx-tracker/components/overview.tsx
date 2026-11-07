@@ -2,6 +2,7 @@
 
 import { Dumbbell, Target } from "lucide-react";
 import { CollapsibleCard } from "@/components/collapsible-card";
+import { Energy } from "@/components/energy";
 import { Fuel } from "@/components/fuel";
 import { RaceEstimate, RaceProgress, raceLine } from "@/components/race-estimate";
 import { SessionCalendar } from "@/components/session-calendar";
@@ -17,11 +18,12 @@ import {
   estimateBurn,
   formatTimeOrDash,
   scenarioLine,
+  type EnergyCheckIn,
   type RecordItem,
   type Settings,
 } from "@/lib/domain";
 import { bodyweightOn, type BodyweightHistory } from "@/lib/bodyweight";
-import { addDays, daysBetween, dayToDate, isWorkout, weekStart } from "@/lib/client";
+import { addDays, isWorkout, weekStart } from "@/lib/client";
 import type { JournalSummary } from "@/lib/summary";
 
 function Panel({
@@ -76,6 +78,7 @@ export function Overview({
   fuelRefresh,
   heldFrom,
   onLoadSessions,
+  onCheckIn,
 }: {
   records: RecordItem[];
   settings: Settings;
@@ -88,8 +91,9 @@ export function Overview({
   /** The oldest day the phone holds; null when it holds the whole journal. */
   heldFrom: string | null;
   onLoadSessions: (from: string, to: string) => Promise<void>;
+  /** Today's energy for one athlete, tapped on its card. */
+  onCheckIn: (record: EnergyCheckIn) => Promise<void>;
 }) {
-  const countdown = daysBetween(today, settings.eventDate);
   const thisWeek = weekStart(today);
   const workouts = records.filter(isWorkout);
   const sevenDaysAgo = addDays(today, -6);
@@ -106,40 +110,12 @@ export function Overview({
       ? estimateBurn(lastSession, bodyweightOn(history, lastSession.athlete, lastSession.day))
       : null;
   const lastScenario = lastSession ? scenarioLine(lastSession) : null;
-  const daysToGo = `${countdown >= 0 ? countdown : 0} ${countdown === 1 ? "day to go" : "days to go"}`;
   const unit = settings.weightUnit ?? "lb";
 
+  // The days to go are in the header now. Fuel is what gets checked most, so
+  // it leads; Energy folds to a line once both of you have checked in.
   return (
     <div className="space-y-4">
-      <CollapsibleCard
-        name={settings.eventName}
-        className="p-5 sm:p-6"
-        heading={
-          <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
-            {settings.eventName}
-          </p>
-        }
-        mini={daysToGo}
-      >
-        <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <span className="text-4xl font-semibold tabular-nums tracking-tight sm:text-5xl">
-            {countdown >= 0 ? countdown : 0}
-          </span>
-          <span className="text-sm text-muted-foreground">
-            {countdown === 1 ? "day to go" : "days to go"}
-          </span>
-        </div>
-        <p className="mt-2 text-xs text-muted-foreground">
-          {new Intl.DateTimeFormat("en-GB", {
-            weekday: "long",
-            day: "numeric",
-            month: "long",
-            year: "numeric",
-            timeZone: "UTC",
-          }).format(dayToDate(settings.eventDate))}
-        </p>
-      </CollapsibleCard>
-
       <Fuel
         records={records}
         settings={settings}
@@ -149,6 +125,8 @@ export function Overview({
         onLoadDay={onLoadFuelDay}
         refresh={fuelRefresh}
       />
+
+      <Energy records={records} today={today} onCheckIn={onCheckIn} />
 
       <CollapsibleCard
         name="Progress and race-day estimate"

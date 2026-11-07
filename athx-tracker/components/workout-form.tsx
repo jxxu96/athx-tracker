@@ -11,7 +11,8 @@ import {
 } from "react";
 import { CalendarDays, Plus, Sparkles, X } from "lucide-react";
 import { WorkoutDictation } from "@/components/workout-dictation";
-import { EXERCISES } from "@/lib/exercises";
+import { DEFAULT_SETS, EXERCISES, defaultReps } from "@/lib/exercises";
+import { lastLift, type LastLift } from "@/lib/last-lift";
 import { alignWorkoutDraft } from "@/lib/movement-match";
 import { workoutDraftSchema, type WorkoutDraft } from "@/lib/workout-draft";
 import { Button } from "@/components/ui/button";
@@ -27,7 +28,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { athleteOutline, type AthleteOutline } from "@/lib/athlete-outline";
-import { addDays, api, dayToDate, message, newId } from "@/lib/client";
+import { addDays, api, dayToDate, formatDay, message, newId } from "@/lib/client";
 import { bothOf, isText, oneOf, textOf, type Draft } from "@/lib/drafts";
 import { useFormDraft } from "@/hooks/use-form-draft";
 import {
@@ -44,8 +45,10 @@ import {
   sessionSeconds,
   formatTime,
   parseTime,
+  typedClock,
   displayDistance,
   displayLoad,
+  formatLiftSets,
   formatWeight,
   fromMetres,
   liftTop,
@@ -100,6 +103,12 @@ type LiftSide = {
   /** Each set has its own weight and reps. Off is one weight for every set. */
   advanced: boolean;
   detail: SetDraft[];
+  /**
+   * Sets and reps still hold the defaults the form put there when the lift
+   * was chosen. Choosing another lift moves them to its defaults, and they
+   * alone do not make a column count as used.
+   */
+  prefilled?: boolean;
 };
 type LiftRow = {
   name: string;
@@ -399,6 +408,7 @@ export function DayButtons({
   onChange,
   time,
   onTimeChange,
+  subject,
 }: {
   today: string;
   day: string;
@@ -406,7 +416,14 @@ export function DayButtons({
   /** When given, the time of day sits under the date. Blank is not recorded. */
   time?: string;
   onTimeChange?: (next: string) => void;
+  /**
+   * What the date is for, when the screen has another Today button: the
+   * buttons are then named "Energy today" rather than a second "Today" beside
+   * the tab of that name.
+   */
+  subject?: string;
 }) {
+  const named = (what: string) => (subject ? `${subject} ${what[0].toLowerCase()}${what.slice(1)}` : undefined);
   const yesterday = addDays(today, -1);
   const custom = day !== today && day !== yesterday;
   const [open, setOpen] = useState(false);
@@ -420,11 +437,12 @@ export function DayButtons({
       <Label className="mb-1.5 block text-xs font-medium text-muted-foreground">
         Date
       </Label>
-      <div role="group" aria-label="Date" className="grid grid-cols-3 gap-1.5">
+      <div role="group" aria-label={subject ? `${subject} date` : "Date"} className="grid grid-cols-3 gap-1.5">
         <button
           type="button"
           onClick={() => choose(today)}
           aria-pressed={day === today}
+          aria-label={named("Today")}
           className={CHOICE}
         >
           Today
@@ -433,6 +451,7 @@ export function DayButtons({
           type="button"
           onClick={() => choose(yesterday)}
           aria-pressed={day === yesterday}
+          aria-label={named("Yesterday")}
           className={CHOICE}
         >
           Yesterday
@@ -443,7 +462,7 @@ export function DayButtons({
               <button
                 type="button"
                 aria-pressed={custom}
-                aria-label={custom ? `Calendar, ${shortDay(day)}` : "Calendar"}
+                aria-label={named(custom ? `Calendar, ${shortDay(day)}` : "Calendar") ?? (custom ? `Calendar, ${shortDay(day)}` : "Calendar")}
                 className={`${CHOICE} w-full`}
               >
                 <CalendarDays className="size-3.5 shrink-0" aria-hidden="true" />
@@ -545,6 +564,10 @@ function LiftSets({
   side,
   entry,
   unit,
+  liftName,
+  last,
+  lastDay,
+  onUseLast,
   onToggle,
   onSimple,
   onSet,
@@ -554,6 +577,11 @@ function LiftSets({
   side: Side;
   entry: LiftSide;
   unit: WeightUnit;
+  liftName: string;
+  /** This athlete's last time at the lift, offered to copy. */
+  last: LastLift | null;
+  lastDay: string;
+  onUseLast: () => void;
   onToggle: () => void;
   onSimple: (patch: Partial<Pick<LiftSide, "kg" | "sets" | "reps">>) => void;
   onSet: (index: number, patch: Partial<SetDraft>) => void;
@@ -569,8 +597,22 @@ function LiftSets({
   const missed = parsed.flatMap((set) => (set.failed ? [set.index + 1] : []));
   const same = parsed.length > 0 && parsed.every((set) => set.kg === parsed[0].kg && set.reps === parsed[0].reps);
   const top = parsed.length > 0 ? liftTop(parsed.map(({ kg, reps }) => ({ kg, reps }))) : null;
+  const lastSets = last ? formatLiftSets(last.lift, unit) : "";
   return (
     <Column side={side}>
+      {last ? (
+        <button
+          type="button"
+          onClick={onUseLast}
+          aria-label={`Use ${who}' last ${liftName}: ${lastSets}, ${lastDay}`}
+          className="flex w-full items-baseline justify-between gap-2 rounded-md border border-dashed px-2 py-1.5 text-left text-[11px] text-muted-foreground transition-colors hover:bg-muted"
+        >
+          <span className="min-w-0">
+            Last <span className="font-medium tabular-nums text-foreground">{lastSets}</span> · {lastDay}
+          </span>
+          <span className="shrink-0 font-medium text-foreground">Use</span>
+        </button>
+      ) : null}
       <div>
         <Button
           type="button"
@@ -657,11 +699,12 @@ function LiftSets({
             />
           </Field>
           <div className="grid grid-cols-2 gap-2">
+            {/* No placeholder: a grey 3 and 5 read as values and saved as one
+                set of one. Choosing the lift fills real defaults instead. */}
             <Field label="Sets">
               <Input
                 value={entry.sets}
                 inputMode="numeric"
-                placeholder="3"
                 className="h-8"
                 onChange={(event) => onSimple({ sets: event.target.value })}
               />
@@ -670,7 +713,6 @@ function LiftSets({
               <Input
                 value={entry.reps}
                 inputMode="numeric"
-                placeholder="5"
                 className="h-8"
                 onChange={(event) => onSimple({ reps: event.target.value })}
               />
@@ -717,6 +759,7 @@ export function WorkoutForm({
   weightUnit,
   grokReady,
   active = true,
+  workouts = [],
   onLoggingFor,
   editing,
   draft: resumed,
@@ -727,6 +770,8 @@ export function WorkoutForm({
 }: {
   today: string;
   sides: readonly Side[];
+  /** The sessions the phone holds, newest first: where a lift's last time comes from. */
+  workouts?: readonly Workout[];
   /** The header's switch. The boxes follow it, whatever they were typed in. */
   weightUnit: WeightUnit;
   grokReady: boolean;
@@ -1008,7 +1053,7 @@ export function WorkoutForm({
     gators: null,
   });
 
-  const { usesStations, usesLifts, usesCustomStations, isRun, isMixed, takesKcal } =
+  const { usesStations, usesLifts, usesCustomStations, isRun, isMixed, takesKcal, takesGoal } =
     categoryShape(category);
   // Whether the session has MetCon work to have been capped on.
   const hasMetcon = usesStations && stations.some((s) => s.block === "metcon") &&
@@ -1142,12 +1187,62 @@ export function WorkoutForm({
   }
 
   function setLift(index: number, side: Side, patch: Partial<LiftSide>) {
+    // Typing sets or reps makes them yours: another lift no longer moves them.
+    const typed = "sets" in patch || "reps" in patch;
     setLifts((current) =>
       current.map((lift, i) =>
         // Editing the one-line boxes drops a breakdown, so Advanced rebuilds from them.
-        i === index ? { ...lift, [side]: { ...lift[side], ...patch, detail: [] } } : lift,
+        i === index
+          ? {
+              ...lift,
+              [side]: { ...lift[side], ...patch, detail: [], ...(typed ? { prefilled: false } : {}) },
+            }
+          : lift,
       ),
     );
+  }
+
+  /**
+   * Choosing a lift fills its default sets and reps into empty boxes, or over
+   * the last lift's defaults, so leaving them saves what they show. Numbers
+   * you typed, or that the AI or a saved entry filled, stay as they are.
+   */
+  function chooseLift(index: number, name: string) {
+    const fill = (entry: LiftSide): LiftSide => {
+      if (name === "" || entry.advanced) return entry;
+      const sets = entry.prefilled || entry.sets.trim() === "";
+      const reps = entry.prefilled || entry.reps.trim() === "";
+      if (!sets && !reps) return entry;
+      return {
+        ...entry,
+        sets: sets ? String(DEFAULT_SETS) : entry.sets,
+        reps: reps ? String(defaultReps(name)) : entry.reps,
+        prefilled: sets && reps,
+      };
+    };
+    setLifts((current) =>
+      current.map((row, i) =>
+        i === index ? { ...row, name, hippos: fill(row.hippos), gators: fill(row.gators) } : row,
+      ),
+    );
+  }
+
+  /** Copies an athlete's last time at a lift into the row, sets as they were. */
+  function copyLast(index: number, side: Side, last: LastLift) {
+    const { lift } = last;
+    const detail = lift.detail ?? [];
+    // A failed rep belongs to the session it happened in, so it is not copied.
+    const alike = detail.every((set) => set.kg === detail[0].kg && set.reps === detail[0].reps);
+    const entry: LiftSide = detail.length > 0 && !alike
+      ? {
+          kg: "", sets: "", reps: "", advanced: true,
+          detail: detail.map((set) => ({ kg: displayLoad(set.kg, unit), reps: String(set.reps), savedKg: set.kg })),
+        }
+      : {
+          kg: displayLoad(lift.kg, unit), sets: String(lift.sets), reps: String(lift.reps),
+          savedKg: lift.kg, advanced: false, detail: [],
+        };
+    setLifts((current) => current.map((row, i) => (i === index ? { ...row, [side]: entry } : row)));
   }
 
   /** Open one row per set, or fold the rows back into the one-line boxes. */
@@ -1164,7 +1259,7 @@ export function WorkoutForm({
                 reps: entry.reps,
                 ...(entry.savedKg !== undefined ? { savedKg: entry.savedKg } : {}),
               }));
-          return { ...lift, [side]: { ...entry, advanced: true, detail } };
+          return { ...lift, [side]: { ...entry, advanced: true, detail, prefilled: false } };
         }
         const touched = entry.detail.some((set) => set.kg.trim() !== "" || set.reps.trim() !== "");
         if (!touched) return { ...lift, [side]: { ...entry, advanced: false, detail: [] } };
@@ -1274,7 +1369,9 @@ export function WorkoutForm({
       const entry = lift[side];
       if (entry.advanced)
         return entry.detail.some((set) => set.kg.trim() !== "" || set.reps.trim() !== "");
-      return entry.kg.trim() !== "" || entry.sets.trim() !== "" || entry.reps.trim() !== "";
+      // Defaults the form filled in are not something you did.
+      return entry.kg.trim() !== "" ||
+        (!entry.prefilled && (entry.sets.trim() !== "" || entry.reps.trim() !== ""));
     });
   }
 
@@ -1417,6 +1514,9 @@ export function WorkoutForm({
       if (liftName === "") return `${who}: choose or name the exercise.`;
       if (parseLoad(entry.kg, unit, entry.savedKg) === null)
         return `${who} · ${liftName}: add the load in ${unit}.`;
+      // An empty box used to save as one set of one, behind a grey 3 and 5.
+      if (entry.sets.trim() === "" || entry.reps.trim() === "")
+        return `${who} · ${liftName}: add the sets and reps.`;
       if (entry.sets.trim() !== "" && !(num(entry.sets) >= 1))
         return `${who} · ${liftName}: sets must be at least 1.`;
       if (entry.reps.trim() !== "" && !(num(entry.reps) >= 1))
@@ -1478,7 +1578,12 @@ export function WorkoutForm({
     if (active.length === 0)
       return setError("Fill in at least one athlete before saving.");
 
-    const goalSeconds = goal.trim() === "" ? null : parseTime(goal);
+    // A goal typed before switching to MetCon is out of sight, so it neither
+    // blocks the save nor lands on the session. A MetCon saved with a goal,
+    // before the box went, keeps it through an edit.
+    const goalSeconds = !takesGoal
+      ? (editing?.category === "MetCon" ? editing.goal : null)
+      : goal.trim() === "" ? null : parseTime(goal);
     if (goalSeconds !== null && (!Number.isFinite(goalSeconds) || goalSeconds <= 0))
       return setError("Write the goal time as mm:ss, or leave it empty.");
 
@@ -1658,13 +1763,16 @@ export function WorkoutForm({
               ))}
             </NativeSelect>
           </Field>
-          <Field label="Goal time">
-            <Input
-              value={goal}
-              placeholder="mm:ss"
-              onChange={(event) => setGoal(event.target.value)}
-            />
-          </Field>
+          {takesGoal ? (
+            <Field label="Goal time">
+              <Input
+                value={goal}
+                inputMode="numeric"
+                placeholder="mm:ss"
+                onChange={(event) => setGoal(typedClock(event.target.value))}
+              />
+            </Field>
+          ) : null}
         </div>
         {category === "Other" ? (
           <Field label="What was it?">
@@ -1687,14 +1795,15 @@ export function WorkoutForm({
                   elapsedRefs.current[side] = element;
                 }}
                 value={elapsed[side]}
-                // No inputMode on a time: a phone's number pad has no colon.
+                // The number pad has no colon, so the box puts it in: 2530 is 25:30.
+                inputMode="numeric"
                 placeholder="mm:ss"
                 aria-invalid={invalidSide === side}
                 aria-label={`${ATHLETES[side].name} elapsed time`}
                 onChange={(event) =>
                   setElapsed((current) => ({
                     ...current,
-                    [side]: event.target.value,
+                    [side]: typedClock(event.target.value),
                   }))
                 }
               />
@@ -1771,14 +1880,14 @@ export function WorkoutForm({
                         <p className="text-sm font-medium">
                           {index + 1}. {station.name}
                         </p>
-                        <p className="text-[11px] text-muted-foreground">
-                          Target {station.target} {station.unit}
-                          {(() => {
-                            const circuit = circuitStation(station);
-                            const text = circuit ? metconLoadText(circuit, unit) : "";
-                            return text ? ` · ${text}` : "";
-                          })()}
-                        </p>
+                        {/* The circuit's reps are fixed and known, so only its loads and notes are shown. */}
+                        {(() => {
+                          const circuit = circuitStation(station);
+                          const text = circuit ? metconLoadText(circuit, unit) : "";
+                          return text ? (
+                            <p className="text-[11px] text-muted-foreground">{text}</p>
+                          ) : null;
+                        })()}
                       </div>
                       {isMixed ? (
                         <Button
@@ -1914,10 +2023,11 @@ export function WorkoutForm({
                         <Field label="Time" hint="mm:ss">
                           <Input
                             value={entries[side][index]?.time ?? ""}
+                            inputMode="numeric"
                             placeholder="mm:ss"
                             className="h-8"
                             onChange={(event) =>
-                              setEntry(side, index, { time: event.target.value })
+                              setEntry(side, index, { time: typedClock(event.target.value) })
                             }
                           />
                         </Field>
@@ -1990,13 +2100,7 @@ export function WorkoutForm({
                       label="Lift"
                       choice={lift.name}
                       custom={lift.custom}
-                      onChoice={(value) =>
-                        setLifts((current) =>
-                          current.map((row, i) =>
-                            i === index ? { ...row, name: value } : row,
-                          ),
-                        )
-                      }
+                      onChoice={(value) => chooseLift(index, value)}
                       onCustom={(value) =>
                         setLifts((current) =>
                           current.map((row, i) =>
@@ -2021,19 +2125,27 @@ export function WorkoutForm({
                   ) : null}
                 </div>
                 <div className={`grid gap-2.5 ${columns.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
-                  {columns.map((side) => (
+                  {columns.map((side) => {
+                    const name = exerciseName(lift.name, lift.custom);
+                    const last = lastLift(workouts, side, name, { onOrBefore: day, exclude: editing?.id });
+                    return (
                     <LiftSets
                       key={side}
                       side={side}
                       entry={lift[side]}
                       unit={unit}
+                      liftName={name}
+                      last={last}
+                      lastDay={last ? formatDay(last.day, today) : ""}
+                      onUseLast={() => last && copyLast(index, side, last)}
                       onToggle={() => toggleAdvanced(index, side)}
                       onSimple={(patch) => setLift(index, side, patch)}
                       onSet={(setIndex, patch) => setDetail(index, side, setIndex, patch)}
                       onAdd={() => addSet(index, side)}
                       onRemove={(setIndex) => removeSet(index, side, setIndex)}
                     />
-                  ))}
+                    );
+                  })}
                 </div>
               </li>
             ))}

@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { PASSPHRASE } from "../playwright.config.ts";
+import { chooseTheme } from "./theme.ts";
 
 type SavedMeal = {
   id: string; kind: "meal"; athlete: string; day: string; time?: string; name: string; meal: string; source: string;
@@ -414,11 +415,17 @@ test("a slider shares each dish, a slice at a time once the dish is counted", as
 
   // The shares written on the bar read in both themes.
   for (const theme of ["Light", "Dark"]) {
-    await page.getByRole("button", { name: theme, exact: true }).click();
+    await chooseTheme(page, theme as "Light" | "Dark");
+    // Let the theme's colour transitions land before reading contrast.
+    await page.waitForTimeout(500);
     const { violations } = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
       .analyze();
-    expect(violations.map((v) => v.id), theme).toEqual([]);
+    // Each failing element, so a failure says what to fix and not just which rule.
+    const described = violations.flatMap((v) =>
+      v.nodes.map((n) => `${theme}: ${v.id} ${n.target.join(" ")} ${n.html.slice(0, 200)} ${n.any.map((a) => a.message).join("; ")}`),
+    );
+    expect(described, described.join("\n")).toEqual([]);
     await pie.screenshot({ path: `test-results/meal-dish-slider-${theme.toLowerCase()}.png` });
   }
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
@@ -542,6 +549,27 @@ test("a meal for both is split by dish from the start, and its estimate comes ba
   await expect(page.getByRole("button", { name: "Same meal for each of you" })).toBeVisible();
 });
 
+test("a meal for both says which estimator gave nothing, and why", async ({ page }) => {
+  await page.route("**/api/estimate", async (route) => {
+    const lines = [
+      { type: "missed", provider: "grok", detail: "exit 1 Not signed in." },
+      { type: "done", provider: "codex", estimate: shared([
+        { name: "pizza", calories: 880, protein: 36, carbs: 100, fat: 30 },
+        { name: "salad", calories: 420, protein: 12, carbs: 16, fat: 34 },
+      ]) },
+    ];
+    await route.fulfill({
+      contentType: "application/x-ndjson",
+      body: lines.map((line) => `${JSON.stringify(line)}\n`).join(""),
+    });
+  });
+  await loggingFor(page, "Both").click();
+  await page.getByLabel("Meal description").fill("pizza and salad");
+  await page.getByRole("button", { name: "Estimate macros" }).click();
+  await expect(dish(page, 2).getByLabel("Dish", { exact: true })).toHaveValue("salad");
+  await expect(page.getByRole("list", { name: "No answer from" })).toHaveText("Grok did not answer: exit 1 Not signed in.");
+});
+
 test("a meal for both is cut into dishes without an estimate, or kept the same for each", async ({ page }) => {
   await loggingFor(page, "Both").click();
   await page.getByRole("group", { name: "Sitting" }).getByRole("button", { name: "Lunch" }).click();
@@ -565,4 +593,93 @@ test("a meal for both is cut into dishes without an estimate, or kept the same f
   // And the next is split again.
   await page.getByRole("button", { name: "Meal", exact: true }).click();
   await expect(page.getByRole("button", { name: "Same meal for each of you" })).toBeVisible();
+});
+
+test("a share written with a dish is taken into its boxes, and no estimate reads it", async ({ page }) => {
+  const requests: { description: string; dishes?: string[] }[] = [];
+  await page.route("**/api/estimate", async (route) => {
+    const body = route.request().postDataJSON() as { description: string; dishes?: string[] };
+    requests.push(body);
+    const dishes = body.dishes?.length === 1
+      ? [{ name: "fries", calories: 380, protein: 4, carbs: 48, fat: 19 }]
+      : [
+          { name: "Turkey sandwich", calories: 500, protein: 30, carbs: 50, fat: 18 },
+          { name: "fries", calories: 400, protein: 5, carbs: 50, fat: 20 },
+          { name: "Coca-Cola", calories: 140, protein: 0, carbs: 39, fat: 0 },
+        ];
+    await route.fulfill({ json: { estimate: shared(dishes), provider: "average" } });
+  });
+  await loggingFor(page, "Both").click();
+  await page.getByLabel("Meal description").fill("sandwich (60% gators 40% hippos)\nfries (80% h 20% g)\ncoke (75% g)");
+  await page.getByRole("button", { name: "Estimate macros" }).click();
+  await expect.poll(() => requests.at(-1)).toEqual({
+    description: "sandwich\nfries\ncoke",
+    dishes: ["sandwich", "fries", "coke"],
+  });
+  await expect(dish(page, 3).getByLabel("Dish", { exact: true })).toHaveValue("Coca-Cola");
+  for (const [n, hippos, gators] of [[1, "40", "60"], [2, "80", "20"], [3, "25", "75"]] as const) {
+    await expect(dish(page, n).getByLabel("Hippos (%)")).toHaveValue(hippos);
+    await expect(dish(page, n).getByLabel("Gators (%)")).toHaveValue(gators);
+  }
+
+  // Typed into a dish's name, the share moves into the boxes on leaving it,
+  // and its own estimate reads only the food.
+  await dish(page, 2).getByLabel("Dish", { exact: true }).fill("fries (g 100%)");
+  await dish(page, 2).getByLabel("Calories (kcal)").focus();
+  await expect(dish(page, 2).getByLabel("Dish", { exact: true })).toHaveValue("fries");
+  await expect(dish(page, 2).getByLabel("Gators (%)")).toHaveValue("100");
+  await expect(dish(page, 2).getByLabel("Hippos (%)")).toHaveValue("0");
+  await dish(page, 2).getByLabel("Dish", { exact: true }).fill("fries (30% h)");
+  await dish(page, 2).getByRole("button", { name: "Estimate" }).click();
+  await expect(dish(page, 2).getByLabel("Calories (kcal)")).toHaveValue("380");
+  expect(requests.at(-1)).toEqual({ description: "fries", dishes: ["fries"] });
+  await expect(dish(page, 2).getByLabel("Dish", { exact: true })).toHaveValue("fries");
+  await expect(dish(page, 2).getByLabel("Hippos (%)")).toHaveValue("30");
+  await expect(dish(page, 2).getByLabel("Gators (%)")).toHaveValue("70");
+
+  // Split by dish, with no estimate, shares the same way.
+  for (let n = 3; n >= 1; n -= 1) await page.getByRole("button", { name: `Remove dish ${n}` }).click();
+  await page.getByLabel("Meal description").fill("ramen (60% g and 40% h), gyoza (100% hippos), tea");
+  await page.getByRole("button", { name: "Split by dish" }).click();
+  for (const [n, name, hippos, gators] of [[1, "ramen", "40", "60"], [2, "gyoza", "100", "0"], [3, "tea", "50", "50"]] as const) {
+    await expect(dish(page, n).getByLabel("Dish", { exact: true })).toHaveValue(name);
+    await expect(dish(page, n).getByLabel("Hippos (%)")).toHaveValue(hippos);
+    await expect(dish(page, n).getByLabel("Gators (%)")).toHaveValue(gators);
+  }
+});
+
+test("the meal as it was written that night: pieces, each, and a dish joined back together", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const requests: { description: string; dishes?: string[] }[] = [];
+  await page.route("**/api/estimate", async (route) => {
+    requests.push(route.request().postDataJSON() as { description: string; dishes?: string[] });
+    // The estimator joins what the phone cut at commas, as it did that night.
+    await route.fulfill({ json: { estimate: shared([
+      { name: "3 blue crabs, fried congjiang with some starchy thing to firm up the outside", calories: 586, protein: 36, carbs: 33, fat: 34 },
+      { name: "stir fried bean sprouts + chives, 2 servings", calories: 411, protein: 13, carbs: 29, fat: 31 },
+      { name: "250g shanghainese cai fan", calories: 423, protein: 9, carbs: 70, fat: 12 },
+      { name: "5 shengjianbao", calories: 697, protein: 27, carbs: 82, fat: 30 },
+      { name: "8pc hongshaorou", calories: 1060, protein: 33, carbs: 26, fat: 92 },
+    ]), provider: "average" } });
+  });
+  await loggingFor(page, "Both").click();
+  await page.getByLabel("Meal description").fill(
+    "3 blue crabs, fried congjiang with some starchy thing to firm up the outside (70% g), stir fried bean sprouts + chives, 2 servings (50% ea), 250g shanghainese cai fan (75% g), 5 shengjianbao (3 pc gators, 2 pc hippos), 8pc hongshaorou (5.5pc gators)",
+  );
+  await page.getByRole("button", { name: "Estimate macros" }).click();
+  await expect(dish(page, 5).getByLabel("Dish", { exact: true })).toHaveValue("8pc hongshaorou");
+  // Nothing in brackets reaches the estimator.
+  expect(requests.at(-1)?.description).not.toMatch(/[()]/);
+  expect(requests.at(-1)?.dishes?.join(" ")).not.toMatch(/[()%]/);
+  for (const [n, hippos, gators] of [[1, "30", "70"], [2, "50", "50"], [3, "25", "75"], [4, "40", "60"], [5, "31.3", "68.8"]] as const) {
+    await expect(dish(page, n).getByLabel("Hippos (%)")).toHaveValue(hippos);
+    await expect(dish(page, n).getByLabel("Gators (%)")).toHaveValue(gators);
+  }
+  // 5.5 of 8 for Gators, 2.5 of 8 for Hippos, under the bar.
+  await expect(dish(page, 5).getByLabel("Quantity (whole dish)")).toHaveValue("8 pc");
+  await expect(dish(page, 5)).toContainText("2.5 of 8 pc");
+  await expect(dish(page, 5)).toContainText("5.5 of 8 pc");
+  await expect(dish(page, 4)).toContainText("3 of 5 pc");
+  await page.getByRole("status", { name: "Shares" }).scrollIntoViewIfNeeded();
+  await page.locator("form").screenshot({ path: "test-results/meal-written-shares-mobile.png" });
 });

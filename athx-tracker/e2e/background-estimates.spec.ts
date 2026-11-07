@@ -11,8 +11,10 @@ const workout = {
   lifts: [{ name: "Deadlift", hippos: { kg: 60, sets: 3, reps: 5 },
     gators: { kg: null, sets: null, reps: null } }],
 };
-const section = (page: Page, name: string) => page.getByRole("navigation", { name: "Sections" })
-  .getByRole("button", { name, exact: true });
+// Setup is the gear in the header; the rest are the bottom bar's tabs.
+const section = (page: Page, name: string) =>
+  (name === "Setup" ? page.locator("header") : page.getByRole("navigation", { name: "Sections" }))
+    .getByRole("button", { name, exact: true });
 const notice = (page: Page, text: string) => page.locator("[data-sonner-toast]").filter({ hasText: text });
 const records = (page: Page) => page.evaluate(async () => (await fetch("/api/records").then(r => r.json())).records);
 function gate() {

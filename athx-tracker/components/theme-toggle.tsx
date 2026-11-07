@@ -47,9 +47,17 @@ function storedPreference(): Preference {
 /** The server cannot know a stored choice. Dark is what a first visit gets. */
 const serverPreference = (): Preference => "dark";
 
-/** Writes the theme where the stylesheet can see it. */
+/**
+ * The page background of each theme, which the browser's own bar and the
+ * phone's status bar take too. Kept in step with --background in globals.css
+ * and with the script in the layout that sets it before anything paints.
+ */
+const THEME_COLOR: Record<Preference, string> = { light: "#ffffff", dark: "#0a0a0a" };
+
+/** Writes the theme where the stylesheet and the browser's bar can see it. */
 function applyTheme(preference: Preference) {
   document.documentElement.dataset.theme = preference;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", THEME_COLOR[preference]);
 }
 
 /**
@@ -66,7 +74,13 @@ function choose(next: Preference) {
   listeners.forEach((listener) => listener());
 }
 
-export function ThemeToggle() {
+/**
+ * The stored choice, applied to the page whenever it changes, here or in
+ * another tab. Mounted for the whole app by ThemeSync, not only where the
+ * buttons are: the buttons live in Setup now, and a second tab that had never
+ * opened Setup kept its old theme while the first one switched.
+ */
+function useThemePreference() {
   const preference = useSyncExternalStore(
     subscribe,
     storedPreference,
@@ -82,8 +96,20 @@ export function ThemeToggle() {
     applyTheme(storedPreference());
   }, [preference]);
 
-  // Both choices are visible, and which one is on does not have to be read off
-  // an icon.
+  return preference;
+}
+
+/** Keeps the page in the chosen theme from anywhere in the app. Draws nothing. */
+export function ThemeSync() {
+  useThemePreference();
+  return null;
+}
+
+export function ThemeToggle() {
+  const preference = useThemePreference();
+
+  // Both choices are visible and named, so which one is on does not have to
+  // be read off an icon. It lives in Setup now, where there is room for words.
   return (
     <div
       role="group"
@@ -96,11 +122,12 @@ export function ThemeToggle() {
           type="button"
           onClick={() => choose(value)}
           aria-pressed={preference === value}
-          aria-label={label}
-          title={label}
-          className="rounded-full p-1.5 text-muted-foreground transition-colors aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm"
+          // Words, unlike the icons these used to be, have to hold 4.5:1 on the
+          // grey track; the muted ink managed 4.35 in the light theme.
+          className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-foreground/70 transition-colors aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm"
         >
-          <Icon className="size-3.5" />
+          <Icon className="size-3.5" aria-hidden="true" />
+          {label}
         </button>
       ))}
     </div>

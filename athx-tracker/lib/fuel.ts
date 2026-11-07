@@ -16,28 +16,34 @@ import { averageTargets, targetsOn } from "./targets.ts";
 export type FuelSpan = "today" | "yesterday" | "week" | "overall";
 export type FuelAthlete = "hippos" | "gators";
 
-/** Null is the whole journal. A bounded span includes both ends. */
-export type FuelWindow = { start: string; end: string } | null;
+/**
+ * The days a span covers, both ends included. A null start is the whole
+ * journal, from each athlete's first entry.
+ */
+export type FuelWindow = { start: string | null; end: string };
 
 const EMPTY: Macros = { calories: 0, protein: 0, carbs: 0, fat: 0 };
 
 /**
- * Today, yesterday, and the seven days ending today. The Monday week on the
- * session panel is a different question (how many times you trained). This one
- * is the food, so it is the days a person means by "the last week".
+ * Today, yesterday, the last seven days, and the whole journal. The Monday
+ * week on the session panel is a different question (how many times you
+ * trained). This one is the food, so it is the days a person means by "the
+ * last week".
+ *
+ * The two averages stop at yesterday. Today is not over: counted in, its
+ * breakfast stood for a whole day's eating and pulled the average down until
+ * dinner, by an eighth on an ordinary morning. Today joins them tomorrow.
  */
 export function fuelWindow(span: FuelSpan, today: string): FuelWindow {
-  if (span === "overall") return null;
+  const yesterday = addDays(today, -1);
   if (span === "today") return { start: today, end: today };
-  if (span === "yesterday") {
-    const day = addDays(today, -1);
-    return { start: day, end: day };
-  }
-  return { start: addDays(today, -6), end: today };
+  if (span === "yesterday") return { start: yesterday, end: yesterday };
+  if (span === "week") return { start: addDays(today, -7), end: yesterday };
+  return { start: null, end: yesterday };
 }
 
 export function inFuelWindow(day: string, window: FuelWindow) {
-  return window === null || (day >= window.start && day <= window.end);
+  return (window.start === null || day >= window.start) && day <= window.end;
 }
 
 /** Whole numbers with thousands separators, independent of the machine locale. */
@@ -196,24 +202,29 @@ export function athleteFuel(
     else burned += kcal;
   }
 
-  const days = spanDays(records, athlete, window, today);
-  let resting: number | null = 0;
-  for (const day of days) {
-    const kcal = restingOn(settings, history, athlete, day);
-    if (kcal === null) {
-      resting = null;
-      break;
+  const days = spanDays(records, athlete, window);
+  // No complete day yet, as on the first day of a journal: nothing to average.
+  let resting: number | null = null;
+  if (days.length) {
+    let sum = 0;
+    let known = true;
+    for (const day of days) {
+      const kcal = restingOn(settings, history, athlete, day);
+      if (kcal === null) {
+        known = false;
+        break;
+      }
+      sum += kcal;
     }
-    resting += kcal;
+    resting = known ? sum / days.length : null;
   }
-  if (resting !== null) resting /= days.length;
 
   return {
     eaten,
     shown: multi ? averageMacros(eaten, daysWithMeals) : eaten,
     dailyTarget: multi
       ? averageTargets(settings, athlete, mealDays)
-      : targetsOn(settings, athlete, window!.start),
+      : targetsOn(settings, athlete, window.end),
     daysWithMeals,
     meals: meals.length,
     burned,
@@ -231,18 +242,14 @@ export function athleteFuel(
  * Every day a span covers. The whole journal starts on the athlete's first
  * entry, so a day before they logged anything is not a day of theirs.
  */
-function spanDays(
-  records: RecordItem[],
-  athlete: FuelAthlete,
-  window: FuelWindow,
-  today: string,
-) {
-  let start = window?.start;
-  const end = window?.end ?? today;
-  if (!start) {
-    start = end;
+function spanDays(records: RecordItem[], athlete: FuelAthlete, window: FuelWindow) {
+  const { end } = window;
+  let start = window.start;
+  if (start === null) {
     for (const record of records)
-      if (record.athlete === athlete && record.day < start) start = record.day;
+      if (record.athlete === athlete && (start === null || record.day < start)) start = record.day;
+    // Nothing logged, or nothing before today: no day of theirs is over yet.
+    if (start === null) return [];
   }
   const days: string[] = [];
   for (let day = start; day <= end; day = addDays(day, 1)) days.push(day);

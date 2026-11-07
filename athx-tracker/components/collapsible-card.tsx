@@ -17,6 +17,7 @@ export function CollapsibleCard({
   heading,
   mini,
   className,
+  defaultOpen = true,
   children,
 }: {
   /** What the toggle names, as in "Collapse Fuel". */
@@ -26,13 +27,18 @@ export function CollapsibleCard({
   /** The one line a folded box keeps. */
   mini: React.ReactNode;
   className?: string;
+  /** Whether the box opens unfolded. Tapping it still opens and folds it. */
+  defaultOpen?: boolean;
   children: React.ReactNode;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(defaultOpen);
   return (
     <section
       data-collapsed={!open || undefined}
       onClick={(event) => {
+        // A calendar opened from the box is drawn elsewhere on the page, but
+        // its clicks still arrive here; they are not taps on the box.
+        if (!event.currentTarget.contains(event.target as Node)) return;
         if ((event.target as Element).closest(OWN_CLICK)) return;
         // Selecting text to copy it is not a request to fold the box.
         if (window.getSelection()?.toString()) return;

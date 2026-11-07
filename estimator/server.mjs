@@ -114,12 +114,57 @@ const COMPLEX_ITEMS = 3;
 // opened showed no nutrition: search, open another, search again, and no turn
 // was left to answer in. The time cap above still bounds a long lookup.
 const MEAL_MAX_TURNS = "10";
+// The most a request may carry, in characters. A reply's description holds
+// the meal, the previous estimate, every correction and the food notes, and
+// a reply also sends each provider's own last answer. The app's test of its
+// largest valid reply holds it to this.
+const BODY_LIMIT = 128_000;
+
+// Grok's switches, from the documentation built into the Grok CLI the image
+// installs (1.0.70). Each model in its built-in catalog starts at high
+// reasoning effort, and every round of a lookup pays for it: one estimate with
+// no tools took about 32 s, and a complex meal ran past the whole 130 s click.
+// A meal asks for low effort through the config overlay, which applies it only
+// "when the model supports it", so a model without that level keeps its own
+// instead of failing. A workout keeps the default: one turn, no tools.
+const GROK_MEAL_CONFIG = JSON.stringify({ models: { default_reasoning_effort: "low" } });
+// Grok also loads Claude Code's and Cursor's setup by default: CLAUDE.md and
+// their rules, skills, MCP servers and hooks. In the stack that is the same
+// HOME the Claude login lives in, and on a laptop it is all of yours. Codex
+// and Claude are already kept off your config, with --ignore-user-config and
+// --strict-mcp-config. false is the value the CLI documents. Cross-session
+// memory is off by default but can be switched on remotely, and one meal must
+// not carry notes into the next.
+const GROK_ISOLATION = {
+  GROK_CLAUDE_RULES_ENABLED: "false",
+  GROK_CLAUDE_SKILLS_ENABLED: "false",
+  GROK_CLAUDE_AGENTS_ENABLED: "false",
+  GROK_CLAUDE_MCPS_ENABLED: "false",
+  GROK_CLAUDE_HOOKS_ENABLED: "false",
+  GROK_CURSOR_RULES_ENABLED: "false",
+  GROK_CURSOR_SKILLS_ENABLED: "false",
+  GROK_CURSOR_AGENTS_ENABLED: "false",
+  GROK_CURSOR_MCPS_ENABLED: "false",
+  GROK_CURSOR_HOOKS_ENABLED: "false",
+  GROK_MEMORY: "0",
+};
+/**
+ * An empty folder outside any repository. Grok takes the nearest .git above
+ * its working folder as the project, and scopes AGENTS.md, skills and git
+ * history to it, which its documentation says can make startup slow. Run from
+ * a checkout, this file's own folder made the whole repository the project.
+ * Made on each call, in case something cleared the temp folder in between.
+ */
+function grokFolder() {
+  const folder = join(tmpdir(), "athx-estimator-grok");
+  mkdirSync(folder, { recursive: true });
+  return folder;
+}
 
 // Codex, then Claude, then Grok. A missing binary or a login that is not there
 // fails quickly and the next provider answers. Whoever is not last still leaves
 // the reserve, so a slow leader cannot spend the whole budget. A complex meal
-// asks all of them at once, waits for them, and keeps Grok's answer: its search
-// is the slow part, and that answer is not thrown out for finishing less sure.
+// asks all of them at once and waits for them: Grok's search is the slow part.
 // ESTIMATOR_ORDER overrides this.
 const ORDER = (process.env.ESTIMATOR_ORDER ?? "codex,claude,grok")
   .split(",")
@@ -218,19 +263,21 @@ const API_KEY_VARS =
 /**
  * Subscription auth only. Every API key is removed before a CLI runs, so this
  * cannot quietly switch to metered per-token billing: with no key to fall back
- * on, a CLI that is not logged in fails loudly instead of charging you.
+ * on, a CLI that is not logged in fails loudly instead of charging you. extra
+ * is a provider's own settings, which a real environment variable still wins
+ * over.
  */
-function childEnv() {
-  const env = { ...process.env };
+function childEnv(extra = {}) {
+  const env = { ...extra, ...process.env };
   for (const key of Object.keys(env)) if (API_KEY_VARS.test(key)) delete env[key];
   return env;
 }
 
-function run(bin, args, timeoutMs, signal) {
+function run(bin, args, timeoutMs, signal, extraEnv) {
   return new Promise((resolve) => {
     // stdin ignored: the CLIs otherwise wait three seconds for piped input.
     const child = spawn(bin, args, {
-      env: childEnv(),
+      env: childEnv(extraEnv),
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       // A Windows npm shim is a .cmd file, which spawn will not start directly.
@@ -264,12 +311,26 @@ function run(bin, args, timeoutMs, signal) {
 /**
  * Grok nests the validated object under structuredOutput, Claude under
  * structured_output, and either will print it bare if asked for text output.
+ * An envelope without either carries the answer as its final text, in result
+ * or text. Grok's plain and json output join every turn's text into that one
+ * string, so after a search the answer follows whatever was said on the way.
  * Take whichever is there; clean() decides whether it is usable.
  */
+function unwrap(value, nested) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const inner = value.structuredOutput ?? value.structured_output;
+  if (inner && typeof inner === "object" && !Array.isArray(inner)) return inner;
+  if (!nested)
+    for (const text of [inner, value.result, value.text]) {
+      const found = typeof text === "string" ? parseCliOutput(text, true) : null;
+      if (found) return found;
+    }
+  return value;
+}
+
 function structured(raw) {
   try {
-    const parsed = JSON.parse(raw);
-    return parsed.structuredOutput ?? parsed.structured_output ?? parsed;
+    return unwrap(JSON.parse(raw));
   } catch {
     return null;
   }
@@ -281,16 +342,23 @@ function structured(raw) {
  * object in the text: the one that ends at its last brace, found by stepping
  * back from brace to brace. The last brace that opens can belong to an object
  * inside it, such as a shared meal's last dish, so that one alone is not it.
+ * nested is the text inside an envelope, which is not opened a second time.
  */
-function parseCliOutput(raw) {
+function parseCliOutput(raw, nested = false) {
   if (typeof raw !== "string" || !raw.trim()) return null;
-  const direct = structured(raw);
-  if (direct && typeof direct === "object" && !Array.isArray(direct)) return direct;
+  const whole = (value) => value && typeof value === "object" && !Array.isArray(value);
+  let direct = null;
+  try {
+    direct = JSON.parse(raw);
+  } catch {
+    // Text around it; looked for below.
+  }
+  if (whole(direct)) return unwrap(direct, nested);
   const end = raw.lastIndexOf("}");
   for (let start = raw.lastIndexOf("{", end); start >= 0; start = raw.lastIndexOf("{", start - 1)) {
     try {
       const parsed = JSON.parse(raw.slice(start, end + 1));
-      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+      return whole(parsed) ? unwrap(parsed, nested) : null;
     } catch {
       // Not a whole object from here; an earlier brace may open it.
     }
@@ -367,14 +435,14 @@ function cleanDishes(value) {
   };
 }
 
-const MEAL_TASK = { schema: SCHEMA, instructions: INSTRUCTIONS, clean, name: "meal", meal: true, settle: (answers, options) => settle(answers, options) };
+const MEAL_TASK = { schema: SCHEMA, instructions: INSTRUCTIONS, clean, name: "meal", meal: true, settle: (answers) => settle(answers) };
 const DISH_TASK = {
   schema: DISH_SCHEMA,
   instructions: DISH_INSTRUCTIONS,
   clean: cleanDishes,
   name: "dishes",
   meal: true,
-  settle: (answers, options) => settleDishes(answers, options),
+  settle: (answers) => settleDishes(answers),
 };
 const PROVIDERS = {
   codex: {
@@ -404,14 +472,21 @@ const PROVIDERS = {
   },
   grok: {
     bin: () => GROK_BIN,
+    env: (task = MEAL_TASK) => ({
+      ...GROK_ISOLATION,
+      ...(task.meal === true ? { GROK_CONFIG: GROK_MEAL_CONFIG } : {}),
+    }),
     args: (description, task = MEAL_TASK) => {
-      // web_search is already allowed under dontAsk. WebFetch is not, so a meal
-      // names it. The tool ids are web_search and web_fetch; the display names
-      // do not restrict the tool list. A workout keeps both off.
+      // A meal gets web_search alone. It opens a page as well as searching,
+      // and it never asks for approval, dontAsk included. web_fetch is off
+      // unless the CLI is told otherwise, and it runs here rather than at
+      // xAI, so where it is on, every page fetched costs another whole round
+      // of the model. The tool ids are web_search and web_fetch; the display
+      // names do not restrict the tool list. A workout has neither.
       const meal = task.meal === true;
       return [
       "--cwd",
-      here,
+      grokFolder(),
       "--no-subagents",
       "--no-plan",
       "--permission-mode",
@@ -419,7 +494,7 @@ const PROVIDERS = {
       "--max-turns",
       meal ? MEAL_MAX_TURNS : "1",
       ...(meal
-        ? ["--tools", "web_search,web_fetch", "--allow", "WebFetch"]
+        ? ["--tools", "web_search"]
         : ["--tools", "", "--disable-web-search"]),
       "--system-prompt-override",
       task.instructions,
@@ -495,19 +570,24 @@ function shorten(text, max) {
 }
 
 /**
- * Who the average starts from. High is a looked-up label: the exact calories,
- * so only those answers count, and keep does not pull a guess back in.
- * Otherwise the best footing wins, plus anyone named in keep. A complex meal
- * keeps Grok when nobody found a label, so a search that came back less sure
- * still counts.
+ * How much more a surer answer counts than its weight alone says: a label
+ * found counts double, a reference value as it is, and a product not found or
+ * extrapolated half. Each weight is multiplied by this before the shares are
+ * worked out, so answers on the same footing share as WEIGHTS do, and
+ * otherwise share moves from the less sure to the surer. The app's box uses
+ * the same, as CONFIDENCE_FACTOR in lib/estimate-blend.ts.
  */
-function kept(answers, keep = []) {
-  const exact = answers.filter(({ estimate }) => estimate.confidence === "high");
-  if (exact.length) return exact;
-  const best = Math.max(...answers.map(({ estimate }) => RANK[estimate.confidence]));
-  return answers.filter(
-    ({ estimate, provider }) => RANK[estimate.confidence] === best || keep.includes(provider),
-  );
+const CONFIDENCE_FACTOR = { low: 0.5, medium: 1, high: 2 };
+const counts = ({ provider, estimate }) => WEIGHTS[provider] * CONFIDENCE_FACTOR[estimate.confidence];
+
+/**
+ * Who the average starts from: everyone, except that when two or more found
+ * the label, an answer that could not find the product is left out. Anyone
+ * else less sure stays in and counts for less.
+ */
+function kept(answers) {
+  const labels = answers.filter(({ estimate }) => estimate.confidence === "high").length;
+  return labels >= 2 ? answers.filter(({ estimate }) => estimate.confidence !== "low") : answers;
 }
 
 /** One phrase for the header. Same footing stays "each low confidence". */
@@ -515,42 +595,40 @@ function footing(list) {
   const [first] = list;
   return list.every(({ estimate }) => estimate.confidence === first.estimate.confidence)
     ? `each ${first.estimate.confidence} confidence`
-    : list.map(({ provider, estimate }) => `${title(provider)} ${estimate.confidence} confidence`).join(", ");
+    : `${list.map(({ provider, estimate }) => `${title(provider)} ${estimate.confidence} confidence`).join(", ")}, a high answer counting double its weight and a low one half`;
 }
 
 /**
- * The best-sourced answer wins, so a label one of them found is never diluted
- * by another's guess. A label is never diluted, even by a provider keep names.
- * Answers on the same footing are averaged by WEIGHTS, each figure over the
- * answers that gave it more than 0: a 0 beside real figures is one left out,
- * not one measured. Each one's working is kept, inside the 3000 characters the
- * app holds for assumptions. keep names a provider that still counts when it
- * is less sure and nobody found a label.
+ * The kept answers averaged by WEIGHTS times CONFIDENCE_FACTOR, each figure
+ * over the answers that gave it more than 0: a 0 beside real figures is one
+ * left out, not one measured. The name is the answer that counts for most.
+ * Each one's working is kept, inside the 3000 characters the app holds for
+ * assumptions.
  */
-function settle(answers, { keep = [] } = {}) {
-  const top = kept(answers, keep);
+function settle(answers) {
+  const top = kept(answers);
   if (top.length === 1) return top[0];
 
-  const weight = (list) => list.reduce((sum, { provider }) => sum + WEIGHTS[provider], 0);
+  const weight = (list) => list.reduce((sum, answer) => sum + counts(answer), 0);
   const mean = (key) => {
     const given = top.filter(({ estimate }) => estimate[key] > 0);
     return given.length
-      ? given.reduce((sum, { estimate, provider }) => sum + estimate[key] * WEIGHTS[provider], 0) /
-          weight(given)
+      ? given.reduce((sum, answer) => sum + answer.estimate[key] * counts(answer), 0) / weight(given)
       : 0;
   };
   const macros = Object.fromEntries(
     ["calories", "protein", "carbs", "fat", "fiber", "alcohol"].map((key) => [key, mean(key)]),
   );
   const shares = top.map(
-    ({ provider }) => `${title(provider)} ${Math.round((WEIGHTS[provider] / weight(top)) * 100)}%`,
+    (answer) => `${title(answer.provider)} ${Math.round((counts(answer) / weight(top)) * 100)}%`,
   );
   const confidence = weakest(top.map(({ estimate }) => estimate.confidence));
   const header = `Weighted average of ${shares.slice(0, -1).join(", ")} and ${shares.at(-1)}, ${footing(top)}. A 0 is left out of that figure's average.`;
   const room = Math.floor((3000 - header.length) / top.length) - 2;
+  const lead = top.reduce((best, answer) => (counts(answer) > counts(best) ? answer : best));
   return {
     estimate: clean({
-      name: top[0].estimate.name,
+      name: lead.estimate.name,
       ...macros,
       // Fiber is averaged over fewer answers than carbs can be, so it is held
       // to them.
@@ -570,39 +648,41 @@ function settle(answers, { keep = [] } = {}) {
 
 /**
  * A shared meal settled dish by dish, by the same rule as a whole one: the
- * best-sourced answers win, and those on the same footing are averaged by
- * WEIGHTS, each figure over the answers that gave it more than 0. A dish is
- * averaged with the dish in the same place in the others, so only answers
- * that split the meal into as many dishes as the best-weighted one are
- * averaged; one that split it another way is left out, and the meal's
- * assumptions say so. Each dish keeps every answer's working for it, and the
- * totals are the dishes added up. keep is the same as for a whole meal.
+ * same answers are kept, and each dish is averaged by WEIGHTS times that
+ * answer's confidence for that dish, each figure over the answers that gave
+ * it more than 0. A dish is averaged with the dish in the same place in the
+ * others, so only answers that split the meal into as many dishes as the one
+ * that counts for most are averaged; one that split it another way is left
+ * out, and the meal's assumptions say so. Each dish keeps every answer's
+ * working for it, and the totals are the dishes added up.
  */
-function settleDishes(answers, { keep = [] } = {}) {
-  const top = kept(answers, keep);
+function settleDishes(answers) {
+  const top = kept(answers);
   if (top.length === 1) return top[0];
-  const [lead] = [...top].sort((a, b) => WEIGHTS[b.provider] - WEIGHTS[a.provider]);
+  const [lead] = [...top].sort((a, b) => counts(b) - counts(a));
   const same = top.filter(({ estimate }) => estimate.dishes.length === lead.estimate.dishes.length);
   const apart = top.filter((answer) => !same.includes(answer));
   if (same.length === 1) return lead;
 
-  const weight = (list) => list.reduce((sum, { provider }) => sum + WEIGHTS[provider], 0);
+  // Each answer for one dish counts by its weight and its confidence there.
+  const weigh = ({ value, provider }) => counts({ provider, estimate: value });
+  const weight = (list) => list.reduce((sum, item) => sum + weigh(item), 0);
   const mean = (list, key) => {
     const given = list.filter(({ value }) => value[key] > 0);
     return given.length
-      ? given.reduce((sum, { value, provider }) => sum + value[key] * WEIGHTS[provider], 0) / weight(given)
+      ? given.reduce((sum, item) => sum + item.value[key] * weigh(item), 0) / weight(given)
       : 0;
   };
   const shares = (list) => {
     const named = list.map(
-      ({ provider }) => `${title(provider)} ${Math.round((WEIGHTS[provider] / weight(list)) * 100)}%`,
+      (item) => `${title(item.provider)} ${Math.round((weigh(item) / weight(list)) * 100)}%`,
     );
     return `${named.slice(0, -1).join(", ")} and ${named.at(-1)}`;
   };
   const dishes = lead.estimate.dishes.map((dish, index) => {
     const each = same.map(({ estimate, provider }) => ({ value: estimate.dishes[index], provider }));
     const macros = Object.fromEntries(FIGURES.map((key) => [key, mean(each, key)]));
-    const header = `Weighted average of ${shares(same)}.`;
+    const header = `Weighted average of ${shares(each)}.`;
     const room = Math.floor((3000 - header.length) / each.length) - 2;
     return {
       name: dish.name,
@@ -622,7 +702,8 @@ function settleDishes(answers, { keep = [] } = {}) {
   const left = apart.length
     ? ` ${apart.map(({ provider }) => title(provider)).join(" and ")} split the meal into a different number of dishes, so ${apart.length > 1 ? "they are" : "it is"} left out.`
     : "";
-  const header = `Weighted average of ${shares(same)}, dish by dish, ${footing(same)}. A 0 is left out of that figure's average.${left}`;
+  // The meal's shares are each answer's whole-meal footing; each dish says its own.
+  const header = `Weighted average of ${shares(same.map(({ estimate, provider }) => ({ value: estimate, provider })))}, dish by dish, ${footing(same)}. A 0 is left out of that figure's average.${left}`;
   const notes = same.filter(({ estimate }) => estimate.assumptions);
   const room = notes.length ? Math.floor((3000 - header.length) / notes.length) - 2 : 0;
   const settled = cleanDishes({
@@ -667,44 +748,105 @@ function either(...signals) {
 }
 
 /**
+ * Why a run gave nothing. A timeout adds the last line the CLI printed, when it
+ * printed one, since "timed out" alone cannot tell a run still searching from
+ * one stuck behind a rate limit or a sign-in. That reaches the form too.
+ */
+function failure({ code, out, err, timedOut }, sliceMs) {
+  if (!timedOut) return `exit ${code} ${(err || out).slice(0, 160).trim()}`;
+  const last = (text) =>
+    String(text ?? "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean).at(-1) ?? "";
+  const said = (last(err) || last(out)).slice(0, 160);
+  return `timed out after ${Math.round(sliceMs / 1000)} s${said ? `, last said: ${said}` : ""}`;
+}
+
+/**
+ * How long one provider may run. In order, whoever is not last leaves the
+ * reserve behind and nobody passes the cap. Asked together, nobody is after
+ * them, so each may use whatever the caller left: on a complex meal the cap
+ * held 40 s of a click's 130 s back for a fallback that never runs, and could
+ * cut Grok's search, the slow one, off at 90 s while that time went unused.
+ */
+function providerSlice(remaining, { meal, isLast, together = false }) {
+  if (together) return remaining;
+  return budgetSlice(
+    remaining,
+    isLast,
+    meal ? MEAL_PROVIDER_MS : PER_PROVIDER_MS,
+    meal ? MEAL_RESERVE_MS : RESERVE_MS,
+  );
+}
+
+/**
+ * What one provider is asked. A reply's description carries the meal's
+ * previousEstimate, the average on the form. Given that same average, all
+ * three applied the same correction to it and came back with the same
+ * figures, so the average of a reply was one answer three times. When the
+ * caller sends each provider's own last answer, that provider continues from
+ * its own instead, and the three stay three estimates. Anything else is the
+ * description as it came.
+ */
+function describedFor(description, previousEstimates, name) {
+  const own = previousEstimates?.[name];
+  if (!own || typeof own !== "object" || Array.isArray(own)) return description;
+  let parsed;
+  try {
+    parsed = JSON.parse(description);
+  } catch {
+    return description;
+  }
+  if (!parsed || typeof parsed !== "object" || !Object.hasOwn(parsed, "previousEstimate")) return description;
+  return JSON.stringify({ ...parsed, previousEstimate: own });
+}
+
+/**
  * signal is the caller hanging up: every CLI still running is stopped, and
  * nobody else is asked. onAnswer hears each usable answer the moment it lands,
  * before it is settled with the others, so a caller can show it while the rest
- * are still working.
+ * are still working. onMiss hears each one that was asked and gave nothing,
+ * and why. Otherwise that reason only ever reached the log whenever somebody
+ * else answered, so a provider could fail on every meal without the screen
+ * ever saying so. previousEstimates is each provider's own last answer, for a
+ * reply; see describedFor.
  */
-async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK, { signal, onAnswer } = {}) {
+async function estimate(
+  description,
+  budgetMs = BUDGET_MS,
+  task = MEAL_TASK,
+  { signal, onAnswer, onMiss, previousEstimates } = {},
+) {
   const deadline = Date.now() + budgetMs;
   const tried = [];
   const meal = task.meal === true;
+  const miss = (name, why) => {
+    tried.push(`${name}: ${why}`);
+    onMiss?.({ provider: name, detail: why });
+  };
 
-  async function ask(name, isLast, stop) {
+  async function ask(name, isLast, stop, together = false) {
     if (signal?.aborted) return null;
     const provider = PROVIDERS[name];
     if (!provider) return null;
     const bin = provider.bin();
     if (!bin) {
-      tried.push(`${name}: no binary found`);
+      miss(name, "no binary found");
       return null;
     }
 
     // Hold time back for whoever is next, so a slow leader cannot eat the lot.
-    const slice = budgetSlice(
-      deadline - Date.now(),
-      isLast,
-      meal ? MEAL_PROVIDER_MS : PER_PROVIDER_MS,
-      meal ? MEAL_RESERVE_MS : RESERVE_MS,
-    );
+    const slice = providerSlice(deadline - Date.now(), { meal, isLast, together });
     if (slice < 4000) {
-      tried.push(`${name}: skipped, out of time`);
+      miss(name, "skipped, out of time");
       return null;
     }
 
     const started = Date.now();
     const { code, out, err, timedOut } = await run(
       bin,
-      provider.args(description, task),
+      provider.args(describedFor(description, previousEstimates, name), task),
       slice,
       either(stop, signal),
+      provider.env?.(task),
     );
     const value = task.clean(parseCliOutput(out));
     if (value) {
@@ -716,10 +858,8 @@ async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK, { s
     // Stopped because another found the label, or because the caller left,
     // which is not a failure.
     if (stop?.aborted || signal?.aborted) return null;
-    const why = timedOut
-      ? `timed out after ${slice}ms`
-      : `exit ${code} ${(err || out).slice(0, 160).trim()}`;
-    tried.push(`${name}: ${why}`);
+    const why = failure({ code, out, err, timedOut }, slice);
+    miss(name, why);
     console.warn(`[estimator] ${name} failed (${why})`);
     return null;
   }
@@ -732,7 +872,7 @@ async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK, { s
     const stop = new AbortController();
     const answers = await Promise.all(
       names.map(async (name) => {
-        const answer = await ask(name, true, finish ? undefined : stop.signal);
+        const answer = await ask(name, true, finish ? undefined : stop.signal, true);
         if (!finish && answer?.estimate.confidence === "high") stop.abort();
         return answer;
       }),
@@ -742,9 +882,9 @@ async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK, { s
 
   if (meal && complex(description)) {
     const given = await together(ORDER, { finish: true });
-    // A label is the exact calories, so kept() leaves the guesses out. When
-    // nobody found one, Grok's search still counts even if it came back less sure.
-    if (given.length) return task.settle(given, { keep: ["grok"] });
+    // Everyone counts, by weight and confidence, unless two found the label,
+    // when an answer that could not find the product is left out.
+    if (given.length) return task.settle(given);
   } else {
     for (const [index, name] of ORDER.entries()) {
       if (signal?.aborted) break;
@@ -990,13 +1130,14 @@ const server = createServer((request, response) => {
     if (!response.writableFinished) gone.abort();
   });
 
-  // Meal follow-ups include the previous estimate and earlier corrections.
-  // Decode across chunk boundaries so longer descriptions preserve Unicode too.
+  // Meal follow-ups include the previous estimate and earlier corrections,
+  // and each provider's own last answer as well. Decode across chunk
+  // boundaries so longer descriptions preserve Unicode too.
   request.setEncoding("utf8");
   let body = "";
   request.on("data", (chunk) => {
     body += chunk;
-    if (body.length > 64000) request.destroy();
+    if (body.length > BODY_LIMIT) request.destroy();
   });
   request.on("end", async () => {
     let description = "";
@@ -1004,6 +1145,7 @@ const server = createServer((request, response) => {
     let task = MEAL_TASK;
     let context = "";
     let streaming = false;
+    let previousEstimates;
     try {
       const parsed = JSON.parse(body);
       description = String(parsed.description ?? "").trim();
@@ -1022,6 +1164,14 @@ const server = createServer((request, response) => {
       // older estimator ignores the ask and answers for the whole meal, which
       // the app takes as one dish.
       if (task === MEAL_TASK && parsed.dishes === true) task = DISH_TASK;
+      // A reply's own last answer for each provider, by name. Only a meal
+      // continues one, and only an object of objects is taken.
+      const own = parsed.previousEstimates;
+      if (task.meal && own && typeof own === "object" && !Array.isArray(own))
+        previousEstimates = Object.fromEntries(
+          Object.entries(own).filter(([name, value]) =>
+            Object.hasOwn(PROVIDERS, name) && value && typeof value === "object" && !Array.isArray(value)),
+        );
       // Clamped, so a caller cannot pin a CLI open or starve one at birth.
       const requested = Number(parsed.budgetMs);
       if (Number.isFinite(requested))
@@ -1047,8 +1197,13 @@ const server = createServer((request, response) => {
       };
       const result = await estimate(description, budget, task, {
         signal: gone.signal,
+        previousEstimates,
         onAnswer: ({ estimate: answer, provider }) =>
           line({ type: "partial", provider, estimate: answer }),
+        // One that was asked and gave nothing says why, even when the others
+        // answered. An app from before this line skips a type it does not know.
+        onMiss: ({ provider, detail }) =>
+          line({ type: "missed", provider, detail: String(detail).slice(0, 300) }),
       });
       if (gone.signal.aborted) return response.end();
       if (result.error) {
@@ -1058,7 +1213,7 @@ const server = createServer((request, response) => {
       return response.end();
     }
 
-    const result = await estimate(context + description, budget, task, { signal: gone.signal });
+    const result = await estimate(context + description, budget, task, { signal: gone.signal, previousEstimates });
     if (gone.signal.aborted) return response.end();
     if (result.error) {
       console.error(`[estimator] all providers failed: ${result.error}`);
@@ -1085,6 +1240,7 @@ const runDirectly =
   process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 
 export {
+  BODY_LIMIT,
   DISH_INSTRUCTIONS,
   DISH_SCHEMA,
   DISH_TASK,
@@ -1097,8 +1253,11 @@ export {
   clean,
   cleanDishes,
   complex,
+  describedFor,
   estimate,
+  failure,
   parseCliOutput,
+  providerSlice,
   settle,
   settleDishes,
   structured,

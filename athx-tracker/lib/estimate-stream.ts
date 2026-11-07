@@ -10,10 +10,13 @@ export const NDJSON = "application/x-ndjson";
 
 export type EstimateEvent =
   | { type: "partial"; provider: Exclude<Estimator, "average">; estimate: MealEstimate }
+  // One that was asked and gave nothing, and why, while the others may answer.
+  | { type: "missed"; provider: Exclude<Estimator, "average">; detail: string }
   | { type: "done"; provider?: Estimator; estimate: MealEstimate }
   | { type: "error"; status: number; error: string };
 
 export type PartialEstimate = Extract<EstimateEvent, { type: "partial" }>;
+export type MissedEstimate = Extract<EstimateEvent, { type: "missed" }>;
 
 export const UNUSABLE = {
   type: "error",
@@ -82,6 +85,9 @@ export async function* relayEstimate(
         const checked = valid(estimate);
         if (checked && named && named !== "average")
           yield { type: "partial", provider: named, estimate: checked };
+      } else if (type === "missed") {
+        if (named && named !== "average")
+          yield { type: "missed", provider: named, detail: typeof detail === "string" ? detail.slice(0, 300) : "" };
       } else if (type === "done") {
         const checked = valid(estimate);
         yield checked ? { type: "done", estimate: checked, ...(named ? { provider: named } : {}) } : UNUSABLE;
@@ -122,6 +128,7 @@ function failure(text: string, status: number) {
 export async function readEstimate(
   response: Response,
   onPartial?: (partial: PartialEstimate) => void,
+  onMissed?: (missed: MissedEstimate) => void,
 ): Promise<Settled> {
   if (!response.headers.get("content-type")?.includes(NDJSON) || !response.body) {
     const data = (await response.json().catch(() => null)) as (Settled & { error?: string }) | null;
@@ -136,6 +143,7 @@ export async function readEstimate(
       continue;
     }
     if (event.type === "partial") onPartial?.(event);
+    else if (event.type === "missed") onMissed?.(event);
     else if (event.type === "done") return { estimate: event.estimate, ...(event.provider ? { provider: event.provider } : {}) };
     else if (event.type === "error") throw failure(event.error, event.status);
   }

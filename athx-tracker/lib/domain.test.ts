@@ -22,6 +22,7 @@ import {
   fromMetres,
   toMetres,
   parseTime,
+  typedClock,
   projectWorkout,
   scenarioLine,
   sumMacros,
@@ -315,6 +316,11 @@ test("only Other takes a typed burn", () => {
     assert.equal(categoryShape(category).takesKcal, category === "Other", category);
 });
 
+test("every category but MetCon takes a goal time", () => {
+  for (const category of CATEGORIES)
+    assert.equal(categoryShape(category).takesGoal, category !== "MetCon", category);
+});
+
 test("only the run category is treated as a run", () => {
   for (const category of CATEGORIES) {
     assert.equal(categoryShape(category).isRun, category === "Endurance", category);
@@ -458,4 +464,23 @@ test("macros add up and start from zero", () => {
   assert.deepEqual(sumMacros(meals), { calories: 350, protein: 40, carbs: 30, fat: 17 });
   // A fresh accumulator each call, not one shared between them.
   assert.deepEqual(sumMacros([]), { calories: 0, protein: 0, carbs: 0, fat: 0 });
+});
+
+test("a time box takes digits from a number pad and puts the colon in", () => {
+  assert.equal(typedClock("2"), "2");
+  assert.equal(typedClock("25"), "25");
+  assert.equal(typedClock("253"), "2:53");
+  assert.equal(typedClock("2530"), "25:30");
+  assert.equal(typedClock("9000"), "90:00");
+  // A colon typed on a keyboard, or one already there, comes out the same.
+  assert.equal(typedClock("25:30"), "25:30");
+  assert.equal(typedClock("1:05"), "1:05");
+  // Leading zeros go from the minutes, and the seconds keep theirs.
+  assert.equal(typedClock("0530"), "5:30");
+  assert.equal(typedClock("030"), "0:30");
+  assert.equal(typedClock("005"), "0:05");
+  // Four digits of minutes is the most a time holds.
+  assert.equal(typedClock("12345678"), "1234:56");
+  assert.equal(typedClock(""), "");
+  for (const text of ["2530", "253", "0530", "9000"]) assert.ok(Number.isFinite(parseTime(typedClock(text))));
 });

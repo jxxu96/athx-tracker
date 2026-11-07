@@ -6,6 +6,7 @@ import { ESTIMATORS, type Meal } from "@/lib/domain";
 import type { PartialEstimate } from "@/lib/estimate-stream";
 import {
   ANSWER_ORDER,
+  CONFIDENCE_FACTOR,
   blendEstimates,
   type AnswerProvider,
   type EstimateWeights,
@@ -91,9 +92,10 @@ function FigureBox({
 /**
  * Each estimator's figures and how much it counts, at the top of the meal:
  * the macros alone, which you can type over, and a slider for its weight.
- * The share is the one the average gives it: its weight over the weights of
- * whoever is included, or an even share when those are all 0. Moving a
- * slider or changing a figure reweighs the meal at once, and the weight is
+ * The share is the one the average gives it: its weight times its confidence,
+ * over the same for whoever is included. When every included weight is 0 they
+ * count equally before their confidence. Moving a slider or changing a
+ * figure reweighs the meal at once, and the weight is
  * this phone's default for the next meal too. A 0 a figure was given is
  * still left out of that figure's average, as the estimator leaves it out.
  */
@@ -119,9 +121,18 @@ export function EstimatorWeights({
     (a, b) => ANSWER_ORDER.indexOf(a.provider) - ANSWER_ORDER.indexOf(b.provider),
   );
   const counted = shown.filter((answer) => included.includes(answer.provider));
-  const mass = counted.reduce((sum, answer) => sum + Math.max(weights[answer.provider], 0), 0);
-  const share = (provider: AnswerProvider) =>
-    mass > 0 ? Math.max(weights[provider], 0) / mass : 1 / Math.max(counted.length, 1);
+  const weightOf = (provider: AnswerProvider) => {
+    const value = weights[provider];
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  };
+  const any = counted.some((answer) => weightOf(answer.provider) > 0);
+  const weighed = (answer: (typeof counted)[number]) =>
+    (any ? weightOf(answer.provider) : 1) * CONFIDENCE_FACTOR[answer.estimate.confidence];
+  const mass = counted.reduce((sum, answer) => sum + weighed(answer), 0);
+  const share = (provider: AnswerProvider) => {
+    const answer = counted.find((each) => each.provider === provider);
+    return answer && mass > 0 ? weighed(answer) / mass : 0;
+  };
   const blended = counted.length > 1 ? blendEstimates(counted, weights)?.estimate : null;
   const figures = sitting === "Alcohol" ? [...FIGURES, ETHANOL] : FIGURES;
   return (

@@ -149,7 +149,7 @@ function relay(body: ReadableStream<Uint8Array>, bucket: string, upstream: Abort
         const { value, done } = await events.next();
         if (left) return;
         if (done) return controller.close();
-        if (value.type !== "partial") settle(value.type === "error");
+        if (value.type === "done" || value.type === "error") settle(value.type === "error");
         controller.enqueue(encoder.encode(`${JSON.stringify(value)}\n`));
       },
       async cancel() {
@@ -223,6 +223,13 @@ export async function POST(request: Request) {
                   // ask and answers for the whole meal, which the form takes
                   // as one dish.
                   ...(dishes ? { dishes: true } : {}),
+                  // A reply: each estimator's own last answer, which it
+                  // continues from in place of the average in the
+                  // description. An older estimator ignores it and gives
+                  // everyone the average, as before.
+                  ...(input.refinement?.byEstimator
+                    ? { previousEstimates: input.refinement.byEstimator }
+                    : {}),
                 }
               : grokRequest(description, config.XAI_MODEL || "grok-4.7", { dishes }),
           ),

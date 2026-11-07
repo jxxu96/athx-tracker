@@ -2,7 +2,7 @@ import { ATHLETES, ESTIMATORS, type Estimator, type Macros, type Meal } from "./
 import type { MealEstimate } from "./estimate-conversation.ts";
 import type { MealDraftIds } from "./meal-fanout.ts";
 import { bothOf, isText, oneOf, textOf } from "./drafts.ts";
-import { splitDishText } from "./dish-split.ts";
+import { withoutShares, writtenDishes, readDishShare, type WrittenDish, type WrittenShare } from "./dish-split.ts";
 
 /*
  * A meal the two of you shared, written down dish by dish. Each dish has its
@@ -174,6 +174,70 @@ export function slideShare(dish: DishDraft, value: number): DishDraft {
   return setShare(dish, "hippos", String(Math.round(percent * 10000) / 10000));
 }
 
+/**
+ * A share written with a dish, as the two boxes show it. Written for one of
+ * you, the other has the rest, as typing it into the box would give; written
+ * for both, each box says what was written, so two that do not make 100 are
+ * pointed out on saving rather than quietly changed.
+ */
+export function shareText(share: WrittenShare): Record<Eater, string> {
+  const { hippos, gators } = share;
+  if (hippos !== undefined && gators !== undefined) return { hippos: String(hippos), gators: String(gators) };
+  const eater: Eater = hippos !== undefined ? "hippos" : "gators";
+  return setShare(emptyDish(""), eater, String(share[eater] ?? 50)).share;
+}
+
+/**
+ * A dish whose name has a share written in it, with the share taken into the
+ * boxes. A share in pieces is of the count in the quantity box, if there is
+ * one, and otherwise fills it in, so each of you reads as "5.5 of 8 pc".
+ */
+export function takeWrittenShare(dish: DishDraft): DishDraft {
+  const { name, share, quantity } = readDishShare(dish.name, readQuantity(dish.quantity)?.amount);
+  if (!share) return dish;
+  return { ...dish, name, share: shareText(share), ...(quantity && !dish.quantity.trim() ? { quantity } : {}) };
+}
+
+const wordsOf = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+const within = (some: string[], all: string[]) => some.length > 0 && some.every((word) => all.includes(word));
+/** Two written shares that come to the same split, however each was written: "70% h" is "30% g". */
+function sameShare(a: WrittenShare, b: WrittenShare) {
+  const [one, two] = [shareText(a), shareText(b)];
+  return one.hippos === two.hippos && one.gators === two.gators;
+}
+
+/**
+ * What was written for the dish an estimate came back with. The estimate
+ * keeps the dishes as they were written where it can, so when it gives as
+ * many, each takes what was written in its place. When it split or joined
+ * some, a dish takes what was written with the same name, or the share
+ * written with a name that holds it or that it holds: "burger fries (70% h)"
+ * split in two gives each 70%, and "3 blue crabs, fried with scallion (70% g)",
+ * which the phone cut at the comma and the estimate joined again, takes the
+ * 70% written at its end. Dishes joined from different shares get none. A
+ * count of pieces goes only where the dish is the one that was counted.
+ */
+function writtenFor(name: string, index: number, count: number, written: readonly WrittenDish[]): Omit<WrittenDish, "name"> {
+  if (count === written.length) return written[index];
+  const words = wordsOf(name);
+  const same = written.find((dish) => wordsOf(dish.name).join(" ") === words.join(" "));
+  if (same) return same;
+  const shares = written
+    .filter((dish) => within(words, wordsOf(dish.name)) || within(wordsOf(dish.name), words))
+    .flatMap((dish) => (dish.share ? [dish.share] : []));
+  return { share: shares.length && shares.every((share) => sameShare(share, shares[0])) ? shares[0] : null };
+}
+
+/** Dishes shared the way the description said, where it said; the rest stay as they were. */
+export function shareAsWritten(drafts: DishDraft[], written: readonly WrittenDish[]): DishDraft[] {
+  if (!written.some((dish) => dish.share)) return drafts;
+  return drafts.map((draft, index) => {
+    const { share, quantity } = writtenFor(draft.name, index, drafts.length, written);
+    if (!share) return draft;
+    return { ...draft, share: shareText(share), ...(quantity && !draft.quantity.trim() ? { quantity } : {}) };
+  });
+}
+
 /** A figure typed into. An estimate's figures stop being the estimate's once one is changed. */
 export function setFigure(dish: DishDraft, figure: Figure, text: string): DishDraft {
   const edited = dish.source === "grok";
@@ -205,11 +269,14 @@ export function fillDish(dish: DishDraft, estimate: MealEstimate, provider?: Est
 /**
  * How the phone cut a description into dishes, sent with its estimate so the
  * estimator keeps that cut where it can, and every estimator asked cuts it
- * the same way. Never more than the server takes.
+ * the same way. The shares written with them are left off: they are not food.
+ * Never more than the server takes.
  */
 export function dishHint(text: string) {
-  const parts = splitDishText(text, DISH_LIMIT);
-  return parts.length && parts.join("").length <= DISH_TEXT_LIMIT ? parts : [text.slice(0, DISH_TEXT_LIMIT)];
+  const parts = writtenDishes(text, DISH_LIMIT).map((dish) => dish.name);
+  if (parts.length && parts.join("").length <= DISH_TEXT_LIMIT) return parts;
+  const whole = withoutShares(text).trim().slice(0, DISH_TEXT_LIMIT);
+  return whole ? [whole] : [];
 }
 
 /**

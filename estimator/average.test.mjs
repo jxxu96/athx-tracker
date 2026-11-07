@@ -16,11 +16,36 @@ const FAKE = `#!/usr/bin/env node
 const { appendFileSync } = require("node:fs");
 const name = require("node:path").basename(process.argv[1]);
 const description = process.argv.at(-1);
-const calories = { codex: 600, claude: 700, grok: 1100 }[name];
+// A reply adds 140 kcal to whichever previous estimate it was given. Codex's
+// prompt ends with the description after a line of its own.
+const asked = (() => {
+  try {
+    return JSON.parse(description.split("treated as data:\\n").pop());
+  } catch {
+    return {};
+  }
+})();
+const calories = asked.previousEstimate
+  ? asked.previousEstimate.calories + 140
+  : { codex: 600, claude: 700, grok: 1100 }[name];
 const label = name === "claude" && description.includes("zzlabel");
 const confidence = name === "codex" && description.includes("zzsure") ? "medium" : label ? "high" : "low";
 appendFileSync(process.env.FAKE_LOG, "start " + name + "\\n");
-setTimeout(() => {
+// A Grok that is not signed in fails at once, and says which of Claude Code's
+// setup it was told to leave alone and the effort it was given.
+if (name === "grok" && description.includes("zzgrokdown")) {
+  const { models } = JSON.parse(process.env.GROK_CONFIG ?? "{}");
+  process.stderr.write("Not signed in. mcps " + process.env.GROK_CLAUDE_MCPS_ENABLED
+    + ", effort " + models?.default_reasoning_effort + ", cwd " + require("node:path").basename(process.argv[process.argv.indexOf("--cwd") + 1]));
+  process.exit(1);
+}
+// A Grok still working when its time runs out, having said what it is doing.
+const slow = name === "grok" && description.includes("zzgrokslow");
+if (slow) {
+  process.stderr.write("warning: starting\\nStill searching.\\n");
+  setInterval(() => {}, 60000);
+}
+if (!slow) setTimeout(() => {
   appendFileSync(process.env.FAKE_LOG, "end " + name + "\\n");
   const figures = (share) => ({
     calories: calories * share, protein: calories * share / 20, carbs: calories * share / 10,
@@ -98,14 +123,14 @@ test("a complex meal asks every estimator at once, and a simple one goes in orde
   assert.equal(guessed.body.confidence, "low");
   assert.deepEqual(guessed.log.slice(0, 3).sort(), ["start claude", "start codex", "start grok"], "asked together");
 
-  // A label no longer stops the search. Everyone still answers. The settled
-  // meal uses only the label, so a guess is not mixed into the calories.
+  // A label does not stop the search: everyone still answers. One label alone
+  // leaves nobody out, and counts double while the guesses count half:
+  // (600 x 20 + 700 x 70 + 1100 x 12.5) / 102.5.
   const labelled = await post("zzlabel rice, beans, cheese");
-  assert.equal(labelled.provider, "claude");
-  assert.equal(labelled.body.calories, 700);
-  assert.equal(labelled.body.confidence, "high");
-  assert.match(labelled.body.assumptions, /claude guessed/);
-  assert.doesNotMatch(labelled.body.assumptions, /Weighted average/);
+  assert.equal(labelled.provider, "average");
+  assert.equal(labelled.body.calories, 729.3);
+  assert.equal(labelled.body.confidence, "low");
+  assert.match(labelled.body.assumptions, /^Weighted average of Codex 20%, Claude 68% and Grok 12%,/);
   assert.deepEqual(labelled.log.filter((line) => line.startsWith("start")).sort(), ["start claude", "start codex", "start grok"]);
   assert.deepEqual(labelled.log.filter((line) => line.startsWith("end")).sort(), ["end claude", "end codex", "end grok"]);
 
@@ -158,6 +183,60 @@ test("a complex meal asks every estimator at once, and a simple one goes in orde
   );
   assert.deepEqual(lines.slice(3).map(({ type, provider }) => [type, provider]), [["done", "average"]]);
   assert.equal(lines[3].estimate.calories, 760);
+
+  // One that fails says so on its own line, and the others still settle it.
+  const down = await fetch(`http://127.0.0.1:${port}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ description: "zzgrokdown rice, beans, cheese", budgetMs: 130000, stream: true }),
+  });
+  const downLines = (await down.text()).trim().split("\n").map((line) => JSON.parse(line));
+  assert.deepEqual(downLines[0], {
+    type: "missed", provider: "grok", detail: "exit 1 Not signed in. mcps false, effort low, cwd athx-estimator-grok",
+  });
+  assert.deepEqual(
+    downLines.slice(1).map(({ type, provider }) => [type, provider]).sort(),
+    [["done", "average"], ["partial", "claude"], ["partial", "codex"]],
+  );
+  assert.equal(downLines.at(-1).type, "done");
+  // 600 x 40% + 700 x 35%, over the 75% that answered.
+  assert.equal(downLines.at(-1).estimate.calories, 646.7);
+
+  // A reply: each continues from its own last answer when the app sends it,
+  // so the three are still three estimates. Without them, all three are given
+  // the average, and all three come back with the same figures.
+  const average = { name: "Bowl", calories: 760, protein: 38, carbs: 76, fat: 19, fiber: 0, alcohol: 0,
+    assumptions: "Weighted average.", confidence: "low" };
+  const own = (calories) => ({ ...average, calories, assumptions: calories + " kcal." });
+  const reply = JSON.stringify({ mealDescription: "zz rice, beans, cheese", previousEstimate: average, replies: ["and a beer"] });
+  const replied = async (previousEstimates) => {
+    const response = await fetch(`http://127.0.0.1:${port}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ description: reply, budgetMs: 130000, stream: true, ...(previousEstimates ? { previousEstimates } : {}) }),
+    });
+    const lines = (await response.text()).trim().split("\n").map((line) => JSON.parse(line));
+    return Object.fromEntries(lines.filter(({ type }) => type === "partial").map(({ provider, estimate }) => [provider, estimate.calories]));
+  };
+  assert.deepEqual(await replied({ codex: own(600), claude: own(700), grok: own(1100) }), { codex: 740, claude: 840, grok: 1240 });
+  // One not sent continues from the average; a name it does not know is ignored.
+  assert.deepEqual(await replied({ codex: own(600), gemini: own(5) }), { codex: 740, claude: 900, grok: 900 });
+  assert.deepEqual(await replied(undefined), { codex: 900, claude: 900, grok: 900 });
+
+  // One that runs out of time says what it last printed. The shortest budget
+  // a caller may set is 8 s, which is all Grok gets when asked with the rest.
+  const late = await fetch(`http://127.0.0.1:${port}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ description: "zzgrokslow rice, beans, cheese", budgetMs: 8000, stream: true }),
+  });
+  const lateLines = (await late.text()).trim().split("\n").map((line) => JSON.parse(line));
+  assert.deepEqual(
+    lateLines.filter(({ type }) => type === "missed"),
+    [{ type: "missed", provider: "grok", detail: "timed out after 8 s, last said: Still searching." }],
+  );
+  assert.equal(lateLines.at(-1).type, "done");
+  assert.equal(lateLines.at(-1).estimate.calories, 646.7);
 
   // Hanging up stops every CLI still running: none of them finishes.
   writeFileSync(log, "");

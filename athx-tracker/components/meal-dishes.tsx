@@ -24,6 +24,7 @@ import {
   slideShare,
   sliderSteps,
   sliderValue,
+  takeWrittenShare,
   tidyShare,
   type DishDraft,
   type Eater,
@@ -271,6 +272,10 @@ function DishCard({
           onChange={(event) => {
             const name = event.target.value;
             onDish((current) => ({ ...current, name }));
+          }}
+          // "fries (80% h)": the share goes into the boxes once you leave.
+          onBlur={() => {
+            if (takeWrittenShare(dish) !== dish) onDish(takeWrittenShare);
           }}
         />
         {grokReady ? (

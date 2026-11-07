@@ -61,17 +61,17 @@ const weighIn = (over: Partial<Bodyweight> = {}): Bodyweight => ({
   id: "b", kind: "bodyweight", athlete: "hippos", day: today, kg: 70, ...over,
 });
 
-test("the fuel window is today, yesterday, or the seven days ending today", () => {
+test("the fuel window is today, yesterday, the seven days before today, or every day before it", () => {
   assert.deepEqual(fuelWindow("today", today), { start: today, end: today });
   assert.deepEqual(fuelWindow("yesterday", today), {
     start: "2026-02-28",
     end: "2026-02-28",
   });
   assert.deepEqual(fuelWindow("week", today), {
-    start: "2026-02-23",
-    end: today,
+    start: "2026-02-22",
+    end: "2026-02-28",
   });
-  assert.equal(fuelWindow("overall", today), null);
+  assert.deepEqual(fuelWindow("overall", today), { start: null, end: "2026-02-28" });
   assert.deepEqual(fuelWindow("yesterday", "2028-03-01"), {
     start: "2028-02-29",
     end: "2028-02-29",
@@ -144,15 +144,16 @@ test("a day shows that day's meals and not the days around it", () => {
 
 test("a week averages days with a meal and ignores the empty ones", () => {
   const records: RecordItem[] = [
-    meal({ id: "a", day: "2026-02-23", macros: { calories: 1000, protein: 50, carbs: 100, fat: 30 } }),
-    meal({ id: "b", day: "2026-02-23", macros: { calories: 1000, protein: 50, carbs: 100, fat: 30 } }),
-    meal({ id: "c", day: "2026-03-01", macros: { calories: 3000, protein: 150, carbs: 300, fat: 90 } }),
-    // Eighth day back, and the other athlete: neither belongs in this average.
-    meal({ id: "d", day: "2026-02-22", macros: { calories: 9000, protein: 0, carbs: 0, fat: 0 } }),
+    meal({ id: "a", day: "2026-02-22", macros: { calories: 1000, protein: 50, carbs: 100, fat: 30 } }),
+    meal({ id: "b", day: "2026-02-22", macros: { calories: 1000, protein: 50, carbs: 100, fat: 30 } }),
+    meal({ id: "c", day: "2026-02-28", macros: { calories: 3000, protein: 150, carbs: 300, fat: 90 } }),
+    // Eighth day back, today, and the other athlete: none belongs in this average.
+    meal({ id: "d", day: "2026-02-21", macros: { calories: 9000, protein: 0, carbs: 0, fat: 0 } }),
+    meal({ id: "f", day: today, macros: { calories: 9000, protein: 0, carbs: 0, fat: 0 } }),
     meal({
       id: "e",
       athlete: "gators",
-      day: "2026-03-01",
+      day: "2026-02-28",
       macros: { calories: 9000, protein: 0, carbs: 0, fat: 0 },
     }),
   ];
@@ -165,10 +166,11 @@ test("a week averages days with a meal and ignores the empty ones", () => {
   assert.equal(fuel.spanDays, 7);
 });
 
-test("overall keeps the whole journal, including days outside the last week", () => {
+test("overall keeps the whole journal up to yesterday, including days outside the last week", () => {
   const records: RecordItem[] = [
     meal({ id: "old", day: "2025-01-01", macros: { calories: 1800, protein: 100, carbs: 150, fat: 60 } }),
-    meal({ id: "now", macros: { calories: 2200, protein: 140, carbs: 200, fat: 70 } }),
+    meal({ id: "recent", day: "2026-02-28", macros: { calories: 2200, protein: 140, carbs: 200, fat: 70 } }),
+    meal({ id: "today", macros: { calories: 9000, protein: 0, carbs: 0, fat: 0 } }),
   ];
   const fuel = athleteFuel(records, "hippos", "overall", today, ...setup(target, 70));
   assert.equal(fuel.daysWithMeals, 2);
@@ -197,7 +199,7 @@ test("tracking names the calorie gap, and a longer span says it is an average", 
     "Hippos is 500 kcal under target",
   );
   const on = athleteFuel(
-    [meal({ macros: { calories: 2000, protein: 140, carbs: 200, fat: 70 } })],
+    [meal({ day: "2026-02-28", macros: { calories: 2000, protein: 140, carbs: 200, fat: 70 } })],
     "hippos",
     "week",
     today,
@@ -205,7 +207,7 @@ test("tracking names the calorie gap, and a longer span says it is an average", 
   );
   assert.equal(calorieTracking("Hippos", on, true), "Hippos is averaging on target");
   const bare = athleteFuel(
-    [meal()],
+    [meal({ day: "2026-02-28" })],
     "hippos",
     "overall",
     today,
@@ -243,7 +245,7 @@ test("expenditure sums timed sessions and withholds a burn without a bodyweight"
 test("a session burns at the weight of its own day, so a new weigh-in moves no earlier burn", () => {
   const sessions: RecordItem[] = [
     workout({ id: "old", day: "2026-02-01", seconds: 1800 }),
-    workout({ id: "new", day: today, seconds: 1800 }),
+    workout({ id: "new", day: "2026-02-28", seconds: 1800 }),
   ];
   // 80 kg in Setup from before weigh-ins were dated, then 60 kg from the 15th.
   const records = [...sessions, weighIn({ id: "w", day: "2026-02-15", kg: 60 })];
@@ -253,7 +255,7 @@ test("a session burns at the weight of its own day, so a new weigh-in moves no e
   // MetCon, 30 min: 336 kcal at 80 kg rounds to 340, 252 at 60 kg to 250.
   assert.equal(before.burned, 680);
   assert.equal(old.burned, 340 + 250);
-  const day = athleteFuel(records, "hippos", "today", today, settings, history);
+  const day = athleteFuel(records, "hippos", "yesterday", today, settings, history);
   assert.equal(day.burned, 250);
 });
 
@@ -269,16 +271,19 @@ test("with no weight in Setup, a day before the first weigh-in takes that weigh-
 
 test("a past day is judged against the targets it had", () => {
   const records: RecordItem[] = [
+    meal({ id: "e", day: "2026-02-25" }),
     meal({ id: "y", day: "2026-02-28" }),
     meal({ id: "t" }),
   ];
   const earlier = { calories: 1800, protein: 120, carbs: 180, fat: 60 };
   const settings = {
     targets: { hippos: target, gators: target },
-    targetHistory: { hippos: [{ until: "2026-02-28", macros: earlier }], gators: [] },
+    targetHistory: { hippos: [{ until: "2026-02-25", macros: earlier }], gators: [] },
   };
   const history = bodyweightHistory([], { hippos: 70, gators: 70 });
-  assert.equal(athleteFuel(records, "hippos", "yesterday", today, settings, history).dailyTarget.calories, 1800);
+  // The 25th, yesterday as seen on the 26th, had the earlier targets.
+  assert.equal(athleteFuel(records, "hippos", "yesterday", "2026-02-26", settings, history).dailyTarget.calories, 1800);
+  assert.equal(athleteFuel(records, "hippos", "yesterday", today, settings, history).dailyTarget.calories, 2000);
   assert.equal(athleteFuel(records, "hippos", "today", today, settings, history).dailyTarget.calories, 2000);
   // A week shown as a daily average is set against the average of its days' targets.
   assert.equal(athleteFuel(records, "hippos", "week", today, settings, history).dailyTarget.calories, 1900);
@@ -314,9 +319,9 @@ test("expenditure is resting energy and training, and waits for a height and bir
 
 test("a longer span spreads resting and training over all its days", () => {
   const records: RecordItem[] = [
-    workout({ id: "a", athlete: "gators", seconds: 1800 }),
+    workout({ id: "a", athlete: "gators", day: "2026-02-28", seconds: 1800 }),
     workout({ id: "b", athlete: "gators", day: "2026-02-24", seconds: 1800 }),
-    meal({ id: "m", athlete: "gators", macros: { calories: 2800, protein: 180, carbs: 300, fat: 80 } }),
+    meal({ id: "m", athlete: "gators", day: "2026-02-28", macros: { calories: 2800, protein: 180, carbs: 300, fat: 80 } }),
   ];
   const [base, history] = setup(target, 80);
   const settings = { ...base, height: { hippos: 0, gators: 180 }, birthYear: { hippos: 0, gators: 1996 } };
@@ -326,7 +331,26 @@ test("a longer span spreads resting and training over all its days", () => {
   assert.equal(week.expenditure, 1780 + 680 / 7);
   // One logged day of 2,800 against the average day's spend.
   assert.equal(energyBalance(week), 2800 - (1780 + 680 / 7));
-  // The whole journal starts at the athlete's first entry, a week ago here.
+  // The whole journal starts at the athlete's first entry and stops at
+  // yesterday: the 24th to the 28th here.
   const overall = athleteFuel(records, "gators", "overall", today, settings, history);
-  assert.equal(overall.expenditureDays, 6);
+  assert.equal(overall.expenditureDays, 5);
+});
+
+test("the week and overall leave today out until it is over", () => {
+  const full = { calories: 1780, protein: 120, carbs: 200, fat: 60 };
+  const days = ["2026-02-22", "2026-02-23", "2026-02-24", "2026-02-25", "2026-02-26", "2026-02-27", "2026-02-28"];
+  const records: RecordItem[] = [
+    ...days.map((day, index) => meal({ id: `d${index}`, day, macros: full })),
+    // This morning's breakfast, which used to stand for a whole day.
+    meal({ id: "breakfast", macros: { calories: 380, protein: 28, carbs: 55, fat: 12 } }),
+  ];
+  const week = athleteFuel(records, "hippos", "week", today, ...setup(target, 70));
+  assert.equal(week.daysWithMeals, 7);
+  assert.equal(week.shown.calories, 1780);
+  assert.equal(athleteFuel(records, "hippos", "overall", today, ...setup(target, 70)).shown.calories, 1780);
+  // A journal begun today has no complete day yet: nothing to average.
+  const first = athleteFuel([meal()], "hippos", "overall", today, ...setup(target, 70));
+  assert.equal(first.daysWithMeals, 0);
+  assert.equal(first.expenditure, null);
 });

@@ -5,7 +5,9 @@ import {
   CalendarDays,
   CloudOff,
   Dumbbell,
+  Keyboard,
   RotateCw,
+  ScrollText,
   Settings as SettingsIcon,
   TrendingUp,
   UtensilsCrossed,
@@ -19,7 +21,14 @@ import { MealForm } from "@/components/meal-form";
 import { History } from "@/components/history";
 import { Progress } from "@/components/progress";
 import { SettingsForm } from "@/components/settings-form";
-import { ThemeToggle } from "@/components/theme-toggle";
+import {
+  setKeyboardShortcutsEnabled,
+  useKeyboardShortcutSetting,
+  useKeyboardShortcuts,
+} from "@/hooks/use-keyboard-shortcuts";
+import { useLoggingFor } from "@/hooks/use-logging-for";
+import { Countdown } from "@/components/countdown";
+import { ThemeSync } from "@/components/theme-toggle";
 import { DraftBoundary } from "@/components/draft-boundary";
 import { Drafts } from "@/components/drafts";
 import {
@@ -27,6 +36,7 @@ import {
   localDay,
   RECENT_LIMIT,
   type Bodyweight,
+  type EnergyCheckIn,
   type Meal,
   type RecordItem,
   type Settings,
@@ -35,8 +45,9 @@ import {
 } from "@/lib/domain";
 import { athleteOutline } from "@/lib/athlete-outline";
 import { bodyweightHistory } from "@/lib/bodyweight";
+import { sameCheckInDay } from "@/lib/energy-level";
 import { bestLine, type NewBest } from "@/lib/bests";
-import { api, isMeal, message, sortRecords } from "@/lib/client";
+import { api, isMeal, isWorkout, message, sortRecords } from "@/lib/client";
 import {
   applyOutbox,
   changeOutbox,
@@ -65,13 +76,14 @@ import {
 
 type Tab = "today" | "session" | "meal" | "progress" | "log" | "settings";
 
+// Five, the most a bottom bar holds. Setup is opened rarely, so it is the
+// gear in the header. Log has its own icon: the circular arrow is Refresh's.
 const TABS = [
   { id: "today", label: "Today", icon: CalendarDays },
   { id: "session", label: "Session", icon: Dumbbell },
   { id: "meal", label: "Meal", icon: UtensilsCrossed },
   { id: "progress", label: "Progress", icon: TrendingUp },
-  { id: "log", label: "Log", icon: RotateCw },
-  { id: "settings", label: "Setup", icon: SettingsIcon },
+  { id: "log", label: "Log", icon: ScrollText },
 ] as const satisfies readonly { id: Tab; label: string; icon: typeof Dumbbell }[];
 
 /** Nothing to subscribe to: the device's day is read once, after hydration. */
@@ -154,12 +166,15 @@ export function Tracker({
   }, [today]);
 
   const [tab, setTab] = useState<Tab>("today");
+  const shortcutSetting = useKeyboardShortcutSetting();
+  const shortcutsEnabled = shortcutSetting === "on";
   // Zero means unopened; advancing a form's key starts a fresh draft after save.
   const [formKeys, setFormKeys] = useState({ meal: 0, session: 0 });
   const activeTab = useRef(tab);
   // One switch drives both forms: which columns the session shows, and who a
-  // new meal is saved for. The journal opens on Hippos. "both" writes both athletes.
-  const [who, setWho] = useState<"hippos" | "gators" | "both">("hippos");
+  // new meal is saved for. "both" writes both athletes. Each phone opens on
+  // whoever it last logged for, Hippos until it has chosen.
+  const [who, setWho] = useLoggingFor();
   // Editing one kind must not remount the other kind's background estimate.
   const [editingMeal, setEditingMeal] = useState<Meal | null>(null);
   const [editingWorkout, setEditingWorkout] = useState<Workout | null>(null);
@@ -167,6 +182,9 @@ export function Tracker({
   const [mealDraft, setMealDraft] = useState<Draft | null>(null);
   const [sessionDraft, setSessionDraft] = useState<Draft | null>(null);
   const formOpened = useRef({ meal: false, session: false });
+  // Setup stays mounted once opened, like the forms, so typing in it survives
+  // a visit to another tab.
+  const [setupOpened, setSetupOpened] = useState(false);
 
   /** Opens a draft on its form, as it was left: an edit as that edit. */
   const openDraftOnForm = useCallback((draft: Draft) => {
@@ -179,11 +197,12 @@ export function Tracker({
       setSessionDraft(draft);
     }
     if (!draft.editing) setWho(draft.who);
-  }, []);
+  }, [setWho]);
 
   const navigate = useCallback((next: Tab) => {
     activeTab.current = next;
     setTab(next);
+    if (next === "settings") setSetupOpened(true);
     if (next === "meal" || next === "session") {
       // The first time a form opens, it opens on whatever was left typed in
       // it, so closing the app mid-meal loses nothing.
@@ -197,6 +216,16 @@ export function Tracker({
     }
     window.scrollTo(0, 0);
   }, [openDraftOnForm]);
+
+  useKeyboardShortcuts(shortcutsEnabled, {
+    g: () => setWho("gators"),
+    h: () => setWho("hippos"),
+    v: () => setWho("both"),
+    w: () => navigate("session"),
+    m: () => navigate("meal"),
+    t: () => navigate("today"),
+    p: () => navigate("progress"),
+  }, (action) => action());
 
   /** An entry from the Log, picking up any unsaved edit of it. */
   const openEdit = useCallback((record: Meal | Workout) => {
@@ -300,12 +329,23 @@ export function Tracker({
   /** What this phone has not sent yet, shown as if it had been. */
   const outbox = useSyncExternalStore(subscribeOutbox, outboxSnapshot, serverOutbox);
   const shown = useMemo(() => sortRecords(applyOutbox(records, outbox)), [records, outbox]);
-  // Leaving Setup with edits in it discards them, but a refresh while it is
-  // open must not: the form is keyed on the settings revision.
+  // Newest first, like everything shown: a lift's last time is the first match.
+  const workouts = useMemo(() => shown.filter(isWorkout), [shown]);
+  // Setup keeps what was typed in it until it is saved or discarded, on any
+  // tab, so a refresh in the meantime must not reopen it: the form is keyed on
+  // the settings revision. The gear says when it holds unsaved changes.
   const setupDirty = useRef(false);
+  const [setupUnsaved, setSetupUnsaved] = useState(false);
   const markSetupDirty = useCallback((dirty: boolean) => {
     setupDirty.current = dirty;
+    setSetupUnsaved(dirty);
   }, []);
+  // Discarding reopens Setup from the settings as they are.
+  const [setupReset, setSetupReset] = useState(0);
+  const discardSetup = useCallback(() => {
+    markSetupDirty(false);
+    setSetupReset((current) => current + 1);
+  }, [markSetupDirty]);
   const lastFetch = useRef(0);
 
   const announceBests = useCallback((bests: NewBest[]) => {
@@ -384,7 +424,14 @@ export function Tracker({
 
   // Refreshing keeps whatever the Log is already showing: having asked for the
   // whole journal once, it should not silently shrink back on the next tap.
-  const refresh = useCallback(() => reload(scope), [reload, scope]);
+  // It leaves Setup alone while Setup holds unsaved typing, which would
+  // otherwise vanish from another tab without a word.
+  const refresh = useCallback(
+    () => reload(scope, { keepSettings: setupDirty.current }),
+    [reload, scope],
+  );
+  /** Settings as the server has them, whatever Setup holds: after a restore or a clash. */
+  const reloadSettings = useCallback(() => reload(scope), [reload, scope]);
   const loadAll = useCallback(() => reload("all"), [reload]);
 
   const loadFuelDay = useCallback(async (day: string) => {
@@ -423,7 +470,7 @@ export function Tracker({
     setRecords((current) =>
       sortRecords([
         ...batch,
-        ...current.filter((item) => !batch.some((r) => r.id === item.id)),
+        ...current.filter((item) => !batch.some((r) => r.id === item.id || sameCheckInDay(r, item))),
       ]),
     );
   }, []);
@@ -501,8 +548,8 @@ export function Tracker({
     [announceBests, editingMeal, editingWorkout, navigate, persist, refreshSummary],
   );
 
-  /** A weigh-in edited in the Log: saved where it stands, without leaving it. */
-  const update = useCallback(async (record: Bodyweight) => {
+  /** A weigh-in or check-in edited in the Log: saved where it stands, without leaving it. */
+  const update = useCallback(async (record: Bodyweight | EnergyCheckIn) => {
     try {
       const result = await persist([record]);
       if (result.reason) toast("Saved on this phone", { description: result.reason, icon: <CloudOff className="size-4" /> });
@@ -515,6 +562,20 @@ export function Tracker({
       throw error;
     }
   }, [persist, refreshSummary]);
+
+  /**
+   * Today's energy, tapped on its card. No notice when it lands: the level
+   * it shows chosen says so. One that waits on the phone, or is refused, does say.
+   */
+  const checkIn = useCallback(async (record: EnergyCheckIn) => {
+    try {
+      const result = await persist([record]);
+      if (result.reason) toast("Saved on this phone", { description: result.reason, icon: <CloudOff className="size-4" /> });
+    } catch (error) {
+      toast.error(message(error));
+      throw error;
+    }
+  }, [persist]);
 
   const remove = useCallback(async (id: string) => {
     try {
@@ -705,11 +766,11 @@ export function Tracker({
       } catch (error) {
         if (!quiet) toast.error(message(error));
         // Someone saved from the other phone: pull their version back in.
-        if ((error as Error & { status?: number }).status === 409) await refresh();
+        if ((error as Error & { status?: number }).status === 409) await reloadSettings();
         throw error;
       }
     },
-    [persist, revision, refresh, refreshSummary],
+    [persist, revision, reloadSettings, refreshSummary],
   );
 
   /**
@@ -775,18 +836,37 @@ export function Tracker({
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col">
       <Toaster position="top-center" expand />
+      {/* The theme buttons are in Setup; the page follows the choice everywhere. */}
+      <ThemeSync />
 
       <header className="sticky top-0 z-20 border-b bg-background/95 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur">
-        <div className="flex items-center justify-between gap-2">
-          {/* Theme buttons and a refresh leave no room for this beside the
-              athlete pills on a phone, and the name is already on the tab and
-              the home screen icon. */}
-          <h1 className="hidden min-w-0 text-sm font-semibold tracking-tight sm:block">
-            Hippos &amp; Gators ATHX Adventure
-          </h1>
+        {/* Top-aligned, so the days left stay level with the first row of
+            buttons when a narrow screen wraps them onto two. */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex h-7 min-w-0 items-center gap-2">
+            {/* A refresh and the switches leave no room for this beside the
+                athlete pills on a phone, and the name is already on the tab
+                and the home screen icon. */}
+            <h1 className="hidden min-w-0 text-sm font-semibold tracking-tight sm:block">
+              Hippos &amp; Gators ATHX Adventure
+            </h1>
+            <Countdown eventName={shownSettings.eventName} eventDate={shownSettings.eventDate} today={today} />
+          </div>
           {/* Wraps rather than running off a narrow phone, as it would at
               320 px or with entries waiting to send beside the unit switch. */}
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-1">
+          {/* Two people on two phones: one logs, the other wants it without
+              hunting for the browser's own reload. */}
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            disabled={refreshing}
+            aria-label="Refresh from the server"
+            title="Refresh from the server"
+            className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+          >
+            <RotateCw className={`size-4${refreshing ? " animate-spin" : ""}`} />
+          </button>
           <div
             role="group"
             aria-label="Logging for"
@@ -817,18 +897,6 @@ export function Tracker({
               {waiting}
             </button>
           ) : null}
-          {/* Two people on two phones: one logs, the other wants it without
-              hunting for the browser's own reload. */}
-          <button
-            type="button"
-            onClick={() => void refresh()}
-            disabled={refreshing}
-            aria-label="Refresh from the server"
-            title="Refresh from the server"
-            className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-          >
-            <RotateCw className={`size-4${refreshing ? " animate-spin" : ""}`} />
-          </button>
           <div
             role="group"
             aria-label="Weight unit"
@@ -847,7 +915,35 @@ export function Tracker({
               </button>
             ))}
           </div>
-          <ThemeToggle />
+          {shortcutSetting !== "unavailable" ? (
+            <button
+              type="button"
+              onClick={() => setKeyboardShortcutsEnabled(!shortcutsEnabled)}
+              aria-label="Keyboard shortcuts"
+              aria-pressed={shortcutsEnabled}
+              title="Keyboard shortcuts · G Gators, H Hippos, V Both, W Session, M Meal, T Today, P Progress · In Meal: B Breakfast, L Lunch, D Dinner, S Snack, A Alcohol"
+              className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-pressed:bg-primary aria-pressed:text-primary-foreground aria-pressed:hover:bg-primary/85"
+            >
+              <Keyboard className="size-4" />
+            </button>
+          ) : null}
+          {/* The name stays "Setup", so it can always be asked for by name;
+              unsaved typing in it is the description, and the dot. */}
+          <button
+            type="button"
+            onClick={() => navigate("settings")}
+            aria-label="Setup"
+            aria-describedby={setupUnsaved ? "setup-unsaved" : undefined}
+            aria-current={tab === "settings" ? "page" : undefined}
+            title={setupUnsaved ? "Setup · unsaved changes" : "Setup"}
+            className="relative rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-[current]:bg-muted aria-[current]:text-foreground"
+          >
+            <SettingsIcon className="size-4" />
+            {setupUnsaved ? (
+              <span aria-hidden="true" className="absolute top-1 right-1 size-2 rounded-full bg-primary ring-2 ring-background" />
+            ) : null}
+          </button>
+          {setupUnsaved ? <span id="setup-unsaved" hidden>Unsaved changes</span> : null}
           </div>
         </div>
       </header>
@@ -876,6 +972,7 @@ export function Tracker({
             fuelRefresh={fuelRefresh}
             heldFrom={heldFrom}
             onLoadSessions={loadSessions}
+            onCheckIn={checkIn}
           />
         ) : tab === "progress" ? (
           <Progress
@@ -901,25 +998,30 @@ export function Tracker({
             onLoadAll={scope === "all" ? undefined : loadAll}
             onSendNow={() => void catchUp(true)}
             onEdit={(record) => {
-              if (record.kind !== "bodyweight") openEdit(record);
+              if (record.kind === "meal" || record.kind === "workout") openEdit(record);
             }}
             onUpdate={update}
             onDelete={remove}
           />
-        ) : tab === "settings" ? (
-          <SettingsForm
-            key={setupKey}
-            settings={shownSettings}
-            history={history}
-            today={today}
-            grokReady={grokReady}
-            onRefresh={refresh}
-            onSave={saveSettings}
-            onDirty={markSetupDirty}
-          />
         ) : null}
         {/* Keep visited forms mounted: hiding a section must not cancel its
-            request or discard its draft, even if a refresh reports an error. */}
+            request or discard its draft, even if a refresh reports an error.
+            Setup too, so what was typed there waits for Save or Discard. */}
+        {setupOpened ? (
+          <div hidden={Boolean(problem) || tab !== "settings"}>
+            <SettingsForm
+              key={`${setupKey}-${setupReset}`}
+              settings={shownSettings}
+              history={history}
+              today={today}
+              grokReady={grokReady}
+              onRefresh={reloadSettings}
+              onSave={saveSettings}
+              onDirty={markSetupDirty}
+              onDiscard={discardSetup}
+            />
+          </div>
+        ) : null}
         <div hidden={Boolean(problem) || tab !== "session"}>
         {formKeys.session > 0 ? <Drafts kind="session" today={today} onOpen={openDraftOnForm} /> : null}
         {formKeys.session > 0 ? (
@@ -931,6 +1033,7 @@ export function Tracker({
           <WorkoutForm
             today={today}
             grokReady={grokReady}
+            workouts={workouts}
             sides={sides}
             onLoggingFor={setWho}
             weightUnit={unit}
@@ -964,6 +1067,7 @@ export function Tracker({
             grokReady={grokReady}
             queueReady={queueReady}
             active={tab === "meal" && !problem}
+            shortcutsEnabled={shortcutsEnabled}
             editing={editingMeal}
             draft={mealDraft}
             onLoggingFor={setWho}
@@ -975,7 +1079,9 @@ export function Tracker({
             onEstimateComplete={(error) => estimateFinished("meal", error)}
             onSave={save}
             onSaveTemplates={(mealTemplates, notice) =>
-              saveSettings({ ...settings, mealTemplates }, notice)
+              // Unsaved typing in Setup stays: Setup saves the templates as
+              // they are now, whenever it is saved.
+              saveSettings({ ...settings, mealTemplates }, notice, [], { keepSetup: setupDirty.current })
             }
           />
           </DraftBoundary>
@@ -983,9 +1089,10 @@ export function Tracker({
         </div>
       </main>
 
+      {/* A fixed height, which Setup's sticky save bar sits just above. */}
       <nav
         aria-label="Sections"
-        className="sticky bottom-0 z-20 grid grid-cols-6 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur"
+        className="sticky bottom-0 z-20 grid grid-cols-5 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur"
       >
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
@@ -993,7 +1100,7 @@ export function Tracker({
             type="button"
             onClick={() => navigate(id)}
             aria-current={tab === id ? "page" : undefined}
-            className="flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium text-muted-foreground transition-colors aria-[current]:text-foreground"
+            className="flex h-[var(--nav-row)] flex-col items-center justify-center gap-1 text-[11px] font-medium text-muted-foreground transition-colors aria-[current]:text-foreground"
           >
             <Icon className="size-5" />
             {label}

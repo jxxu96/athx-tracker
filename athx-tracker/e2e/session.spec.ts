@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { DEFAULT_SETTINGS, formatTime, projectWorkout, type Workout } from "../lib/domain.ts";
 import { PASSPHRASE } from "../playwright.config.ts";
+import { openSetup } from "./theme.ts";
 
 // These cover the paths that have actually broken. Every bug that reached the
 // user in this app was wiring or rendering, which the unit tests cannot see:
@@ -159,23 +160,27 @@ test.describe("a first visit", () => {
     await expect(page.locator("body")).toHaveCSS("background-color", "rgb(10, 10, 10)");
     await page.getByLabel("Passphrase").fill(PASSPHRASE);
     await page.getByRole("button", { name: "Open journal" }).click();
+    await openSetup(page);
     await expect(page.getByRole("button", { name: "Dark" })).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator("body")).toHaveCSS("background-color", "rgb(10, 10, 10)");
   });
 
   test("has no control that follows the device", async ({ page }) => {
+    await openSetup(page);
     await expect(page.getByRole("button", { name: "Device" })).toHaveCount(0);
     await expect(page.getByRole("group", { name: "Theme" }).getByRole("button")).toHaveCount(2);
     await page.evaluate(() => localStorage.setItem("athx-theme", "system"));
     await page.reload();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
     await expect(page.locator("body")).toHaveCSS("background-color", "rgb(10, 10, 10)");
+    await openSetup(page);
     await expect(page.getByRole("button", { name: "Dark" })).toHaveAttribute("aria-pressed", "true");
   });
 });
 
 test("the theme buttons change the page, not just themselves", async ({ page }) => {
   const body = page.locator("body");
+  await openSetup(page);
   await page.getByRole("button", { name: "Light" }).click();
   await expect(body).toHaveCSS("background-color", "rgb(255, 255, 255)");
   await page.getByRole("button", { name: "Dark" }).click();
@@ -187,7 +192,9 @@ test("the theme buttons change the page, not just themselves", async ({ page }) 
 
 test("a theme chosen in one tab follows into the other", async ({ page, context }) => {
   // The bug: the second tab's control moved to Dark while its page stayed
-  // white, because only the tab doing the choosing applied it.
+  // white, because only the tab doing the choosing applied it. The second tab
+  // never opens Setup, where the buttons are: the whole app follows.
+  await openSetup(page);
   await page.getByRole("button", { name: "Light" }).click();
   const second = await context.newPage();
   await second.goto("/");
@@ -444,17 +451,48 @@ test("an Other session's burn is the one typed, with or without a bodyweight", a
     .toEqual(["Tennis:"]);
 });
 
-test("a time box opens a keyboard that has a colon", async ({ page }) => {
+test("a time box opens the number pad and puts the colon in", async ({ page }) => {
   await openSession(page);
   await typeSelect(page).selectOption("Other");
   await page.getByRole("button", { name: "Station", exact: true }).click();
-  // A number pad has no colon, and every one of these is written mm:ss.
+  // A number pad has no colon, so every box written mm:ss puts it in: the
+  // last two digits are the seconds.
   for (const box of [
     page.getByLabel("Goal time"),
     elapsed(page).first(),
     page.getByLabel("Time", { exact: true }).first(),
-  ])
-    await expect(box).not.toHaveAttribute("inputmode", /.*/);
+  ]) {
+    await expect(box).toHaveAttribute("inputmode", "numeric");
+    await box.pressSequentially("1230");
+    await expect(box).toHaveValue("12:30");
+  }
+});
+
+test("a MetCon asks for no goal time and saves none", async ({ page }) => {
+  await openSession(page);
+  await typeSelect(page).selectOption("Strength");
+  await expect(page.getByLabel("Goal time")).toBeVisible();
+  // Typed under another type, then out of sight: it must not ride along.
+  await page.getByLabel("Goal time").fill("12:00");
+  await typeSelect(page).selectOption("MetCon");
+  await expect(page.getByLabel("Goal time")).toHaveCount(0);
+  await page.getByLabel("Done (reps)").first().fill("30");
+  await page.getByRole("button", { name: "Save session" }).click();
+
+  const read = () =>
+    page.evaluate(async () => (await fetch("/api/records").then((r) => r.json())).records);
+  await expect.poll(async () => (await read()).length).toBe(1);
+  const [saved] = await read();
+  expect(saved.category).toBe("MetCon");
+  expect(saved.goal).toBeNull();
+});
+
+test("a circuit station shows its loads, not its target", async ({ page }) => {
+  await openSession(page);
+  await typeSelect(page).selectOption("MetCon");
+  const station = page.locator("li").filter({ hasText: "DB ground to overhead" });
+  await expect(station.getByText(/^Hippos .* · Gators /)).toBeVisible();
+  await expect(station.getByText(/Target/)).toHaveCount(0);
 });
 
 test("a lift can be added from the bottom of the list", async ({ page }) => {
@@ -832,6 +870,31 @@ test("an older entry with no loads is not given any when edited", async ({ page 
     (await fetch("/api/records").then((r) => r.json())).records[0],
   );
   expect(record.segments[0].kg).toBeUndefined();
+});
+
+test("an older MetCon keeps the goal it was saved with when edited", async ({ page }) => {
+  await page.evaluate(async () => {
+    await fetch("/api/records", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: "7b2e4c1d-5a3f-4e8b-9c6d-2f1a0e9b8c77", kind: "workout", athlete: "gators",
+        day: "2026-10-20", title: "Old circuit", category: "MetCon", seconds: 600, notes: "",
+        segments: [{ name: "DB ground to overhead", unit: "reps", completed: 30, target: 30, seconds: 120 }],
+        fatigue: 10, transition: 0, goal: 900, context: "solo", lifts: [],
+      }),
+    });
+  });
+  await page.reload();
+  await openLog(page);
+  await page.getByLabel("Edit entry").first().click();
+  await expect(page.getByLabel("Goal time")).toHaveCount(0);
+  await title(page).fill("Renamed circuit");
+  await page.getByRole("button", { name: "Update session" }).click();
+  const read = () =>
+    page.evaluate(async () => (await fetch("/api/records").then((r) => r.json())).records[0]);
+  await expect.poll(async () => (await read()).title).toBe("Renamed circuit");
+  expect((await read()).goal).toBe(900);
 });
 
 test("the unit switches without a connection, and is sent when the server answers", async ({ page }) => {

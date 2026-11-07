@@ -2,6 +2,8 @@ import { z } from "zod";
 import { CONVERSATION_LIMIT, FOOD_NOTES_LIMIT, MAX_REPLIES, REPLY_LIMIT } from "./estimate-conversation.ts";
 import {
   DEFAULT_SETTINGS,
+  ENERGY_MAX,
+  ENERGY_MIN,
   MEAL_TEMPLATE_GRAMS_LIMIT,
   MEAL_TEMPLATE_ITEM_LIMIT,
   MEAL_TEMPLATE_ITEMS,
@@ -134,6 +136,10 @@ export const estimateSchema = answerSchema.extend({
 }).superRefine((estimate, context) => {
   rejectFiberAboveCarbs(estimate, context, ["fiber"]);
 });
+/** One estimator's own answer for a whole meal, which has no dishes. */
+const ownAnswerSchema = answerSchema.superRefine((answer, context) => {
+  rejectFiberAboveCarbs(answer, context, ["fiber"]);
+});
 /** Keep the latest estimate and every user correction within a bounded request. */
 export const estimateRequestSchema = z.object({
   description: z.string().trim().min(3).max(4000),
@@ -148,6 +154,12 @@ export const estimateRequestSchema = z.object({
     previous: estimateSchema,
     replies: z.array(z.string().trim().min(1).max(REPLY_LIMIT)).min(1).max(MAX_REPLIES)
       .refine((replies) => replies.join("").length <= CONVERSATION_LIMIT, "Conversation is too long."),
+    // Each estimator's own last answer for the whole meal, with no dishes.
+    byEstimator: z.object({
+      codex: ownAnswerSchema.optional(),
+      claude: ownAnswerSchema.optional(),
+      grok: ownAnswerSchema.optional(),
+    }).strict().optional(),
   }).strict().optional(),
 }).strict();
 /** A weigh-in. The same bounds as the weight Setup held before weigh-ins were dated. */
@@ -156,7 +168,13 @@ export const bodyweightSchema = z.object({
   time,
   kg: finite.positive().max(500),
 }).strict();
-export const recordSchema = z.union([workoutSchema, mealSchema, bodyweightSchema]);
+/** How someone feels on a day, a whole number out of 10. */
+export const energySchema = z.object({
+  ...base, kind: z.literal("energy"), athlete: z.enum(["hippos", "gators"]),
+  time,
+  level: z.number().int().min(ENERGY_MIN).max(ENERGY_MAX),
+}).strict();
+export const recordSchema = z.union([workoutSchema, mealSchema, bodyweightSchema, energySchema]);
 const pastTargetsSchema = z.array(z.object({ until: daySchema, macros: macroSchema }).strict())
   .max(TARGET_HISTORY_LIMIT);
 const birthYear = z.union([z.literal(0), z.number().int().min(1900).max(2100)]);

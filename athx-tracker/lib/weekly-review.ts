@@ -1,4 +1,5 @@
 import { addDays, daysBetween, isMeal, isWorkout, weekStart } from "./client.ts";
+import { averageEnergy } from "./energy-level.ts";
 import { averageMacros } from "./fuel.ts";
 import { categoryName, isDistanceUnit, segmentBlock, sumMacros, toMetres, type RecordItem, type Workout } from "./domain.ts";
 
@@ -46,5 +47,7 @@ export function reviewPeriod(records: RecordItem[], athlete: ReviewAthlete, wind
     daysWithMeals,
     meals: knownMeals.length,
     pendingMeals: meals.length - knownMeals.length,
+    // Days without a check-in are left out, not read as no energy.
+    energy: averageEnergy(entries, athlete, window.start, window.end),
   };
 }

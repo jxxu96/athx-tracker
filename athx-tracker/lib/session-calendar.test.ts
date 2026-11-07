@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { Bodyweight, Meal, Workout } from "./domain.ts";
+import type { Bodyweight, EnergyCheckIn, Meal, Workout } from "./domain.ts";
 import {
   dayAthletes,
   heldFrom,
@@ -22,6 +22,7 @@ const meal = (over: Partial<Meal> = {}): Meal => ({
   macros: { calories: 600, protein: 40, carbs: 60, fat: 20 }, source: "manual", assumptions: "", ...over,
 });
 const weighIn = (day: string): Bodyweight => ({ id: "b", kind: "bodyweight", athlete: "gators", day, kg: 80 });
+const checkIn = (day: string): EnergyCheckIn => ({ id: "e", kind: "energy", athlete: "hippos", day, level: 6 });
 
 test("the strip is the seven days up to its last, across a month's end", () => {
   assert.deepEqual(stripDays("2026-11-02"), [
@@ -82,8 +83,8 @@ test("a range counts its sessions and the days that had any", () => {
   assert.deepEqual(rangeCounts(days), { total: 4, days: 2 });
 });
 
-test("the slice is held whole after its oldest entry's day, which weigh-ins do not move", () => {
-  const slice = [workout({ day: "2026-10-28" }), meal({ day: "2026-09-20" }), weighIn("2025-01-01")];
+test("the slice is held whole after its oldest entry's day, which weigh-ins and check-ins do not move", () => {
+  const slice = [workout({ day: "2026-10-28" }), meal({ day: "2026-09-20" }), weighIn("2025-01-01"), checkIn("2025-02-01")];
   assert.equal(heldFrom(slice, false), "2026-09-20");
   assert.equal(heldFrom(slice, true), null);
   // The cut can fall partway through its oldest day, so that day is asked for too.

@@ -1,6 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { PASSPHRASE } from "../playwright.config.ts";
+import { chooseTheme } from "./theme.ts";
 import { addDays } from "../lib/client.ts";
 import { DEFAULT_SETTINGS } from "../lib/domain.ts";
 import { previousWeek } from "../lib/protein-week.ts";
@@ -174,7 +175,7 @@ test("a filled-in Progress tab is usable without sight, in both themes", async (
   await openProgress(page);
   await expect(page.getByRole("group", { name: "Gators deadlift" })).toContainText("2 sessions");
   for (const theme of ["Light", "Dark"]) {
-    await page.getByRole("button", { name: theme, exact: true }).click();
+    await chooseTheme(page, theme as "Light" | "Dark");
     // Let colour transitions land before contrast is read.
     await page.waitForTimeout(500);
     const { violations } = await new AxeBuilder({ page })

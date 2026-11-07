@@ -1,16 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { CloudOff, Pencil, Scale, Soup, Trash2, Weight } from "lucide-react";
+import { BatteryMedium, CloudOff, Pencil, Scale, Soup, Trash2, Weight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DayButtons, Field } from "@/components/workout-form";
+import { EnergyLevels } from "@/components/energy";
 import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import {
   ATHLETES,
+  ENERGY_MAX,
   ESTIMATORS,
   categoryName,
   completionLine,
@@ -25,12 +27,13 @@ import {
   scenarioLine,
   type Athlete,
   type Bodyweight,
+  type EnergyCheckIn,
   type RecordItem,
   type WeightUnit,
   type Workout,
 } from "@/lib/domain";
 import { bodyweightOn, type BodyweightHistory } from "@/lib/bodyweight";
-import { formatDay, isWeighIn, isWorkout } from "@/lib/client";
+import { formatDay, isCheckIn, isWeighIn, isWorkout } from "@/lib/client";
 import type { OutboxEntry } from "@/lib/outbox";
 
 /** Entries drawn at once. More arrive on request, rather than all at once. */
@@ -100,6 +103,66 @@ function WeighInEditor({
   );
 }
 
+/** A check-in edited where it stands, like a weigh-in: the level, the day and the time. */
+function CheckInEditor({
+  record,
+  today,
+  onSave,
+  onCancel,
+}: {
+  record: EnergyCheckIn;
+  today: string;
+  onSave: (record: EnergyCheckIn) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [level, setLevel] = useState(record.level);
+  const [day, setDay] = useState(record.day);
+  const [time, setTime] = useState(record.time ?? "");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function submit() {
+    if (time !== "" && !isClockTime(time)) return setError("Write the time as HH:MM, or leave it empty.");
+    setSaving(true);
+    try {
+      await onSave({
+        id: record.id,
+        kind: "energy",
+        athlete: record.athlete,
+        day,
+        ...(time ? { time } : {}),
+        level,
+      });
+      onCancel();
+    } catch {
+      setError("That did not save. Try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <EnergyLevels
+        athlete={record.athlete}
+        label={`${ATHLETES[record.athlete].name} energy`}
+        value={level}
+        onChoose={setLevel}
+      />
+      <DayButtons today={today} day={day} onChange={setDay} time={time} onTimeChange={setTime} />
+      {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
+      <div className="flex gap-1.5">
+        <Button type="button" size="xs" disabled={saving} onClick={() => void submit()}>
+          {saving ? "Saving…" : "Save check-in"}
+        </Button>
+        <Button type="button" size="xs" variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /** The time of day, then the rest of an entry's line. */
 const at = (record: RecordItem) => (record.time ? `${record.time} · ` : "");
 
@@ -133,7 +196,7 @@ export function History({
   onLoadAll?: () => void;
   onSendNow?: () => void;
   onEdit: (record: RecordItem) => void;
-  onUpdate?: (record: Bodyweight) => Promise<void>;
+  onUpdate?: (record: Bodyweight | EnergyCheckIn) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }) {
   /** Null when the session has no time, or no weight is known for its day. */
@@ -144,7 +207,7 @@ export function History({
   const waitingFor = (id: string) =>
     outbox.find((entry) => entry.op === "save" && entry.record.id === id);
 
-  const [kind, setKind] = useState<"all" | "workout" | "meal" | "bodyweight">("all");
+  const [kind, setKind] = useState<"all" | RecordItem["kind"]>("all");
   const [editing, setEditing] = useState("");
   const [pending, setPending] = useState("");
   const [busy, setBusy] = useState("");
@@ -215,7 +278,7 @@ export function History({
             value={kind}
             aria-label="Filter by entry type"
             onChange={(event) => {
-              setKind(event.target.value as "all" | "workout" | "meal" | "bodyweight");
+              setKind(event.target.value as "all" | RecordItem["kind"]);
               // A new filter is a new list; starting it part-scrolled would be
               // showing the middle of something nobody has seen the top of.
               setShown(PAGE);
@@ -225,6 +288,7 @@ export function History({
             <NativeSelectOption value="workout">Sessions</NativeSelectOption>
             <NativeSelectOption value="meal">Meals</NativeSelectOption>
             <NativeSelectOption value="bodyweight">Weigh-ins</NativeSelectOption>
+            <NativeSelectOption value="energy">Energy</NativeSelectOption>
           </NativeSelect>
         </div>
       </div>
@@ -258,6 +322,12 @@ export function History({
                         style={{ color: ATHLETES[record.athlete].color }}
                         aria-hidden="true"
                       />
+                    ) : isCheckIn(record) ? (
+                      <BatteryMedium
+                        className="mt-0.5 size-4 shrink-0"
+                        style={{ color: ATHLETES[record.athlete].color }}
+                        aria-hidden="true"
+                      />
                     ) : (
                       <Soup
                         className="mt-0.5 size-4 shrink-0"
@@ -274,6 +344,23 @@ export function History({
                           onSave={onUpdate}
                           onCancel={() => setEditing("")}
                         />
+                      ) : isCheckIn(record) && editing === record.id && onUpdate ? (
+                        <CheckInEditor
+                          record={record}
+                          today={today}
+                          onSave={onUpdate}
+                          onCancel={() => setEditing("")}
+                        />
+                      ) : isCheckIn(record) ? (
+                        <>
+                          <p className="truncate text-sm font-medium">
+                            Energy {record.level}/{ENERGY_MAX}
+                          </p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {at(record)}
+                            {ATHLETES[record.athlete].name} · check-in
+                          </p>
+                        </>
                       ) : isWeighIn(record) ? (
                         <>
                           <p className="truncate text-sm font-medium">
@@ -406,7 +493,9 @@ export function History({
                           variant="ghost"
                           className="text-muted-foreground"
                           aria-label="Edit entry"
-                          onClick={() => (isWeighIn(record) ? setEditing(record.id) : onEdit(record))}
+                          onClick={() =>
+                            isWeighIn(record) || isCheckIn(record) ? setEditing(record.id) : onEdit(record)
+                          }
                         >
                           <Pencil />
                         </Button>

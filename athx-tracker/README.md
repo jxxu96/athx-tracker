@@ -6,7 +6,7 @@ single SQLite file on a volume.
 
 ## What it does
 
-- **Today** — countdown to the event, then fuel for each athlete, then each
+- **Today** — fuel for each athlete first, then each athlete's energy, then each
   zone's progress from its first estimate to its goal (Strength's from the lift
   targets), then a race-day estimate: the pair's Strength score, each athlete's share
   of it, and where it would have placed among last season's mixed Lite pairs; the
@@ -22,7 +22,13 @@ single SQLite file on a volume.
   entries older than the phone's recent slice. A single day is that day's macros against
   the daily targets. A longer range is the daily average of days that have a meal,
   so a day you forgot to log is not treated as a day you ate nothing, with the
-  totals written under the bars. Under each athlete's food is their
+  totals written under the bars. The last 7 days and the whole journal count
+  complete days only: the seven days before today, and every day up to
+  yesterday. Today joins them tomorrow; counted in, this morning's breakfast
+  stood for a whole day of eating and pulled the average down until dinner. A
+  bar past its target no longer stops at the end: the bar stands for all that
+  was eaten, a tick marks where the target falls inside it, and the part past
+  the target is striped. Under each athlete's food is their
   expenditure, resting energy and training together, and the balance of eating
   against it: for a day, that day's; for a longer range, a day's average. See
   *Resting energy and the balance* below. The race-day estimate, Progress and
@@ -30,8 +36,25 @@ single SQLite file on a volume.
   so an old best counts however much has been logged since. The last session stays underneath,
   with its time, what it burned, and the whole-session estimate when the
   stations support one, and so does the ATHX Lite running order.
-  Tap any box away from its buttons to fold it to one line, such as the days to
-  go or this week's counts, and see what is under it; tap again to open it.
+  Tap any box away from its buttons to fold it to one line, such as this
+  week's counts, and see what is under it; tap again to open it. The days to
+  go are a chip at the left of the header, "295 d", and read out in full to a
+  screen reader.
+  **Energy** is how each of you feels, out of 10, from 1 (exhausted) to 10
+  (full of energy): one tap on that athlete's row logs it for today at the
+  phone's clock, and tapping another number changes it, so a day keeps one
+  check-in each. The server holds to that too: a check-in saved from another
+  phone, or moved onto a day in the Log, replaces the one that day had. The
+  date buttons above the rows, Today, Yesterday or a day off the calendar,
+  set a missed day the same way. Another day's check-in keeps the time it
+  had, and a new one has none, since the clock now is not when that day was
+  felt. Once both of you have checked in today, the box opens folded to that
+  one line. Under the rows, the last 7 days for both of you and each
+  one's average over the days that have a check-in: a day nobody logged is
+  left out, not counted as no energy. It is subjective and nothing else is
+  worked out from it. Check-ins are journal entries, so they wait on the phone
+  without a connection like anything else, and, being small, are always sent
+  whole, like weigh-ins, however much of the journal the phone holds.
 - **Session** — log a workout as MetCon, Strength, Endurance, Solidcore, Tennis or
   Other, with Solidcore and tennis a tap away under Quick start. YTWs is a lift.
   Load the seven
@@ -42,6 +65,19 @@ single SQLite file on a volume.
   and Other takes a name of its own, which is what the log then calls it.
   Other also takes the calories each athlete burned, from a watch or a machine;
   typed, that figure is the session's burn, and left empty it is estimated.
+  Choosing a lift fills its sets and reps with real numbers: three sets, at
+  one rep for the split jerk, three for the deadlift, and five for the back
+  squat, the bench press and anything else (`DEFAULT_SETS` and `defaultReps`
+  in `lib/exercises.ts`). Choosing another lift moves them to its defaults
+  until you type in them. The boxes used to show a grey 3 and 5 that were
+  only placeholders, and leaving them saved one set of one; a lift with a
+  weight and an empty sets or reps box is now turned away instead. Under the
+  lift's name, each athlete's column shows their last time at it, such as
+  "Last 225 lb 3×3 · Wed 4 Nov", from the newest session on or before the
+  session's day (`lastLift` in `lib/last-lift.ts`, names matched the way a
+  described workout's are), and **Use** copies those sets into the row, a
+  breakdown of differing sets included. The entry being edited is not its own
+  last time, and only sessions the phone holds are searched.
   A lift is one weight for every set, or, under **Advanced**, a row for each set
   with its own weight and reps. Sets that differ are listed one by one in the
   log, every rep counts towards the burn, and Progress takes the heaviest.
@@ -54,7 +90,10 @@ single SQLite file on a volume.
   blank included. A MetCon you did not finish is logged as what you completed at
   each station, and "stopped at the time cap" records the cap; the log then
   reads e.g. "5/7 movements · 82% of the work · time cap hit". The form's
-  weight boxes follow the lb/kg switch at the top of the screen.
+  weight boxes follow the lb/kg switch at the top of the screen. Time boxes,
+  elapsed, station and goal times and Setup's MetCon X goal, open the number
+  pad and put the colon in themselves: the last two digits are the seconds,
+  so 2530 reads 25:30 (`typedClock` in `lib/domain.ts`).
   **Describe your workout** accepts typed text or browser dictation and uses the
   same subscription-backed estimator as meals to fill an editable draft. `1 x 2`
   means **1 set of 2 reps**. Include weights and units; an omitted unit follows
@@ -81,9 +120,15 @@ single SQLite file on a volume.
   include fiber; fiber, sugar alcohols, food-specific factors and rounding can
   make the simple calculation differ from a label's calorie total. A meal takes
   a time of day, which starts at the clock; a new meal's sitting follows it until
-  you pick one. A meal logged on more than one day is offered again. Save it as
+  you pick one. The form opens on **Describe it**; the templates, then who it
+  is for, the sitting and the date come after it, since those start out right
+  for most meals. A meal logged on more than one day is offered again. Save it as
   a template to keep your own name, items and grams; tapping one fills the form,
-  and the saved macros stay until you estimate again. A meal typed and not
+  and the saved macros stay until you estimate again. Templates, and meals
+  offered from the log with a dashed edge, are one row of buttons that scrolls
+  sideways; **Manage templates** opens the full list to save, edit or remove
+  them, and saving the meal on the form as a template is at the end of the
+  row. A meal typed and not
   saved yet is kept as a draft; see *Drafts*.
   A meal of two or more items offers **Expand into N items** under its
   figures. The items come from the estimate's working, which lists each item
@@ -113,7 +158,33 @@ single SQLite file on a volume.
   needs to know food: it splits what is plainly two dishes however it was
   written, such as "burger fries" with only a space, and joins what is plainly
   one. A dish estimated again on its own can come back as two, each keeping its
-  share. **Split by dish** makes the phone's cut without estimating, for
+  share. A dish can say how it was shared in brackets after it: "sandwich
+  (60% gators 40% hippos)", "fries (80% h 20% g)", "coke (75% g)", "sprouts
+  (50% each)", or in pieces, "8pc hongshaorou (5.5pc gators)". Either name,
+  singular or plural, or its first letter, before or after the number; the %
+  or the "pc" is needed, since "60 g" is grams. Pieces are a part of the
+  dish's count, the number it starts with ("8pc", "5 shengjianbao", but not
+  "250g" or "12 inch") or the one in its quantity box, so 5.5 pc of 8 is
+  68.75% and the other has 2.5 of 8; with no count, the pieces written for
+  both of you are the count. A dish counted that way gets that count as its
+  quantity when it has none, so each part reads "5.5 of 8 pc". Pieces for one
+  of you of nothing counted, or more pieces than the dish had, cannot be
+  worked out and stay part of the dish. Written for one of you, the other has
+  the rest; written for both, the boxes say what was written, and saving says
+  so if they do not make 100. Brackets that hold anything else stay part of the
+  dish. The share is taken off the dish and into its boxes (`readDishShare` in
+  `lib/dish-split.ts`), and no estimate ever reads it, since "gators" could be
+  read as food and "3 pc" as a portion. "2 servings", "3 orders" and "8 pieces"
+  after a comma say how much of the dish before them, like a size. An estimate
+  that keeps the dishes gives each the share written in its place; one that
+  split or joined them gives a dish the share written with its name, or with a
+  name that holds it or that it holds. So "burger fries (70% h)" split in two
+  gives each 70%, and "3 blue crabs, fried with scallion (70% g)", cut at the
+  comma by the phone and joined again by the estimate, takes the 70% written at
+  its end; dishes joined from different shares stay half each
+  (`shareAsWritten` in `lib/meal-dishes.ts`). A share typed into a dish's own
+  name moves into its boxes on leaving the name, on estimating that dish, or
+  on saving. **Split by dish** makes the phone's cut without estimating, for
   figures typed by hand; figures already on the form stay together as the
   first dish. A dish whose working lists two or more items offers **Expand
   into N items**: each item becomes a dish of its own with the dish's share,
@@ -167,10 +238,26 @@ single SQLite file on a volume.
   added, where shoulder to overhead counts any press or jerk the race does,
   so its best is the race estimate's figure. Its target takes the higher of
   the press and split jerk targets for shoulder to overhead.
-  Under each lift, the volume of the last eight Monday weeks, load times reps
-  across every set, this week's growing as it is logged. Each athlete's card opens
-  with their bodyweight from the weigh-ins and how far it has moved. All of it is
-  worked out over the whole journal, not the slice the phone holds.
+  Under each lift, a chart of its figure over time, the best of each Monday
+  week on the day it was first reached, with the target as a level line when
+  there is one (`weeklyBests` in `lib/progress.ts`; a point a week keeps the
+  summary small however long the season), and the volume of the last eight
+  Monday weeks, load times reps across every set, this week's growing as it is
+  logged. Each athlete's card opens with their bodyweight from the weigh-ins,
+  how far it has moved, and a chart of every weigh-in as a faint dot with the
+  seven-day average as the line: the mean of the weigh-ins in the seven days up
+  to each one (`weeklyAverage` in `lib/bodyweight.ts`), since a day's weight
+  moves with water and food by more than a week of training does. Under it,
+  protein as a share of the target for each of the last eight Monday weeks,
+  counted the way the bagel counts last week: days with a known meal, each
+  against the target it had, and today only once it is over
+  (`proteinWeeks` in `lib/protein-week.ts`); the week under way is drawn
+  lighter. Each chart is one athlete's, so colour never has to tell the two of
+  you apart, and every value is also in a table under it. The charts' code is
+  fetched the first time Progress draws one (`components/lazy-charts.tsx`), so
+  the app opens no heavier; offline before that, a chart's place stays empty
+  and the figures above it still show. All of it is worked out over the whole
+  journal, not the slice the phone holds.
   **ATHX benchmarks** compares actual circuit times and individual station splits,
   with best, latest, previous and attempt history. Only matching work, loads and
   solo/pairs context are compared; unknown loads stay separate from recorded
@@ -180,8 +267,9 @@ single SQLite file on a volume.
   capped/unfinished attempts compare the average station completion share only
   when their elapsed times match. Nothing is projected to a finish.
   **Weekly review** compares each athlete's sessions, training mix, timed work,
-  endurance distance, lift volume, benchmark improvements and daily macro
-  averages with the previous week. The current week compares the same weekdays
+  endurance distance, lift volume, energy, benchmark improvements and daily macro
+  averages with the previous week. Energy is the average of the days with a
+  check-in. The current week compares the same weekdays
   through today; earlier weeks run Monday to Sunday. Lift volume counts every
   set's load times reps. Nutrition averages use days with known meal macros;
   unlogged days and pending estimates are excluded, while partial days count.
@@ -190,7 +278,8 @@ single SQLite file on a volume.
   and offer the rest.
 - **Log** — everything logged, newest first and, inside a day, latest time of day
   first, filterable, with edit and delete, each session showing what it burned.
-  Weigh-ins are entries too, corrected where they stand. It opens with the most
+  Weigh-ins and energy check-ins are entries too, corrected where they stand:
+  a check-in's level, day and time. It opens with the most
   recent entries and fetches the rest when asked, and draws a hundred at a time
   however many are loaded, so a journal years deep neither crosses the network
   nor reaches the screen all at once. What this phone has not sent yet is marked
@@ -211,6 +300,21 @@ single SQLite file on a volume.
   until set, and a blank target is no target.
   Each athlete's targets are for the lifts Progress follows for them, so Hippos
   sets a push press where Gators sets an overhead press.
+  Setup is the gear at the right of the header, which leaves the bottom bar
+  five tabs: Today, Session, Meal, Progress and Log. What is typed in Setup
+  stays there on any other tab until it is saved or discarded, and the gear
+  carries a dot meanwhile; a refresh, or a template saved from Meal, leaves it
+  alone. The save bar sticks above the bottom bar, says whether anything is
+  unsaved, and offers **Discard**, which reopens Setup from the settings as
+  they are. The light and dark themes are set here, on each phone, and apply
+  at once without Save; the browser's own bar takes the theme's background.
+
+### The header
+
+The days to go, Refresh, who you are logging for, the lb/kg switch, keyboard
+shortcuts on a computer, and the Setup gear. Who you are logging for is kept
+on each phone, since each of you carries your own: a phone opens on whoever
+it last logged for, and on Hippos until it has chosen (`hooks/use-logging-for.ts`).
 
 ### Weights and older entries
 
@@ -482,18 +586,22 @@ the form.
 
 While a meal estimate runs, each estimator's figures appear under **Answers so
 far** as it answers. They are shown, not applied: the meal waits for the
-settled answer, which may average them or keep only the best-sourced one.
+settled answer, which averages them by weight and confidence: a label counts
+double and a low-confidence answer half, and when two found the label a low
+one is left out. Switching an answer on or off, and its weight, are under
+**Estimator weights**.
 **Stop estimate** ends it, stops the estimator's CLIs, gives the daily
 estimate back, and unlocks the form to edit. A stopped estimate raises no
 popup.
 
 Once it has settled, **Estimator weights** at the very top of the form lists
 each estimator's macros alone, whether it counts, and a slider from 0 to 100
-for its weight, with the share of the meal that gives it and the weighted
-average underneath. Each figure can be typed over, and the meal is averaged
+for its weight, with the share the average gives it and the weighted
+average underneath. That share is the weight times the answer's confidence.
+Each figure can be typed over, and the meal is averaged
 again from it; an answer typed over is marked as edited, and a meal averaged
-from one is saved as your own numbers. A looked-up label starts on its own,
-and the others can be switched back on. Moving a slider reweighs the meal at
+from one is saved as your own numbers. When two found the label, a low answer
+starts left out and can be switched back on. Moving a slider reweighs the meal at
 once, and the weight is this phone's default for the next meal. A meal split
 by dish is settled by the estimator dish by dish, with its own fixed weights,
 so it shows none.
