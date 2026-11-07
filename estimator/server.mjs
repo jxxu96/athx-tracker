@@ -214,7 +214,7 @@ const INSTRUCTIONS = [...MEAL_LINES, OUTPUT_LINE].join(" ");
 
 // A meal the two of them shared is estimated dish by dish, so each can be
 // given a share of each dish. The phone has already cut the description at
-// its commas and line breaks; the model makes the cut that needs to know
+// its commas, periods and line breaks; the model makes the cut that needs to know
 // food, and keeps the phone's where it can, so that every estimator asked
 // splits the meal the same way and their dishes can be averaged. "with" is
 // not a separator, and a Chinese dish is not cut into its ingredients.
@@ -222,7 +222,7 @@ const DISH_LINES = [
   "The meal was shared, so also give it dish by dish in dishes, in the order the description gives them.",
   "A dish is one thing that was served, which one person could have more or less of than the other: a pizza, a salad, a bowl of soup, a side of fries, a bottle or a glass of wine.",
   "Keep together what was served together: a dish's own ingredients, toppings, sauce and garnish, and the sides on its own plate, so 'mac and cheese', 'fish and chips' and 'salt and pepper wings' are one dish each.",
-  "A comma or a line break starts a new dish, and so does a bullet. A Chinese comma or an enumeration comma counts as a comma.",
+  "A comma, a period, or a line break starts a new dish, and so does a bullet. A Chinese comma, an enumeration comma, or a Chinese period counts as one. A decimal point does not.",
   "'with' is not a separator. 'and', '&', '+' and a slash are not separators on their own, so 'beef with broccoli', 'steak with fries', 'tomato and egg' and 'bean sprouts + chives' are one dish each.",
   "Split on a space only when it is obvious that two dishes were written next to each other, such as 'burger fries', which is two dishes. A name of several words is still one dish, and a Chinese dish stays one dish. When unsure, keep it together.",
   "When the description contains dishes, the household has already split it that way: keep those dishes, in that order and with those names, unless one of them is clearly two dishes or two of them are clearly one.",
