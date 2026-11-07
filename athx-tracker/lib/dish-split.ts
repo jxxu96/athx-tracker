@@ -2,11 +2,14 @@ import type { Eater } from "./meal-dishes.ts";
 
 /*
  * A shared meal's description cut into dishes as it was written: a line, or a
- * bullet, for each, or commas, semicolons, "and", "plus", and a "+", "&" or
- * "/" with space around it between them. This is the first cut, made on the
- * phone without asking anyone. The estimate makes the last one: it is given
- * these dishes, and splits one that is plainly two, such as "burger fries"
- * written with only a space, or joins two that are plainly one.
+ * bullet, for each, or a comma between them. A Chinese comma and an
+ * enumeration comma count, and so does a semicolon. "with" is not a new dish,
+ * and neither is "and", "plus", "+", "&" or "/": "beef with broccoli",
+ * "tomato and egg" and "bean sprouts + chives" are one dish each. This is the
+ * first cut, made on the phone without asking anyone. The estimate makes the
+ * last one: it is given these dishes, and splits one that is plainly two,
+ * such as "burger fries" written with only a space, or joins two that are
+ * plainly one. It does not read "with" as a separator.
  *
  * A dish can say in brackets how it was shared: "sandwich (60% gators 40%
  * hippos)", "fries (80% h 20% g)", "coke (75% g)", "sprouts (50% each)", or
@@ -14,11 +17,31 @@ import type { Eater } from "./meal-dishes.ts";
  * taken off the dish before anything estimates it, and becomes its share.
  */
 
-/** "and" written any of the ways people write it inside a name. */
-const AND = "\\s*(?:and|&|'n'?|n'|n)\\s*";
+/** A part that only says more about the dish before it: its size, its weight, or how it came. */
+const DETAIL = new RegExp(
+  [
+    "^\\d+(?:\\.\\d+)?\\s*(?:-?\\s*inch(?:es)?|in|\"|cm|mm|g|gr|grams?|kg|oz|ounces?|ml|cl|l|liters?|litres?|lbs?|pounds?|cups?|tbsp|tsp|pints?|fl ?oz|servings?|portions?|orders?|helpings?|pcs?|pieces?)(?=\\s|$)(?:\\s+(?:cooked|raw|dry|uncooked|each|total|wide|across|pie))?$",
+    "^(?:small|medium|large|regular|x?xl|extra large|grande|venti|tall|short|kids?|personal|single|double|triple)(?:\\s+(?:size|order|portion|serving|one))?$",
+    "^(?:grilled|fried|deep fried|baked|steamed|raw|cooked|roasted|toasted|iced|hot|cold|warm|spicy|mild|well done|medium rare|rare|scrambled|poached|sunny side up|over easy|plain|unsweetened|sweetened)$",
+    "^(?:no|without|extra|light|easy on|add(?:ed)?|with|w/|hold the|sub(?:stitute)?)(?=\\s|$)",
+    "^(?:sauce|dressing|cheese)? ?on the side$",
+  ].join("|"),
+  "i",
+);
 
-/** Names that are one dish with "and" in them. */
-const ONE_DISH = [
+const LIST_MARK = /^\s*(?:[-*•·▪◦‣]|\d+[.)])\s+/;
+/** A comma, a Chinese comma, an enumeration comma, a semicolon, or a bar. "and" right after a comma belongs to that comma. */
+const LINE_BETWEEN = /\s*[;；|｜]\s*|\s*[,，、]\s*(?:(?:and|plus|&)\s+)?/iu;
+/** A comma that is part of the name, not a new dish: "bacon, egg and cheese". */
+const COMMA_IN_THE_NAME = /(?:bacon|sausage|ham), egg and cheese/gi;
+
+/**
+ * Item expansion still cuts on "and", "plus", "+", "&" and "/". A dish does
+ * not: "beef and broccoli" is one dish. Names that are one item with "and"
+ * in them are kept whole on that cut.
+ */
+const AND = "\\s*(?:and|&|'n'?|n'|n)\\s*";
+const ONE_ITEM = [
   "mac(?:aroni)? and cheese",
   "fish and chips",
   "salt and (?:pepper|vinegar)",
@@ -46,27 +69,8 @@ const ONE_DISH = [
   "black and white",
   "cheese and crackers",
 ].map((name) => new RegExp(`\\b${name.replace(/ and /g, AND)}\\b`, "gi"));
-
-/** A part that only says more about the dish before it: its size, its weight, or how it came. */
-const DETAIL = new RegExp(
-  [
-    "^\\d+(?:\\.\\d+)?\\s*(?:-?\\s*inch(?:es)?|in|\"|cm|mm|g|gr|grams?|kg|oz|ounces?|ml|cl|l|liters?|litres?|lbs?|pounds?|cups?|tbsp|tsp|pints?|fl ?oz|servings?|portions?|orders?|helpings?|pcs?|pieces?)(?=\\s|$)(?:\\s+(?:cooked|raw|dry|uncooked|each|total|wide|across|pie))?$",
-    "^(?:small|medium|large|regular|x?xl|extra large|grande|venti|tall|short|kids?|personal|single|double|triple)(?:\\s+(?:size|order|portion|serving|one))?$",
-    "^(?:grilled|fried|deep fried|baked|steamed|raw|cooked|roasted|toasted|iced|hot|cold|warm|spicy|mild|well done|medium rare|rare|scrambled|poached|sunny side up|over easy|plain|unsweetened|sweetened)$",
-    "^(?:no|without|extra|light|easy on|add(?:ed)?|with|w/|hold the|sub(?:stitute)?)(?=\\s|$)",
-    "^(?:sauce|dressing|cheese)? ?on the side$",
-  ].join("|"),
-  "i",
-);
-
-/**
- * After one of these, "and" joins what is on the dish rather than starting
- * another: "burger with lettuce and tomato", "platter: 2 rolls and 6 nigiri".
- */
+/** After one of these, "and" joins what is in the item: "burger with lettuce and tomato". */
 const ON_IT = /(?:^|\s)(?:with|w\/|topped with|served with|no|without|extra|add)(?=\s|$)|:/i;
-
-const LIST_MARK = /^\s*(?:[-*•·▪◦‣]|\d+[.)])\s+/;
-const LINE_BETWEEN = /\s*[;|]\s*|\s*,\s*(?:(?:and|plus|&)\s+)?/i;
 const WORD_BETWEEN = /(\s+[+&/]\s+|\s+(?:and|plus)\s+)/i;
 
 /** Brackets hide what is in them: "pizza (ham and pineapple)" is one dish. */
@@ -276,9 +280,10 @@ export function withoutShares(text: string) {
 /**
  * The dishes in a description, in its order. Every word of it is in one of
  * them, so nothing typed is lost; blank gives none. Past the limit, the rest
- * share the last dish.
+ * share the last dish. Item expansion passes splitWords, and then also cuts
+ * on "and", "plus", "+", "&" and "/". A dish never does, and never on "with".
  */
-export function splitDishText(text: string, limit = 20): string[] {
+export function splitDishText(text: string, limit = 20, splitWords = false): string[] {
   const parts: string[] = [];
   const add = (raw: string, kept: string[]) => {
     const dish = show(raw, kept)
@@ -296,20 +301,26 @@ export function splitDishText(text: string, limit = 20): string[] {
     if (!line) continue;
     const kept: string[] = [];
     let guarded = hide(line, kept);
-    for (const name of ONE_DISH)
-      guarded = guarded.replace(name, (match) => `\u0000${kept.push(match) - 1}\u0000`);
+    guarded = guarded.replace(COMMA_IN_THE_NAME, (match) => `\u0000${kept.push(match) - 1}\u0000`);
+    if (splitWords) {
+      for (const name of ONE_ITEM)
+        guarded = guarded.replace(name, (match) => `\u0000${kept.push(match) - 1}\u0000`);
+    }
     for (const segment of guarded.split(LINE_BETWEEN)) {
-      // Pieces and the words between them, so a joined piece keeps its "and".
+      if (!splitWords) {
+        add(segment, kept);
+        continue;
+      }
       const pieces = segment.split(WORD_BETWEEN);
-      let dish = pieces[0] ?? "";
+      let item = pieces[0] ?? "";
       for (let index = 1; index < pieces.length; index += 2) {
-        if (ON_IT.test(show(dish, kept))) dish += pieces[index] + pieces[index + 1];
+        if (ON_IT.test(show(item, kept))) item += pieces[index] + pieces[index + 1];
         else {
-          add(dish, kept);
-          dish = pieces[index + 1];
+          add(item, kept);
+          item = pieces[index + 1];
         }
       }
-      add(dish, kept);
+      add(item, kept);
     }
   }
   if (parts.length <= limit) return parts;
