@@ -88,15 +88,42 @@ test("each estimator's answer shows as it lands, and the settled one fills the m
   await expect(calories).toHaveValue("");
   expect((await soFar.boundingBox())!.y).toBeLessThan((await calories.boundingBox())!.y);
 
+  // Which answers count, and how much, waits for the estimate to finish.
+  const weights = page.getByRole("region", { name: "Estimator weights" });
+  await expect(weights).toHaveCount(0);
   await push(page, { type: "done", provider: "average", estimate: bowl(711.4) });
   // All three count. Grok was less sure, so its 25 counts as 12.5:
   // (600 x 40 + 700 x 35 + 1100 x 12.5) / 87.5.
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("711.4");
   await expect(page.getByText("Averaged across estimators")).toBeVisible();
-  await expect(soFar.getByRole("checkbox", { name: "Include Codex" })).toBeChecked();
-  await expect(soFar.getByRole("checkbox", { name: "Include Claude" })).toBeChecked();
-  await expect(soFar.getByRole("checkbox", { name: "Include Grok" })).toBeChecked();
-  await expect(soFar.getByLabel("Codex weight")).toHaveValue("40");
+  await expect(weights.getByRole("checkbox", { name: "Include Codex" })).toBeChecked();
+  await expect(weights.getByRole("checkbox", { name: "Include Claude" })).toBeChecked();
+  await expect(weights.getByRole("checkbox", { name: "Include Grok" })).toBeChecked();
+  await expect(weights.getByRole("slider", { name: "Codex weight" })).toHaveValue("40");
+  // Each estimator's macros sit beside its weight, at the very top of the form.
+  const answered = weights.getByRole("listitem");
+  await expect(answered).toHaveCount(3);
+  await expect(answered.nth(0)).toContainText("Codex");
+  await expect(weights.getByLabel("Codex calories")).toHaveValue("600");
+  await expect(weights.getByLabel("Codex protein")).toHaveValue("30");
+  await expect(weights.getByLabel("Codex carbs")).toHaveValue("60");
+  await expect(weights.getByLabel("Codex fat")).toHaveValue("20");
+  // Shares follow the blend: weight times confidence. Codex 40/87.5, Grok 12.5/87.5.
+  await expect(answered.nth(0)).toContainText("46% of the meal");
+  await expect(weights.getByLabel("Grok calories")).toHaveValue("1100");
+  await expect(answered.nth(2)).toContainText("14% of the meal");
+  // Macros only: each one's working is said once, under Answers so far.
+  await expect(weights).not.toContainText("About 600 kcal.");
+  await expect(weights.getByRole("status")).toHaveText("Weighted average · 711 kcal · 30P · 60C · 20F");
+  const describe = page.getByLabel("Meal description");
+  expect((await weights.boundingBox())!.y).toBeLessThan((await page.getByRole("group", { name: "Athlete" }).boundingBox())!.y);
+  expect((await weights.boundingBox())!.y).toBeLessThan((await describe.boundingBox())!.y);
+  await expect(soFar.getByRole("checkbox")).toHaveCount(0);
+  // The assumptions would only repeat Answers so far, so only the reply stays.
+  await expect(page.getByRole("region", { name: "Review estimate" })).toHaveCount(0);
+  await expect(page.getByLabel("Assumptions")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Reply to estimate" })).toBeVisible();
+  await expect(soFar.getByText("About 700 kcal.")).toHaveCount(1);
   await expect(answers).toHaveCount(3);
   await expect(soFar.getByText("About 600 kcal.")).toBeVisible();
   await expect(soFar.getByText("About 700 kcal.")).toBeVisible();
@@ -143,22 +170,26 @@ test("a label counts double beside the guesses, and the answers can be included 
   // One label leaves nobody out. Claude's 35 counts as 70, the guesses' 40 and
   // 25 as 20 and 12.5: (600 x 20 + 700 x 70 + 1100 x 12.5) / 102.5.
   const soFar = page.getByRole("status", { name: "Answers so far" });
+  const weights = page.getByRole("region", { name: "Estimator weights" });
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("729.3");
   await expect(page.getByText("Averaged across estimators")).toBeVisible();
-  await expect(soFar.getByRole("checkbox", { name: "Include Codex" })).toBeChecked();
-  const claude = soFar.getByRole("checkbox", { name: "Include Claude" });
+  await expect(weights.getByRole("checkbox", { name: "Include Codex" })).toBeChecked();
+  const claude = weights.getByRole("checkbox", { name: "Include Claude" });
   await expect(claude).toBeChecked();
-  await expect(soFar.getByRole("checkbox", { name: "Include Grok" })).toBeChecked();
+  await expect(weights.getByRole("checkbox", { name: "Include Grok" })).toBeChecked();
+  await expect(soFar.getByRole("checkbox")).toHaveCount(0);
+  await expect(soFar.getByText("About 600 kcal.")).toBeVisible();
+  await expect(soFar.getByText("About 1100 kcal.")).toBeVisible();
 
-  await soFar.getByRole("checkbox", { name: "Include Grok" }).uncheck();
+  await weights.getByRole("checkbox", { name: "Include Grok" }).uncheck();
   // 600 x 20 and 700 x 70, over 90.
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("677.8");
 
-  await soFar.getByLabel("Codex weight").fill("10");
+  await weights.getByRole("slider", { name: "Codex weight" }).fill("10");
   // Codex's 10 counts as 5: 600 x 5 and 700 x 70, over 75.
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("693.3");
 
-  await soFar.getByRole("checkbox", { name: "Include Codex" }).uncheck();
+  await weights.getByRole("checkbox", { name: "Include Codex" }).uncheck();
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("700");
   await expect(page.getByText("Answered by Claude")).toBeVisible();
   await expect(claude).toBeDisabled();
@@ -168,19 +199,20 @@ test("a label counts double beside the guesses, and the answers can be included 
   await push(page, { type: "partial", provider: "codex", estimate: bowl(600) });
   await push(page, { type: "partial", provider: "claude", estimate: bowl(700) });
   await push(page, { type: "done", provider: "average", estimate: bowl(650) });
-  await expect(soFar.getByLabel("Codex weight")).toHaveValue("10");
-  await expect(soFar.getByLabel("Claude weight")).toHaveValue("35");
+  await expect(weights.getByRole("slider", { name: "Codex weight" })).toHaveValue("10");
+  await expect(weights.getByRole("slider", { name: "Claude weight" })).toHaveValue("35");
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("677.8");
 
-  // Two labels leave a guess out: Grok starts unticked.
+  // Two labels leave a guess out: Grok starts unticked. Codex's saved 10
+  // counts double, as 20, beside Claude's 70.
   await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
   await push(page, { type: "partial", provider: "codex", estimate: bowl(600, "high") });
   await push(page, { type: "partial", provider: "claude", estimate: bowl(700, "high") });
   await push(page, { type: "partial", provider: "grok", estimate: bowl(1100, "low") });
   await push(page, { type: "done", provider: "average", estimate: bowl(677.8) });
-  await expect(soFar.getByRole("checkbox", { name: "Include Codex" })).toBeChecked();
-  await expect(soFar.getByRole("checkbox", { name: "Include Claude" })).toBeChecked();
-  await expect(soFar.getByRole("checkbox", { name: "Include Grok" })).not.toBeChecked();
+  await expect(weights.getByRole("checkbox", { name: "Include Codex" })).toBeChecked();
+  await expect(weights.getByRole("checkbox", { name: "Include Claude" })).toBeChecked();
+  await expect(weights.getByRole("checkbox", { name: "Include Grok" })).not.toBeChecked();
   // 600 x 20 and 700 x 70, over 90.
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("677.8");
 });
