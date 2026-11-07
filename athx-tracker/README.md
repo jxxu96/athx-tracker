@@ -313,7 +313,7 @@ single SQLite file on a volume.
   is there to read: the keys are fixed, and the header switch still turns them
   on or off on a computer.
   Setup is the gear at the right of the header, which leaves the bottom bar
-  five tabs: Today, Session, Meal, Progress and Log. What is typed in Setup
+  five tabs: Today, Session, Meal, Log and Progress. What is typed in Setup
   stays there on any other tab until it is saved or discarded, and the gear
   carries a dot meanwhile; a refresh, or a template saved from Meal, leaves it
   alone. The save bar sticks above the bottom bar, says whether anything is

@@ -167,7 +167,7 @@ test("a phone opens on whoever it last logged for", async ({ page }) => {
 
 test("five tabs below, Setup on the gear, and what is typed there waits for Save or Discard", async ({ page }) => {
   await expect(page.getByRole("navigation", { name: "Sections" }).getByRole("button")).toHaveText([
-    "Today", "Session", "Meal", "Progress", "Log",
+    "Today", "Session", "Meal", "Log", "Progress",
   ]);
   await gear(page).click();
   await expect(gear(page)).toHaveAttribute("aria-current", "page");

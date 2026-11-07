@@ -83,8 +83,8 @@ const TABS = [
   { id: "today", label: "Today", icon: CalendarDays },
   { id: "session", label: "Session", icon: Dumbbell },
   { id: "meal", label: "Meal", icon: UtensilsCrossed },
-  { id: "progress", label: "Progress", icon: TrendingUp },
   { id: "log", label: "Log", icon: ScrollText },
+  { id: "progress", label: "Progress", icon: TrendingUp },
 ] as const satisfies readonly { id: Tab; label: string; icon: typeof Dumbbell }[];
 
 /** Nothing to subscribe to: the device's day is read once, after hydration. */
