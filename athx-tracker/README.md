@@ -33,9 +33,12 @@ single SQLite file on a volume.
   against it: for a day, that day's; for a longer range, a day's average. See
   *Resting energy and the balance* below. The race-day estimate, Progress and
   Fuel over the whole journal are worked out on the server from every entry,
-  so an old best counts however much has been logged since. The last session stays underneath,
-  with its time, what it burned, and the whole-session estimate when the
-  stations support one, and so does the ATHX Lite running order.
+  so an old best counts however much has been logged since. Under the counts,
+  the last 7 days list each session, including its time, what it burned, and
+  the whole-session estimate when the stations support one. The ATHX Lite
+  running order follows. Under that is a request log for features and ideas:
+  shared between the two of you, kept with the journal, and not listed in the
+  Log. Mark one done when it has been dealt with, or delete it.
   Tap any box away from its buttons to fold it to one line, such as this
   week's counts, and see what is under it; tap again to open it. The days to
   go are a chip at the left of the header, "295 d", and read out in full to a
@@ -303,6 +306,9 @@ single SQLite file on a volume.
   until set, and a blank target is no target.
   Each athlete's targets are for the lifts Progress follows for them, so Hippos
   sets a push press where Gators sets an overhead press.
+  Keyboard shortcuts are listed in Setup, grouped by where they work. The list
+  is there to read: the keys are fixed, and the header switch still turns them
+  on or off on a computer.
   Setup is the gear at the right of the header, which leaves the bottom bar
   five tabs: Today, Session, Meal, Progress and Log. What is typed in Setup
   stays there on any other tab until it is saved or discarded, and the gear
@@ -368,7 +374,7 @@ it declines rather than guessing.
 
 It is worked out again from the stations, fatigue and transition already on the
 session, not stored as a second figure that could drift. Reading a part-finished
-session shows it as one line, on the log entry and on Today's last session: the
+session shows it as one line, on the log entry and under Today's sessions: the
 estimated finish as a clock time, beside the time and the burn. A session with no
 stations, no elapsed time, unfinished work that has no pace, or station times that
 cannot fit the elapsed time shows nothing, not a zero. Logging still does not ask

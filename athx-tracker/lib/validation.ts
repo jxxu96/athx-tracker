@@ -4,6 +4,7 @@ import {
   DEFAULT_SETTINGS,
   ENERGY_MAX,
   ENERGY_MIN,
+  REQUEST_TEXT_LIMIT,
   MEAL_TEMPLATE_GRAMS_LIMIT,
   MEAL_TEMPLATE_ITEM_LIMIT,
   MEAL_TEMPLATE_ITEMS,
@@ -174,7 +175,14 @@ export const energySchema = z.object({
   time,
   level: z.number().int().min(ENERGY_MIN).max(ENERGY_MAX),
 }).strict();
-export const recordSchema = z.union([workoutSchema, mealSchema, bodyweightSchema, energySchema]);
+/** An idea for the app. The pair's, so it is not filed under one athlete. */
+export const requestSchema = z.object({
+  ...base, kind: z.literal("request"), athlete: z.literal("team"),
+  time,
+  text: z.string().trim().min(1).max(REQUEST_TEXT_LIMIT),
+  done: z.literal(true).optional(),
+}).strict();
+export const recordSchema = z.union([workoutSchema, mealSchema, bodyweightSchema, energySchema, requestSchema]);
 const pastTargetsSchema = z.array(z.object({ until: daySchema, macros: macroSchema }).strict())
   .max(TARGET_HISTORY_LIMIT);
 const birthYear = z.union([z.literal(0), z.number().int().min(1900).max(2100)]);

@@ -1,28 +1,24 @@
 "use client";
 
-import { Dumbbell, Target } from "lucide-react";
+import { Dumbbell } from "lucide-react";
 import { CollapsibleCard } from "@/components/collapsible-card";
 import { Energy } from "@/components/energy";
 import { Fuel } from "@/components/fuel";
 import { RaceEstimate, RaceProgress, raceLine } from "@/components/race-estimate";
+import { RequestLog } from "@/components/request-log";
 import { SessionCalendar } from "@/components/session-calendar";
 import { zoneGoals } from "@/lib/race";
 import {
   ATHLETES,
   DEFAULT_SETTINGS,
   METCON,
-  categoryName,
-  completionLine,
-  distanceLine,
   metconLoadText,
-  estimateBurn,
-  formatTimeOrDash,
-  scenarioLine,
   type EnergyCheckIn,
+  type FeatureRequest,
   type RecordItem,
   type Settings,
 } from "@/lib/domain";
-import { bodyweightOn, type BodyweightHistory } from "@/lib/bodyweight";
+import type { BodyweightHistory } from "@/lib/bodyweight";
 import { addDays, isWorkout, weekStart } from "@/lib/client";
 import type { JournalSummary } from "@/lib/summary";
 
@@ -79,6 +75,8 @@ export function Overview({
   heldFrom,
   onLoadSessions,
   onCheckIn,
+  onSaveRequest,
+  onDeleteRequest,
   shortcutsEnabled = false,
 }: {
   records: RecordItem[];
@@ -94,6 +92,9 @@ export function Overview({
   onLoadSessions: (from: string, to: string) => Promise<void>;
   /** Today's energy for one athlete, tapped on its card. */
   onCheckIn: (record: EnergyCheckIn) => Promise<void>;
+  /** An idea added or marked done on the request log. */
+  onSaveRequest: (record: FeatureRequest) => Promise<void>;
+  onDeleteRequest: (id: string) => Promise<void>;
   shortcutsEnabled?: boolean;
 }) {
   const thisWeek = weekStart(today);
@@ -104,14 +105,6 @@ export function Overview({
     { label: "This week", workouts: workouts.filter((w) => weekStart(w.day) === thisWeek) },
     { label: "Last 7 D", workouts: workouts.filter((w) => w.day >= sevenDaysAgo && w.day <= today) },
   ];
-  const lastSession = workouts.find((w) => w.day <= today) ?? workouts[0];
-  // The log shows every session's burn; the panel that puts one session in
-  // front of you was the one place leaving it out.
-  const lastBurn =
-    lastSession && lastSession.athlete !== "team"
-      ? estimateBurn(lastSession, bodyweightOn(history, lastSession.athlete, lastSession.day))
-      : null;
-  const lastScenario = lastSession ? scenarioLine(lastSession) : null;
   const unit = settings.weightUnit ?? "lb";
 
   // The days to go are in the header now. Fuel is what gets checked most, so
@@ -223,45 +216,6 @@ export function Overview({
         />
       </Panel>
 
-      {lastSession ? (
-        <Panel
-          title="Last session"
-          icon={<Target className="size-4 text-muted-foreground" />}
-          mini={`${lastSession.title} · ${formatTimeOrDash(lastSession.seconds)} · ${lastSession.day}`}
-        >
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <p className="font-medium">{lastSession.title}</p>
-            <p className="text-sm tabular-nums text-muted-foreground">
-              {formatTimeOrDash(lastSession.seconds)}
-              {lastBurn !== null ? ` · ~${lastBurn} kcal` : ""}
-            </p>
-          </div>
-          {lastScenario ? (
-            <p className="mt-1 text-xs text-muted-foreground">{lastScenario}</p>
-          ) : null}
-          {completionLine(lastSession) ? (
-            <p className="mt-1 text-xs text-muted-foreground">
-              {completionLine(lastSession)}
-            </p>
-          ) : null}
-          {distanceLine(lastSession) ? (
-            <p className="mt-1 text-xs text-muted-foreground">
-              {distanceLine(lastSession)}
-            </p>
-          ) : null}
-          <p className="mt-1 text-xs text-muted-foreground">
-            {ATHLETES[lastSession.athlete].name} · {categoryName(lastSession)} ·{" "}
-            {lastSession.context === "pairs" ? "Pairs" : "Solo"} · {lastSession.day}
-            {lastSession.time ? ` ${lastSession.time}` : ""}
-          </p>
-          {lastSession.notes ? (
-            <p className="mt-3 whitespace-pre-wrap text-xs text-muted-foreground">
-              {lastSession.notes}
-            </p>
-          ) : null}
-        </Panel>
-      ) : null}
-
       <Panel
         title="ATHX Lite running order"
         mini={`${METCON.length} stations, ${METCON[0].name} to ${METCON[METCON.length - 1].name}`}
@@ -284,6 +238,13 @@ export function Overview({
           ))}
         </ol>
       </Panel>
+
+      <RequestLog
+        records={records}
+        today={today}
+        onSave={onSaveRequest}
+        onDelete={onDeleteRequest}
+      />
     </div>
   );
 }

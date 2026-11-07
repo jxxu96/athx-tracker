@@ -54,6 +54,27 @@ test("desktop shortcuts select athletes, sections, and sittings until turned off
   await expect(meal).toHaveAttribute("aria-current", "page");
 });
 
+test("setup lists every shortcut and does not edit them", async ({ page }) => {
+  await page.getByRole("button", { name: "Setup", exact: true }).click();
+  const list = page.getByRole("region", { name: "Keyboard shortcuts" });
+  const anywhere = list.getByRole("group", { name: "Anywhere" });
+  const today = list.getByRole("group", { name: "Today" });
+  const session = list.getByRole("group", { name: "Session" });
+  const meal = list.getByRole("group", { name: "Meal" });
+
+  await expect(anywhere.getByText("Log for Gators")).toBeVisible();
+  await expect(anywhere.getByText("Log for both")).toBeVisible();
+  await expect(anywhere.locator("kbd")).toHaveText(["G", "H", "V", "W", "M", "T", "P"]);
+  await expect(today.locator("kbd")).toHaveText(["Y"]);
+  await expect(today.getByText("Energy for yesterday")).toBeVisible();
+  await expect(session.locator("kbd")).toHaveText(["D", "Y"]);
+  await expect(meal.locator("kbd")).toHaveText(["B", "L", "D", "S", "A", "Y"]);
+  await expect(meal.getByText("Dinner")).toBeVisible();
+  await expect(list.locator("input, textarea, select")).toHaveCount(0);
+  await expect(list.getByRole("button")).toHaveCount(0);
+  await expect(list.getByRole("textbox")).toHaveCount(0);
+});
+
 test("fields, open calendars, and modifier keys take priority over shortcuts", async ({ page }) => {
   const toggle = page.getByRole("button", { name: "Keyboard shortcuts" });
   const sections = page.getByRole("navigation", { name: "Sections" });

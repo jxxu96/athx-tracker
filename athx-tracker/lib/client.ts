@@ -1,4 +1,4 @@
-import type { Bodyweight, EnergyCheckIn, RecordItem, Workout, Meal } from "./domain";
+import type { Bodyweight, EnergyCheckIn, FeatureRequest, RecordItem, Workout, Meal } from "./domain";
 
 /** Same-origin JSON call. Dispatch injects the identity headers. */
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -83,7 +83,7 @@ export function formatDay(day: string, today: string) {
  * no time keep the order they came in, newest saved first, after the timed
  * ones: the sort is stable, and the server sends them newest first.
  */
-export function sortRecords(records: RecordItem[]) {
+export function sortRecords<T extends { day: string; time?: string }>(records: readonly T[]) {
   return [...records].sort((a, b) => {
     if (a.day !== b.day) return a.day < b.day ? 1 : -1;
     const at = a.time ?? "";
@@ -103,3 +103,5 @@ export const isWeighIn = (record: RecordItem): record is Bodyweight =>
   record.kind === "bodyweight";
 export const isCheckIn = (record: RecordItem): record is EnergyCheckIn =>
   record.kind === "energy";
+export const isRequest = (record: RecordItem): record is FeatureRequest =>
+  record.kind === "request";

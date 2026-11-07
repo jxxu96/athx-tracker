@@ -115,6 +115,23 @@ test("an energy check-in is a whole number from 1 to 10, for one athlete", () =>
   assert.ok(!ok(recordSchema, { ...checkIn, note: "tired" }), "unknown fields are refused");
 });
 
+test("a request is the pair's idea, and nothing else", () => {
+  const request = {
+    id: "3f1a5f2e-9c4b-4d7a-8e21-6b0c9d5a1234",
+    kind: "request", athlete: "team", day: "2026-10-22", time: "21:05",
+    text: "Show the keybinds in Setup",
+  };
+  assert.ok(ok(recordSchema, request));
+  assert.ok(ok(recordSchema, { ...request, done: true }));
+  assert.ok(ok(recordSchema, { ...request, time: undefined }), "the time of day is optional");
+  assert.ok(ok(recordSchema, { ...request, text: "  padded  " }), "surrounding space is not part of it");
+  assert.ok(!ok(recordSchema, { ...request, athlete: "hippos" }), "an idea is not one person's");
+  assert.ok(!ok(recordSchema, { ...request, text: "   " }), "blank is not an idea");
+  assert.ok(!ok(recordSchema, { ...request, text: "x".repeat(501) }));
+  assert.ok(!ok(recordSchema, { ...request, done: false }));
+  assert.ok(!ok(recordSchema, { ...request, note: "later" }), "unknown fields are refused");
+});
+
 test("settings saved before bodyweight existed still parse", () => {
   const legacy = {
     eventDate: "2027-08-28", eventName: "ATHX New York", weeklyTarget: 4,
