@@ -14,6 +14,7 @@ import {
   ATHLETES,
   ENERGY_MAX,
   ESTIMATORS,
+  type FeatureRequest,
   categoryName,
   completionLine,
   distanceLine,
@@ -33,7 +34,7 @@ import {
   type Workout,
 } from "@/lib/domain";
 import { bodyweightOn, type BodyweightHistory } from "@/lib/bodyweight";
-import { formatDay, isCheckIn, isWeighIn, isWorkout } from "@/lib/client";
+import { formatDay, isCheckIn, isRequest, isWeighIn, isWorkout } from "@/lib/client";
 import type { OutboxEntry } from "@/lib/outbox";
 
 /** Entries drawn at once. More arrive on request, rather than all at once. */
@@ -213,8 +214,11 @@ export function History({
   const [busy, setBusy] = useState("");
   const [shown, setShown] = useState(PAGE);
 
+  // Requests are the idea log on Today. They are not sessions, meals or
+  // check-ins, so the Log does not list them among those.
   const matching = records.filter(
-    (record) =>
+    (record): record is Exclude<RecordItem, FeatureRequest> =>
+      !isRequest(record) &&
       (athlete === "all" || record.athlete === athlete) &&
       (kind === "all" || record.kind === kind),
   );

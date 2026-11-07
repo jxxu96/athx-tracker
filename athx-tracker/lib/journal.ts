@@ -1,26 +1,6 @@
 import { database } from "./server";
 import type { RecordItem, Settings } from "./domain";
-
-/**
- * The most recent entries and every weigh-in and energy check-in besides,
- * from a journal already newest first. A session's burn needs the weight in
- * force on its day, which can be a weigh-in from long before anything in the
- * recent slice. The energy card and the weekly review compare check-ins
- * across weeks, and at one a day for each athlete they stay small. Both are
- * few enough always to send.
- */
-export function recentOf(records: readonly RecordItem[], limit: number) {
-  const recent: RecordItem[] = [];
-  let taken = 0;
-  for (const record of records) {
-    if (record.kind === "bodyweight" || record.kind === "energy") recent.push(record);
-    else if (taken < limit) {
-      recent.push(record);
-      taken += 1;
-    }
-  }
-  return recent;
-}
+import { recentOf } from "./recent";
 
 /**
  * Entries, newest first: with a limit, the recent slice; without one,

@@ -588,9 +588,12 @@ test("a session reports what it burned, once it can", async ({ page }) => {
   await openLog(page);
   await expect(page.getByText(/· Tennis · 60:00 · ~620 kcal/)).toBeVisible();
 
-  // And on the panel that puts the last session in front of you.
+  // And in the week's sessions, which is where Today shows the latest one.
   await page.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: "Today", exact: true }).click();
-  await expect(page.getByText(/60:00 · ~620 kcal/)).toBeVisible();
+  const sessions = page.locator("section").filter({ has: page.getByRole("heading", { name: "Sessions" }) });
+  await expect(sessions.getByText("60:00", { exact: true })).toBeVisible();
+  await expect(sessions.getByText(/~620 kcal/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Last session" })).toHaveCount(0);
 });
 
 test("squats with no clock still show a burn", async ({ page }) => {

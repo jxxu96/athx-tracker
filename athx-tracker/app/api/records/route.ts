@@ -6,7 +6,7 @@ import { kickQueue } from "@/lib/queue";
 import { daySchema, recordSchema } from "@/lib/validation";
 import { ZodError } from "zod";
 
-const KINDS: RecordItem["kind"][] = ["workout", "meal", "bodyweight", "energy"];
+const KINDS: RecordItem["kind"][] = ["workout", "meal", "bodyweight", "energy", "request"];
 
 export async function GET(request: Request) {
   const rejected = await guard(request);

@@ -135,7 +135,20 @@ export type EnergyCheckIn = {
 };
 export const ENERGY_MIN = 1;
 export const ENERGY_MAX = 10;
-export type RecordItem = Workout | Meal | Bodyweight | EnergyCheckIn;
+/** How long one idea in the request log may be. */
+export const REQUEST_TEXT_LIMIT = 500;
+/**
+ * A feature or an idea, kept with the journal so both phones see it. It is
+ * the pair's, not one athlete's, and Today is where it is written and read.
+ * done is set once it has been dealt with, and omitted while it is open.
+ */
+export type FeatureRequest = {
+  id: string; kind: "request"; athlete: "team"; day: string;
+  time?: ClockTime;
+  text: string;
+  done?: true;
+};
+export type RecordItem = Workout | Meal | Bodyweight | EnergyCheckIn | FeatureRequest;
 /**
  * The lifts Progress follows, in the order it shows them. The name is the
  * picker's spelling; the key is what a target is stored under.

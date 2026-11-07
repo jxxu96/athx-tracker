@@ -37,6 +37,7 @@ import {
   RECENT_LIMIT,
   type Bodyweight,
   type EnergyCheckIn,
+  type FeatureRequest,
   type Meal,
   type RecordItem,
   type Settings,
@@ -217,6 +218,7 @@ export function Tracker({
     window.scrollTo(0, 0);
   }, [openDraftOnForm]);
 
+  // Setup lists every one of these. The keys are fixed.
   useKeyboardShortcuts(shortcutsEnabled, {
     g: () => setWho("gators"),
     h: () => setWho("hippos"),
@@ -568,6 +570,21 @@ export function Tracker({
    * it shows chosen says so. One that waits on the phone, or is refused, does say.
    */
   const checkIn = useCallback(async (record: EnergyCheckIn) => {
+    try {
+      const result = await persist([record]);
+      if (result.reason) toast("Saved on this phone", { description: result.reason, icon: <CloudOff className="size-4" /> });
+    } catch (error) {
+      toast.error(message(error));
+      throw error;
+    }
+  }, [persist]);
+
+  /**
+   * An idea on Today's request log. No notice when it lands: the line it
+   * adds, or the one it strikes through, says so. One that waits, or is
+   * refused, does say.
+   */
+  const saveRequest = useCallback(async (record: FeatureRequest) => {
     try {
       const result = await persist([record]);
       if (result.reason) toast("Saved on this phone", { description: result.reason, icon: <CloudOff className="size-4" /> });
@@ -973,6 +990,8 @@ export function Tracker({
             heldFrom={heldFrom}
             onLoadSessions={loadSessions}
             onCheckIn={checkIn}
+            onSaveRequest={saveRequest}
+            onDeleteRequest={remove}
             shortcutsEnabled={shortcutsEnabled}
           />
         ) : tab === "progress" ? (

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Field } from "@/components/workout-form";
+import { Keybinds } from "@/components/keybinds";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { toast } from "sonner";
 import { api, formatDay, message, newId } from "@/lib/client";
@@ -701,6 +702,8 @@ export function SettingsForm({
           <ThemeToggle />
         </div>
       </section>
+
+      <Keybinds />
 
       <section className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
         <h3 className="text-sm font-semibold">Your data</h3>
