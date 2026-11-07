@@ -10,10 +10,12 @@ export const metadata: Metadata = {
     title: "Hippos & Gators",
     statusBarStyle: "default",
   },
+  // The running hippo, drawn by scripts/make-icons.mjs. iPhones take no SVG
+  // for the home screen, so theirs is a PNG.
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
-    apple: "/favicon.svg",
+    apple: { url: "/apple-touch-icon.png", sizes: "180x180" },
   },
 };
 
