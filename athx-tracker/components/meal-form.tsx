@@ -81,10 +81,13 @@ import {
   emptyDish,
   fillDish,
   readDishes,
+  shareAsWritten,
+  shareText,
   splitMeal,
+  takeWrittenShare,
   type DishDraft,
 } from "@/lib/meal-dishes";
-import { splitDishText } from "@/lib/dish-split";
+import { readDishShare, withoutShares, writtenDishes } from "@/lib/dish-split";
 
 const MACRO_FIELDS = [
   { key: "calories", label: "Calories", unit: "kcal" },
@@ -615,20 +618,22 @@ export function MealForm({
    * form came from the whole meal, so they stay together as the first dish,
    * estimate and all. A description with no figures yet is cut into dishes
    * where it was written as dishes (`splitDishText`), each to be typed in or
-   * estimated. Every dish starts shared half and half. A name typed for the
-   * whole meal stays the meal's name, unless it was all there was, in which
-   * case it is what gets cut into dishes instead.
+   * estimated. Every dish starts shared half and half, unless a share was
+   * written with it, such as "fries (80% h)". A name typed for the whole
+   * meal stays the meal's name, unless it was all there was, in which case it
+   * is what gets cut into dishes instead.
    */
   function splitByDish() {
     const text = description.trim() || name.trim();
+    const written = writtenDishes(text, DISH_LIMIT);
     const figured = assumptions.trim() !== "" || fiber.trim() !== "" || ethanol.trim() !== "" ||
       MACRO_FIELDS.some(({ key }) => macros[key].trim() !== "");
     const made: DishDraft[] = figured
-      ? [{
+      ? shareAsWritten([{
           ...emptyDish(newId()),
           // Whole: the description is what the figures came from, and what
-          // the dish's own estimate will read.
-          name: text,
+          // the dish's own estimate will read, less any share written in it.
+          name: withoutShares(text).trim() || text,
           ...macros,
           fiber,
           ethanol,
@@ -637,8 +642,12 @@ export function MealForm({
           confidence,
           adjusted,
           assumptions,
-        }]
-      : splitDishText(text, DISH_LIMIT).map((part) => ({ ...emptyDish(newId()), name: part }));
+        }], written)
+      : written.map((dish) => ({
+          ...emptyDish(newId()),
+          name: dish.name,
+          ...(dish.share ? { share: shareText(dish.share) } : {}),
+        }));
     const mealName = description.trim() ? name : "";
     reset();
     setName(mealName);
@@ -661,11 +670,16 @@ export function MealForm({
     setError("");
   }
 
-  /** One dish's own estimate. The dish's text is the description, as typed. */
+  /**
+   * One dish's own estimate. The dish's text is the description, as typed,
+   * less a share written in it, which goes into the share boxes instead.
+   */
   async function estimateDish(id: string) {
     if (estimatingDish || saving) return;
-    const text = dishes.find((dish) => dish.id === id)?.name.trim() ?? "";
+    const typed = readDishShare(dishes.find((dish) => dish.id === id)?.name.trim() ?? "");
+    const text = typed.name;
     if (text.length < 3) return;
+    if (typed.share) changeDish(id, takeWrittenShare);
     setEstimatingDish(id);
     setError("");
     setDishErrors((current) => {
@@ -798,8 +812,11 @@ export function MealForm({
     const byEstimator = refining && previous
       ? ownPrevious(previous, { figures: canCheckCalories ? counted : undefined, assumptions }, partials)
       : undefined;
-    // A meal for both, not split yet, is estimated dish by dish.
+    // A meal for both, not split yet, is estimated dish by dish. A share
+    // written with a dish is not food, so the estimate never reads it.
     const asDishes = describing && !refining;
+    const described = asDishes ? withoutShares(description).trim() : description.trim();
+    const hint = asDishes ? dishHint(description) : [];
     setError("");
     setReplyError("");
     setRejected(false);
@@ -816,8 +833,8 @@ export function MealForm({
         headers: { "Content-Type": "application/json", Accept: `${NDJSON}, application/json` },
         signal: stop.signal,
         body: JSON.stringify({
-          description: description.trim().length >= 3 ? description.trim() : `Meal: ${name.trim()}`,
-          ...(asDishes ? { dishes: dishHint(description.trim()) } : {}),
+          description: described.length >= 3 ? described : `Meal: ${name.trim()}`,
+          ...(hint.length ? { dishes: hint } : {}),
           // The figures on the form, not the last answer, when they have been
           // edited and still make sense, so a reply starts from what you see.
           ...(refining && previous ? {
@@ -845,7 +862,10 @@ export function MealForm({
         // after your own dishes. The per-model box is for a whole meal.
         setPartials([]);
         setIncluded(null);
-        setDishes(dishesFromEstimate(estimate, provider, newId, undefined, description.trim()));
+        setDishes(shareAsWritten(
+          dishesFromEstimate(estimate, provider, newId, undefined, described),
+          writtenDishes(description, DISH_LIMIT),
+        ));
         setDescription("");
         setDishErrors({});
         if ((estimate.alcohol ?? 0) > 0) setSlot("Alcohol");
@@ -1102,8 +1122,11 @@ export function MealForm({
       setError(description.trim() ? "Estimate the meal, or split it by dish, first." : "Describe the meal first.");
       return;
     }
+    // A share written into a dish's name and saved before leaving the box.
+    const taken = dishes.map(takeWrittenShare);
+    if (taken.some((dish, index) => dish !== dishes[index])) setDishes(taken);
     const when = validateWhen();
-    const read = when ? null : readDishes(dishes, slot);
+    const read = when ? null : readDishes(taken, slot);
     const split = read?.ok
       ? splitMeal({
           eaters,

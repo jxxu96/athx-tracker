@@ -141,7 +141,21 @@ single SQLite file on a volume.
   needs to know food: it splits what is plainly two dishes however it was
   written, such as "burger fries" with only a space, and joins what is plainly
   one. A dish estimated again on its own can come back as two, each keeping its
-  share. **Split by dish** makes the phone's cut without estimating, for
+  share. A dish can say how it was shared in brackets after it: "sandwich
+  (60% gators 40% hippos)", "fries (80% h 20% g)", "coke (75% g)". Either name,
+  singular or plural, or its first letter, before or after the percentage; the
+  % is needed, since "60 g" is grams. Written for one of you, the other has
+  the rest; written for both, the boxes say what was written, and saving says
+  so if they do not make 100. Brackets that hold anything else stay part of the
+  dish. The share is taken off the dish and into its boxes (`readDishShare` in
+  `lib/dish-split.ts`), and no estimate ever reads it, since "gators" could be
+  read as food. An estimate that keeps the dishes gives each the share written
+  in its place; one that split or joined them gives a dish the share written
+  with its name, or with a name that holds it or that it holds, so "burger
+  fries (70% h)" split in two gives each 70%, and dishes joined from different
+  shares stay half each (`shareAsWritten` in `lib/meal-dishes.ts`). A share
+  typed into a dish's own name moves into its boxes on leaving the name, on
+  estimating that dish, or on saving. **Split by dish** makes the phone's cut without estimating, for
   figures typed by hand; figures already on the form stay together as the
   first dish. **Same meal for each of you** saves the same meal for each of
   you instead, as Both used to, and the next meal is split again. An estimator

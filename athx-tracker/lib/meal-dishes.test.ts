@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mealSchema } from "./validation.ts";
+import { writtenDishes } from "./dish-split.ts";
 import {
   ASSUMPTIONS_LIMIT,
   DISH_LIMIT,
@@ -17,7 +18,10 @@ import {
   readQuantity,
   setFigure,
   setShare,
+  shareAsWritten,
   shareAssumptions,
+  shareText,
+  takeWrittenShare,
   shareTotals,
   slideShare,
   sliderSteps,
@@ -442,4 +446,54 @@ test("the cut sent with an estimate is the phone's, within what the server takes
   const long = "x".repeat(3990) + ",y,z";
   const hint = dishHint(long);
   assert.ok(hint.join("").length <= 4000);
+});
+
+test("a share written for one of you gives the other the rest, and one for both is kept as written", () => {
+  assert.deepEqual(shareText({ gators: 75 }), { hippos: "25", gators: "75" });
+  assert.deepEqual(shareText({ hippos: 80 }), { hippos: "80", gators: "20" });
+  assert.deepEqual(shareText({ gators: 60, hippos: 40 }), { hippos: "40", gators: "60" });
+  // Not 100 between them: saving says so, rather than the phone guessing which was meant.
+  const off = dish("d", { name: "soup", calories: "300", share: shareText({ gators: 70, hippos: 40 }) });
+  assert.deepEqual(readDishes([off], "Dinner"), { ok: false, error: "Dish 1: the two shares have to add up to 100%." });
+});
+
+test("a share typed into a dish's name moves into its boxes", () => {
+  const typed = dish("d", { name: "fries (80% h)" });
+  assert.deepEqual([takeWrittenShare(typed).name, takeWrittenShare(typed).share], ["fries", { hippos: "80", gators: "20" }]);
+  const plain = dish("p", { name: "fries" });
+  assert.equal(takeWrittenShare(plain), plain);
+});
+
+test("an estimate's dishes take the shares written in the description", () => {
+  const written = writtenDishes("sandwich (60% gators 40% hippos)\nfries (80% h 20% g)\ncoke (75% g)\npickle");
+  const shares = (drafts: DishDraft[]) => drafts.map((each) => [each.name, each.share.hippos, each.share.gators]);
+  // As many as were written: each takes the share in its place, whatever it was called.
+  const same = ["Turkey sandwich", "French fries", "Coca-Cola", "pickle"].map((name, index) => dish(`${index}`, { name }));
+  assert.deepEqual(shares(shareAsWritten(same, written)), [
+    ["Turkey sandwich", "40", "60"],
+    ["French fries", "80", "20"],
+    ["Coca-Cola", "25", "75"],
+    ["pickle", "50", "50"],
+  ]);
+  // Split or joined: a dish takes the share written with its name, or with a name that holds it.
+  const burger = writtenDishes("burger fries (70% h), shake (100% g)");
+  const split = ["burger", "fries", "shake"].map((name, index) => dish(`${index}`, { name }));
+  assert.deepEqual(shares(shareAsWritten(split, burger)), [["burger", "70", "30"], ["fries", "70", "30"], ["shake", "0", "100"]]);
+  const joined = ["steak with fries", "wine"].map((name, index) => dish(`${index}`, { name }));
+  assert.deepEqual(
+    shares(shareAsWritten(joined, writtenDishes("steak (70% h), fries (30% h), wine, water"))),
+    [["steak with fries", "50", "50"], ["wine", "50", "50"]],
+  );
+  // The same split written for each of you in turn is still the same split.
+  assert.deepEqual(
+    shares(shareAsWritten(joined, writtenDishes("steak (70% h), fries (30% g), wine, water"))),
+    [["steak with fries", "70", "30"], ["wine", "50", "50"]],
+  );
+  // Nothing written leaves every dish as it was.
+  assert.equal(shareAsWritten(same, writtenDishes("a, b, c, d")), same);
+});
+
+test("the cut sent with an estimate leaves the shares off", () => {
+  assert.deepEqual(dishHint("sandwich (60% g 40% h)\nfries (80% h)\ncoke"), ["sandwich", "fries", "coke"]);
+  assert.deepEqual(dishHint("(70% g)"), []);
 });

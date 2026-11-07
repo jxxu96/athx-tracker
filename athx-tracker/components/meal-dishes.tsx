@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Field } from "@/components/workout-form";
 import { ATHLETES, ESTIMATORS, type Meal } from "@/lib/domain";
+import { readDishShare } from "@/lib/dish-split";
 import {
   ASSUMPTIONS_LIMIT,
   DISH_LIMIT,
@@ -24,6 +25,7 @@ import {
   slideShare,
   sliderSteps,
   sliderValue,
+  takeWrittenShare,
   tidyShare,
   type DishDraft,
   type Eater,
@@ -265,6 +267,10 @@ function DishCard({
           onChange={(event) => {
             const name = event.target.value;
             onDish((current) => ({ ...current, name }));
+          }}
+          // "fries (80% h)": the share goes into the boxes once you leave.
+          onBlur={() => {
+            if (readDishShare(dish.name).share) onDish(takeWrittenShare);
           }}
         />
         {grokReady ? (
