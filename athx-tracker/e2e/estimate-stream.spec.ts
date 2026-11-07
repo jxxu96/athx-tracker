@@ -310,3 +310,59 @@ test("the background estimate is offered from the start, and not once there is a
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("600");
   await expect(later).toHaveCount(0);
 });
+
+test("accepting a provisional answer stops the stream and keeps the meal editable", async ({ page }) => {
+  await holdEstimates(page);
+  await signIn(page);
+  await section(page, "Meal").click();
+  await page.getByLabel("Meal description").fill("Rice, beans, cheese");
+  await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
+  await push(page, { type: "partial", provider: "claude", estimate: bowl(700) });
+  await expect(page.getByRole("region", { name: "Provisional estimate" })).toBeVisible();
+  await page.getByRole("button", { name: "Use this estimate", exact: true }).click();
+  await expect.poll(() => held(page)).toEqual({ requests: 1, stopped: true });
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("700");
+  await expect(page.getByLabel("Calories (kcal)")).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Stop estimate", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Estimator weights" }).getByLabel("Claude calories")).toHaveValue("700");
+  await page.getByLabel("Calories (kcal)").fill("725");
+  await page.getByRole("button", { name: "Save meal", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Use this estimate", exact: true })).toHaveCount(0);
+});
+
+test("a provisional reply can be accepted inside the conversation", async ({ page }) => {
+  await holdEstimates(page);
+  await signIn(page);
+  await section(page, "Meal").click();
+  await page.getByLabel("Meal description").fill("Rice, beans, cheese");
+  await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
+  await push(page, { type: "done", provider: "codex", estimate: bowl(600) });
+  await page.getByRole("button", { name: "Reply to estimate", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Your reply").fill("It was a larger bowl");
+  await dialog.getByRole("button", { name: "Send & re-estimate", exact: true }).click();
+  await push(page, { type: "partial", provider: "claude", estimate: bowl(800) });
+  await dialog.getByRole("button", { name: "Use this estimate", exact: true }).click();
+  await expect.poll(() => held(page)).toEqual({ requests: 2, stopped: true });
+  await expect(dialog.getByRole("log")).toContainText("800 kcal");
+  await dialog.getByRole("button", { name: "Done, back to meal", exact: true }).click();
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("800");
+});
+
+test("a provisional shared meal keeps its dish breakdown and editable shares", async ({ page }) => {
+  await holdEstimates(page);
+  await signIn(page);
+  await section(page, "Meal").click();
+  await page.getByRole("group", { name: "Logging for" }).getByRole("button", { name: "Both", exact: true }).click();
+  await page.getByLabel("Meal description").fill("Rice bowl, salad");
+  await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
+  await push(page, { type: "partial", provider: "claude", estimate: {
+    ...bowl(900), dishes: [{ ...bowl(700), name: "Rice bowl" }, { ...bowl(200), name: "Salad" }],
+  } });
+  await page.getByRole("button", { name: "Use this estimate", exact: true }).click();
+  await expect.poll(() => held(page)).toEqual({ requests: 1, stopped: true });
+  const first = page.getByRole("group", { name: "Dish 1", exact: true });
+  await expect(first.getByLabel("Calories (kcal)")).toHaveValue("700");
+  await expect(first.getByLabel("Hippos (%)")).toBeEnabled();
+  await expect(page.getByRole("group", { name: "Dish 2", exact: true }).getByLabel("Calories (kcal)")).toHaveValue("200");
+});

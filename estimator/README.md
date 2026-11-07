@@ -285,3 +285,48 @@ whether or not any laptop is awake. It does not cover losing the machine: a copy
 on the server it is backing up cannot survive that server. The estimator on your
 own machine is the one that does, so keep it configured and run it when you can.
 Neither replaces the other.
+
+## Source reuse and early answers
+
+Meal CLIs now return structured nutrition bases alongside their normal answer:
+exact identity, variety, region, serving amount/unit, per-serving nutrients,
+source URL and a verbatim label excerpt. The sidecar scales each ingredient and
+adds the meal/dishes in code. Label calories are preserved separately from macro
+calories, including fiber and ethanol. Incomplete or malformed ingredient data
+falls back to the existing validated estimate and is not cached.
+
+For a complex meal without cached evidence, Claude (or the first installed
+provider) gets an eight-second lookup head start. The others then receive those
+sources and independently check identity, portions and missing ingredients.
+They search when sources are absent or conflicting. A slow leader keeps running
+while the others start; the request keeps its existing deadline. Simple meals
+keep the configured provider order and fallback behavior.
+
+Only complete label-backed evidence is persisted, after the sidecar independently
+finds its verbatim excerpt on the public HTTPS source page. Dynamic, blocked or
+unverifiable pages are not cached. The check runs alongside estimates and never
+blocks a partial answer. Source reads cannot target private addresses and have
+a five-second deadline and a two-megabyte response limit.
+
+The cache keeps at most 100 entries for seven days under
+`$HOME/.athx/nutrition-sources.json` (`/config/.athx/` in Docker, so it survives
+redeploys). `NUTRITION_CACHE_FILE` overrides the file location. Matching is
+conservative: the exact full description, food notes and whole-meal/dish mode
+must match. Changed products, serving sizes, regions and corrections miss the
+cache; follow-ups always recheck their evidence. Reuse does not reset expiry.
+No estimated or reference-only result is persisted as a verified label. If a
+peer returns conflicting structured source or portion data, the entry is not
+saved and an existing matching entry is invalidated.
+
+The phone shows a **Use this estimate** action as soon as a provider answers.
+It applies the answers received so far using the existing inclusion/weight
+rules and stops the remaining calls. A shared meal accepts the latest available
+dish breakdown. The answer is then editable and can be saved; later results
+cannot overwrite it. Waiting still produces the full settled answer. A request
+cancelled after a usable partial answer consumes one daily estimate, while a
+cancellation before any usable answer returns the slot.
+
+Actual latency still depends on source availability and provider response time;
+these changes do not claim that one or several models have measured nutritional
+accuracy. The tests cover source reuse, expiration, serving arithmetic and early
+acceptance without spending model allowance.
