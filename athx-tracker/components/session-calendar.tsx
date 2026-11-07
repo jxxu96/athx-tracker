@@ -11,6 +11,7 @@ import {
   estimateBurn,
   formatLift,
   formatTimeOrDash,
+  scenarioLine,
   type Athlete,
   type RecordItem,
   type WeightUnit,
@@ -136,6 +137,7 @@ function SessionItem({
       ? null
       : estimateBurn(session, bodyweightOn(history, session.athlete, session.day));
   const details = [
+    scenarioLine(session),
     completionLine(session),
     distanceLine(session),
     session.lifts.length ? session.lifts.map((lift) => formatLift(lift, unit)).join(" · ") : null,

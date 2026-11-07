@@ -56,7 +56,7 @@ export function Keybinds() {
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         {GROUPS.map((group) => (
-          <div key={group.title} role="group" aria-label={group.title} className="space-y-1.5">
+          <div key={group.title} className="space-y-1.5">
             <h4 className="text-xs font-semibold">{group.title}</h4>
             <ul className="space-y-1.5">
               {group.items.map((item) => (

@@ -57,10 +57,14 @@ test("desktop shortcuts select athletes, sections, and sittings until turned off
 test("setup lists every shortcut and does not edit them", async ({ page }) => {
   await page.getByRole("button", { name: "Setup", exact: true }).click();
   const list = page.getByRole("region", { name: "Keyboard shortcuts" });
-  const anywhere = list.getByRole("group", { name: "Anywhere" });
-  const today = list.getByRole("group", { name: "Today" });
-  const session = list.getByRole("group", { name: "Session" });
-  const meal = list.getByRole("group", { name: "Meal" });
+  // Headings, not labelled groups: a group named Meal or Session is also the
+  // name of a field, and a hidden Setup still counts for an exact label.
+  const group = (title: string) =>
+    list.getByRole("heading", { name: title, exact: true }).locator("..");
+  const anywhere = group("Anywhere");
+  const today = group("Today");
+  const session = group("Session");
+  const meal = group("Meal");
 
   await expect(anywhere.getByText("Log for Gators")).toBeVisible();
   await expect(anywhere.getByText("Log for both")).toBeVisible();
