@@ -4,6 +4,7 @@ import { useState } from "react";
 import { BatteryMedium } from "lucide-react";
 import { CollapsibleCard } from "@/components/collapsible-card";
 import { DayButtons } from "@/components/workout-form";
+import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { athleteOutline } from "@/lib/athlete-outline";
 import { addDays, dayToDate, formatDay, newId } from "@/lib/client";
 import {
@@ -78,10 +79,12 @@ export function Energy({
   records,
   today,
   onCheckIn,
+  shortcutsEnabled = false,
 }: {
   records: RecordItem[];
   today: string;
   onCheckIn: (record: EnergyCheckIn) => Promise<void>;
+  shortcutsEnabled?: boolean;
 }) {
   // The level tapped while it is being saved. The row waits for it, so a
   // second tap cannot race the first and leave two for one day.
@@ -124,6 +127,8 @@ export function Energy({
   // "Today", "Yesterday" or "Wed 4 Nov", and the same inside a sentence.
   const dayLabel = formatDay(day, today);
   const dayName = onToday ? "today" : day === addDays(today, -1) ? "yesterday" : `on ${dayLabel}`;
+
+  useKeyboardShortcuts(shortcutsEnabled, { y: () => setChosen({ day: addDays(today, -1), asOf: today }) }, (action) => action());
 
   return (
     <CollapsibleCard
