@@ -195,8 +195,12 @@ export function takeWrittenShare(dish: DishDraft): DishDraft {
 
 const wordsOf = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 const within = (some: string[], all: string[]) => some.length > 0 && some.every((word) => all.includes(word));
-const sameShare = (a: WrittenShare | null, b: WrittenShare | null) =>
-  a?.hippos === b?.hippos && a?.gators === b?.gators;
+/** Two written shares that come to the same split, however each was written: "70% h" is "30% g". */
+function sameShare(a: WrittenShare | null, b: WrittenShare | null) {
+  if (!a || !b) return a === b;
+  const [one, two] = [shareText(a), shareText(b)];
+  return one.hippos === two.hippos && one.gators === two.gators;
+}
 
 /**
  * The share written for the dish an estimate came back with. The estimate

@@ -484,6 +484,11 @@ test("an estimate's dishes take the shares written in the description", () => {
     shares(shareAsWritten(joined, writtenDishes("steak (70% h), fries (30% h), wine, water"))),
     [["steak with fries", "50", "50"], ["wine", "50", "50"]],
   );
+  // The same split written for each of you in turn is still the same split.
+  assert.deepEqual(
+    shares(shareAsWritten(joined, writtenDishes("steak (70% h), fries (30% g), wine, water"))),
+    [["steak with fries", "70", "30"], ["wine", "50", "50"]],
+  );
   // Nothing written leaves every dish as it was.
   assert.equal(shareAsWritten(same, writtenDishes("a, b, c, d")), same);
 });
