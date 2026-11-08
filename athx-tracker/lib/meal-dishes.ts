@@ -299,10 +299,10 @@ export function openScale(dish: DishDraft): DishDraft {
 
 /**
  * The dish at a size, its figures at 100% scaled to it, to a tenth. A box
- * that was blank, or never read as a number, is left as typed, so saving
- * still points out what is wrong with it. An estimate's figures, once
- * scaled, are your own, as an edited one is. A size the box cannot take
- * changes nothing.
+ * that is blank, or does not read as a number, is left as typed, whatever
+ * it held before: a size never writes over an edit, so saving still points
+ * out what is wrong with it. An estimate's figures, once scaled, are your
+ * own, as an edited one is. A size the box cannot take changes nothing.
  */
 export function scaleDish(dish: DishDraft, percent: number): DishDraft {
   if (!Number.isFinite(percent) || percent < SCALE_MIN || percent > SCALE_MAX) return dish;
@@ -311,8 +311,7 @@ export function scaleDish(dish: DishDraft, percent: number): DishDraft {
   const figures = Object.fromEntries(FIGURES.map((figure) => {
     const typed = amount(dish[figure]);
     const unread = dish[figure].trim() === "" || !Number.isFinite(typed) || typed < 0;
-    if (unread && scale.base[figure] === 0) return [figure, dish[figure]];
-    return [figure, String(round((scale.base[figure] * percent) / 100))];
+    return [figure, unread ? dish[figure] : String(round((scale.base[figure] * percent) / 100))];
   })) as Record<Figure, string>;
   return {
     ...dish,

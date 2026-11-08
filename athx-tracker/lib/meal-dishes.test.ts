@@ -612,6 +612,13 @@ test("scaling a dish moves every figure from its 100%, and closing the scale put
   const typo = scaleDish(openScale({ ...curry, protein: "4o" }), 150);
   assert.deepEqual([typo.calories, typo.protein], ["1200", "4o"]);
   assert.equal(problem([typo]), "Dish 1: Protein needs a number of zero or more.");
+  // Nor is one mistyped after the scale opened: neither a new size nor closing writes over it.
+  const mistyped = setFigure(openScale(curry), "protein", "4o");
+  const resized = scaleDish(mistyped, 120);
+  assert.deepEqual([resized.calories, resized.protein], ["960", "4o"]);
+  assert.equal(problem([resized]), "Dish 1: Protein needs a number of zero or more.");
+  assert.equal(closeScale(resized).protein, "4o");
+  assert.equal(problem([closeScale(resized)]), "Dish 1: Protein needs a number of zero or more.");
   // A dish scaled without opening the scale first opens it at that size.
   assert.equal(scaleDish(curry, 150).calories, "1200");
   assert.equal(scaleDish(curry, 150).scale?.percent, 150);
