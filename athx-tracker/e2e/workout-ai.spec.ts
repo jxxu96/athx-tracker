@@ -12,6 +12,7 @@ const draft = {
 const selection = (page: Page, name: string) => page.getByRole("group", { name: "Logging for" }).getByRole("button", { name, exact: true });
 const fill = (page: Page) => page.getByRole("button", { name: "Fill workout with AI", exact: true });
 const lifts = (page: Page) => page.locator("section").filter({ has: page.getByRole("heading", { name: "Lifts", exact: true }) });
+const stations = (page: Page) => page.locator("section").filter({ has: page.getByRole("heading", { name: "MetCon and endurance", exact: true }) });
 const saved = async (page: Page): Promise<Workout[]> => page.evaluate(async () =>
   (await fetch("/api/records").then(r => r.json())).records.filter((r: { kind: string }) => r.kind === "workout"));
 
@@ -132,7 +133,10 @@ test("mixed workout fills custom lifts, station volume, load and run time", asyn
   } } }));
   await page.getByLabel("Workout description").fill("Cable reverse fly, burpees and a run");
   await fill(page).click();
-  await expect(page.getByLabel("Name it")).toHaveValue("Cable reverse fly");
+  await expect(lifts(page).getByLabel("Name it")).toHaveValue("Cable reverse fly");
+  // Burpee is not an ATHX station, so the station types it under Other.
+  await expect(stations(page).getByLabel("Station", { exact: true }).first()).toHaveValue("Other");
+  await expect(stations(page).getByLabel("Name it")).toHaveValue("Burpee");
   await expect(page.getByLabel("Done (reps)")).toHaveValue("20");
   await expect(page.getByLabel("Covered (m)")).toHaveValue("1000");
   await page.getByRole("button", { name: "Save session", exact: true }).click();
@@ -140,6 +144,8 @@ test("mixed workout fills custom lifts, station volume, load and run time", asyn
   const record = (await saved(page))[0];
   expect(record.lifts[0]).toEqual({ name: "Cable reverse fly", kg: 10, sets: 3, reps: 12 });
   expect(record.segments[0].kg).toBe(6);
+  // A station of its own has no target: the 30 the draft named is not kept.
+  expect(record.segments[0]).toMatchObject({ name: "Burpee", completed: 20, target: 20 });
   expect(record.segments[1].seconds).toBe(300);
 });
 
@@ -236,8 +242,10 @@ test("AI names snap to the exercise list and a far one is called out in the note
   await expect(liftNames.nth(0)).toHaveValue("Deadlift");
   await expect(liftNames.nth(1)).toHaveValue("Back squat");
   await expect(liftNames.nth(2)).toHaveValue("Other");
-  await expect(page.getByLabel("Name it")).toHaveValue("cable reverse fly");
-  await expect(page.getByLabel("Station", { exact: true })).toHaveValue("Burpee");
+  await expect(lifts(page).getByLabel("Name it")).toHaveValue("cable reverse fly");
+  // Snapped to the list's Burpee, which is not an ATHX station, so typed under Other.
+  await expect(page.getByLabel("Station", { exact: true })).toHaveValue("Other");
+  await expect(stations(page).getByLabel("Name it")).toHaveValue("Burpee");
   await expect(page.getByLabel("Notes", { exact: true })).toHaveValue('Left as typed: "cable reverse fly" is not in the list.');
 });
 

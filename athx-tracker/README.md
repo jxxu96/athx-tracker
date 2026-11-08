@@ -88,8 +88,16 @@ single SQLite file on a volume.
   defaults back. An empty rep box in a set is asked for, not saved as one rep.
   Sets that differ are listed one by one in the
   log, every rep counts towards the burn, and Progress takes the heaviest.
-  **Mixed** puts lifts, MetCon and endurance in one session: add the ATHX
-  circuit, your own MetCon stations, or a run/erg, alongside lifts. MetCon
+  **Mixed** puts lifts, MetCon and endurance in one session: **Complete ATHX
+  circuit** adds all seven stations, **+ Station** one at a time, and
+  **+ Endurance** a run or erg, alongside lifts. A station is picked from the
+  ATHX stations alone, not the lifts, with Other… for anything unlisted, and
+  starts at its own unit: calories for a row, metres for the carry, reps for
+  the rest (`stationUnit` in `lib/exercises.ts`). Only the circuit's stations
+  have a target. A station you add has none: what you did there is the whole
+  of it, and an athlete who left it blank has nothing saved for it, which in
+  pairs is how one of you takes a station the other did not. A time or load
+  typed there still needs the work done with it. MetCon
   stations take a load per athlete. On a new session the circuit's stations
   start at the standard weight, rounded to the rack (nearest 5 lb, or 2.5 kg),
   so saving untouched records it; a station you never reached does not record
@@ -342,10 +350,12 @@ boxes, typed or not, and keeps it. Opening an entry and saving it again keeps th
 stored load exactly, rather than re-reading it from its rounded display.
 Stations saved before sessions could mix carry no part or load: their part is
 taken from the session's category (Endurance is endurance, anything else is
-MetCon), and a missing time-cap flag reads as no. Entries from before times of
-day have none and sort after the timed ones on their day; settings from before
-dated targets, heights and birth years read as one set of targets for every day
-and nothing given. No migration is needed.
+MetCon), and a missing time-cap flag reads as no. A station of your own saved
+short of a target, from before such stations stopped taking one, keeps that
+target through an edit; one saved at its target reads as having none. Entries
+from before times of day have none and sort after the timed ones on their day;
+settings from before dated targets, heights and birth years read as one set of
+targets for every day and nothing given. No migration is needed.
 
 ### Calories burned
 

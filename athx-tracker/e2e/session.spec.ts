@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
-import { DEFAULT_SETTINGS, formatTime, projectWorkout, type Workout } from "../lib/domain.ts";
+import { DEFAULT_SETTINGS, METCON, formatTime, projectWorkout, type Workout } from "../lib/domain.ts";
+import { STATIONS } from "../lib/exercises.ts";
 import { PASSPHRASE } from "../playwright.config.ts";
 import { openSetup } from "./theme.ts";
 
@@ -512,14 +513,15 @@ test("a lift can be added from the bottom of the list", async ({ page }) => {
 test("a partial session shows its finish on the log, and an untimed one does not", async ({ page }) => {
   await athlete(page, "Gators").click();
   await openSession(page);
-  await typeSelect(page).selectOption("Tennis");
-  await page.getByRole("button", { name: "Station", exact: true }).click();
-  await page
-    .locator("select")
-    .filter({ has: page.locator('option[value="Row"]') })
-    .selectOption("Row");
-  await page.getByLabel("Target").fill("30");
-  await page.getByLabel("Done (reps)").fill("15");
+  // Only the circuit's stations have a target, so one of them half done is
+  // the part-finished session.
+  const [row] = METCON;
+  await typeSelect(page).selectOption("Mixed");
+  await title(page).fill("Half a row");
+  await page.getByRole("button", { name: "Complete ATHX circuit" }).click();
+  for (let station = METCON.length; station > 1; station--)
+    await page.getByRole("button", { name: `Remove station ${station}` }).click();
+  await page.getByLabel(`Done (${row.unit})`).fill(String(row.target / 2));
   await page.getByLabel("Time", { exact: true }).fill("2:00");
   await elapsed(page).fill("5:00");
   await page.getByRole("button", { name: "Save session" }).click();
@@ -528,7 +530,7 @@ test("a partial session shows its finish on the log, and an untimed one does not
   // half of the station extended at the pace just held, with the stored
   // fatigue allowance. Not a second copy of that arithmetic.
   const projected = projectWorkout(
-    [{ name: "Row", unit: "reps", completed: 15, target: 30, seconds: 120 }],
+    [{ name: row.name, unit: row.unit, completed: row.target / 2, target: row.target, seconds: 120 }],
     300,
     10,
     0,
@@ -539,7 +541,7 @@ test("a partial session shows its finish on the log, and an untimed one does not
   await expect(page.getByText(finish)).toBeVisible();
 
   await openLog(page);
-  const partial = page.getByRole("listitem").filter({ hasText: "Tennis" });
+  const partial = page.getByRole("listitem").filter({ hasText: "Half a row" });
   await expect(partial.getByText(finish)).toBeVisible();
 
   await openSession(page);
@@ -752,7 +754,7 @@ test("one session holds lifts, a part-finished MetCon with loads, and a run", as
     .selectOption("Deadlift");
   await page.getByLabel("kg", { exact: true }).fill("100");
 
-  await page.getByRole("button", { name: "ATHX circuit" }).click();
+  await page.getByRole("button", { name: "Complete ATHX circuit" }).click();
   await page.getByLabel("Done (cal)").first().fill("40");
   await page.getByLabel("Done (reps)").first().fill("20");
   await page.getByLabel("Gators DB ground to overhead load").fill("12.5");
@@ -785,13 +787,13 @@ test("one session holds lifts, a part-finished MetCon with loads, and a run", as
   await expect(entry.getByText(/DB ground to overhead 12\.5 kg/)).toBeVisible();
 });
 
-test("a row saves each athlete's completed work without a target, including on edit", async ({ page }) => {
+test("a row starts in calories and saves each athlete's completed work, including on edit", async ({ page }) => {
   await athlete(page, "Both").click();
   await openSession(page);
   await page.getByRole("button", { name: "Station", exact: true }).click();
   await page.getByLabel("Station", { exact: true }).selectOption("Row");
-  await page.getByLabel("Unit", { exact: true }).selectOption("cal");
-  await expect(page.getByLabel("Target")).toHaveValue("");
+  await expect(page.getByLabel("Unit", { exact: true })).toHaveValue("cal");
+  await expect(page.getByLabel("Target", { exact: true })).toHaveCount(0);
   await page.getByLabel("Done (cal)").first().fill("40");
   await page.getByLabel("Done (cal)").last().fill("30");
   await page.getByLabel("Time", { exact: true }).first().fill("2:00");
@@ -810,10 +812,62 @@ test("a row saves each athlete's completed work without a target, including on e
 
   await openLog(page);
   await page.getByLabel("Edit entry").first().click();
-  await page.getByLabel("Target").fill("");
+  await expect(page.getByLabel("Unit", { exact: true })).toHaveValue("cal");
+  await expect(page.getByLabel("Target", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Update session" }).click();
   await expect(page.getByText("Entry updated", { exact: true })).toBeVisible();
   expect(await read()).toEqual(saved);
+});
+
+test("a station is picked from the ATHX stations alone, and starts at its own unit", async ({ page }) => {
+  await openSession(page);
+  await typeSelect(page).selectOption("Mixed");
+  await expect(page.getByRole("button", { name: "Complete ATHX circuit", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Station", exact: true }).click();
+  const station = page.getByLabel("Station", { exact: true });
+  // The lifts are not stations. Other is still there for anything unlisted.
+  const offered = await station.locator("option").evaluateAll((options) =>
+    options.map((option) => (option as HTMLOptionElement).value));
+  expect(offered).toEqual(["", ...STATIONS.flatMap((group) => group.items), "Other"]);
+  for (const [name, unit] of [
+    ["Opening row", "cal"], ["Sandbag carry", "m"], ["DB bench press", "reps"], ["Closing row", "cal"],
+  ]) {
+    await station.selectOption(name);
+    await expect(page.getByLabel("Unit", { exact: true })).toHaveValue(unit);
+  }
+  // A run moved into MetCon is not on its list, so it is typed under Other.
+  await page.getByRole("button", { name: "Endurance", exact: true }).click();
+  const run = page.getByLabel("Station", { exact: true }).last();
+  await expect(run).toHaveValue("Run");
+  await page.getByLabel("Part", { exact: true }).last().selectOption("metcon");
+  await expect(run).toHaveValue("Other");
+  await expect(page.getByLabel("Name it", { exact: true })).toHaveValue("Run");
+});
+
+test("a station only one of you did is saved for that one alone", async ({ page }) => {
+  await athlete(page, "Both").click();
+  await openSession(page);
+  await page.getByRole("group", { name: "Weight unit" }).getByRole("button", { name: "kg" }).click();
+  await typeSelect(page).selectOption("Mixed");
+  await page.getByRole("button", { name: "Station", exact: true }).click();
+  await page.getByLabel("Station", { exact: true }).selectOption("DB bench press");
+  await page.getByLabel("Done (reps)").first().fill("30");
+  await page.getByLabel("Hippos DB bench press load").fill("20");
+  await elapsed(page).last().fill("10:00");
+  // A time with no work is still asked about.
+  await page.getByLabel("Time", { exact: true }).last().fill("1:00");
+  await page.getByRole("button", { name: "Save session" }).click();
+  await expect(page.locator("form").getByRole("alert")).toHaveText("Gators · DB bench press: add the work completed.");
+  await page.getByLabel("Time", { exact: true }).last().fill("");
+  await page.getByRole("button", { name: "Save session" }).click();
+  await expect(page.getByText("Sessions saved", { exact: true })).toBeVisible();
+
+  const saved: Workout[] = await page.evaluate(async () =>
+    (await fetch("/api/records").then((r) => r.json())).records);
+  expect(saved).toHaveLength(2);
+  expect(saved.find((record) => record.athlete === "hippos")?.segments)
+    .toEqual([{ name: "DB bench press", unit: "reps", completed: 30, target: 30, seconds: 0, block: "metcon", kg: 20 }]);
+  expect(saved.find((record) => record.athlete === "gators")?.segments).toEqual([]);
 });
 
 test("a run can be logged in metres, kilometres, or miles", async ({ page }) => {

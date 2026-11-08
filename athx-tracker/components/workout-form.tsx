@@ -11,7 +11,7 @@ import {
 } from "react";
 import { CalendarDays, Plus, Sparkles, X } from "lucide-react";
 import { WorkoutDictation } from "@/components/workout-dictation";
-import { DEFAULT_SETS, EXERCISES, defaultReps } from "@/lib/exercises";
+import { DEFAULT_SETS, EXERCISES, STATIONS, defaultReps, stationUnit } from "@/lib/exercises";
 import { lastLift, type LastLift } from "@/lib/last-lift";
 import { alignWorkoutDraft } from "@/lib/movement-match";
 import { workoutDraftSchema, type WorkoutDraft } from "@/lib/workout-draft";
@@ -75,6 +75,11 @@ type Station = {
   name: string;
   custom: string;
   unit: Segment["unit"];
+  /**
+   * The circuit's target, for one of its stations. Any other station has none:
+   * what was done at it is the whole of it. An entry saved short of a target,
+   * from before the box went, keeps that target through an edit.
+   */
   target: string;
   /** MetCon or endurance work, which matters once a session mixes them. */
   block: Block;
@@ -192,14 +197,29 @@ const OTHER = "Other";
 const exerciseName = (choice: string, custom: string) =>
   (choice === OTHER ? custom : choice).trim();
 
-const optionalTarget = (station: Station) =>
-  !station.fixed && exerciseName(station.name, station.custom) === "Row";
+type Groups = readonly { group: string; items: readonly string[] }[];
 
 const LISTED = new Set(EXERCISES.flatMap((group) => group.items));
+const STATION_LISTED = new Set(STATIONS.flatMap((group) => group.items));
+
+/** A MetCon station is one of the ATHX stations; endurance work picks from everything. */
+const stationGroups = (block: Block): Groups => (block === "metcon" ? STATIONS : EXERCISES);
+const listedFor = (block: Block) => (block === "metcon" ? STATION_LISTED : LISTED);
 
 /** Reverse of exerciseName: put a saved name back into the picker. */
-const toChoice = (name: string) =>
-  LISTED.has(name) ? { name, custom: "" } : { name: OTHER, custom: name };
+const toChoice = (name: string, listed: ReadonlySet<string> = LISTED) =>
+  listed.has(name) ? { name, custom: "" } : { name: OTHER, custom: name };
+
+/**
+ * A station's name as its part's list can show it. One that list lacks, such
+ * as a run moved to MetCon or a lift picked before stations were ATHX only,
+ * is typed under Other, so the picker never shows a choice it does not hold.
+ */
+const fitPicker = (station: Station): Station => {
+  if (station.fixed) return station;
+  const name = exerciseName(station.name, station.custom);
+  return name === "" ? station : { ...station, ...toChoice(name, listedFor(station.block)) };
+};
 
 /** Legacy records can be on the team athlete, which has no column of its own. */
 const sideOf = (athlete: Workout["athlete"]): Side =>
@@ -209,12 +229,15 @@ function ExercisePicker({
   label,
   choice,
   custom,
+  groups = EXERCISES,
   onChoice,
   onCustom,
 }: {
   label: string;
   choice: string;
   custom: string;
+  /** What the list offers. Other follows it, for anything it lacks. */
+  groups?: Groups;
   onChoice: (value: string) => void;
   onCustom: (value: string) => void;
 }) {
@@ -227,7 +250,7 @@ function ExercisePicker({
           onChange={(event) => onChoice(event.target.value)}
         >
           <NativeSelectOption value="">Choose…</NativeSelectOption>
-          {EXERCISES.map((group) => (
+          {groups.map((group) => (
             <NativeSelectOptGroup key={group.group} label={group.group}>
               {group.items.map((item) => (
                 <NativeSelectOption key={item} value={item}>
@@ -842,7 +865,7 @@ export function WorkoutForm({
   const columns: readonly Side[] = editing ? [recordSide] : sides;
   const [stations, setStations] = useState<Station[]>(() =>
     Array.isArray(from?.stations)
-      ? (from.stations as Station[])
+      ? (from.stations as Station[]).map(fitPicker)
       : editing
       ? editing.segments.map((segment) => {
           const block = segmentBlock(editing, segment);
@@ -856,9 +879,10 @@ export function WorkoutForm({
                 circuit?.unit === segment.unit &&
                 circuit?.target === segment.target));
           return {
-            ...(fixed ? { name: segment.name, custom: "" } : toChoice(segment.name)),
+            ...(fixed ? { name: segment.name, custom: "" } : toChoice(segment.name, listedFor(block))),
             unit: segment.unit,
-            target: String(segment.target),
+            // Any other station saved its work as its target, which is no target.
+            target: fixed || segment.target > segment.completed ? String(segment.target) : "",
             block,
             fixed,
           };
@@ -989,8 +1013,9 @@ export function WorkoutForm({
       const nextStations: Station[] = draft.stations.map(station => {
         const fixed = asCircuit(station);
         return {
-          ...(fixed ? { name: station.name, custom: "" } : toChoice(station.name)),
-          unit: station.unit, target: String(station.target), block: station.block, fixed,
+          ...(fixed ? { name: station.name, custom: "" } : toChoice(station.name, listedFor(station.block))),
+          // Only the circuit's stations keep a target; any other is what was done.
+          unit: station.unit, target: fixed ? String(station.target) : "", block: station.block, fixed,
         };
       });
       const nextEntries = (side: Side): Entry[] => draft.stations.map(station => {
@@ -1393,32 +1418,41 @@ export function WorkoutForm({
 
   function segmentsFor(side: Side): Segment[] {
     if (!usesStations) return [];
-    return stations
-      .map((station, index) => {
-        const entry = entries[side][index];
-        const completed = num(entry.completed);
-        // Runs and rows without a goal use the work actually completed.
-        const target = measured(station) || (optionalTarget(station) && station.target.trim() === "")
-          ? completed : num(station.target);
-        // A standard weight left in the box of a station never reached was
-        // not carried, so it is not recorded; one you typed always is.
-        const offered = entry.prefilled && completed === 0;
-        const kg =
-          loadable(category, station) && !offered
-            ? parseLoad(entry.load, unit, entry.savedKg)
-            : null;
-        const segment: Segment = {
-          name: exerciseName(station.name, station.custom),
-          unit: station.unit,
-          completed,
-          target,
-          seconds: seconds(entry.time),
-          block: station.block,
-        };
-        if (kg !== null) segment.kg = kg;
-        return segment;
-      })
-      .filter((segment) => segment.name !== "");
+    return stations.flatMap((station, index) => {
+      const name = exerciseName(station.name, station.custom);
+      if (name === "") return [];
+      const entry = entries[side][index];
+      const completed = num(entry.completed);
+      const loaded = loadable(category, station);
+      const kept = num(station.target);
+      // Only the circuit's stations come with a target. A run is measured, and
+      // any other station is the work done at it, unless it was saved short of
+      // a target before the box went, which an edit keeps.
+      const target = station.fixed
+        ? kept
+        : measured(station)
+          ? completed
+          : Math.max(completed, kept > 0 ? kept : 0);
+      // With nothing to aim at, a station left blank is one this athlete did
+      // not do. In pairs it is often the other one's, so it is not asked for.
+      const blank = entry.completed.trim() === "" && entry.time.trim() === "" &&
+        !(loaded && !entry.prefilled && entry.load.trim() !== "");
+      if (!station.fixed && !measured(station) && target === 0 && blank) return [];
+      // A standard weight left in the box of a station never reached was
+      // not carried, so it is not recorded; one you typed always is.
+      const offered = entry.prefilled && completed === 0;
+      const kg = loaded && !offered ? parseLoad(entry.load, unit, entry.savedKg) : null;
+      const segment: Segment = {
+        name,
+        unit: station.unit,
+        completed,
+        target,
+        seconds: seconds(entry.time),
+        block: station.block,
+      };
+      if (kg !== null) segment.kg = kg;
+      return [segment];
+    });
   }
 
   function liftsFor(side: Side) {
@@ -1483,13 +1517,12 @@ export function WorkoutForm({
       const where = `${who} · ${segment.name}`;
       if (!Number.isFinite(segment.seconds))
         return `${where}: write the time as mm:ss.`;
-      if (!(segment.target > 0)) {
-        if (segment.name === "Row" && segment.completed === 0)
-          return `${where}: add the work completed.`;
+      // Never one of the circuit's stations, which always have a target: a run
+      // with no distance, or another station given a time or load but no work.
+      if (!(segment.target > 0))
         return isRun || (isMixed && segment.block === "endurance")
           ? `${where}: add the distance covered.`
-          : `${where}: set a target above zero.`;
-      }
+          : `${where}: add the work completed.`;
       if (segment.completed > segment.target)
         return `${where}: completed work is above the target.`;
       if (segment.completed === 0 && segment.seconds > 0)
@@ -1863,7 +1896,7 @@ export function WorkoutForm({
                   size="sm"
                   onClick={() => addStations(metconStations())}
                 >
-                  <Plus /> ATHX circuit
+                  Complete ATHX circuit
                 </Button>
                 <Button type="button" variant="outline" size="sm" onClick={() => addStation("metcon")}>
                   <Plus /> Station
@@ -1933,7 +1966,17 @@ export function WorkoutForm({
                         label="Station"
                         choice={station.name}
                         custom={station.custom}
-                        onChoice={(value) => setStation(index, { name: value })}
+                        groups={stationGroups(station.block)}
+                        // A MetCon station starts at the chosen station's unit,
+                        // calories for a row. Endurance work keeps its own.
+                        onChoice={(value) =>
+                          setStation(
+                            index,
+                            station.block === "metcon"
+                              ? { name: value, unit: stationUnit(value) }
+                              : { name: value },
+                          )
+                        }
                         onCustom={(value) => setStation(index, { custom: value })}
                       />
                       <div className="flex items-end gap-2">
@@ -1944,16 +1987,15 @@ export function WorkoutForm({
                               value={station.block}
                               onChange={(event) => {
                                 const block = event.target.value as Block;
+                                // The name goes with it, onto the new part's list.
+                                const { name, custom } = fitPicker({ ...station, block });
                                 if (block === "endurance" && !isDistanceUnit(station.unit)) {
-                                  setStation(index, { block, unit: "m" });
+                                  setStation(index, { block, name, custom, unit: "m" });
                                   return;
                                 }
-                                if (block === "metcon" && isDistanceUnit(station.unit) && station.unit !== "m") {
+                                if (block === "metcon" && isDistanceUnit(station.unit) && station.unit !== "m")
                                   changeDistanceUnit(index, "m");
-                                  setStation(index, { block });
-                                  return;
-                                }
-                                setStation(index, { block });
+                                setStation(index, { block, name, custom });
                               }}
                             >
                               <NativeSelectOption value="metcon">MetCon</NativeSelectOption>
@@ -1961,18 +2003,6 @@ export function WorkoutForm({
                             </NativeSelect>
                           </Field>
                         ) : null}
-                        {measured(station) ? null : (
-                        <Field label="Target" className="w-20">
-                          <Input
-                            value={station.target}
-                            inputMode="decimal"
-                            className="h-8"
-                            onChange={(event) =>
-                              setStation(index, { target: event.target.value })
-                            }
-                          />
-                        </Field>
-                        )}
                         {measured(station) ? (
                           <div className="flex-1">
                             <Label className="mb-1.5 block text-xs font-medium text-muted-foreground">
