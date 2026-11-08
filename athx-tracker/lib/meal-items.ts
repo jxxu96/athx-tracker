@@ -5,7 +5,7 @@ import {
   type Meal,
   type MealTemplateItem,
 } from "./domain.ts";
-import { ingredientRow, providerSections, sameFood, type Figures } from "./meal-ingredients.ts";
+import { ingredientRow, providerSections, readFigures, sameFood, type Figures } from "./meal-ingredients.ts";
 import { splitDishText } from "./dish-split.ts";
 import { textOf } from "./drafts.ts";
 import {
@@ -16,6 +16,7 @@ import {
   MACRO_LIMITS,
   emptyDish,
   looseDishes,
+  unscaledCalories,
   type DishDraft,
 } from "./meal-dishes.ts";
 
@@ -245,6 +246,136 @@ export function breakdown(
 
 /** The first line of a meal's item list, which also tells a list from an estimate's working. */
 export const ITEM_LIST_HEAD = "Adjusted item by item:";
+
+/**
+ * How far a working's items can come from the calories they are meant to add
+ * up to, as a share of those calories, before the gap is worth a look. A
+ * smaller gap is still said, quietly. Rounding is never a gap: each item's
+ * figure and the total can each be up to half a kcal out.
+ */
+export const ITEM_GAP_SHARE = 0.05;
+
+/** One working's items against the calories they are meant to come to. */
+export type ItemSum = {
+  /** Whose working it is in a blend, "Codex"; null for a single estimate's. */
+  by: string | null;
+  count: number;
+  /** The items' calories added up, to a tenth. */
+  sum: number;
+  /** The calories they are meant to come to, to a tenth. */
+  total: number;
+  /** Within what rounding can account for. */
+  addsUp: boolean;
+  /** Out by more than ITEM_GAP_SHARE of the total as well. */
+  off: boolean;
+};
+
+/** A blend's line above one estimator's working, with that estimator's own figures. */
+const FROM_HEAD = /^From (Codex|Claude|Grok) \[([^\]\n]+)\]:[^\S\n]*$/gm;
+
+/**
+ * The workings a set of assumptions holds, and the calories each is meant to
+ * come to: a changed item list alone, as opening the items reads it; in a
+ * blend, each estimator's working against its own figure; otherwise the one
+ * working, against the total given, or none without one.
+ */
+function workings(assumptions: string, total: number | null) {
+  if (assumptions.startsWith(ITEM_LIST_HEAD)) {
+    const end = assumptions.indexOf("\n\n");
+    return total === null ? [] : [{ by: null, text: end < 0 ? assumptions : assumptions.slice(0, end), total }];
+  }
+  const heads = [...assumptions.matchAll(FROM_HEAD)];
+  if (!heads.length) return total === null ? [] : [{ by: null, text: assumptions, total }];
+  return heads.flatMap((head, index) => {
+    const figures = readFigures(head[2]);
+    if (!figures) return [];
+    const start = (head.index ?? 0) + head[0].length;
+    const end = index + 1 < heads.length ? heads[index + 1].index ?? assumptions.length : assumptions.length;
+    return [{ by: head[1], text: assumptions.slice(start, end), total: figures.calories }];
+  });
+}
+
+/**
+ * Whether the items a working lists add up to the calories it gave: the
+ * same items Expand would make, added up. A working cut short to fit, which
+ * ends in "…", may have lost some, so it is not checked. Only ever reported:
+ * nothing here changes a figure or stops a save.
+ */
+export function itemSums(assumptions: string, total: number | null): ItemSum[] {
+  return workings(assumptions.trim(), total).flatMap(({ by, text, total: meant }) => {
+    if (text.trimEnd().endsWith("…")) return [];
+    const rows = itemBlocks(text);
+    if (!rows.length) return [];
+    // In tenths, so a sum of tenths is exact.
+    const sum = rows.reduce((tenths, row) => tenths + Math.round(row.macros.calories * 10), 0);
+    const whole = Math.round(meant * 10);
+    const gap = Math.abs(sum - whole);
+    const rounding = (rows.length + 1) * 5;
+    return [{
+      by,
+      count: rows.length,
+      sum: sum / 10,
+      total: whole / 10,
+      addsUp: gap <= rounding,
+      off: gap > Math.max(rounding, whole * ITEM_GAP_SHARE),
+    }];
+  });
+}
+
+/** One line of a dish's item check, and whether its gap is worth a look. */
+export type ItemCheckLine = { text: string; off: boolean };
+
+function gapOf(sum: ItemSum) {
+  const gap = Math.round(sum.sum * 10) - Math.round(sum.total * 10);
+  return `${Math.abs(gap) / 10} kcal ${gap > 0 ? "above" : "below"}`;
+}
+
+/** "Codex's", "Codex's and Claude's", "Codex's, Claude's and Grok's". */
+function owners(names: readonly string[]) {
+  const owned = names.map((name) => `${name}'s`);
+  return owned.length > 1 ? `${owned.slice(0, -1).join(", ")} and ${owned.at(-1)}` : owned[0];
+}
+
+/**
+ * Whether the items a dish's working lists add up to its calories, said in a
+ * line: advisory, never a reason a dish cannot be saved, and never a figure
+ * changed. A single estimate's items are held to the dish's calories, at
+ * 100% when it is scaled, since the working was written for 100%. A blend's
+ * are held to each estimator's own figure, which the dish's averages. Items
+ * that add up say so when there are two or more; a lone item only when it is
+ * out, since it is the dish itself.
+ */
+export function dishItemCheck(dish: DishDraft): ItemCheckLine[] {
+  const sums = itemSums(dish.assumptions, unscaledCalories(dish));
+  if (!sums.length) return [];
+  const [first] = sums;
+  if (first.by === null) {
+    const at = dish.scale && dish.scale.percent !== 100 ? " at 100%" : "";
+    const listed = first.count === 1 ? "The item listed" : `The ${first.count} items listed`;
+    if (first.addsUp)
+      return first.count >= 2 ? [{ text: `${listed} add up to this dish's ${first.total} kcal${at}.`, off: false }] : [];
+    return [{
+      text: `${listed} ${first.count === 1 ? "comes" : "come"} to ${first.sum} kcal, ${gapOf(first)} this dish's ${first.total} kcal${at}.`,
+      off: first.off,
+    }];
+  }
+  const items = (sum: ItemSum) => (sum.count === 1 ? "item" : `${sum.count} items`);
+  if (sums.every((sum) => sum.addsUp)) {
+    if (!sums.some((sum) => sum.count >= 2)) return [];
+    return [{
+      text: sums.length === 1
+        ? `${owners([first.by])} ${items(first)} ${first.count === 1 ? "adds" : "add"} up to its ${first.total} kcal.`
+        : `${owners(sums.map((sum) => sum.by!))} items each add up to their own total.`,
+      off: false,
+    }];
+  }
+  return sums.map((sum) => ({
+    text: sum.addsUp
+      ? `${owners([sum.by!])} ${items(sum)} ${sum.count === 1 ? "adds" : "add"} up to its ${sum.total} kcal.`
+      : `${owners([sum.by!])} ${items(sum)} ${sum.count === 1 ? "comes" : "come"} to ${sum.sum} kcal, ${gapOf(sum)} its ${sum.total} kcal.`,
+    off: sum.off,
+  }));
+}
 
 /**
  * Where a meal's items can be read from. A list written when the items were

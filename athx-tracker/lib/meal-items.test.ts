@@ -6,12 +6,14 @@ import {
   assumptionSources,
   blankSeeds,
   breakdown,
+  dishItemCheck,
   emptyItem,
   expandDish,
   fitItems,
   itemBlocks,
   itemDraft,
   itemDraftsOf,
+  itemSums,
   itemTotals,
   readItems,
   seedsFromIngredients,
@@ -20,7 +22,7 @@ import {
   withItemList,
   withoutItemList,
 } from "./meal-items.ts";
-import { emptyDish } from "./meal-dishes.ts";
+import { emptyDish, openScale, scaleDish, setFigure } from "./meal-dishes.ts";
 import { blendEstimates } from "./estimate-blend.ts";
 
 const totals = (calories: number, protein: number, carbs: number, fat: number, fiber = 0, alcohol = 0) =>
@@ -269,4 +271,95 @@ test("a shared dish opens into dishes of its own, each with the dish's share and
   assert.equal(dishes.reduce((sum, made) => sum + Number(made.calories) * 10, 0) / 10, 648);
   assert.ok(dishes.every((made) => made.source === "grok" && made.estimator === "codex" && made.confidence === "medium"));
   assert.deepEqual(expandDish({ ...dish, assumptions: "One thing [648 kcal, 64P, 57C, 16F]" }, "Lunch", id), []);
+});
+
+// BOWL's items: 248 + 260 + 140 = 648 kcal.
+const BLEND = [
+  "Weighted average of Codex 60% and Claude 40%.",
+  "",
+  "From Codex [700 kcal, 46P, 60C, 6F]:",
+  "Chicken, 150 g [300 kcal, 40P, 0C, 4F]",
+  "",
+  "Rice, 200 g [400 kcal, 6P, 60C, 2F]",
+  "",
+  "From Claude [650 kcal, 46P, 60C, 6F]:",
+  "Chicken, 160 g [200 kcal, 44P, 0C, 6F]",
+  "",
+  "Rice, 180 g [300 kcal, 2P, 60C, 0F]",
+].join("\n");
+
+test("a working's items are added up against the calories it gave, in a blend each against its own", () => {
+  const sums = (text: string, total: number | null) =>
+    itemSums(text, total).map(({ by, count, sum, total: meant, addsUp, off }) => [by, count, sum, meant, addsUp, off]);
+  assert.deepEqual(sums(BOWL, 648), [[null, 3, 648, 648, true, false]]);
+  // Rounding each of three items and the total is up to 2 kcal, and is not a gap.
+  assert.deepEqual(sums(BOWL, 650), [[null, 3, 648, 650, true, false]]);
+  // Past rounding but within 5%, it is said, quietly.
+  assert.deepEqual(sums(BOWL, 670), [[null, 3, 648, 670, false, false]]);
+  // Past 5% as well, it is worth a look.
+  assert.deepEqual(sums(BOWL, 700), [[null, 3, 648, 700, false, true]]);
+  assert.deepEqual(sums(BOWL, null), [], "nothing to hold one estimate to");
+  assert.deepEqual(sums("Assumed a standard bowl.", 648), [], "no items, nothing to add up");
+  // A blend: Codex's come to its 700; Claude's 500 are 150 short of its 650.
+  assert.deepEqual(sums(BLEND, 1000), [
+    ["Codex", 2, 700, 700, true, false],
+    ["Claude", 2, 500, 650, false, true],
+  ]);
+  // Cut short to fit, a working may have lost items, so it is not checked.
+  assert.deepEqual(sums(`${BLEND.slice(0, BLEND.lastIndexOf("\n\n"))}…`, 1000), [["Codex", 2, 700, 700, true, false]]);
+  assert.deepEqual(sums(`${BOWL}\n\nWhite rice, 2…`, 648), []);
+  // A changed item list is what the items are; the working after it is not counted again.
+  const listed = withItemList(BOWL, [
+    { name: "Chicken breast", grams: 150, nutrition: { grams: 150, macros: totals(248, 47, 0, 5) } },
+    { name: "Eggs", grams: 0, nutrition: { grams: 0, macros: totals(152, 12, 1, 11) } },
+  ]);
+  assert.deepEqual(sums(listed, 400), [[null, 2, 400, 400, true, false]]);
+});
+
+test("a dish's item check says whether its items add up, and never more than it can tell", () => {
+  const bowl = {
+    ...emptyDish("bowl"),
+    name: "Burrito bowl",
+    calories: "648", protein: "64", carbs: "57", fat: "16", fiber: "1",
+    source: "grok" as const,
+    assumptions: BOWL,
+  };
+  assert.deepEqual(dishItemCheck(bowl), [{ text: "The 3 items listed add up to this dish's 648 kcal.", off: false }]);
+  assert.deepEqual(dishItemCheck({ ...bowl, calories: "670" }), [
+    { text: "The 3 items listed come to 648 kcal, 22 kcal below this dish's 670 kcal.", off: false },
+  ]);
+  assert.deepEqual(dishItemCheck({ ...bowl, calories: "600.5" }), [
+    { text: "The 3 items listed come to 648 kcal, 47.5 kcal above this dish's 600.5 kcal.", off: true },
+  ]);
+  // Edited by hand, the figure is still held to the items, and only said.
+  assert.deepEqual(dishItemCheck(setFigure(bowl, "calories", "800")), [
+    { text: "The 3 items listed come to 648 kcal, 152 kcal below this dish's 800 kcal.", off: true },
+  ]);
+  // Scaled, the working is still for 100%, so that is what it is held to.
+  const bigger = scaleDish(openScale(bowl), 150);
+  assert.equal(bigger.calories, "972");
+  assert.deepEqual(dishItemCheck(bigger), [{ text: "The 3 items listed add up to this dish's 648 kcal at 100%.", off: false }]);
+  // A lone item is the dish itself: said only when it is out.
+  const fries = { ...bowl, calories: "470", assumptions: "French fries, 150 g [470 kcal, 5P, 60C, 23F]" };
+  assert.deepEqual(dishItemCheck(fries), []);
+  assert.deepEqual(dishItemCheck({ ...fries, calories: "520" }), [
+    { text: "The item listed comes to 470 kcal, 50 kcal below this dish's 520 kcal.", off: true },
+  ]);
+  assert.deepEqual(dishItemCheck({ ...bowl, calories: "" }), [], "a blank figure has nothing to be held to");
+  assert.deepEqual(dishItemCheck({ ...bowl, assumptions: "" }), []);
+
+  // A blend holds each estimator to its own figure, whatever the dish's says.
+  const blended = { ...bowl, calories: "680", assumptions: BLEND };
+  assert.deepEqual(dishItemCheck(blended), [
+    { text: "Codex's 2 items add up to its 700 kcal.", off: false },
+    { text: "Claude's 2 items come to 500 kcal, 150 kcal below its 650 kcal.", off: true },
+  ]);
+  const agreed = BLEND.replace("From Claude [650 kcal", "From Claude [500 kcal");
+  assert.deepEqual(dishItemCheck({ ...blended, assumptions: agreed }), [
+    { text: "Codex's and Claude's items each add up to their own total.", off: false },
+  ]);
+  const alone = `${BLEND.slice(0, BLEND.indexOf("\n\nFrom Claude"))}`;
+  assert.deepEqual(dishItemCheck({ ...blended, assumptions: alone }), [
+    { text: "Codex's 2 items add up to its 700 kcal.", off: false },
+  ]);
 });
