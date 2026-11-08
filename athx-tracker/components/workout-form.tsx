@@ -1260,24 +1260,30 @@ export function WorkoutForm({
         if (i !== index) return lift;
         const entry = lift[side];
         if (!entry.advanced) {
+          // Sets and reps the form filled in are a guess, not what you did, so
+          // they open one set at your weight rather than three copies of the
+          // guess. Sets and reps you typed open a row per set.
           const detail = entry.detail.length > 0
             ? entry.detail
-            : Array.from({ length: seedCount(entry.sets) }, () => ({
+            : Array.from({ length: entry.prefilled ? 1 : seedCount(entry.sets) }, () => ({
                 kg: entry.kg,
-                reps: entry.reps,
+                reps: entry.prefilled ? "" : entry.reps,
                 ...(entry.savedKg !== undefined ? { savedKg: entry.savedKg } : {}),
               }));
-          return { ...lift, [side]: { ...entry, advanced: true, detail, prefilled: false } };
+          return { ...lift, [side]: { ...entry, advanced: true, detail } };
         }
         const touched = entry.detail.some((set) => set.kg.trim() !== "" || set.reps.trim() !== "");
-        if (!touched) return { ...lift, [side]: { ...entry, advanced: false, detail: [] } };
+        // Opened over the defaults and given nothing new: the defaults come back.
+        const seedOnly = entry.prefilled && entry.detail.length === 1 &&
+          entry.detail[0].kg === entry.kg && entry.detail[0].reps.trim() === "";
+        if (!touched || seedOnly) return { ...lift, [side]: { ...entry, advanced: false, detail: [] } };
         const parsed = entry.detail.map((set) => ({
           kg: parseLoad(set.kg, unit, set.savedKg),
-          // An empty rep box is one rep, the same as the one-line field.
-          reps: set.reps.trim() === "" ? 1 : Math.round(num(set.reps)),
+          reps: set.reps.trim() === "" ? 0 : Math.round(num(set.reps)),
           text: set,
         }));
-        // A half-filled breakdown stays open, so closing it cannot drop sets.
+        // A half-filled breakdown stays open, so closing it cannot drop sets or
+        // guess reps, the same as the one-line boxes.
         if (!parsed.every((set) => set.kg !== null && set.reps >= 1)) return lift;
         const detail = parsed.map((set) => ({ kg: set.kg!, reps: set.reps }));
         const same = detail.every((set) => set.kg === detail[0].kg && set.reps === detail[0].reps);
@@ -1292,6 +1298,7 @@ export function WorkoutForm({
               reps: String(detail[0].reps),
               savedKg: entry.detail[0].savedKg,
               detail: [],
+              prefilled: false,
             },
           };
         }
@@ -1307,6 +1314,7 @@ export function WorkoutForm({
             reps: String(top.reps),
             savedKg: match.text.savedKg,
             detail: [],
+            prefilled: false,
           },
         };
       }),
@@ -1507,10 +1515,12 @@ export function WorkoutForm({
             return `${where}: add the load in ${unit}.`;
           if (set.reps.trim() !== "" && !(num(set.reps) >= 1))
             return `${where}: reps must be at least 1.`;
-          // An empty rep box typed by hand is one rep. One the AI left empty was
-          // never said, so it is asked for rather than saved as one.
-          if (draftNotice && set.reps.trim() === "")
-            return `${where}: fill in the missing reps, or remove this set before saving.`;
+          // An empty rep box is asked for rather than saved as one rep, the
+          // same as the one-line boxes.
+          if (set.reps.trim() === "")
+            return draftNotice
+              ? `${where}: fill in the missing reps, or remove this set before saving.`
+              : `${where}: add the reps.`;
         }
         continue;
       }

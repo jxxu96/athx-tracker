@@ -82,7 +82,11 @@ single SQLite file on a volume.
   breakdown of differing sets included. The entry being edited is not its own
   last time, and only sessions the phone holds are searched.
   A lift is one weight for every set, or, under **Advanced**, a row for each set
-  with its own weight and reps. Sets that differ are listed one by one in the
+  with its own weight and reps. Advanced opens a row per set from sets and reps
+  you typed, but over the form's defaults it opens one set at your weight with
+  the reps empty, and **+ Set** adds the rest; closing it untouched gives the
+  defaults back. An empty rep box in a set is asked for, not saved as one rep.
+  Sets that differ are listed one by one in the
   log, every rep counts towards the burn, and Progress takes the heaviest.
   **Mixed** puts lifts, MetCon and endurance in one session: add the ATHX
   circuit, your own MetCon stations, or a run/erg, alongside lifts. MetCon
