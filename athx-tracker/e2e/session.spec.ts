@@ -632,14 +632,15 @@ test("advanced sets keep their own weight and reps", async ({ page }) => {
     .selectOption("Back squat");
   await page.getByRole("textbox", { name: "lb", exact: true }).fill("135");
   await page.getByRole("textbox", { name: "Sets", exact: true }).fill("3");
-  await page.getByRole("textbox", { name: "Reps", exact: true }).fill("5");
+  // Not the default five: typed sets and reps open a row each, defaults open one.
+  await page.getByRole("textbox", { name: "Reps", exact: true }).fill("6");
   await page.getByRole("button", { name: "Gators advanced sets" }).click();
 
   const weight = (n: number) => page.getByLabel(`Gators set ${n} weight`);
   const reps = (n: number) => page.getByLabel(`Gators set ${n} reps`);
   await expect(weight(1)).toHaveValue("135");
   await expect(weight(3)).toHaveValue("135");
-  await expect(reps(3)).toHaveValue("5");
+  await expect(reps(3)).toHaveValue("6");
   await weight(2).fill("185");
   await reps(2).fill("3");
   await weight(3).fill("225");
@@ -666,14 +667,14 @@ test("advanced sets keep their own weight and reps", async ({ page }) => {
     reps: set.reps,
     failed: set.failed ?? false,
   }))).toEqual([
-    { reps: 5, failed: false },
+    { reps: 6, failed: false },
     { reps: 3, failed: false },
     { reps: 1, failed: true },
   ]);
 
   await openLog(page);
   const entry = page.getByRole("listitem").filter({ hasText: "Back squat" });
-  await expect(entry.getByText("Back squat 135 lb×5, 185 lb×3, 225 lb×1 (last rep failed)")).toBeVisible();
+  await expect(entry.getByText("Back squat 135 lb×6, 185 lb×3, 225 lb×1 (last rep failed)")).toBeVisible();
 
   await entry.getByLabel("Edit entry").click();
   await expect(weight(1)).toHaveValue("135");
@@ -691,6 +692,49 @@ test("advanced sets keep their own weight and reps", async ({ page }) => {
   await page.getByRole("button", { name: "Update session" }).click();
   await expect.poll(async () => (await read())[0].lifts[0].kg).toBe(saved.lifts[0].kg);
   expect((await read())[0].lifts[0].detail[2].failed).toBe(true);
+});
+
+test("advanced opens one set over the form's defaults, not three copies of them", async ({ page }) => {
+  await athlete(page, "Gators").click();
+  await openSession(page);
+  await typeSelect(page).selectOption("Strength");
+  await page
+    .locator("select")
+    .filter({ has: page.locator('option[value="Back squat"]') })
+    .first()
+    .selectOption("Back squat");
+  await expect(page.getByRole("textbox", { name: "Sets", exact: true })).toHaveValue("3");
+  await expect(page.getByRole("textbox", { name: "Reps", exact: true })).toHaveValue("5");
+  await page.getByRole("textbox", { name: "lb", exact: true }).fill("135");
+  const toggle = page.getByRole("button", { name: "Gators advanced sets" });
+  await toggle.click();
+
+  const weight = (n: number) => page.getByLabel(`Gators set ${n} weight`);
+  const reps = (n: number) => page.getByLabel(`Gators set ${n} reps`);
+  await expect(weight(1)).toHaveValue("135");
+  await expect(reps(1)).toHaveValue("");
+  await expect(weight(2)).toHaveCount(0);
+
+  // Closing it untouched gives the defaults back rather than one set of one.
+  await toggle.click();
+  await expect(page.getByRole("textbox", { name: "Sets", exact: true })).toHaveValue("3");
+  await expect(page.getByRole("textbox", { name: "Reps", exact: true })).toHaveValue("5");
+
+  // An empty rep box is asked for, not saved as one rep.
+  await toggle.click();
+  await page.getByRole("button", { name: "Save session" }).click();
+  await expect(page.locator("form").getByRole("alert")).toContainText("Back squat, set 1: add the reps.");
+  await reps(1).fill("5");
+  await page.getByRole("button", { name: "Gators add set" }).click();
+  await weight(2).fill("155");
+  await reps(2).fill("3");
+  await page.getByRole("button", { name: "Save session" }).click();
+
+  const read = () =>
+    page.evaluate(async () => (await fetch("/api/records").then((r) => r.json())).records);
+  await expect.poll(async () => (await read()).length).toBe(1);
+  const [saved] = await read();
+  expect(saved.lifts[0].detail.map((set: { reps: number }) => set.reps)).toEqual([5, 3]);
 });
 
 test("one session holds lifts, a part-finished MetCon with loads, and a run", async ({ page }) => {
