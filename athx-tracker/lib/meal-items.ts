@@ -55,7 +55,7 @@ export type ItemDraft = {
   fat: string;
   /** Already part of the carbs. */
   fiber: string;
-  /** Ethanol grams, which count only on an Alcohol sitting. */
+  /** Ethanol grams, on any sitting. */
   ethanol: string;
   /**
    * The figures at a weight, which a new weight scales from. Fixed while the
@@ -512,7 +512,6 @@ export function itemTotals(items: readonly ItemDraft[]): Record<ItemBox, string>
 /** Every item, held to what a meal's items are held to, or the first thing wrong with one. */
 export function readItems(
   drafts: readonly ItemDraft[],
-  sitting: Meal["meal"],
 ): { ok: true; items: MealTemplateItem[] } | { ok: false; error: string } {
   if (!drafts.length) return { ok: false, error: "Add an item." };
   if (drafts.length > MEAL_TEMPLATE_ITEMS)
@@ -548,13 +547,11 @@ export function readItems(
     if (fiber > macros.carbs)
       return { ok: false, error: `${label}: Fiber is part of total carbs, so it cannot be higher.` };
     macros.fiber = fiber;
-    if (sitting === "Alcohol") {
-      const ethanol = amount(draft.ethanol);
-      if (!Number.isFinite(ethanol) || ethanol < 0)
-        return { ok: false, error: `${label}: Ethanol needs a number of zero or more.` };
-      if (ethanol > ETHANOL_LIMIT) return { ok: false, error: `${label}: Ethanol looks too high.` };
-      macros.alcohol = ethanol;
-    }
+    const ethanol = amount(draft.ethanol);
+    if (!Number.isFinite(ethanol) || ethanol < 0)
+      return { ok: false, error: `${label}: Ethanol needs a number of zero or more.` };
+    if (ethanol > ETHANOL_LIMIT) return { ok: false, error: `${label}: Ethanol looks too high.` };
+    macros.alcohol = ethanol;
     const weight = round1(grams);
     // The figures are kept at the grams the item is at, so a template made
     // from it scales from exactly what was logged.
@@ -568,7 +565,7 @@ export function readItems(
  * half-typed: anything unreadable counts as nothing, and an unnamed item is
  * called by its place.
  */
-export function looseItems(drafts: readonly ItemDraft[], sitting: Meal["meal"]): MealTemplateItem[] {
+export function looseItems(drafts: readonly ItemDraft[]): MealTemplateItem[] {
   return drafts.map((draft, index) => {
     const grams = Math.min(round1(usable(amount(draft.grams))), MEAL_TEMPLATE_GRAMS_LIMIT);
     const macros = looseFigures(draft);
@@ -580,7 +577,6 @@ export function looseItems(drafts: readonly ItemDraft[], sitting: Meal["meal"]):
         macros: {
           ...macros,
           fiber: Math.min(macros.fiber, macros.carbs),
-          alcohol: sitting === "Alcohol" ? macros.alcohol : 0,
         },
       },
     };
@@ -670,8 +666,8 @@ export function itemDraftsOf(value: unknown): ItemDraft[] {
  * counted in grams, so it shares a gram at a time. None when the dish's
  * working does not list two or more items.
  */
-export function expandDish(dish: DishDraft, sitting: Meal["meal"], id: () => string): DishDraft[] {
-  const [read] = looseDishes([dish], sitting);
+export function expandDish(dish: DishDraft, id: () => string): DishDraft[] {
+  const [read] = looseDishes([dish]);
   const seeds = breakdown(assumptionSources(dish.assumptions), {
     ...read.macros,
     fiber: Math.min(read.macros.fiber, read.macros.carbs),

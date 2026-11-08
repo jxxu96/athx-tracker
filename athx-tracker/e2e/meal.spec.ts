@@ -177,25 +177,28 @@ test("a new meal starts on the sitting that matches the time", async ({ page }) 
   await expect(group.getByRole("button", { name: other })).toHaveAttribute("aria-pressed", "true");
 });
 
-test("ethanol is only on an alcohol sitting, and snacks alongside still count", async ({ page }) => {
+test("ethanol shows on an alcohol sitting, and a dinner with a drink keeps it", async ({ page }) => {
   await expect(page.getByLabel("Fiber (g)")).toBeVisible();
   await expect(page.getByLabel("Ethanol (g)")).toHaveCount(0);
   const sitting = page.getByRole("group", { name: "Sitting" });
   await sitting.getByRole("button", { name: "Alcohol" }).click();
   await expect(page.getByLabel("Ethanol (g)")).toBeVisible();
   await expect(page.getByLabel("Fiber (g)")).toBeVisible();
-  await sitting.getByRole("button", { name: "Lunch" }).click();
-  await expect(page.getByLabel("Ethanol (g)")).toHaveCount(0);
-  await sitting.getByRole("button", { name: "Dinner" }).click();
-  await expect(page.getByLabel("Ethanol (g)")).toHaveCount(0);
-  await sitting.getByRole("button", { name: "Breakfast" }).click();
-  await expect(page.getByLabel("Ethanol (g)")).toHaveCount(0);
-  await sitting.getByRole("button", { name: "Snack" }).click();
-  await expect(page.getByLabel("Ethanol (g)")).toHaveCount(0);
+  // Nothing in it yet, so another sitting has no box for it.
+  for (const other of ["Lunch", "Dinner", "Breakfast", "Snack"]) {
+    await sitting.getByRole("button", { name: other }).click();
+    await expect(page.getByLabel("Ethanol (g)")).toHaveCount(0);
+  }
 
   await loggingFor(page, "Hippos").click();
   await sitting.getByRole("button", { name: "Alcohol" }).click();
-  await page.getByLabel("Meal", { exact: true }).fill("Beers and chips");
+  await page.getByLabel("Meal", { exact: true }).fill("Burger and a beer");
+  await page.getByLabel("Ethanol (g)").fill("10");
+  // Holding ethanol, the box stays on any sitting, and clearing it to retype does not hide it.
+  await sitting.getByRole("button", { name: "Dinner" }).click();
+  await expect(page.getByLabel("Ethanol (g)")).toHaveValue("10");
+  await page.getByLabel("Ethanol (g)").fill("");
+  await expect(page.getByLabel("Ethanol (g)")).toBeVisible();
   await page.getByLabel("Ethanol (g)").fill("10");
   await page.getByLabel("Calories (kcal)").fill("150");
   await page.getByLabel("Protein (g)").fill("0");
@@ -205,11 +208,17 @@ test("ethanol is only on an alcohol sitting, and snacks alongside still count", 
   await expect(page.getByText("Your calorie total equals this rough estimate.", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Save meal", exact: true }).click();
   await expect.poll(async () => {
-    const saved = (await meals(page)).find((meal) => meal.name === "Beers and chips");
+    const saved = (await meals(page)).find((meal) => meal.name === "Burger and a beer");
     return saved
       ? { meal: saved.meal, calories: saved.macros.calories, carbs: saved.macros.carbs, alcohol: saved.macros.alcohol }
       : null;
-  }).toEqual({ meal: "Alcohol", calories: 150, carbs: 20, alcohol: 10 });
+  }).toEqual({ meal: "Dinner", calories: 150, carbs: 20, alcohol: 10 });
+
+  await page.getByRole("button", { name: "Log", exact: true }).click();
+  const row = page.getByRole("listitem").filter({ hasText: "Burger and a beer" });
+  await expect(row).toContainText("Ethanol 10 g");
+  await row.getByLabel("Edit entry").click();
+  await expect(page.getByLabel("Ethanol (g)")).toHaveValue("10");
 });
 
 for (const sitting of ["Alcohol", "Dinner"] as const) {

@@ -82,6 +82,7 @@ import {
   dishesFromEstimate,
   dishesOf,
   emptyDish,
+  holdsEthanol,
   readDishes,
   replaceDishEstimate,
   shareAsWritten,
@@ -424,7 +425,7 @@ export function MealForm({
   );
   const [ethanol, setEthanol] = useState(textOf(
     from?.ethanol,
-    editing?.meal === "Alcohol" ? String(editing.macros.alcohol ?? 0) : "",
+    editing && (editing.meal === "Alcohol" || editing.macros.alcohol) ? String(editing.macros.alcohol ?? 0) : "",
   ));
   const [fiber, setFiber] = useState(textOf(from?.fiber, editing ? String(editing.macros.fiber ?? 0) : ""));
   const [assumptions, setAssumptions] = useState(textOf(from?.assumptions, editing?.assumptions ?? ""));
@@ -508,6 +509,17 @@ export function MealForm({
     : macros;
   const shownFiber = itemSums ? itemSums.fiber : fiber;
   const shownEthanol = itemSums ? itemSums.ethanol : ethanol;
+  // Ethanol counts on any sitting. Its box shows on an Alcohol sitting, and on
+  // any other once the meal, an item or a dish holds some, as a dinner with
+  // wine does. Each item is read as typed, since their sum counts a mistyped
+  // one as 0 that saving still refuses. Once shown it stays for this meal, so
+  // clearing the box to retype it does not take the box away.
+  const ethanolHeld = holdsEthanol(shownEthanol) ||
+    items.some((item) => holdsEthanol(item.ethanol)) ||
+    dishes.some((dish) => holdsEthanol(dish.ethanol));
+  const [ethanolSeen, setEthanolSeen] = useState(ethanolHeld);
+  if (ethanolHeld && !ethanolSeen) setEthanolSeen(true);
+  const showEthanol = slot === "Alcohol" || ethanolHeld || ethanolSeen;
   const conversationLog = useRef<HTMLDivElement>(null);
   const replyButton = useRef<HTMLButtonElement>(null);
   const doneButton = useRef<HTMLButtonElement>(null);
@@ -572,17 +584,14 @@ export function MealForm({
   }, {} as Macros);
   const ethanolRaw = shownEthanol.trim();
   const ethanolGrams = ethanolRaw === "" ? 0 : Number(ethanolRaw);
-  const alcoholGrams = slot === "Alcohol" ? ethanolGrams : 0;
-  const ethanolOk = slot !== "Alcohol" || (
-    Number.isFinite(ethanolGrams) && ethanolGrams >= 0 && ethanolGrams <= ETHANOL_LIMIT
-  );
+  const ethanolOk = Number.isFinite(ethanolGrams) && ethanolGrams >= 0 && ethanolGrams <= ETHANOL_LIMIT;
   const fiberRaw = shownFiber.trim();
   const fiberGrams = fiberRaw === "" ? 0 : Number(fiberRaw);
   const fiberOk = Number.isFinite(fiberGrams) && fiberGrams >= 0 && fiberGrams <= FIBER_LIMIT
     && Number.isFinite(parsedMacros.carbs) && fiberGrams <= parsedMacros.carbs;
-  const counted = { ...parsedMacros, alcohol: alcoholGrams, fiber: fiberGrams };
+  const counted = { ...parsedMacros, alcohol: ethanolGrams, fiber: fiberGrams };
   const canCheckCalories = ethanolOk && fiberOk &&
-    MACRO_FIELDS.some(({ key }) => shownMacros[key].trim() !== "" || (slot === "Alcohol" && ethanolRaw !== "") || fiberRaw !== "") &&
+    MACRO_FIELDS.some(({ key }) => shownMacros[key].trim() !== "" || ethanolRaw !== "" || fiberRaw !== "") &&
     MACRO_FIELDS.every(({ key }) => Number.isFinite(parsedMacros[key]) &&
       parsedMacros[key] >= 0 && parsedMacros[key] <= LIMITS[key]);
   const breakdown = macroCalories(counted);
@@ -598,6 +607,7 @@ export function MealForm({
     setName("");
     setMacros(emptyMacros);
     setEthanol("");
+    setEthanolSeen(false);
     setFiber("");
     setAssumptions("");
     setConfidence(null);
@@ -693,7 +703,7 @@ export function MealForm({
     setDishes((current) => {
       const at = current.findIndex((dish) => dish.id === id);
       if (at < 0) return current;
-      const made = expandDish(current[at], slot, newId);
+      const made = expandDish(current[at], newId);
       if (made.length < 2 || current.length - 1 + made.length > DISH_LIMIT) return current;
       return [...current.slice(0, at), ...made, ...current.slice(at + 1)];
     });
@@ -743,7 +753,8 @@ export function MealForm({
         dishEpoch.current === epoch ? replaceDishEstimate(current, id, estimate, provider, newId) : current
       ));
       if (dishEpoch.current !== epoch) return;
-      // Ethanol belongs to an Alcohol sitting, as it does for a whole meal.
+      // A dish with ethanol makes it an Alcohol sitting, as it does for a
+      // whole meal. Picking another sitting afterwards keeps the ethanol.
       if ((estimate.alcohol ?? 0) > 0) setSlot("Alcohol");
       onEstimateComplete?.();
     } catch (problem) {
@@ -1043,7 +1054,7 @@ export function MealForm({
   function itemSeeds(): ItemSeed[] {
     if (splitting || expanded) return [];
     const figured = MACRO_FIELDS.some(({ key }) => macros[key].trim() !== "") ||
-      fiber.trim() !== "" || (slot === "Alcohol" && ethanol.trim() !== "");
+      fiber.trim() !== "" || ethanol.trim() !== "";
     if (!figured) return blankSeeds(description.trim());
     if (!canCheckCalories) return [];
     const saved = seedsFromIngredients(ingredients, counted);
@@ -1057,7 +1068,7 @@ export function MealForm({
 
   /** The assumptions with the items listed first, once they were changed. */
   function listedAssumptions() {
-    return expanded && itemsEdited ? withItemList(assumptions, looseItems(items, slot)) : assumptions;
+    return expanded && itemsEdited ? withItemList(assumptions, looseItems(items)) : assumptions;
   }
 
   function expandItems(seeds: readonly ItemSeed[]) {
@@ -1121,7 +1132,7 @@ export function MealForm({
   /** Keep the meal on the form, portions and all, without logging it. */
   async function saveAsTemplate() {
     if (estimating || saving || templateSaving) return;
-    const read = expanded ? readItems(items, slot) : null;
+    const read = expanded ? readItems(items) : null;
     const problem = (read && !read.ok ? read.error : "") || validate();
     setError(problem);
     if (problem) return;
@@ -1241,7 +1252,7 @@ export function MealForm({
     if (!name.trim()) return "Name the meal, or run an estimate first.";
     const when = validateWhen();
     if (when) return when;
-    if (slot === "Alcohol" && !ethanolOk)
+    if (!ethanolOk)
       return ethanolGrams > ETHANOL_LIMIT
         ? "Ethanol looks too high."
         : "Ethanol needs a number of zero or more.";
@@ -1258,7 +1269,7 @@ export function MealForm({
       if (fiberGrams > FIBER_LIMIT) return "Fiber looks too high.";
       return "Fiber is part of total carbs, so it cannot be higher.";
     }
-    if (MACRO_FIELDS.every(({ key }) => parsedMacros[key] === 0) && alcoholGrams === 0)
+    if (MACRO_FIELDS.every(({ key }) => parsedMacros[key] === 0) && ethanolGrams === 0)
       return "Add at least one macro value.";
     return "";
   }
@@ -1273,7 +1284,7 @@ export function MealForm({
     const taken = dishes.map(takeWrittenShare);
     if (taken.some((dish, index) => dish !== dishes[index])) setDishes(taken);
     const when = validateWhen();
-    const read = when ? null : readDishes(taken, slot);
+    const read = when ? null : readDishes(taken);
     const split = read?.ok
       ? splitMeal({
           eaters,
@@ -1303,7 +1314,7 @@ export function MealForm({
       return;
     }
     // An item says what is wrong with it before the meal it adds up to does.
-    const read = expanded ? readItems(items, slot) : null;
+    const read = expanded ? readItems(items) : null;
     const problem = (read && !read.ok ? read.error : "") || validate();
     setError(problem);
     if (problem) return;
@@ -1324,7 +1335,7 @@ export function MealForm({
         ...(time ? { time } : {}),
         name: name.trim(),
         meal: slot,
-        macros: { ...parsedMacros, alcohol: alcoholGrams, fiber: fiberGrams },
+        macros: { ...parsedMacros, alcohol: ethanolGrams, fiber: fiberGrams },
         source,
         assumptions: (listed && itemsEdited ? withItemList(assumptions, listed) : assumptions).trim().slice(0, 3000),
         ...(savedItems ? { items: savedItems } : {}),
@@ -1361,7 +1372,7 @@ export function MealForm({
             answers={partials}
             included={chosen}
             weights={weights}
-            sitting={slot}
+            ethanol={showEthanol}
             onToggle={toggleProvider}
             onWeight={changeWeight}
             onFigure={changeAnswerFigure}
@@ -1441,7 +1452,7 @@ export function MealForm({
               <h3 className="text-sm font-semibold">Dishes</h3>
               <MealDishes
                 dishes={dishes}
-                sitting={slot}
+                ethanol={showEthanol}
                 grokReady={grokReady}
                 estimating={estimatingDishIds}
                 disabled={busy}
@@ -1468,7 +1479,7 @@ export function MealForm({
                   }}
                 />
               </Field>
-              <DishShares dishes={dishes} sitting={slot} eaters={eaters} />
+              <DishShares dishes={dishes} eaters={eaters} />
             </section>
         </fieldset>
       ) : (
@@ -1705,7 +1716,7 @@ export function MealForm({
               onChange={(event) => setName(event.target.value)}
             />
           </Field>
-          {slot === "Alcohol" ? (
+          {showEthanol ? (
             <Field label="Ethanol (g)">
               <Input
                 value={shownEthanol}
@@ -1777,7 +1788,7 @@ export function MealForm({
                     `carbs ${formatCalories(breakdown.carbs)}`,
                     ...(breakdown.fiber > 0 ? [`fiber ${formatCalories(breakdown.fiber)}`] : []),
                     `fat ${formatCalories(breakdown.fat)}`,
-                    ...(slot === "Alcohol" ? [`ethanol ${formatCalories(breakdown.alcohol)}`] : []),
+                    ...(showEthanol ? [`ethanol ${formatCalories(breakdown.alcohol)}`] : []),
                   ].join(" + ")} kcal
                 </p>
                 <p className="text-xs text-muted-foreground">
@@ -1828,7 +1839,7 @@ export function MealForm({
             <h3 className="text-sm font-semibold">Items</h3>
             <MealItems
               items={items}
-              sitting={slot}
+              ethanol={showEthanol}
               onItem={(id, change) =>
                 changeItems((current) => current.map((item) => (item.id === id ? change(item) : item)))}
               onRename={(id, itemName) => {

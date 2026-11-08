@@ -18,6 +18,15 @@ export const EATERS = ["hippos", "gators"] as const satisfies readonly Eater[];
 /** The meal form's own bounds, the same the server holds a meal to. */
 export const MACRO_LIMITS: Macros = { calories: 20000, protein: 2000, carbs: 3000, fat: 2000 };
 export const ETHANOL_LIMIT = 500;
+/**
+ * A box that holds ethanol: anything but blank or zero, so a half-typed or
+ * mistyped one counts too and stays in sight to be fixed. Ethanol counts on
+ * any sitting, so a dinner with wine keeps its sitting and its ethanol.
+ */
+export function holdsEthanol(text: string) {
+  const typed = text.trim();
+  return typed !== "" && Number(typed) !== 0;
+}
 export const FIBER_LIMIT = 3000;
 /** The server's limit on a meal's assumptions. */
 export const ASSUMPTIONS_LIMIT = 3000;
@@ -70,7 +79,7 @@ export type DishDraft = {
   fat: string;
   /** Already part of the carbs. */
   fiber: string;
-  /** Ethanol grams, which count only on an Alcohol sitting, as on a meal. */
+  /** Ethanol grams, on any sitting, as on a meal. */
   ethanol: string;
   /**
    * How much the whole dish was, counted: "8 slices", "400 g". Optional. A
@@ -431,7 +440,7 @@ function withCount(quantity: string): { count?: Count } {
  * The dishes as far as they can be read, for the shares shown as you type:
  * anything unreadable counts as nothing. Saving reads them strictly instead.
  */
-export function looseDishes(drafts: readonly DishDraft[], sitting: Meal["meal"]): Dish[] {
+export function looseDishes(drafts: readonly DishDraft[]): Dish[] {
   return drafts.map((draft) => ({
     name: draft.name.trim(),
     ...withCount(draft.quantity),
@@ -441,7 +450,7 @@ export function looseDishes(drafts: readonly DishDraft[], sitting: Meal["meal"])
       carbs: usable(amount(draft.carbs)),
       fat: usable(amount(draft.fat)),
       fiber: usable(amount(draft.fiber)),
-      alcohol: sitting === "Alcohol" ? usable(amount(draft.ethanol)) : 0,
+      alcohol: usable(amount(draft.ethanol)),
     },
     share: {
       hippos: (readShare(draft.share.hippos) ?? 0) / 100,
@@ -457,21 +466,18 @@ export function looseDishes(drafts: readonly DishDraft[], sitting: Meal["meal"])
 /** Every dish, held to what a meal is held to, or the first thing wrong with one. */
 export function readDishes(
   drafts: readonly DishDraft[],
-  sitting: Meal["meal"],
 ): { ok: true; dishes: Dish[] } | { ok: false; error: string } {
   if (!drafts.length) return { ok: false, error: "Add a dish." };
   if (drafts.length > DISH_LIMIT) return { ok: false, error: `A meal holds up to ${DISH_LIMIT} dishes.` };
-  const dishes = looseDishes(drafts, sitting);
+  const dishes = looseDishes(drafts);
   for (const [index, draft] of drafts.entries()) {
     const dish = `Dish ${index + 1}`;
     if (!draft.name.trim()) return { ok: false, error: `Name dish ${index + 1}.` };
     if (draft.name.trim().length > DISH_TEXT_LIMIT) return { ok: false, error: `${dish}: the description is too long.` };
-    if (sitting === "Alcohol") {
-      const ethanol = amount(draft.ethanol);
-      if (!Number.isFinite(ethanol) || ethanol < 0)
-        return { ok: false, error: `${dish}: Ethanol needs a number of zero or more.` };
-      if (ethanol > ETHANOL_LIMIT) return { ok: false, error: `${dish}: Ethanol looks too high.` };
-    }
+    const ethanol = amount(draft.ethanol);
+    if (!Number.isFinite(ethanol) || ethanol < 0)
+      return { ok: false, error: `${dish}: Ethanol needs a number of zero or more.` };
+    if (ethanol > ETHANOL_LIMIT) return { ok: false, error: `${dish}: Ethanol looks too high.` };
     for (const { key, label } of MACROS) {
       const value = amount(draft[key]);
       if (!Number.isFinite(value) || value < 0)

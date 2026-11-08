@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Field } from "@/components/workout-form";
-import { ATHLETES, ESTIMATORS, type Meal } from "@/lib/domain";
+import { ATHLETES, ESTIMATORS } from "@/lib/domain";
 import {
   ASSUMPTIONS_LIMIT,
   DISH_LIMIT,
@@ -125,17 +125,15 @@ function BarLabel({ fraction, side, text }: { fraction: number; side: "start" | 
  */
 function ShareControl({
   dish,
-  sitting,
   disabled,
   onDish,
 }: {
   dish: DishDraft;
-  sitting: Meal["meal"];
   disabled: boolean;
   onDish: (change: (dish: DishDraft) => DishDraft) => void;
 }) {
   const ids = { hippos: useId(), gators: useId() };
-  const [read] = looseDishes([dish], sitting);
+  const [read] = looseDishes([dish]);
   const portions = { hippos: portionOf(read, "hippos"), gators: portionOf(read, "gators") };
   // Said for a screen reader in place of the step count, which means nothing alone.
   const spoken = EATERS.map((eater) =>
@@ -355,7 +353,7 @@ function ItemCheck({ dish }: { dish: DishDraft }) {
 function DishCard({
   dish,
   index,
-  sitting,
+  ethanol,
   grokReady,
   busy,
   disabled,
@@ -368,7 +366,8 @@ function DishCard({
 }: {
   dish: DishDraft;
   index: number;
-  sitting: Meal["meal"];
+  /** The meal holds ethanol, or is an Alcohol sitting, so each dish has a box for it. */
+  ethanol: boolean;
   grokReady: boolean;
   /** This dish is being estimated, so its boxes wait for the answer. */
   busy: boolean;
@@ -435,7 +434,7 @@ function DishCard({
           </Button>
         ) : null}
       </div>
-      {sitting === "Alcohol" ? (
+      {ethanol ? (
         <Field label="Ethanol (g)">
           <Input
             value={dish.ethanol}
@@ -529,7 +528,7 @@ function DishCard({
           }}
         />
       </Field>
-      <ShareControl dish={dish} sitting={sitting} disabled={busy || disabled} onDish={onDish} />
+      <ShareControl dish={dish} disabled={busy || disabled} onDish={onDish} />
       {error ? (
         <p role="alert" className="text-sm text-destructive">
           {error}
@@ -542,7 +541,7 @@ function DishCard({
 /** The dishes on the table, each with its own figures and who had how much of it. */
 export function MealDishes({
   dishes,
-  sitting,
+  ethanol,
   grokReady,
   estimating,
   disabled,
@@ -554,7 +553,8 @@ export function MealDishes({
   onAdd,
 }: {
   dishes: DishDraft[];
-  sitting: Meal["meal"];
+  /** Show each dish's ethanol box: the meal holds ethanol, or is an Alcohol sitting. */
+  ethanol: boolean;
   grokReady: boolean;
   /** The dishes being estimated. Several can be at once. */
   estimating: ReadonlySet<string>;
@@ -571,7 +571,7 @@ export function MealDishes({
   // Each item takes the dish's place, so it has the room the dish had.
   const room = DISH_LIMIT - dishes.length + 1;
   const pieces = (dish: DishDraft) => {
-    const count = expandDish(dish, sitting, () => "").length;
+    const count = expandDish(dish, () => "").length;
     return count >= 2 && count <= room ? count : 0;
   };
   return (
@@ -581,7 +581,7 @@ export function MealDishes({
           key={dish.id}
           dish={dish}
           index={index}
-          sitting={sitting}
+          ethanol={ethanol}
           grokReady={grokReady}
           busy={estimating.has(dish.id)}
           disabled={disabled}
@@ -610,14 +610,12 @@ export function MealDishes({
 /** What each meal will hold, as it is typed. */
 export function DishShares({
   dishes,
-  sitting,
   eaters,
 }: {
   dishes: DishDraft[];
-  sitting: Meal["meal"];
   eaters: readonly Eater[];
 }) {
-  const read = looseDishes(dishes, sitting);
+  const read = looseDishes(dishes);
   return (
     <div
       role="status"
