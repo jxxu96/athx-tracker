@@ -14,7 +14,8 @@ type SavedItem = MealTemplateItem & { nutrition: NonNullable<MealTemplateItem["n
 const FIGURE_NAMES = [/^kcal$/i, /^(p|protein)$/i, /^(c|carbs?)$/i, /^(f|fat)$/i, /^fib(?:er|re)$/i, /^(ethanol|alcohol)$/i];
 const PROVIDER_BREAKDOWN = /^From (?:Codex|Claude|Grok) \[[^\n]+\]:\s*/m;
 
-function readFigures(text: string): Figures | undefined {
+/** The figures inside an item's brackets, "248 kcal, 47P, 0C, 5F", or undefined when they do not read. */
+export function readFigures(text: string): Figures | undefined {
   const values: Partial<Figures> = {};
   for (const part of text.split(",")) {
     const match = part.trim().match(/^(\d+(?:\.\d+)?)\s*(?:g\s+)?([a-z]+)$/i);

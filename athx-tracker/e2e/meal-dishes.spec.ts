@@ -452,7 +452,7 @@ test("a slider shares each dish, a slice at a time once the dish is counted", as
 });
 
 /** An estimate dish by dish, each dish an estimate of its own, with the totals theirs added up. */
-function shared(dishes: { name: string; calories: number; protein: number; carbs: number; fat: number; fiber?: number; alcohol?: number; confidence?: string }[]) {
+function shared(dishes: { name: string; calories: number; protein: number; carbs: number; fat: number; fiber?: number; alcohol?: number; confidence?: string; assumptions?: string }[]) {
   const full = dishes.map((each) => ({
     fiber: 0, alcohol: 0, confidence: "medium", assumptions: `${each.name}, worked out.`, ...each,
   }));
@@ -782,4 +782,127 @@ test("several dishes are estimated again at once, and each answer stays on its d
   await expect(dish(page, 4).getByLabel("Calories (kcal)")).toHaveValue("");
   expect(requests).toEqual(["pizza", "salad"]);
   await expect(page.getByRole("button", { name: "Save meal", exact: true })).toBeEnabled();
+});
+
+test("a dish's items are checked against its calories without being enforced, and a dish scales by a percentage", async ({ page }) => {
+  // The curry's items come to its 800 kcal. The naan's come to 300 of its 400.
+  const curry = [
+    "Chicken thigh curry, 300 g [520 kcal, 36P, 14C, 30F, 2 fiber]",
+    "Thigh meat, onion and oil.",
+    "",
+    "Basmati rice, 250 g cooked [280 kcal, 4P, 66C, 0F, 4 fiber]",
+  ].join("\n");
+  const naan = ["Garlic naan, 1 piece [260 kcal, 8P, 44C, 6F, 2 fiber]", "", "Butter, 5 g [40 kcal, 0P, 0C, 5F]"].join("\n");
+  await page.route("**/api/estimate", async (route) => {
+    await route.fulfill({
+      json: {
+        estimate: shared([
+          { name: "Chicken curry with rice", calories: 800, protein: 40, carbs: 80, fat: 30, fiber: 6, assumptions: curry },
+          { name: "Garlic naan", calories: 400, protein: 10, carbs: 60, fat: 12, fiber: 2, assumptions: naan },
+        ]),
+        provider: "codex",
+      },
+    });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await loggingFor(page, "Both").click();
+  await page.getByRole("group", { name: "Sitting" }).getByRole("button", { name: "Dinner" }).click();
+  await page.getByLabel("Meal description").fill("Chicken curry with rice, garlic naan");
+  await page.getByRole("button", { name: "Estimate macros" }).click();
+  await expect(dish(page, 2).getByLabel("Calories (kcal)")).toHaveValue("400");
+
+  // Each dish's listed items are added up against its calories, and a gap is said, not fixed.
+  const curryDish = dish(page, 1);
+  const naanDish = dish(page, 2);
+  await expect(curryDish.getByRole("status", { name: "Items check" })).toHaveText(
+    "The 2 items listed add up to this dish's 800 kcal.",
+  );
+  await expect(naanDish.getByRole("status", { name: "Items check" })).toHaveText(
+    "The 2 items listed come to 300 kcal, 100 kcal below this dish's 400 kcal.",
+  );
+  await expect(naanDish.getByLabel("Calories (kcal)")).toHaveValue("400");
+  await expect(naanDish).toContainText("Answered by Codex · Confidence: medium");
+  await expect(naanDish).not.toContainText("saved as your own numbers");
+
+  // The scale stays shut until it is ticked, and opens at 100% with nothing changed.
+  await expect(curryDish.getByLabel("Size (%)")).toHaveCount(0);
+  await curryDish.getByRole("checkbox", { name: "Scale size" }).check();
+  await expect(curryDish.getByLabel("Size (%)")).toHaveValue("100");
+  await expect(curryDish.getByLabel("Size", { exact: true })).toHaveValue("100");
+  await expect(curryDish).toContainText("100% is 800 kcal.");
+  await expect(curryDish.getByLabel("Calories (kcal)")).toHaveValue("800");
+  await expect(curryDish).not.toContainText("saved as your own numbers");
+
+  // Typed, every figure follows the size, and the estimate becomes your own numbers.
+  await curryDish.getByLabel("Size (%)").fill("120");
+  await expect(curryDish.getByLabel("Calories (kcal)")).toHaveValue("960");
+  await expect(curryDish.getByLabel("Protein (g)")).toHaveValue("48");
+  await expect(curryDish.getByLabel("Carbs (g)")).toHaveValue("96");
+  await expect(curryDish.getByLabel("Fiber (g)")).toHaveValue("7.2");
+  await expect(curryDish.getByLabel("Fat (g)")).toHaveValue("36");
+  await expect(curryDish.getByLabel("Size", { exact: true })).toHaveValue("120");
+  await expect(curryDish).toContainText("saved as your own numbers after your edit");
+  // The working was written for 100%, so that is what its items are held to.
+  await expect(curryDish.getByRole("status", { name: "Items check" })).toHaveText(
+    "The 2 items listed add up to this dish's 800 kcal at 100%.",
+  );
+  // The split under the bar is of the scaled dish.
+  await expect(curryDish.getByText("480 kcal")).toHaveCount(2);
+
+  // Slid, always from 100%, and a step at a time from the keyboard.
+  await curryDish.getByLabel("Size", { exact: true }).fill("50");
+  await expect(curryDish.getByLabel("Calories (kcal)")).toHaveValue("400");
+  await expect(curryDish.getByLabel("Size (%)")).toHaveValue("50");
+  await curryDish.getByLabel("Size", { exact: true }).press("ArrowRight");
+  await expect(curryDish.getByLabel("Calories (kcal)")).toHaveValue("440");
+  await expect(curryDish.getByLabel("Size (%)")).toHaveValue("55");
+
+  // Unticked, the dish is back at 100%.
+  await curryDish.getByRole("checkbox", { name: "Scale size" }).uncheck();
+  await expect(curryDish.getByLabel("Size (%)")).toHaveCount(0);
+  await expect(curryDish.getByLabel("Calories (kcal)")).toHaveValue("800");
+  await expect(curryDish.getByLabel("Fiber (g)")).toHaveValue("6");
+
+  await curryDish.getByRole("checkbox", { name: "Scale size" }).check();
+  await curryDish.getByLabel("Size (%)").fill("120");
+  await expect(curryDish.getByLabel("Calories (kcal)")).toHaveValue("960");
+
+  const { violations } = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  expect(violations.map((v) => v.id)).toEqual([]);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+  await curryDish.screenshot({ path: "test-results/meal-dish-scale-mobile.png" });
+  await naanDish.screenshot({ path: "test-results/meal-dish-items-check-mobile.png" });
+
+  // The size outlives a reload.
+  await page.reload();
+  await page.getByRole("button", { name: "Meal", exact: true }).click();
+  await expect(dish(page, 1).getByLabel("Size (%)")).toHaveValue("120");
+  await expect(dish(page, 1).getByLabel("Calories (kcal)")).toHaveValue("960");
+  await expect(dish(page, 1)).toContainText("100% is 800 kcal.");
+
+  // The naan's gap does not stand in the way of saving.
+  await page.getByLabel("Meal", { exact: true }).fill("Curry night");
+  await page.getByRole("button", { name: "Save meal", exact: true }).click();
+  await expect(page.getByText("Meals saved for Hippos and Gators", { exact: true })).toBeVisible();
+  const macros = { calories: 680, protein: 29, carbs: 78, fat: 24, alcohol: 0, fiber: 4.6 };
+  await expect.poll(async () =>
+    (await meals(page))
+      .filter((meal) => meal.name === "Curry night")
+      .map(({ athlete, source, macros: saved }) => ({ athlete, source, macros: saved }))
+      .sort((a, b) => a.athlete.localeCompare(b.athlete)),
+  ).toEqual([
+    { athlete: "gators", source: "manual", macros },
+    { athlete: "hippos", source: "manual", macros },
+  ]);
+  const hippos = (await meals(page)).find((meal) => meal.athlete === "hippos" && meal.name === "Curry night");
+  expect(hippos?.assumptions).toContain(
+    "50% of Chicken curry with rice [480 kcal, 24P, 48C, 18F, 4 fiber]\n" +
+      "The whole dish [960 kcal, 48P, 96C, 36F, 7 fiber]\n" +
+      "Scaled to 120% of 800 kcal.\n" +
+      "Chicken thigh curry, 300 g [520 kcal, 36P, 14C, 30F, 2 fiber]",
+  );
+  expect(hippos?.assumptions).toContain("50% of Garlic naan [200 kcal, 5P, 30C, 6F, 1 fiber]\nThe whole dish [400 kcal, 10P, 60C, 12F, 2 fiber]\nGarlic naan");
 });

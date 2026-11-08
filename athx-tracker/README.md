@@ -216,7 +216,24 @@ single SQLite file on a volume.
   dish has its own figures, typed or estimated from what the
   dish says, and under them the assumptions its estimate gave, to read and
   correct; correcting them leaves the figures the estimate's. A dish typed by
-  hand has none to show until it is estimated. Each dish has a share for each
+  hand has none to show until it is estimated. Each dish also says whether the
+  items its working lists add up to its calories: the items **Expand into N
+  items** would make, added up against the dish's calories, or in a blend,
+  each estimator's items against that estimator's own figure, which the dish's
+  averages. Rounding each item and the total is allowed for; a gap past that
+  is said, and one past 5% of the calories stands out. It is advice only: it
+  never stops a save and never changes a figure. A working cut short to fit is
+  not checked, and a lone item, being the dish itself, is mentioned only when
+  it is out (`dishItemCheck` in `lib/meal-items.ts`). **Scale size** makes a
+  dish bigger or smaller by a percentage. Ticked, it opens at 100% with a
+  slider, 10% to 300% in steps of 5, and a box for anything from 1% to 1000%,
+  and every figure follows the size from the dish's figures at 100%, so
+  sliding back loses nothing; a figure typed meanwhile is that figure at the
+  size shown. Unticked, the figures go back to 100%. A scaled estimate saves
+  as your own numbers, and since its working was written for 100%, each meal's
+  assumptions say "Scaled to 120% of 800 kcal." under the whole dish, and the
+  item check holds the working to the dish at 100%. Estimating the dish again
+  closes the scale (`scaleDish` in `lib/meal-dishes.ts`). Each dish has a share for each
   of you as a percentage of that dish, starting at half each. The two shares
   always add up to 100: typing one sets the other, and blank counts as 0. Each
   of you has a box at your end of a bar, Hippos at the left and Gators at the

@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { ChevronsUpDown, Plus, Sparkles, X } from "lucide-react";
+import { ChevronsUpDown, Plus, Sparkles, TriangleAlert, X } from "lucide-react";
 import { Slider as SliderPrimitive } from "radix-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,9 +15,16 @@ import {
   DISH_TEXT_LIMIT,
   EATERS,
   QUANTITY_LIMIT,
+  SCALE_MAX,
+  SCALE_MIN,
+  SCALE_SLIDER,
+  closeScale,
   looseDishes,
+  openScale,
   portionOf,
   readQuantity,
+  readScale,
+  scaleDish,
   setFigure,
   setShare,
   shareTotals,
@@ -29,7 +36,7 @@ import {
   type DishDraft,
   type Eater,
 } from "@/lib/meal-dishes";
-import { expandDish } from "@/lib/meal-items";
+import { dishItemCheck, expandDish } from "@/lib/meal-items";
 
 /** The same boxes, in the same places, as a meal's: three across, then fiber and fat. */
 const FIGURES = [
@@ -205,6 +212,146 @@ function ShareControl({
   );
 }
 
+/** A percentage as the size box shows it: to a tenth. */
+const shownPercent = (percent: number) => String(Math.round(percent * 10) / 10);
+
+/**
+ * The size box. It shows the size the dish is at, and while it is typed
+ * into, what is typed: a size it can take applies at once, so the figures
+ * follow the typing, and one it cannot is said under it and dropped on
+ * leaving the box.
+ */
+function SizeBox({
+  percent,
+  disabled,
+  onPercent,
+}: {
+  percent: number;
+  disabled: boolean;
+  onPercent: (percent: number) => void;
+}) {
+  const [typed, setTyped] = useState<string | null>(null);
+  const unreadable = typed !== null && typed.trim() !== "" && readScale(typed) === null;
+  return (
+    <div className="w-20 shrink-0 space-y-1">
+      <div className="relative">
+        <Input
+          aria-label="Size (%)"
+          value={typed ?? shownPercent(percent)}
+          inputMode="decimal"
+          disabled={disabled}
+          aria-invalid={unreadable || undefined}
+          className="h-9 pr-5 pl-1.5 text-right tabular-nums"
+          onFocus={() => setTyped(shownPercent(percent))}
+          onBlur={() => setTyped(null)}
+          onChange={(event) => {
+            const text = event.target.value;
+            setTyped(text);
+            const value = readScale(text);
+            if (value !== null) onPercent(value);
+          }}
+        />
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-sm text-muted-foreground"
+        >
+          %
+        </span>
+      </div>
+      {unreadable ? (
+        <p className="text-[11px] text-muted-foreground">
+          {SCALE_MIN}% to {SCALE_MAX}%
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Makes the dish bigger or smaller than its figures say, by a percentage.
+ * Ticked, it opens at 100% with a slider and a box, and the figures above
+ * follow the size. Unticked, the figures go back to 100%.
+ */
+function ScaleControl({
+  dish,
+  disabled,
+  onDish,
+}: {
+  dish: DishDraft;
+  disabled: boolean;
+  onDish: (change: (dish: DishDraft) => DishDraft) => void;
+}) {
+  const scale = dish.scale;
+  const full = scale ? Math.round(scale.base.calories * 10) / 10 : 0;
+  return (
+    <div className="space-y-2">
+      <label className="flex w-fit items-center gap-2 text-xs font-medium">
+        <input
+          type="checkbox"
+          checked={scale !== null}
+          disabled={disabled}
+          className="size-4 shrink-0 accent-primary"
+          onChange={(event) => {
+            const on = event.target.checked;
+            onDish((current) => (on ? openScale(current) : closeScale(current)));
+          }}
+        />
+        Scale size
+      </label>
+      {scale ? (
+        <div className="space-y-1">
+          <div className="flex items-start gap-3">
+            <input
+              type="range"
+              className="h-9 min-w-0 flex-1 accent-primary"
+              aria-label="Size"
+              aria-valuetext={`${shownPercent(scale.percent)}%`}
+              min={SCALE_SLIDER.min}
+              max={SCALE_SLIDER.max}
+              step={SCALE_SLIDER.step}
+              value={Math.min(SCALE_SLIDER.max, Math.max(SCALE_SLIDER.min, scale.percent))}
+              disabled={disabled}
+              onChange={(event) => {
+                const percent = event.target.valueAsNumber;
+                onDish((current) => scaleDish(current, percent));
+              }}
+            />
+            <SizeBox
+              percent={scale.percent}
+              disabled={disabled}
+              onPercent={(percent) => onDish((current) => scaleDish(current, percent))}
+            />
+          </div>
+          {full > 0 ? <p className="text-[11px] text-muted-foreground">100% is {full} kcal.</p> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Whether the items in the dish's working add up to its calories. Advisory:
+ * a gap is said, and one worth a look stands out, but nothing is blocked or
+ * changed by it.
+ */
+function ItemCheck({ dish }: { dish: DishDraft }) {
+  const lines = dishItemCheck(dish);
+  if (!lines.length) return null;
+  return (
+    <div role="status" aria-label="Items check" className="space-y-0.5">
+      {lines.map((line) => (
+        <p
+          key={line.text}
+          className={`flex items-start gap-1.5 text-xs ${line.off ? "font-medium text-foreground" : "text-muted-foreground"}`}
+        >
+          {line.off ? <TriangleAlert aria-hidden className="mt-px size-3.5 shrink-0" /> : null}
+          <span>{line.text}</span>
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function DishCard({
   dish,
   index,
@@ -318,6 +465,7 @@ function DishCard({
           </Field>
         ))}
       </div>
+      <ScaleControl dish={dish} disabled={busy || disabled} onDish={onDish} />
       {dish.confidence || dish.estimator ? (
         <p className="text-xs text-muted-foreground">
           {dish.estimator === "average" ? (
@@ -336,6 +484,7 @@ function DishCard({
           {dish.adjusted ? " · saved as your own numbers after your edit" : null}
         </p>
       ) : null}
+      <ItemCheck dish={dish} />
       {expandable ? (
         <Button
           type="button"

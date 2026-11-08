@@ -42,6 +42,23 @@ const MACROS = [
 type Figure = keyof Macros | "fiber" | "ethanol";
 const FIGURES = ["calories", "protein", "carbs", "fat", "fiber", "ethanol"] as const satisfies readonly Figure[];
 
+/**
+ * A dish made bigger or smaller than its figures said. The figures at 100%
+ * stay put while the size moves, so sliding to 50% and back loses nothing,
+ * and a figure typed meanwhile is taken as that figure at the size shown.
+ */
+export type DishScale = {
+  /** The size the dish's figures are at now, as a percentage. */
+  percent: number;
+  /** Its figures at 100%. */
+  base: Record<Figure, number>;
+};
+
+/** What a size can be. The slider covers the usual range; the box takes the rest. */
+export const SCALE_MIN = 1;
+export const SCALE_MAX = 1000;
+export const SCALE_SLIDER = { min: 10, max: 300, step: 5 } as const;
+
 /** One dish as typed: every box as its text, so a half-typed number survives a draft. */
 export type DishDraft = {
   id: string;
@@ -69,6 +86,8 @@ export type DishDraft = {
   /** An estimate was edited, so the figures are now your own. */
   adjusted: boolean;
   assumptions: string;
+  /** Null until the dish is scaled; closing the scale puts its figures back at 100%. */
+  scale: DishScale | null;
 };
 
 /** A quantity read as a count: 8 of "slices", 400 of "g", 6 of nothing named. */
@@ -84,6 +103,8 @@ export type Dish = {
   source: "manual" | "grok";
   estimator?: Estimator;
   assumptions: string;
+  /** The size it was scaled to, as a percentage. Present only when that is not 100. */
+  scale?: number;
 };
 
 export function emptyDish(id: string): DishDraft {
@@ -103,6 +124,7 @@ export function emptyDish(id: string): DishDraft {
     confidence: null,
     adjusted: false,
     assumptions: "",
+    scale: null,
   };
 }
 
@@ -238,17 +260,83 @@ export function shareAsWritten(drafts: DishDraft[], written: readonly WrittenDis
   });
 }
 
-/** A figure typed into. An estimate's figures stop being the estimate's once one is changed. */
+/**
+ * A figure typed into. An estimate's figures stop being the estimate's once
+ * one is changed. On a scaled dish it is that figure at the size shown, so
+ * the figure at 100% follows it; one that does not read yet leaves it.
+ */
 export function setFigure(dish: DishDraft, figure: Figure, text: string): DishDraft {
   const edited = dish.source === "grok";
+  const value = amount(text);
+  const rescaled = dish.scale && Number.isFinite(value) && value >= 0
+    ? { scale: { ...dish.scale, base: { ...dish.scale.base, [figure]: (value * 100) / dish.scale.percent } } }
+    : {};
   return {
     ...dish,
     [figure]: text,
+    ...rescaled,
     ...(edited ? { source: "manual" as const, adjusted: true } : {}),
   };
 }
 
-/** An estimate's answer on the dish. The name stays as typed: it is what was estimated. */
+/** A size box as a percentage: above 0 and up to SCALE_MAX, with or without its %. */
+export function readScale(text: string) {
+  const typed = text.trim().replace(/\s*%$/, "");
+  if (typed === "") return null;
+  const value = Number(typed);
+  return Number.isFinite(value) && value >= SCALE_MIN && value <= SCALE_MAX ? value : null;
+}
+
+/** The dish's boxes as numbers, anything unreadable as nothing. */
+function figuresOf(dish: DishDraft) {
+  return Object.fromEntries(FIGURES.map((figure) => [figure, usable(amount(dish[figure]))])) as Record<Figure, number>;
+}
+
+/** The scale opened: the dish as it is now is 100%. Nothing changes until the size does. */
+export function openScale(dish: DishDraft): DishDraft {
+  return dish.scale ? dish : { ...dish, scale: { percent: 100, base: figuresOf(dish) } };
+}
+
+/**
+ * The dish at a size, its figures at 100% scaled to it, to a tenth. A box
+ * that is blank, or does not read as a number, is left as typed, whatever
+ * it held before: a size never writes over an edit, so saving still points
+ * out what is wrong with it. An estimate's figures, once scaled, are your
+ * own, as an edited one is. A size the box cannot take changes nothing.
+ */
+export function scaleDish(dish: DishDraft, percent: number): DishDraft {
+  if (!Number.isFinite(percent) || percent < SCALE_MIN || percent > SCALE_MAX) return dish;
+  const scale = dish.scale ?? { percent: 100, base: figuresOf(dish) };
+  if (dish.scale && percent === scale.percent) return dish;
+  const figures = Object.fromEntries(FIGURES.map((figure) => {
+    const typed = amount(dish[figure]);
+    const unread = dish[figure].trim() === "" || !Number.isFinite(typed) || typed < 0;
+    return [figure, unread ? dish[figure] : String(round((scale.base[figure] * percent) / 100))];
+  })) as Record<Figure, string>;
+  return {
+    ...dish,
+    ...figures,
+    scale: { ...scale, percent },
+    ...(dish.source === "grok" ? { source: "manual" as const, adjusted: true } : {}),
+  };
+}
+
+/** The scale closed: the dish goes back to its figures at 100%. */
+export function closeScale(dish: DishDraft): DishDraft {
+  return dish.scale ? { ...scaleDish(dish, 100), scale: null } : dish;
+}
+
+/** What 100% of a scaled dish is in calories, or null while its box does not read. */
+export function unscaledCalories(dish: DishDraft) {
+  const calories = amount(dish.calories);
+  if (dish.calories.trim() === "" || !Number.isFinite(calories) || calories < 0) return null;
+  return dish.scale ? (calories * 100) / dish.scale.percent : calories;
+}
+
+/**
+ * An estimate's answer on the dish. The name stays as typed: it is what was
+ * estimated. Its figures are the dish at 100%, so a scale closes.
+ */
 export function fillDish(dish: DishDraft, estimate: MealEstimate, provider?: Estimator): DishDraft {
   return {
     ...dish,
@@ -263,6 +351,7 @@ export function fillDish(dish: DishDraft, estimate: MealEstimate, provider?: Est
     estimator: provider && provider in ESTIMATORS ? provider : null,
     source: "grok",
     adjusted: false,
+    scale: null,
   };
 }
 
@@ -361,6 +450,7 @@ export function looseDishes(drafts: readonly DishDraft[], sitting: Meal["meal"])
     source: draft.source,
     ...(draft.estimator ? { estimator: draft.estimator } : {}),
     assumptions: draft.assumptions.trim(),
+    ...(draft.scale && draft.scale.percent !== 100 ? { scale: draft.scale.percent } : {}),
   }));
 }
 
@@ -495,6 +585,16 @@ function shorten(text: string, max: number) {
 }
 
 /**
+ * A scaled dish says so, and what 100% was, since its working was written for
+ * 100%. No brackets: a line in brackets reads as one of the dish's items.
+ */
+function scaleNote(dish: Dish) {
+  if (!dish.scale) return [];
+  const full = Math.round((dish.macros.calories * 100) / dish.scale);
+  return [`Scaled to ${Math.round(dish.scale * 10) / 10}% of ${full} kcal.`];
+}
+
+/**
  * What one person's meal says it was: their share of each dish, then the whole
  * dish and how its figures were reached, in the room a meal's assumptions have.
  * The shares come first and are kept whole; each dish's own working is cut to fit.
@@ -509,6 +609,7 @@ export function shareAssumptions(dishes: readonly Dish[], eater: Eater) {
       const head = [
         `${percent(dish.share[eater])}% of ${clip(dish.name)}${counted} ${bracketed(yours)}`,
         ...(whole ? [] : [`The whole dish ${bracketed(dish.macros)}`]),
+        ...scaleNote(dish),
       ].join("\n");
       return { head, working: dish.assumptions };
     });
@@ -586,6 +687,21 @@ export function splitMeal(input: {
   return { ok: true, meals };
 }
 
+/** A scale from a draft, or null for one from before scales or damaged in storage. */
+function scaleOf(value: unknown): DishScale | null {
+  if (!value || typeof value !== "object") return null;
+  const held = value as { percent?: unknown; base?: unknown };
+  const base = held.base as Record<string, unknown> | null | undefined;
+  if (typeof held.percent !== "number" || readScale(String(held.percent)) === null) return null;
+  if (!base || typeof base !== "object") return null;
+  if (!FIGURES.every((figure) => typeof base[figure] === "number" && Number.isFinite(base[figure]) && (base[figure] as number) >= 0))
+    return null;
+  return {
+    percent: held.percent,
+    base: Object.fromEntries(FIGURES.map((figure) => [figure, base[figure]])) as Record<Figure, number>,
+  };
+}
+
 /**
  * Dishes from a draft. A draft written by an older form has none, and one
  * damaged in storage keeps what still reads as a dish.
@@ -614,6 +730,8 @@ export function dishesOf(value: unknown): DishDraft[] {
       confidence: oneOf(held.confidence, ["low", "medium", "high"] as const) ?? null,
       adjusted: held.adjusted === true,
       assumptions: textOf(held.assumptions, ""),
+      // Drafts from before scales have none.
+      scale: scaleOf(held.scale),
     });
   }
   return dishes;

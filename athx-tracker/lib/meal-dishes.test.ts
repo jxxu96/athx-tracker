@@ -5,6 +5,8 @@ import { writtenDishes } from "./dish-split.ts";
 import {
   ASSUMPTIONS_LIMIT,
   DISH_LIMIT,
+  SCALE_MAX,
+  closeScale,
   countShare,
   dishHint,
   dishesFromEstimate,
@@ -13,10 +15,13 @@ import {
   emptyDish,
   fillDish,
   looseDishes,
+  openScale,
   otherShare,
   portionOf,
   readDishes,
   readQuantity,
+  readScale,
+  scaleDish,
   setFigure,
   setShare,
   shareAsWritten,
@@ -29,6 +34,7 @@ import {
   sliderValue,
   splitMeal,
   tidyShare,
+  unscaledCalories,
   type Dish,
   type DishDraft,
 } from "./meal-dishes.ts";
@@ -558,4 +564,131 @@ test("the cut sent with an estimate leaves the shares off", () => {
   assert.deepEqual(dishHint("sandwich (60% g 40% h)\nfries (80% h)\ncoke"), ["sandwich", "fries", "coke"]);
   assert.deepEqual(dishHint("(70% g)"), []);
   assert.deepEqual(dishHint("dumplings (3 pc g), 8 buns (3 pc g)"), ["dumplings (3 pc g)", "8 buns"]);
+});
+
+const curry = dish("c", {
+  name: "Chicken curry",
+  calories: "800", protein: "40", carbs: "80", fat: "30", fiber: "6",
+  source: "grok", estimator: "codex", confidence: "medium",
+  assumptions: "Chicken thigh, 200 g [400 kcal, 36P, 0C, 28F]\n\nRice, 300 g [400 kcal, 4P, 80C, 2F, 6 fiber]",
+});
+
+test("a size box reads a percentage above 0, up to the most a dish can be scaled", () => {
+  assert.equal(readScale("120"), 120);
+  assert.equal(readScale(" 87.5 % "), 87.5);
+  assert.equal(readScale("1"), 1);
+  assert.equal(readScale(String(SCALE_MAX)), SCALE_MAX);
+  for (const text of ["", "0", "0.5", "-10", String(SCALE_MAX + 1), "abc", "12o"]) assert.equal(readScale(text), null, text);
+});
+
+test("scaling a dish moves every figure from its 100%, and closing the scale puts them back", () => {
+  const opened = openScale(curry);
+  assert.deepEqual(opened.scale, { percent: 100, base: { calories: 800, protein: 40, carbs: 80, fat: 30, fiber: 6, ethanol: 0 } });
+  assert.equal(opened.source, "grok", "opening changes nothing");
+  assert.equal(openScale(opened), opened);
+
+  const bigger = scaleDish(opened, 120);
+  assert.deepEqual(
+    [bigger.calories, bigger.protein, bigger.carbs, bigger.fat, bigger.fiber, bigger.ethanol],
+    ["960", "48", "96", "36", "7.2", ""],
+    "to a tenth, and a blank box stays blank",
+  );
+  assert.equal(bigger.source, "manual", "a scaled estimate is your own numbers");
+  assert.equal(bigger.adjusted, true);
+  assert.equal(bigger.assumptions, curry.assumptions, "the working stays the estimate's");
+
+  // Always from 100%, so sizes do not compound.
+  const smaller = scaleDish(scaleDish(bigger, 33), 50);
+  assert.equal(smaller.calories, "400");
+  assert.equal(smaller.scale?.percent, 50);
+
+  const back = closeScale(smaller);
+  assert.equal(back.scale, null);
+  assert.deepEqual([back.calories, back.protein, back.fiber], ["800", "40", "6"]);
+  assert.equal(closeScale(back), back);
+
+  for (const size of [0, SCALE_MAX + 1, Number.NaN]) assert.equal(scaleDish(bigger, size), bigger, String(size));
+  // A box that never read as a number is left for saving to point out, not turned into 0.
+  const typo = scaleDish(openScale({ ...curry, protein: "4o" }), 150);
+  assert.deepEqual([typo.calories, typo.protein], ["1200", "4o"]);
+  assert.equal(problem([typo]), "Dish 1: Protein needs a number of zero or more.");
+  // Nor is one mistyped after the scale opened: neither a new size nor closing writes over it.
+  const mistyped = setFigure(openScale(curry), "protein", "4o");
+  const resized = scaleDish(mistyped, 120);
+  assert.deepEqual([resized.calories, resized.protein], ["960", "4o"]);
+  assert.equal(problem([resized]), "Dish 1: Protein needs a number of zero or more.");
+  assert.equal(closeScale(resized).protein, "4o");
+  assert.equal(problem([closeScale(resized)]), "Dish 1: Protein needs a number of zero or more.");
+  // A dish scaled without opening the scale first opens it at that size.
+  assert.equal(scaleDish(curry, 150).calories, "1200");
+  assert.equal(scaleDish(curry, 150).scale?.percent, 150);
+});
+
+test("a figure typed on a scaled dish is that figure at the size shown", () => {
+  const scaled = scaleDish(openScale(curry), 125);
+  const typed = setFigure(scaled, "calories", "1100");
+  assert.equal(typed.calories, "1100");
+  assert.equal(typed.scale?.base.calories, 880);
+  assert.equal(typed.scale?.base.protein, 40, "the other figures keep their 100%");
+  assert.equal(scaleDish(typed, 100).calories, "880");
+  assert.equal(closeScale(typed).calories, "880");
+  // Half-typed, it leaves the 100% where it was.
+  assert.equal(setFigure(scaled, "calories", "1.1.").scale?.base.calories, 800);
+  // On an unscaled dish nothing changes but the figure.
+  assert.equal(setFigure(curry, "calories", "900").scale, null);
+});
+
+test("a new estimate closes the scale: its figures are the dish at 100%", () => {
+  const scaled = scaleDish(openScale(curry), 140);
+  const again = fillDish(scaled, { ...answer("Chicken curry", 700), assumptions: "Smaller pot." }, "claude");
+  assert.equal(again.scale, null);
+  assert.equal(again.calories, "700");
+  assert.equal(again.source, "grok");
+});
+
+test("a scaled dish is saved at its size, and its share says so and what 100% was", () => {
+  const scaled = setShare(scaleDish(openScale(curry), 120), "hippos", "25");
+  const dishes = read([scaled]);
+  assert.equal(dishes[0].macros.calories, 960);
+  assert.equal(dishes[0].scale, 120);
+  assert.equal(
+    shareAssumptions(dishes, "hippos"),
+    "25% of Chicken curry [240 kcal, 12P, 24C, 9F, 2 fiber]\n" +
+      "The whole dish [960 kcal, 48P, 96C, 36F, 7 fiber]\n" +
+      "Scaled to 120% of 800 kcal.\n" +
+      curry.assumptions,
+  );
+  const split = splitMeal({ eaters: ["hippos", "gators"], meal: dinner, name: "", dishes, ids });
+  assert.ok(split.ok);
+  assert.deepEqual(split.meals.map((meal) => [meal.athlete, meal.macros.calories, meal.source]), [
+    ["hippos", 240, "manual"],
+    ["gators", 720, "manual"],
+  ]);
+  for (const meal of split.meals) assert.deepEqual(mealSchema.parse(meal), meal);
+  // At 100% there is nothing to say.
+  assert.equal(read([closeScale(scaled)])[0].scale, undefined);
+  assert.equal(read([scaleDish(scaleDish(openScale(curry), 120), 100)])[0].scale, undefined);
+});
+
+test("a dish's 100% calories read through its scale, and not while its box does not read", () => {
+  assert.equal(unscaledCalories(curry), 800);
+  assert.equal(unscaledCalories(scaleDish(openScale(curry), 80)), 800);
+  assert.equal(unscaledCalories(dish("x", { calories: "" })), null);
+  assert.equal(unscaledCalories(dish("x", { calories: "lots" })), null);
+});
+
+test("a scale comes back from a draft, and one damaged in storage is dropped", () => {
+  const scaled = scaleDish(openScale(curry), 120);
+  assert.deepEqual(dishesOf([scaled])[0], scaled);
+  const { scale: _scale, ...older } = scaled;
+  void _scale;
+  assert.equal(dishesOf([older])[0].scale, null, "a draft from before scales has none");
+  for (const scale of [
+    { percent: 0, base: scaled.scale!.base },
+    { percent: "120", base: scaled.scale!.base },
+    { percent: 120, base: { ...scaled.scale!.base, fat: -1 } },
+    { percent: 120, base: { calories: 800 } },
+    { percent: 120 },
+    "120%",
+  ]) assert.equal(dishesOf([{ ...scaled, scale }])[0].scale, null, JSON.stringify(scale));
 });
