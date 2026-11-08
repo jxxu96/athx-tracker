@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
-import { ESTIMATORS, type Meal } from "@/lib/domain";
+import { ESTIMATORS } from "@/lib/domain";
 import type { PartialEstimate } from "@/lib/estimate-stream";
 import {
   ANSWER_ORDER,
@@ -103,7 +103,7 @@ export function EstimatorWeights({
   answers,
   included,
   weights,
-  sitting,
+  ethanol,
   onToggle,
   onWeight,
   onFigure,
@@ -111,7 +111,8 @@ export function EstimatorWeights({
   answers: Answer[];
   included: readonly AnswerProvider[];
   weights: EstimateWeights;
-  sitting: Meal["meal"];
+  /** The meal holds ethanol, or is an Alcohol sitting. */
+  ethanol: boolean;
   onToggle: (provider: AnswerProvider) => void;
   onWeight: (provider: AnswerProvider, weight: number) => void;
   onFigure: (provider: AnswerProvider, figure: AnswerFigure, value: number) => void;
@@ -134,7 +135,10 @@ export function EstimatorWeights({
     return answer && mass > 0 ? weighed(answer) / mass : 0;
   };
   const blended = counted.length > 1 ? blendEstimates(counted, weights)?.estimate : null;
-  const figures = sitting === "Alcohol" ? [...FIGURES, ETHANOL] : FIGURES;
+  // Ethanol on any sitting: an answer that found some shows it to correct.
+  const figures = ethanol || answers.some((answer) => (answer.estimate.alcohol ?? 0) > 0)
+    ? [...FIGURES, ETHANOL]
+    : FIGURES;
   return (
     <section aria-label="Estimator weights" className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
       <div>

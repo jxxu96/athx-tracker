@@ -45,12 +45,12 @@ test("saved calories are independent of the rough comparison for every source", 
   }).success, "calories may be known even when the gram breakdown is not");
 });
 
-test("alcohol entries keep source calories and other sittings still reject ethanol", () => {
+test("alcohol entries keep source calories, and every sitting keeps its ethanol", () => {
   const drinks = { ...meal, meal: "Alcohol" as const,
     macros: { ...meal.macros, calories: 640, alcohol: 30 } };
   assert.deepEqual(mealSchema.parse(drinks).macros, { ...drinks.macros, fiber: 0 });
   for (const sitting of ["Breakfast", "Lunch", "Dinner", "Snack"] as const) {
-    assert.ok(!mealSchema.safeParse({ ...drinks, meal: sitting }).success, sitting);
+    assert.equal(mealSchema.parse({ ...drinks, meal: sitting }).macros.alcohol, 30, sitting);
   }
   assert.equal(mealSchema.parse(meal).macros.alcohol, 0, "older records still parse");
 });

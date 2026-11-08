@@ -163,7 +163,7 @@ test("an older template can recover item nutrition from its saved estimate", () 
   assert.equal(stale.items[0].nutrition, undefined);
 });
 
-test("a snack template cannot keep another sitting's ethanol", () => {
+test("a snack template keeps its ethanol, as any sitting does", () => {
   const built = buildTemplate({
     id: "00000000-0000-4000-8000-000000000003",
     name: "Evening",
@@ -175,7 +175,7 @@ test("a snack template cannot keep another sitting's ethanol", () => {
   });
   assert.equal(built.ok, true);
   if (!built.ok) return;
-  assert.equal(built.template.macros.alcohol, 0);
+  assert.equal(built.template.macros.alcohol, 12);
 });
 
 test("settings saved before templates still parse, and a template has to be a real meal", () => {

@@ -108,14 +108,7 @@ export const mealSchema = z.object({
   // Optional, so meals saved before the answer named its model still parse.
   estimator: z.enum(["codex", "claude", "grok", "average"]).optional(),
 }).strict().superRefine((meal, context) => {
-  // Ethanol belongs to the Alcohol sitting only.
-  if (meal.meal !== "Alcohol" && meal.macros.alcohol !== 0) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["macros", "alcohol"],
-      message: "Ethanol is only part of an alcohol sitting.",
-    });
-  }
+  // Ethanol counts on any sitting: a dinner with wine is still a dinner.
   rejectFiberAboveCarbs(meal.macros, context, ["macros", "fiber"]);
 });
 /** One answer for some food: a whole meal, or one dish of a shared one. */
@@ -203,13 +196,6 @@ const mealTemplateSchema = z.object({
   assumptions: z.string().max(3000),
   sourceKey: z.string().max(120).default(""),
 }).strict().superRefine((template, context) => {
-  if (template.meal !== "Alcohol" && template.macros.alcohol !== 0) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["macros", "alcohol"],
-      message: "Ethanol is only part of an alcohol sitting.",
-    });
-  }
   rejectFiberAboveCarbs(template.macros, context, ["macros", "fiber"]);
 });
 export const settingsSchema = z.object({

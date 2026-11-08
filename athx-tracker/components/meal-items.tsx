@@ -4,7 +4,7 @@ import { Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/workout-form";
-import { MEAL_TEMPLATE_ITEM_LIMIT, MEAL_TEMPLATE_ITEMS, type Meal } from "@/lib/domain";
+import { MEAL_TEMPLATE_ITEM_LIMIT, MEAL_TEMPLATE_ITEMS } from "@/lib/domain";
 import { ingredientSliderMax } from "@/lib/meal-ingredients";
 import { setItemFigure, setItemGrams, type ItemBox, type ItemDraft } from "@/lib/meal-items";
 
@@ -20,7 +20,7 @@ const FIGURES = [
 function ItemCard({
   item,
   index,
-  sitting,
+  ethanol,
   removable,
   onItem,
   onRename,
@@ -29,7 +29,8 @@ function ItemCard({
 }: {
   item: ItemDraft;
   index: number;
-  sitting: Meal["meal"];
+  /** The meal holds ethanol, or is an Alcohol sitting, so each item has a box for it. */
+  ethanol: boolean;
   /** The last item stays: Collapse is the way back to one meal. */
   removable: boolean;
   /** A figure or the grams changed, which changes the meal's figures. */
@@ -95,7 +96,7 @@ function ItemCard({
           }}
         />
       ) : null}
-      {sitting === "Alcohol" ? (
+      {ethanol ? (
         <Field label="Ethanol (g)">
           <Input
             value={item.ethanol}
@@ -134,7 +135,7 @@ function ItemCard({
  */
 export function MealItems({
   items,
-  sitting,
+  ethanol,
   onItem,
   onRename,
   onAnchor,
@@ -142,7 +143,8 @@ export function MealItems({
   onAdd,
 }: {
   items: ItemDraft[];
-  sitting: Meal["meal"];
+  /** Show each item's ethanol box: the meal holds ethanol, or is an Alcohol sitting. */
+  ethanol: boolean;
   onItem: (id: string, change: (item: ItemDraft) => ItemDraft) => void;
   onRename: (id: string, name: string) => void;
   onAnchor: (id: string) => void;
@@ -156,7 +158,7 @@ export function MealItems({
           key={item.id}
           item={item}
           index={index}
-          sitting={sitting}
+          ethanol={ethanol}
           removable={items.length > 1}
           onItem={(change) => onItem(item.id, change)}
           onRename={(name) => onRename(item.id, name)}

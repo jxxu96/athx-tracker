@@ -65,8 +65,8 @@ export type Meal = {
   time?: ClockTime;
   name: string; meal: "Breakfast" | "Lunch" | "Dinner" | "Snack" | "Alcohol";
   /**
-   * Alcohol grams are only meaningful on an Alcohol sitting. Fiber grams are
-   * already included in carbs. Older meals omit either one.
+   * Alcohol is grams of ethanol, on any sitting that had a drink. Fiber grams
+   * are already included in carbs. Older meals omit either one.
    */
   macros: Macros & { alcohol?: number; fiber?: number };
   source: "manual" | "grok" | "queued"; assumptions: string;

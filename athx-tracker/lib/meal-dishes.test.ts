@@ -14,6 +14,7 @@ import {
   replaceDishEstimate,
   emptyDish,
   fillDish,
+  holdsEthanol,
   looseDishes,
   openScale,
   otherShare,
@@ -64,14 +65,14 @@ const tiramisu = dish("d3", {
   share: { hippos: "0", gators: "100" },
 });
 
-function read(drafts: DishDraft[], sitting: "Dinner" | "Alcohol" = "Dinner"): Dish[] {
-  const result = readDishes(drafts, sitting);
+function read(drafts: DishDraft[]): Dish[] {
+  const result = readDishes(drafts);
   if (!result.ok) throw new Error(result.error);
   return result.dishes;
 }
 
-function problem(drafts: DishDraft[], sitting: "Dinner" | "Alcohol" = "Dinner") {
-  const result = readDishes(drafts, sitting);
+function problem(drafts: DishDraft[]) {
+  const result = readDishes(drafts);
   return result.ok ? "" : result.error;
 }
 
@@ -241,16 +242,20 @@ test("a long dish is kept whole, and clipped only where it names the meal", () =
   );
 });
 
-test("ethanol counts only on an Alcohol sitting", () => {
+test("ethanol counts on any sitting, so a dinner with wine keeps it", () => {
   const wine = dish("w", { name: "Red wine, 2 glasses", calories: "250", carbs: "8", ethanol: "28" });
-  assert.equal(read([wine], "Dinner")[0].macros.alcohol, 0);
-  const drinks = read([wine], "Alcohol");
+  const drinks = read([wine, salad]);
   assert.equal(drinks[0].macros.alcohol, 28);
   assert.equal(shareTotals(drinks, "hippos").alcohol, 14);
-  assert.equal(problem([dish("w", { ...wine, ethanol: "501" })], "Alcohol"), "Dish 1: Ethanol looks too high.");
-  assert.equal(problem([dish("w", { ...wine, ethanol: "lots" })], "Alcohol"), "Dish 1: Ethanol needs a number of zero or more.");
-  assert.equal(problem([dish("w", { name: "Shot", ethanol: "14" })], "Alcohol"), "", "ethanol alone is a value");
-  assert.equal(problem([dish("w", { name: "Shot", ethanol: "14" })], "Dinner"), "Dish 1 needs at least one macro value.");
+  assert.equal(problem([dish("w", { ...wine, ethanol: "501" })]), "Dish 1: Ethanol looks too high.");
+  assert.equal(problem([dish("w", { ...wine, ethanol: "lots" })]), "Dish 1: Ethanol needs a number of zero or more.");
+  assert.equal(problem([dish("w", { name: "Shot", ethanol: "14" })]), "", "ethanol alone is a value");
+  assert.equal(problem([dish("w", { name: "Water" })]), "Dish 1 needs at least one macro value.");
+});
+
+test("a box holds ethanol unless it is blank or zero", () => {
+  for (const text of ["14", " 0.5 ", "lots", "-1"]) assert.equal(holdsEthanol(text), true, text);
+  for (const text of ["", "  ", "0", "0.0"]) assert.equal(holdsEthanol(text), false, text);
 });
 
 test("a dish is held to what a meal is held to", () => {
@@ -282,7 +287,7 @@ test("shares are to a tenth and fiber never comes out above carbs", () => {
 });
 
 test("the shares shown while typing count what cannot be read yet as nothing", () => {
-  const loose = looseDishes([dish("l", { name: "", calories: "300", protein: "x", share: { hippos: "abc", gators: "50" } })], "Dinner");
+  const loose = looseDishes([dish("l", { name: "", calories: "300", protein: "x", share: { hippos: "abc", gators: "50" } })]);
   assert.equal(loose[0].macros.protein, 0);
   assert.equal(loose[0].share.hippos, 0);
   assert.equal(shareTotals(loose, "gators").calories, 150);
@@ -353,10 +358,10 @@ test("sliding sets Hippos' share in the slider's steps, and Gators takes the res
 test("each of you reads as a percentage, calories, and a count when there is one", () => {
   const [pie] = looseDishes([dish("p", {
     name: "Margherita pizza", calories: "880", quantity: "8 slices", share: { hippos: "37.5", gators: "62.5" },
-  })], "Dinner");
+  })]);
   assert.deepEqual(portionOf(pie, "hippos"), { percent: "37.5%", calories: 330, count: "3 of 8 slices" });
   assert.deepEqual(portionOf(pie, "gators"), { percent: "62.5%", calories: 550, count: "5 of 8 slices" });
-  const [salad] = looseDishes([dish("s", { name: "Caesar salad", calories: "420" })], "Dinner");
+  const [salad] = looseDishes([dish("s", { name: "Caesar salad", calories: "420" })]);
   assert.deepEqual(portionOf(salad, "hippos"), { percent: "50%", calories: 210, count: "" });
   assert.equal(countShare({ amount: 6, unit: "" }, 1 / 3), "2 of 6");
   assert.equal(countShare({ amount: 400, unit: "g" }, 0.333), "133.2 of 400 g");
@@ -508,7 +513,7 @@ test("a share written for one of you gives the other the rest, and one for both 
   assert.deepEqual(shareText({ gators: 60, hippos: 40 }), { hippos: "40", gators: "60" });
   // Not 100 between them: saving says so, rather than the phone guessing which was meant.
   const off = dish("d", { name: "soup", calories: "300", share: shareText({ gators: 70, hippos: 40 }) });
-  assert.deepEqual(readDishes([off], "Dinner"), { ok: false, error: "Dish 1: the two shares have to add up to 100%." });
+  assert.deepEqual(readDishes([off]), { ok: false, error: "Dish 1: the two shares have to add up to 100%." });
 });
 
 test("a share typed into a dish's name moves into its boxes", () => {

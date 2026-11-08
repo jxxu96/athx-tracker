@@ -70,14 +70,14 @@ function readItems(rows: ItemDraft[]): { items: MealTemplateItem[] } | { error: 
   return { items };
 }
 
-function macroLine(macros: Meal["macros"], meal: Meal["meal"]) {
+function macroLine(macros: Meal["macros"]) {
   return [
     `${Math.round(macros.calories)} kcal`,
     `${Math.round(macros.protein)} g protein`,
     `${Math.round(macros.carbs)} g carbs`,
     `${Math.round(macros.fat)} g fat`,
     ...(macros.fiber ? [`${Math.round(macros.fiber)} g fiber`] : []),
-    ...(meal === "Alcohol" && macros.alcohol ? [`${Math.round(macros.alcohol)} g ethanol`] : []),
+    ...(macros.alcohol ? [`${Math.round(macros.alcohol)} g ethanol`] : []),
   ].join(" · ");
 }
 
@@ -556,7 +556,7 @@ export function MealTemplateList({
                     Add item
                   </Button>
                 </div>
-                <p className="text-xs text-muted-foreground">{macroLine(totals ?? editor.draft.macros, editor.draft.meal)}</p>
+                <p className="text-xs text-muted-foreground">{macroLine(totals ?? editor.draft.macros)}</p>
                 {!totals ? (
                   <p className="text-[11px] text-muted-foreground">
                     Estimate these items to save nutrition for each weighed ingredient.

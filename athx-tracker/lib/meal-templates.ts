@@ -136,10 +136,7 @@ export function buildTemplate(input: {
       name,
       meal: input.meal,
       items,
-      macros: {
-        ...copyMacros(input.macros),
-        alcohol: input.meal === "Alcohol" ? (input.macros.alcohol ?? 0) : 0,
-      },
+      macros: copyMacros(input.macros),
       assumptions: input.assumptions.trim().slice(0, 3000),
       sourceKey: input.sourceKey.trim().slice(0, 120),
     },

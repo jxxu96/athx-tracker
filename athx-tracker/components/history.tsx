@@ -449,7 +449,7 @@ export function History({
                             {record.macros.fiber
                               ? ` · Fiber ${Math.round(record.macros.fiber)} g`
                               : ""}
-                            {record.meal === "Alcohol"
+                            {record.meal === "Alcohol" || record.macros.alcohol
                               ? ` · Ethanol ${Math.round(record.macros.alcohol ?? 0)} g`
                               : ""}
                             {record.source === "grok"

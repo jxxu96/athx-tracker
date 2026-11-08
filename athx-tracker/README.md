@@ -130,10 +130,13 @@ single SQLite file on a volume.
 - **Meal** — describe a meal and let Grok estimate the macros, or type them in
   yourself. Editing an estimated number saves the meal as your own figures.
   Calories keep the source's reported or estimated total, including in queued
-  meals. A rough 4/4/9 comparison (plus ethanol at 7 kcal/g on Alcohol) is
+  meals. A rough 4/4/9 comparison (plus ethanol at 7 kcal/g) is
   advisory: differences never block saving or rewrite calories. Total carbs
   include fiber; fiber, sugar alcohols, food-specific factors and rounding can
-  make the simple calculation differ from a label's calorie total. A meal takes
+  make the simple calculation differ from a label's calorie total. Ethanol
+  counts on any sitting: its box shows on Alcohol, and on any meal, item or
+  dish that holds some, so a dinner with wine keeps its ethanol. An estimate
+  that finds ethanol picks Alcohol; picking another sitting keeps it. A meal takes
   a time of day, which starts at the clock; a new meal's sitting follows it until
   you pick one. The form opens on **Describe it**; the templates, then who it
   is for, the sitting and the date come after it, since those start out right

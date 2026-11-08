@@ -213,29 +213,28 @@ test("saving reads every item strictly, at the grams it is at", () => {
     { ...emptyItem("a"), name: "Rice", grams: "200", calories: "260", protein: "5", carbs: "56", fat: "1", fiber: "1", ethanol: "3" },
     { ...emptyItem("b"), name: "Black coffee", calories: "" },
   ];
-  const read = readItems(good, "Lunch");
+  const read = readItems(good);
   assert.ok(read.ok);
   assert.deepEqual(read.items, [
-    { name: "Rice", grams: 200, nutrition: { grams: 200, macros: totals(260, 5, 56, 1, 1, 0) } },
+    { name: "Rice", grams: 200, nutrition: { grams: 200, macros: totals(260, 5, 56, 1, 1, 3) } },
     { name: "Black coffee", grams: 0, nutrition: { grams: 0, macros: totals(0, 0, 0, 0) } },
-  ]);
-  const drinks = readItems(good, "Alcohol");
-  assert.equal(drinks.ok && drinks.items[0].nutrition?.macros.alcohol, 3);
+  ], "ethanol counts on any sitting");
+  assert.deepEqual(readItems([{ ...good[0], ethanol: "501" }]), { ok: false, error: "Item 1: Ethanol looks too high." });
 
-  assert.deepEqual(readItems([{ ...good[0], name: " " }], "Lunch"), { ok: false, error: "Name item 1." });
-  assert.deepEqual(readItems([good[1], { ...good[0], fiber: "60" }], "Lunch"), {
+  assert.deepEqual(readItems([{ ...good[0], name: " " }]), { ok: false, error: "Name item 1." });
+  assert.deepEqual(readItems([good[1], { ...good[0], fiber: "60" }]), {
     ok: false,
     error: "Item 2: Fiber is part of total carbs, so it cannot be higher.",
   });
-  assert.deepEqual(readItems([{ ...good[0], grams: "6000" }], "Lunch"), {
+  assert.deepEqual(readItems([{ ...good[0], grams: "6000" }]), {
     ok: false,
     error: "Item 1: Grams need a number up to 5000.",
   });
-  assert.deepEqual(readItems([{ ...good[0], protein: "x" }], "Lunch"), {
+  assert.deepEqual(readItems([{ ...good[0], protein: "x" }]), {
     ok: false,
     error: "Item 1: Protein needs a number of zero or more.",
   });
-  assert.deepEqual(readItems([], "Lunch"), { ok: false, error: "Add an item." });
+  assert.deepEqual(readItems([]), { ok: false, error: "Add an item." });
 });
 
 test("items survive a draft, and a damaged one keeps what still reads", () => {
@@ -262,7 +261,7 @@ test("a shared dish opens into dishes of its own, each with the dish's share and
     confidence: "medium" as const,
     assumptions: BOWL,
   };
-  const dishes = expandDish(dish, "Lunch", id);
+  const dishes = expandDish(dish, id);
   assert.deepEqual(dishes.map((made) => [made.id, made.name, made.quantity, made.share.gators, made.assumptions]), [
     ["d1", "Chicken breast, 150 g cooked", "150 g", "70", "USDA reference for grilled breast."],
     ["d2", "White rice, 200 g", "200 g", "70", ""],
@@ -270,7 +269,7 @@ test("a shared dish opens into dishes of its own, each with the dish's share and
   ]);
   assert.equal(dishes.reduce((sum, made) => sum + Number(made.calories) * 10, 0) / 10, 648);
   assert.ok(dishes.every((made) => made.source === "grok" && made.estimator === "codex" && made.confidence === "medium"));
-  assert.deepEqual(expandDish({ ...dish, assumptions: "One thing [648 kcal, 64P, 57C, 16F]" }, "Lunch", id), []);
+  assert.deepEqual(expandDish({ ...dish, assumptions: "One thing [648 kcal, 64P, 57C, 16F]" }, id), []);
 });
 
 // BOWL's items: 248 + 260 + 140 = 648 kcal.
