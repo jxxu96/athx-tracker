@@ -3,7 +3,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { PASSPHRASE } from "../playwright.config.ts";
 
 type SavedMeal = {
-  id: string; kind: "meal"; athlete: string; name: string; source: string; assumptions: string;
+  id: string; kind: "meal"; athlete: string; name: string; meal: string; source: string; assumptions: string;
   macros: { calories: number; protein: number; carbs: number; fat: number; alcohol?: number; fiber?: number };
   items?: { name: string; grams: number; nutrition?: { grams: number; macros: { calories: number } } }[];
 };
@@ -180,6 +180,27 @@ test("a meal with no figures opens into blank items to type in, and a weight typ
   const saved = (await meals(page)).find((meal) => meal.name === "Eggs on toast");
   expect(saved?.macros).toMatchObject({ calories: 410, protein: 12, carbs: 30, fat: 6 });
   expect(saved?.items?.map((each) => [each.name, each.grams])).toEqual([["2 eggs", 0], ["toast", 80], ["flat white", 0]]);
+});
+
+test("an item's mistyped ethanol keeps its box on another sitting, so it can be fixed", async ({ page }) => {
+  await loggingFor(page, "Gators").click();
+  const sitting = page.getByRole("group", { name: "Sitting" });
+  await sitting.getByRole("button", { name: "Alcohol" }).click();
+  await page.getByLabel("Meal description").fill("Burger, fries and a beer");
+  await page.getByRole("button", { name: "Expand into 3 items" }).click();
+  // The items add it up as 0, but saving refuses it, so its box has to stay.
+  await item(page, 3).getByLabel("Ethanol (g)").fill("-");
+  await sitting.getByRole("button", { name: "Dinner" }).click();
+  await expect(item(page, 3).getByLabel("Ethanol (g)")).toHaveValue("-");
+
+  await item(page, 3).getByLabel("Ethanol (g)").fill("14");
+  await item(page, 3).getByLabel("Calories (kcal)").fill("150");
+  await page.getByLabel("Meal", { exact: true }).fill("Burger night");
+  await page.getByRole("button", { name: "Save meal", exact: true }).click();
+  await expect(page.getByText("Meal saved", { exact: true }).first()).toBeVisible();
+  const saved = (await meals(page)).find((meal) => meal.name === "Burger night");
+  expect(saved?.meal).toBe("Dinner");
+  expect(saved?.macros).toMatchObject({ calories: 150, alcohol: 14 });
 });
 
 test("a shared dish expands into dishes of its own, each keeping the dish's share", async ({ page }) => {

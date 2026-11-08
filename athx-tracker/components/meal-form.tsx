@@ -510,10 +510,13 @@ export function MealForm({
   const shownFiber = itemSums ? itemSums.fiber : fiber;
   const shownEthanol = itemSums ? itemSums.ethanol : ethanol;
   // Ethanol counts on any sitting. Its box shows on an Alcohol sitting, and on
-  // any other once the meal, its items or a dish holds some, as a dinner with
-  // wine does. Once shown it stays for this meal, so clearing the box to
-  // retype it does not take the box away.
-  const ethanolHeld = holdsEthanol(shownEthanol) || dishes.some((dish) => holdsEthanol(dish.ethanol));
+  // any other once the meal, an item or a dish holds some, as a dinner with
+  // wine does. Each item is read as typed, since their sum counts a mistyped
+  // one as 0 that saving still refuses. Once shown it stays for this meal, so
+  // clearing the box to retype it does not take the box away.
+  const ethanolHeld = holdsEthanol(shownEthanol) ||
+    items.some((item) => holdsEthanol(item.ethanol)) ||
+    dishes.some((dish) => holdsEthanol(dish.ethanol));
   const [ethanolSeen, setEthanolSeen] = useState(ethanolHeld);
   if (ethanolHeld && !ethanolSeen) setEthanolSeen(true);
   const showEthanol = slot === "Alcohol" || ethanolHeld || ethanolSeen;
