@@ -77,3 +77,48 @@ export function useKeyboardShortcuts<T>(
     return () => window.removeEventListener("keydown", listener);
   }, [enabled]);
 }
+
+/**
+ * Command on Apple keyboards, Alt everywhere else. Option on a Mac types
+ * accents (Option+E is the acute dead key), and the Windows key belongs to
+ * the system (Win+E opens Explorer), so neither can be the one modifier.
+ */
+const apple = () => /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+const noSubscription = () => () => {};
+
+export type CommandKey = "⌘" | "Alt";
+
+export function useCommandKey(): CommandKey {
+  return useSyncExternalStore(noSubscription, () => (apple() ? "⌘" : "Alt"), () => "Alt");
+}
+
+/** How a command chord is written on this platform: ⌘E on a Mac, Alt+E elsewhere. */
+export const chordLabel = (command: CommandKey, key: string) =>
+  command === "⌘" ? `⌘${key.toUpperCase()}` : `Alt+${key.toUpperCase()}`;
+
+/**
+ * One key held with the platform's command modifier. Unlike a single-letter
+ * shortcut it fires from inside a field, since the modifier cannot be typed:
+ * the point is to act on what was just written without reaching for the mouse.
+ * AltGr reports Ctrl+Alt on Windows, so a layout typing € on AltGr+E is left alone.
+ */
+export function useCommandShortcut(enabled: boolean, key: string, action: () => void) {
+  const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
+    if (event.defaultPrevented || event.repeat || event.isComposing) return;
+    const mac = apple();
+    const held = mac ? event.metaKey : event.altKey;
+    const other = event.ctrlKey || event.shiftKey || (mac ? event.altKey : event.metaKey);
+    if (!held || other || event.key.toLowerCase() !== key) return;
+    if (document.querySelector(OPEN_MENU)) return;
+
+    event.preventDefault();
+    action();
+  });
+
+  useEffect(() => {
+    if (!enabled) return;
+    const listener = (event: KeyboardEvent) => onKeyDown(event);
+    window.addEventListener("keydown", listener);
+    return () => window.removeEventListener("keydown", listener);
+  }, [enabled]);
+}

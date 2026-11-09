@@ -343,7 +343,11 @@ single SQLite file on a volume.
   sets a push press where Gators sets an overhead press.
   Keyboard shortcuts are listed in Setup, grouped by where they work. The list
   is there to read: the keys are fixed, and the header switch still turns them
-  on or off on a computer.
+  on or off on a computer. ⌘E on a Mac, or Alt+E elsewhere, runs the estimator
+  on the open form, Estimate macros on Meal and Fill workout with AI on
+  Session, and it works with the cursor still in the description. Option on a
+  Mac types accents and the Windows key belongs to the system, so neither is
+  used.
   Setup is the gear at the right of the header, which leaves the bottom bar
   five tabs: Today, Session, Meal, Log and Progress. What is typed in Setup
   stays there on any other tab until it is saved or discarded, and the gear
