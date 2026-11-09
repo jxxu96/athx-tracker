@@ -41,7 +41,7 @@ import {
 } from "@/lib/estimate-blend";
 import { bothOf, isText, oneOf, textOf, type Draft } from "@/lib/drafts";
 import { useFormDraft } from "@/hooks/use-form-draft";
-import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import { useCommandShortcut, useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { MealTemplateList } from "@/components/meal-templates";
 import { DishShares, MealDishes } from "@/components/meal-dishes";
 import { MealItems } from "@/components/meal-items";
@@ -1350,6 +1350,9 @@ export function MealForm({
   const busy = estimating || saving || templateSaving;
   useKeyboardShortcuts(active && !busy && shortcutsEnabled, MEAL_SHORTCUTS, setSlot);
   useKeyboardShortcuts(active && !busy && shortcutsEnabled, { y: () => setDay(addDays(today, -1)) }, (action) => action());
+  const canEstimate = grokReady && !busy && description.trim().length >= 3;
+  // Works from the description itself: type the meal, then ⌘E or Alt+E.
+  useCommandShortcut(active && canEstimate && shortcutsEnabled, "e", () => void estimate());
   // Not once there is an estimate: a queued meal saves zero macros, and would
   // throw away the figures already on the form.
   const canQueue = queueReady && conversation.length === 0 && !rejected && !splitting && !expanded;
@@ -1545,7 +1548,7 @@ export function MealForm({
           type="button"
           variant="outline"
           className="w-full"
-          disabled={!grokReady || busy || description.trim().length < 3}
+          disabled={!canEstimate}
           onClick={() => estimate()}
         >
           <Sparkles />

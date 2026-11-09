@@ -28,7 +28,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { athleteOutline, type AthleteOutline } from "@/lib/athlete-outline";
-import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import { useCommandShortcut, useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { addDays, api, dayToDate, formatDay, message, newId } from "@/lib/client";
 import { bothOf, isText, oneOf, textOf, type Draft } from "@/lib/drafts";
 import { useFormDraft } from "@/hooks/use-form-draft";
@@ -988,6 +988,10 @@ export function WorkoutForm({
   // A response for the old athlete selection must never fill the new one.
   useEffect(() => () => { draftRequest.current?.abort(); }, [columnKey]);
 
+  const canFill = grokReady && !drafting && !listening && !saving && description.trim().length >= 3;
+  // The same chord as Estimate macros on the Meal tab: ⌘E or Alt+E.
+  useCommandShortcut(active && canFill && shortcutsEnabled, "e", () => void fillWorkout());
+
   async function fillWorkout() {
     setDraftError("");
     setDraftNotice("");
@@ -1749,7 +1753,7 @@ export function WorkoutForm({
             onChange={event => setDescription(event.target.value)} />
         </Field>
         <div className="flex flex-wrap items-start gap-2">
-          <Button type="button" size="sm" disabled={!grokReady || drafting || listening || saving || description.trim().length < 3}
+          <Button type="button" size="sm" disabled={!canFill}
             onClick={() => void fillWorkout()}>
             <Sparkles /> {drafting ? "Filling workout…" : "Fill workout with AI"}
           </Button>

@@ -1,4 +1,7 @@
+"use client";
+
 import { Kbd } from "@/components/ui/kbd";
+import { chordLabel, useCommandKey } from "@/hooks/use-keyboard-shortcuts";
 
 /**
  * Every key the app listens for. The header switch turns them on or off;
@@ -7,6 +10,8 @@ import { Kbd } from "@/components/ui/kbd";
  * Anywhere: who you are logging for, and which section opens.
  * Today: the energy card's day. Session and Meal: that form's date, and in
  * Meal the sitting. D is today on a session and dinner on a meal.
+ * E with Command on a Mac, or Alt elsewhere, runs the estimator on either
+ * form, and works from inside a field.
  */
 const GROUPS = [
   {
@@ -30,6 +35,7 @@ const GROUPS = [
     items: [
       { key: "D", label: "Date to today" },
       { key: "Y", label: "Date to yesterday" },
+      { key: "E", command: true, label: "Fill workout with AI" },
     ],
   },
   {
@@ -41,17 +47,20 @@ const GROUPS = [
       { key: "S", label: "Snack" },
       { key: "A", label: "Alcohol" },
       { key: "Y", label: "Date to yesterday" },
+      { key: "E", command: true, label: "Estimate macros" },
     ],
   },
 ] as const;
 
 export function Keybinds() {
+  const command = useCommandKey();
   return (
     <section aria-label="Keyboard shortcuts" className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">
       <div>
         <h3 className="text-sm font-semibold">Keyboard shortcuts</h3>
         <p className="mt-1 text-[11px] text-muted-foreground">
-          On a keyboard, while the switch in the header is on. A field or an open calendar takes the key.
+          On a keyboard, while the switch in the header is on. A field or an open calendar takes the key,
+          except {chordLabel(command, "e")}, which runs the estimator from the description.
         </p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
@@ -62,7 +71,9 @@ export function Keybinds() {
               {group.items.map((item) => (
                 <li key={`${group.title}-${item.key}`} className="flex items-center justify-between gap-3 text-xs">
                   <span>{item.label}</span>
-                  <Kbd className="bg-muted text-foreground">{item.key}</Kbd>
+                  <Kbd className="bg-muted text-foreground">
+                    {"command" in item ? chordLabel(command, item.key) : item.key}
+                  </Kbd>
                 </li>
               ))}
             </ul>
