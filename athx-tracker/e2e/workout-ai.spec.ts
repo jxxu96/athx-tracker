@@ -55,7 +55,7 @@ test("typed workout fills both columns, keeps sets x reps and exact pounds, and 
   expect(records.find(w => w.athlete === "gators")?.lifts[0].reps).toBe(7);
 });
 
-test("unknown weights stay empty and must be filled before saving", async ({ page }) => {
+test("an unknown weight stays empty and can be filled with zero", async ({ page }) => {
   await selection(page, "Hippos").click();
   await page.route("**/api/workout-draft", route => route.fulfill({ json: { draft: {
     ...draft, elapsed: { hippos: null, gators: 100 }, assumptions: "Add the deadlift weight.",
@@ -67,10 +67,11 @@ test("unknown weights stay empty and must be filled before saving", async ({ pag
   await page.getByRole("button", { name: "Save session", exact: true }).click();
   await expect(page.locator("form").getByRole("alert")).toContainText("missing weight, sets and reps");
   expect(await saved(page)).toEqual([]);
-  await lifts(page).getByLabel("lb", { exact: true }).fill("135");
+  await lifts(page).getByLabel("lb", { exact: true }).fill("0");
   await page.getByRole("button", { name: "Save session", exact: true }).click();
   await expect.poll(async () => (await saved(page)).length).toBe(1);
   expect((await saved(page))[0].athlete).toBe("hippos");
+  expect((await saved(page))[0].lifts).toEqual([{ name: "Deadlift", kg: 0, sets: 1, reps: 2 }]);
 });
 
 test("sets that differ fill a row each, and reps never said are asked for", async ({ page }) => {

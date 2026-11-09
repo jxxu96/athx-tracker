@@ -1509,7 +1509,7 @@ export function WorkoutForm({
     for (const [index, station] of stations.entries()) {
       const name = exerciseName(station.name, station.custom);
       const typed = entries[side][index]?.load.trim() ?? "";
-      if (name && loadable(category, station) && typed !== "" && parseLoad(typed, unit) === null)
+      if (name && loadable(category, station) && typed !== "" && !parseLoad(typed, unit))
         return `${who} · ${name}: write the load in ${unit}, or leave it empty.`;
     }
 

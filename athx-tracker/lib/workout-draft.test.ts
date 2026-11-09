@@ -31,9 +31,10 @@ test("workout drafts preserve 1 set of 2 reps, converted weights and unknown ath
   assert.deepEqual(cleanWorkout(base), base);
 });
 
-test("missing lift results remain null and repeated exercises keep their distinct sets", () => {
+test("zero and missing weights stay distinct, and repeated exercises keep their sets", () => {
   const draft = { ...base, lifts: [base.lifts[0],
-    { name: "Deadlift", hippos: { kg: null, sets: 3, reps: 8, detail: [] }, gators: emptyLift }] };
+    { name: "Deadlift", hippos: { kg: null, sets: 3, reps: 8, detail: [] }, gators: emptyLift },
+    { name: "Pull-up", hippos: { kg: 0, sets: 3, reps: 8, detail: [] }, gators: emptyLift }] };
   assert.deepEqual(workoutDraftSchema.parse(draft), draft);
   assert.deepEqual(cleanWorkout(draft), draft);
 });
@@ -41,7 +42,7 @@ test("missing lift results remain null and repeated exercises keep their distinc
 test("sets that differ come back one by one, with what was not said left empty", () => {
   const ramp = { ...base, lifts: [{ name: "Back squat", gators: emptyLift, hippos: {
     kg: null, sets: null, reps: null,
-    detail: [{ kg: 60, reps: 5 }, { kg: 80, reps: 3 }, { kg: 100, reps: 1 }, { kg: null, reps: 1 }, { kg: 100, reps: null }],
+    detail: [{ kg: 0, reps: 5 }, { kg: 80, reps: 3 }, { kg: 100, reps: 1 }, { kg: null, reps: 1 }, { kg: 100, reps: null }],
   } }] };
   assert.deepEqual(workoutDraftSchema.parse(ramp), ramp);
   assert.deepEqual(cleanWorkout(ramp), ramp);
@@ -67,7 +68,7 @@ test("app and CLI reject impossible or hidden workout fields consistently", () =
       { kg: 50, sets: 1.5, reps: 2 }, { kg: 1001, sets: 1, reps: 2 },
       { kg: 10, sets: 51, reps: 2 }, { kg: 10, sets: 1, reps: 101 },
       { detail: [{ kg: 60, reps: 0 }] }, { detail: [{ kg: 60, reps: 1.5 }] },
-      { detail: [{ kg: 60, reps: 101 }] }, { detail: [{ kg: 0, reps: 5 }] },
+      { detail: [{ kg: 60, reps: 101 }] }, { detail: [{ kg: -1, reps: 5 }] },
       { detail: [{ kg: 1001, reps: 5 }] }, { detail: [{ kg: 60, reps: 5, sets: 1 }] },
       { detail: Array.from({ length: 51 }, () => ({ kg: 60, reps: 5 })) }, { detail: null },
     ].map(patch => ({ ...base, lifts: [{ ...base.lifts[0], hippos: { ...base.lifts[0].hippos, ...patch } }] })),

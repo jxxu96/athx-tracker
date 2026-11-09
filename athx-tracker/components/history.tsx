@@ -65,7 +65,7 @@ function WeighInEditor({
 
   async function submit() {
     const kg = parseLoad(weight, unit, record.kg);
-    if (kg === null || kg > 500) return setError(`Write the bodyweight in ${unit}.`);
+    if (!kg || kg > 500) return setError(`Write the bodyweight in ${unit}.`);
     if (time !== "" && !isClockTime(time)) return setError("Write the time as HH:MM, or leave it empty.");
     setSaving(true);
     try {
