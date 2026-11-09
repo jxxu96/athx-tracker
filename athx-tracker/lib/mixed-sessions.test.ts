@@ -125,7 +125,9 @@ test("a load typed in either unit is stored in kilograms", () => {
   assert.equal(parseLoad("100", "kg"), 100);
   assert.equal(parseLoad("225", "lb"), 102.06);
   assert.equal(parseLoad("", "lb"), null, "blank is not recorded");
-  for (const bad of ["0", "-5", "abc"]) assert.equal(parseLoad(bad, "kg"), null, bad);
+  assert.equal(parseLoad("0", "lb"), 0);
+  assert.equal(parseLoad("0", "kg"), 0);
+  for (const bad of ["-5", "abc"]) assert.equal(parseLoad(bad, "kg"), null, bad);
 });
 
 test("re-saving an untouched entry never nudges its load", () => {

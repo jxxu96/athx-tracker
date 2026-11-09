@@ -643,6 +643,7 @@ test("advanced sets keep their own weight and reps", async ({ page }) => {
   await expect(weight(1)).toHaveValue("135");
   await expect(weight(3)).toHaveValue("135");
   await expect(reps(3)).toHaveValue("6");
+  await weight(1).fill("0");
   await weight(2).fill("185");
   await reps(2).fill("3");
   await weight(3).fill("225");
@@ -665,6 +666,7 @@ test("advanced sets keep their own weight and reps", async ({ page }) => {
   expect(saved.lifts[0].sets).toBe(1);
   expect(saved.lifts[0].reps).toBe(1);
   expect(saved.lifts[0].kg).toBeCloseTo(225 / 2.20462262, 1);
+  expect(saved.lifts[0].detail[0].kg).toBe(0);
   expect(saved.lifts[0].detail.map((set: { reps: number; failed?: boolean }) => ({
     reps: set.reps,
     failed: set.failed ?? false,
@@ -676,20 +678,20 @@ test("advanced sets keep their own weight and reps", async ({ page }) => {
 
   await openLog(page);
   const entry = page.getByRole("listitem").filter({ hasText: "Back squat" });
-  await expect(entry.getByText("Back squat 135 lb×6, 185 lb×3, 225 lb×1 (last rep failed)")).toBeVisible();
+  await expect(entry.getByText("Back squat 0 lb×6, 185 lb×3, 225 lb×1 (last rep failed)")).toBeVisible();
 
   await entry.getByLabel("Edit entry").click();
-  await expect(weight(1)).toHaveValue("135");
+  await expect(weight(1)).toHaveValue("0");
   await expect(weight(2)).toHaveValue("185");
   await expect(reps(3)).toHaveValue("1");
   await expect(page.getByRole("checkbox", { name: "Gators set 3 failed the final rep" })).toBeChecked();
   await expect(page.getByRole("checkbox", { name: "Gators set 1 failed the final rep" })).not.toBeChecked();
   const unitSwitch = page.getByRole("group", { name: "Weight unit" });
   await unitSwitch.getByRole("button", { name: "kg" }).click();
-  await expect(weight(1)).toHaveValue("61.2");
+  await expect(weight(1)).toHaveValue("0");
   await expect(weight(3)).toHaveValue("102.1");
   await unitSwitch.getByRole("button", { name: "lb" }).click();
-  await expect(weight(1)).toHaveValue("135");
+  await expect(weight(1)).toHaveValue("0");
   await expect(weight(3)).toHaveValue("225");
   await page.getByRole("button", { name: "Update session" }).click();
   await expect.poll(async () => (await read())[0].lifts[0].kg).toBe(saved.lifts[0].kg);

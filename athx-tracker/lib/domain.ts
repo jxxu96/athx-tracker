@@ -819,15 +819,15 @@ export function standardLoad(kg: number, unit: WeightUnit) {
 /**
  * What a weight box means in kilograms. A box still showing a saved load
  * returns that load untouched, so opening and re-saving an entry never nudges
- * it by a rounding step (100 kg reads 220.5 lb, which is 100.02 kg). Blank or
- * not a positive number is null.
+ * it by a rounding step (100 kg reads 220.5 lb, which is 100.02 kg). Blank,
+ * negative and invalid values are null.
  */
 export function parseLoad(text: string, unit: WeightUnit, saved?: number) {
   const typed = text.trim();
   if (typed === "") return null;
   if (saved !== undefined && saved > 0 && displayLoad(saved, unit) === typed) return saved;
   const value = Number(typed);
-  if (!Number.isFinite(value) || value <= 0) return null;
+  if (!Number.isFinite(value) || value < 0) return null;
   return Math.round(toKilograms(value, unit) * 100) / 100;
 }
 

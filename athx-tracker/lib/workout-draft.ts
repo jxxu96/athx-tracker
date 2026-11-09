@@ -3,14 +3,14 @@ import { VOLUME_UNITS } from "./domain.ts";
 
 const amount = z.number().finite().nonnegative();
 const seconds = amount.max(86400).nullable();
-const kg = amount.positive().max(1000).nullable();
+const kg = amount.max(1000).nullable();
 const reps = amount.int().min(1).max(100).nullable();
 const liftSide = z.object({
   kg, sets: amount.int().min(1).max(50).nullable(), reps,
   // Each set in order when they differed. An estimator from before sets could differ omits it.
   detail: z.array(z.object({ kg, reps }).strict()).max(50).optional(),
 }).strict();
-const stationSide = z.object({ completed: amount.nullable(), seconds, kg }).strict();
+const stationSide = z.object({ completed: amount.nullable(), seconds, kg: amount.positive().max(1000).nullable() }).strict();
 
 /** Null means unreported, so the form keeps that box empty. Weights are always kg. */
 export const workoutDraftSchema = z.object({
