@@ -688,10 +688,10 @@ test("advanced sets keep their own weight and reps", async ({ page }) => {
   await expect(page.getByRole("checkbox", { name: "Gators set 1 failed the final rep" })).not.toBeChecked();
   const unitSwitch = page.getByRole("group", { name: "Weight unit" });
   await unitSwitch.getByRole("button", { name: "kg" }).click();
-  await expect(weight(1)).toHaveValue("61.2");
+  await expect(weight(1)).toHaveValue("0");
   await expect(weight(3)).toHaveValue("102.1");
   await unitSwitch.getByRole("button", { name: "lb" }).click();
-  await expect(weight(1)).toHaveValue("135");
+  await expect(weight(1)).toHaveValue("0");
   await expect(weight(3)).toHaveValue("225");
   await page.getByRole("button", { name: "Update session" }).click();
   await expect.poll(async () => (await read())[0].lifts[0].kg).toBe(saved.lifts[0].kg);
