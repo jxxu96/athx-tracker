@@ -59,8 +59,9 @@ from before this ignores the field. A request may be up to 128,000 characters.
 Workout drafts use the same authenticated service and provider fallback with
 `{"task":"workout","description":"Deadlift 1 x 2 at 185 lb","athletes":["hippos"],"weightUnit":"lb"}`.
 They return editable workout fields instead of meal macros. Sets precede reps in
-`sets x reps` shorthand, all returned weights are kg, and unreported numbers are
-null. Each athlete's side of a lift has a `detail` list: every set in order when
+`sets x reps` shorthand, unless one side is plainly a load: `135x5` is 135 for 5
+reps, and `5x165` is 5 reps at 165, as if written `5 @ 165`. All returned
+weights are kg, and unreported numbers are null. Each athlete's side of a lift has a `detail` list: every set in order when
 the sets differed, empty when they were all the same. No metered API fallback is
 used for workouts. Deploy the app and estimator images together; the estimator
 image includes `workout.mjs`. An app from before `detail` turns away every
