@@ -64,6 +64,21 @@ export function dayAthletes(sessions: readonly Workout[]) {
   return sessions.map((session) => session.athlete).sort((a, b) => ORDER[a] - ORDER[b]);
 }
 
+/**
+ * Days trained, not sessions: two sessions on one day are one day, since the
+ * weekly target asks whether a day had training, not how much. Together is the
+ * days you both trained. A legacy session on the team athlete counts for neither.
+ */
+export function daysTrained(
+  workouts: readonly { athlete: Athlete; day: string }[],
+  key: Exclude<Athlete, "team"> | "team",
+) {
+  const days = (who: Athlete) => new Set(workouts.filter((w) => w.athlete === who).map((w) => w.day));
+  if (key !== "team") return days(key).size;
+  const gators = days("gators");
+  return [...days("hippos")].filter((day) => gators.has(day)).length;
+}
+
 /** Sessions over a range, and how many of its days had any. */
 export function rangeCounts(days: ReadonlyMap<string, readonly Workout[]>) {
   let total = 0;

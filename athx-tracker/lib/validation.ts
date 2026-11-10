@@ -200,7 +200,9 @@ const mealTemplateSchema = z.object({
 });
 export const settingsSchema = z.object({
   eventDate: daySchema, eventName: z.string().trim().min(1).max(100),
-  weeklyTarget: z.number().int().min(1).max(21), weightUnit: z.enum(["kg","lb"]).default("lb"),
+  // Days a week, so 7 at most. Older settings could hold up to 21 sessions;
+  // they still save, at 7, since unit switches and templates resend them.
+  weeklyTarget: z.number().int().min(1).max(21).transform((days) => Math.min(days, 7)), weightUnit: z.enum(["kg","lb"]).default("lb"),
   targets: z.object({ hippos: macroSchema, gators: macroSchema }).strict(),
   // Defaulted, so settings stored before bodyweight existed still parse.
   bodyweight: z.object({ hippos: finite.max(500), gators: finite.max(500) })

@@ -7,6 +7,7 @@ import { Fuel } from "@/components/fuel";
 import { RaceEstimate, RaceProgress, raceLine } from "@/components/race-estimate";
 import { RequestLog } from "@/components/request-log";
 import { SessionCalendar } from "@/components/session-calendar";
+import { daysTrained } from "@/lib/session-calendar";
 import { zoneGoals } from "@/lib/race";
 import {
   ATHLETES,
@@ -50,20 +51,6 @@ function Panel({
   );
 }
 
-const daysLogged = (workouts: { athlete: string; day: string }[], who: string) =>
-  workouts.filter((w) => w.athlete === who).map((w) => w.day);
-
-// "Together" is the days you both logged something, not a third athlete.
-const sessionCount = (
-  workouts: { athlete: string; day: string }[],
-  key: "hippos" | "gators" | "team",
-) =>
-  key === "team"
-    ? [...new Set(daysLogged(workouts, "hippos"))].filter((day) =>
-        daysLogged(workouts, "gators").includes(day),
-      ).length
-    : workouts.filter((w) => w.athlete === key).length;
-
 export function Overview({
   records,
   settings,
@@ -106,6 +93,8 @@ export function Overview({
     { label: "Last 7 D", workouts: workouts.filter((w) => w.day >= sevenDaysAgo && w.day <= today) },
   ];
   const unit = settings.weightUnit ?? "lb";
+  // A target of days, so 7 at most, whatever older settings saved as sessions.
+  const target = Math.min(7, settings.weeklyTarget);
 
   // The days to go are in the header now. Fuel is what gets checked most, so
   // it leads; Energy folds to a line once both of you have checked in.
@@ -142,8 +131,8 @@ export function Overview({
         title="Sessions"
         icon={<Dumbbell className="size-4 text-muted-foreground" />}
         mini={`${windows[0].label}: ${(["hippos", "gators", "team"] as const)
-          .map((key) => `${ATHLETES[key].name} ${sessionCount(windows[0].workouts, key)}/${settings.weeklyTarget}`)
-          .join(" · ")}`}
+          .map((key) => `${ATHLETES[key].name} ${daysTrained(windows[0].workouts, key)}/${target}`)
+          .join(" · ")} days`}
       >
         <table className="w-full table-fixed text-left">
           <thead>
@@ -165,10 +154,10 @@ export function Overview({
                   {ATHLETES[key].name}
                 </th>
                 {windows.map((window) => {
-                  const count = sessionCount(window.workouts, key);
+                  const count = daysTrained(window.workouts, key);
                   const pct = Math.min(
                     100,
-                    Math.round((count / settings.weeklyTarget) * 100),
+                    Math.round((count / target) * 100),
                   );
                   return (
                     <td key={window.label} className="py-1.5 pl-3">
@@ -176,7 +165,7 @@ export function Overview({
                         <p className="text-lg font-semibold tabular-nums leading-none">
                           {count}
                           <span className="text-xs font-normal text-muted-foreground">
-                            /{settings.weeklyTarget}
+                            /{target} days
                           </span>
                         </p>
                         <div className="h-1.5 overflow-hidden rounded-full bg-muted">

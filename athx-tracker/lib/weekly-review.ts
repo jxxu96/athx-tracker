@@ -37,6 +37,8 @@ export function reviewPeriod(records: RecordItem[], athlete: ReviewAthlete, wind
   }
   return {
     sessions: workouts.length,
+    // Two sessions on one day are one day trained.
+    days: new Set(workouts.map((workout) => workout.day)).size,
     // Only observed clocks/splits, with no double counting or estimated lift time.
     seconds: workouts.reduce((sum, workout) => sum + Math.max(workout.seconds, workout.segments.reduce((total, segment) => total + segment.seconds, 0)), 0),
     untimed: workouts.filter((workout) => workout.seconds === 0 && workout.segments.every((segment) => segment.seconds === 0)).length,

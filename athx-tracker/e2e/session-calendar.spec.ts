@@ -125,3 +125,18 @@ test("a range of entries is asked for with real dates in order and a known kind"
   expect(await status("from=2026-10-01&to=2026-10-31&kind=nap")).toBe(400);
   expect(await status("from=2026-10-01&to=2026-10-31&kind=workout")).toBe(200);
 });
+
+test("the weekly count is days trained, so a second session on the same day adds nothing", async ({ page }) => {
+  await seed(page, [
+    workout({ title: "Morning lift", time: "07:00" }),
+    workout({ title: "Evening run", time: "18:00", category: "Endurance" }),
+    workout({ title: "Monday lift", day: "2026-10-26" }),
+    workout({ title: "Gators lift", athlete: "gators" }),
+  ]);
+  const thisWeek = (who: string) =>
+    panel(page).getByRole("row", { name: new RegExp(`^${who}`) }).getByRole("cell").first();
+  await expect(thisWeek("Hippos")).toContainText("2/4 days");
+  await expect(thisWeek("Gators")).toContainText("1/4 days");
+  await expect(thisWeek("Together")).toContainText("1/4 days");
+  await expect(panel(page).getByRole("row", { name: /^Logged/ }).getByRole("cell").first()).toHaveText("4 sessions");
+});

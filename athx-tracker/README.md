@@ -11,8 +11,9 @@ single SQLite file on a volume.
   targets), then a race-day estimate: the pair's Strength score, each athlete's share
   of it, and where it would have placed among last season's mixed Lite pairs; the
   2.4 km run times and SkiErg distance for Endurance; and the MetCon X time. Then
-  the sessions logged this week and over the last 7 days against the weekly
-  target, and under them the last 7 days as a strip, a dot for each session in
+  the days each of you trained this week and over the last 7 days against the
+  weekly target of training days (two sessions on one day count once), and
+  under them the last 7 days as a strip, a dot for each session in
   its athlete's colour, with what each one was listed beneath: the time, who and
   what, the burn, lifts, distance and notes. Tap a day for that day alone, step
   back a week at a time, or switch to **Month** for a calendar to tap. Days older
@@ -307,7 +308,7 @@ single SQLite file on a volume.
   splits can count. Completed, capped and unfinished circuits stay separate;
   capped/unfinished attempts compare the average station completion share only
   when their elapsed times match. Nothing is projected to a finish.
-  **Weekly review** compares each athlete's sessions, training mix, timed work,
+  **Weekly review** compares each athlete's days trained, training mix, timed work,
   endurance distance, lift volume, energy, benchmark improvements and daily macro
   averages with the previous week. Energy is the average of the days with a
   check-in. The current week compares the same weekdays
