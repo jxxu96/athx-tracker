@@ -75,7 +75,7 @@ test("weekly review compares equal weekdays and supports historical weeks with n
   ]);
   await page.getByRole("button", { name: "Weekly review", exact: true }).click();
   const hippos = page.getByRole("region", { name: "Hippos weekly review" });
-  await expect(hippos.getByRole("row", { name: "Sessions 2 1", exact: true })).toBeVisible();
+  await expect(hippos.getByRole("row", { name: "Days trained 1 1", exact: true })).toBeVisible();
   await expect(hippos).toContainText("1:40 faster (15:00)");
   await expect(hippos.getByRole("row", { name: "Calories kcal/day 1,200 600 +600", exact: true })).toBeVisible();
   await expect(hippos).toContainText("Estimates pending: 1 selected, 0 previous");
@@ -88,7 +88,7 @@ test("weekly review compares equal weekdays and supports historical weeks with n
   await expect(page.getByText("Weeks run Monday to Sunday.")).toHaveCount(0);
   await expect(page.getByText(/Compared with /)).toBeVisible();
   await page.getByRole("button", { name: "This week", exact: true }).click();
-  await expect(hippos.getByRole("row", { name: "Sessions 2 1", exact: true })).toBeVisible();
+  await expect(hippos.getByRole("row", { name: "Days trained 1 1", exact: true })).toBeVisible();
 });
 
 test("new Progress views fit a phone and are accessible in both themes", async ({ page }) => {
