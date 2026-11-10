@@ -105,7 +105,7 @@ export function SettingsForm({
     currentBodyweight(history, athlete)?.kg ?? settings.bodyweight?.[athlete] ?? 0;
   const [eventName, setEventName] = useState(settings.eventName);
   const [eventDate, setEventDate] = useState(settings.eventDate);
-  const [weeklyTarget, setWeeklyTarget] = useState(String(settings.weeklyTarget));
+  const [weeklyTarget, setWeeklyTarget] = useState(String(Math.min(7, settings.weeklyTarget)));
   const [targets, setTargets] = useState<Record<"hippos" | "gators", MacroDraft>>({
     hippos: toDraft(settings.targets.hippos),
     gators: toDraft(settings.targets.gators),
@@ -339,8 +339,8 @@ export function SettingsForm({
     if (!eventName.trim()) return "Name the event.";
     if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) return "Pick a valid event date.";
     const weekly = Number(weeklyTarget);
-    if (!Number.isInteger(weekly) || weekly < 1 || weekly > 21)
-      return "Set a weekly session target between 1 and 21.";
+    if (!Number.isInteger(weekly) || weekly < 1 || weekly > 7)
+      return "Set a weekly target between 1 and 7 days.";
     for (const athlete of ["hippos", "gators"] as const) {
       const raw = shownWeight(athlete).trim();
       if (raw !== "") {
@@ -509,7 +509,7 @@ export function SettingsForm({
               onChange={(event) => setEventDate(event.target.value)}
             />
           </Field>
-          <Field label="Sessions a week">
+          <Field label="Training days a week">
             <Input
               value={weeklyTarget}
               inputMode="numeric"

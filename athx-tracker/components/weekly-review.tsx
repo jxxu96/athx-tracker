@@ -33,7 +33,7 @@ function AthleteReview({ records, athlete, selected, today, unit }: { records: R
         <thead className="text-muted-foreground"><tr><th scope="col" className="w-[42%] pb-2 text-left font-normal">Logged</th><th scope="col" className="pb-2 text-right font-normal">Selected week</th><th scope="col" className="pb-2 text-right font-normal">Previous</th></tr></thead>
         <tbody>
           {[
-            ["Sessions", formatAmount(current.sessions), formatAmount(previous.sessions)],
+            ["Days trained", formatAmount(current.days), formatAmount(previous.days)],
             ["Timed work", current.sessions ? formatTime(current.seconds) : "—", previous.sessions ? formatTime(previous.seconds) : "—"],
             ["Endurance distance", `${Number((current.metres / 1000).toFixed(2))} km`, `${Number((previous.metres / 1000).toFixed(2))} km`],
             [`Lift volume (${unit} × reps)`, volume(current.liftedKg), volume(previous.liftedKg)],

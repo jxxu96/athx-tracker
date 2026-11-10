@@ -146,6 +146,21 @@ test("settings saved before bodyweight existed still parse", () => {
   assert.deepEqual(parsed.data!.bodyweight, { hippos: 0, gators: 0 });
 });
 
+test("the weekly target is days, so an older target above 7 saves as 7 instead of blocking every save", () => {
+  const settings = (weeklyTarget: number) => ({
+    eventDate: "2027-08-28", eventName: "ATHX", weeklyTarget, weightUnit: "lb",
+    targets: {
+      hippos: { calories: 0, protein: 0, carbs: 0, fat: 0 },
+      gators: { calories: 0, protein: 0, carbs: 0, fat: 0 },
+    },
+  });
+  assert.equal(settingsSchema.parse(settings(4)).weeklyTarget, 4);
+  assert.equal(settingsSchema.parse(settings(7)).weeklyTarget, 7);
+  assert.equal(settingsSchema.parse(settings(10)).weeklyTarget, 7);
+  assert.ok(!ok(settingsSchema, settings(0)));
+  assert.ok(!ok(settingsSchema, settings(22)));
+});
+
 test("settings reject nonsense bodyweights", () => {
   const base = settingsSchema.parse({
     eventDate: "2027-08-28", eventName: "ATHX", weeklyTarget: 4, weightUnit: "lb",

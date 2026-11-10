@@ -28,6 +28,7 @@ test("training counts categories, actual times, endurance distance and every lif
     workout({ category: "Other", customCategory: "Hike", seconds: 100 }),
   ], "gators", window);
   assert.equal(summary.sessions, 4);
+  assert.equal(summary.days, 1);
   assert.equal(summary.seconds, 1500);
   assert.equal(summary.untimed, 1);
   assert.equal(summary.liftedKg, 2200);
@@ -53,6 +54,7 @@ test("both date boundaries are inclusive and other athletes, team and out-of-win
     workout({ athlete: "team" }), workout({ athlete: "hippos" }), meal({ athlete: "hippos" }),
   ], "gators", window);
   assert.equal(summary.sessions, 2);
+  assert.equal(summary.days, 2);
   assert.equal(summary.daysWithMeals, 0);
   assert.deepEqual(summary.average, { calories: 0, protein: 0, carbs: 0, fat: 0 });
 });

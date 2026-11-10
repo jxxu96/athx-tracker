@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import type { Bodyweight, EnergyCheckIn, FeatureRequest, Meal, Workout } from "./domain.ts";
 import {
   dayAthletes,
+  daysTrained,
   heldFrom,
   monthRange,
   monthWeeks,
@@ -96,4 +97,20 @@ test("the slice is held whole after its oldest entry's day, which weigh-ins, che
   assert.equal(needsFetch("2026-09-20", "2026-09-14"), true);
   assert.equal(needsFetch("2026-09-20", "2026-09-21"), false);
   assert.equal(needsFetch(null, "2020-01-01"), false);
+});
+
+test("the weekly count is days trained: two sessions on one day are one, and Together is the days you both trained", () => {
+  const week = [
+    workout({ id: "a", day: "2026-10-26" }),
+    workout({ id: "b", day: "2026-10-26" }),
+    workout({ id: "c", day: "2026-10-27" }),
+    workout({ id: "d", athlete: "gators", day: "2026-10-26" }),
+    workout({ id: "e", athlete: "gators", day: "2026-10-28" }),
+    workout({ id: "f", athlete: "gators", day: "2026-10-28" }),
+    workout({ id: "g", athlete: "team", day: "2026-10-29" }),
+  ];
+  assert.equal(daysTrained(week, "hippos"), 2);
+  assert.equal(daysTrained(week, "gators"), 2);
+  assert.equal(daysTrained(week, "team"), 1);
+  assert.equal(daysTrained([], "hippos"), 0);
 });
