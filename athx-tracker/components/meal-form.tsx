@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Check, ChevronsDownUp, ChevronsUpDown, Clock, Copy, MessageCircle, Sparkles, Split, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -357,12 +357,16 @@ export function MealForm({
   active = true,
   shortcutsEnabled = false,
   editing,
+  draftId,
   draft,
+  shown = true,
   onLoggingFor,
   onCancelEdit,
   onStartNew,
+  onDiscard,
   onSave,
   onSaveTemplates,
+  onWorking,
   onEstimateComplete,
 }: {
   loggingFor: LoggingFor;
@@ -375,15 +379,27 @@ export function MealForm({
   active?: boolean;
   shortcutsEnabled?: boolean;
   editing?: Meal | null;
+  /** The draft this form writes, held for this tab while it is mounted. */
+  draftId?: string;
   /** What was typed here before and not saved, which the form opens with. */
   draft?: Draft | null;
+  /** On screen, rather than set aside while it estimates. */
+  shown?: boolean;
   onLoggingFor: (next: LoggingFor) => void;
   onCancelEdit?: () => void;
-  /** Set this meal aside in Drafts and start a fresh one. */
+  /**
+   * Set this meal aside in Drafts and start a fresh one. Offered mid-estimate
+   * too: the meal set aside goes on estimating, and its answer lands on it.
+   */
   onStartNew?: () => void;
+  /** This meal thrown away, for a fresh one: gone, not set aside. */
+  onDiscard?: () => void;
   onSave: (batch: Meal[]) => Promise<void>;
   onSaveTemplates: (next: MealTemplates, notice: string) => Promise<void>;
-  onEstimateComplete?: (error?: string) => void;
+  /** Whether an estimate is out for this meal, said once its draft holds what came back. */
+  onWorking?: (working: boolean) => void;
+  /** An estimate is in, or failed, for the meal named. */
+  onEstimateComplete?: (error?: string, called?: string) => void;
 }) {
   // Controlled by the switch in the header, so the two never disagree.
   // An open edit stays on that record's athlete; the header keeps its own switch.
@@ -546,8 +562,10 @@ export function MealForm({
     setWeights(readWeights(browserStorage()));
   }, []);
 
-  // A form that goes away, for a new meal or another draft, takes its estimate
-  // with it: nothing would show the answer, so the estimators are stopped.
+  // A form that goes away for good, discarded, cancelled or saved, takes its
+  // estimate with it: nothing would show the answer, so the estimators are
+  // stopped. One set aside for a new meal or another draft is not gone: it
+  // stays mounted while it estimates.
   useEffect(() => () => stopper.current?.abort(), []);
 
   // Stable across attempts. The endpoint upserts on id, so a retry after a
@@ -562,9 +580,11 @@ export function MealForm({
   // are the moment's, not the meal's, so they stay out.
   const { dirty, finish } = useFormDraft({
     kind: "meal",
+    draftId,
     draft,
     editing: editing ?? null,
     who,
+    shown,
     snapshot: JSON.stringify({
       day, time, picked, description, prompt, name, macros, ethanol, fiber, assumptions,
       confidence, answeredBy, source, adjusted, conversation, reply, kept, draftIds,
@@ -577,6 +597,16 @@ export function MealForm({
     ).slice(0, 80) || "Untitled meal",
     detail: picked ?? mealForTime(atTime(time)),
   });
+
+  // Declared after the draft is kept, so it runs after it: by the time a meal
+  // set aside says it is done, its draft holds the answer, and the form can go.
+  const working = estimating || estimatingDishIds.size > 0;
+  const reportWorking = useEffectEvent((value: boolean) => onWorking?.(value));
+  useEffect(() => reportWorking(working), [working]);
+
+  /** What the meal is called in a notice: the estimate's name once there is one. */
+  const called = (named = "") =>
+    (named.trim() || name.trim() || description.trim() || prompt.trim()).slice(0, 80) || "Untitled meal";
 
   const parsedMacros = MACRO_FIELDS.reduce((out, { key }) => {
     out[key] = Number(shownMacros[key].trim());
@@ -756,10 +786,10 @@ export function MealForm({
       // A dish with ethanol makes it an Alcohol sitting, as it does for a
       // whole meal. Picking another sitting afterwards keeps the ethanol.
       if ((estimate.alcohol ?? 0) > 0) setSlot("Alcohol");
-      onEstimateComplete?.();
+      onEstimateComplete?.(undefined, called(estimate.name || text));
     } catch (problem) {
       if (dishEpoch.current !== epoch) return;
-      onEstimateComplete?.(message(problem));
+      onEstimateComplete?.(message(problem), called(text));
       setDishErrors((current) => ({ ...current, [id]: message(problem) }));
     } finally {
       if (dishEpoch.current !== epoch) return;
@@ -964,7 +994,7 @@ export function MealForm({
         setDescription("");
         setDishErrors({});
         if ((estimate.alcohol ?? 0) > 0) setSlot("Alcohol");
-        onEstimateComplete?.();
+        onEstimateComplete?.(undefined, called(described));
         return;
       }
       // Two or more answers are blended here, each by its confidence, and a
@@ -982,14 +1012,14 @@ export function MealForm({
         : [{ estimate: used }]);
       setReply("");
       if (refining && refineOpenRef.current) setJustFinished(true);
-      onEstimateComplete?.();
+      onEstimateComplete?.(undefined, called(used.name));
     } catch (problem) {
       // Stopped on purpose: the form is as it was, ready to edit.
       if (stop.signal.aborted) return;
       setPartials([]);
       setMissed([]);
       setIncluded(null);
-      onEstimateComplete?.(message(problem));
+      onEstimateComplete?.(message(problem), called(described));
       if (refining) {
         setReplyError(`${message(problem)} Your current estimate and reply have been kept.`);
         return;
@@ -1374,9 +1404,10 @@ export function MealForm({
   return (
     <form ref={form} onSubmit={submit} className="space-y-4 pb-4">
       {/* Fieldsets, not one: the form locks while an estimate runs, and
-          Stop and the background estimate between them must not. */}
+          Stop and the background estimate between them must not. Nor must
+          New meal, which sets this one aside to go on estimating. */}
       {editing || dirty || draft ? (
-      <fieldset disabled={busy} className="min-w-0 space-y-4">
+      <fieldset disabled={saving || templateSaving} className="min-w-0 space-y-4">
         {/* At the very top: each estimator's macros, to correct, and how much it counts. */}
         {!splitting && !estimating ? (
           <EstimatorWeights
@@ -1402,6 +1433,7 @@ export function MealForm({
               type="button"
               variant="ghost"
               size="xs"
+              disabled={estimating}
               onClick={() => {
                 finish(true);
                 onCancelEdit?.();
@@ -1413,24 +1445,19 @@ export function MealForm({
         ) : dirty || draft ? (
           <div className="flex flex-wrap items-center justify-end gap-2 rounded-2xl border bg-muted/50 p-3">
             <div className="flex gap-1.5">
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                onClick={() => {
-                  finish(false);
-                  onStartNew?.();
-                }}
-              >
+              {/* Keeps writing its draft: set aside mid-estimate, this form
+                  stays mounted until the answer is in it. */}
+              <Button type="button" variant="ghost" size="xs" onClick={() => onStartNew?.()}>
                 New meal
               </Button>
               <Button
                 type="button"
                 variant="ghost"
                 size="xs"
+                disabled={estimating}
                 onClick={() => {
                   finish(true);
-                  onStartNew?.();
+                  (onDiscard ?? onStartNew)?.();
                 }}
               >
                 Discard draft

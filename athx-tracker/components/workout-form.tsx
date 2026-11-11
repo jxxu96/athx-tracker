@@ -786,6 +786,7 @@ export function WorkoutForm({
   shortcutsEnabled = false,
   workouts = [],
   onLoggingFor,
+  draftId,
   editing,
   draft: resumed,
   onCancelEdit,
@@ -804,6 +805,8 @@ export function WorkoutForm({
   shortcutsEnabled?: boolean;
   /** Hippos, Gators, or both. The header switch and these buttons are one choice. */
   onLoggingFor: (next: "hippos" | "gators" | "both") => void;
+  /** The draft this form writes, held for this tab while it is mounted. */
+  draftId?: string;
   editing?: Workout | null;
   /** What was typed here before and not saved, which the form opens with. */
   draft?: Draft | null;
@@ -973,6 +976,7 @@ export function WorkoutForm({
   // are the moment's, not the session's, so they stay out.
   const { dirty, finish } = useFormDraft({
     kind: "session",
+    draftId,
     draft: resumed,
     editing: editing ?? null,
     who: editing ? recordSide : sides.length > 1 ? "both" : sides[0],

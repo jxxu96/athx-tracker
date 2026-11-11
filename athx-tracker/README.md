@@ -366,6 +366,8 @@ The days to go, Refresh, who you are logging for, the lb/kg switch, keyboard
 shortcuts on a computer, and the Setup gear. Who you are logging for is kept
 on each phone, since each of you carries your own: a phone opens on whoever
 it last logged for, and on Hippos until it has chosen (`hooks/use-logging-for.ts`).
+Each browser tab then keeps its own, so a meal for Gators started in a
+second tab does not move one for Hippos in the first.
 
 ### Weights and older entries
 
@@ -637,6 +639,17 @@ offers to take you back to review it. Failed estimates also notify you and keep
 the description for retry. Nothing reaches the journal until you choose to save
 the form.
 
+Several meals can be estimated at once. **New meal** stays available while an
+estimate runs: the meal on the form is set aside, listed in Drafts as
+"Estimating…", and its form stays mounted out of sight until the answer is in,
+which lands on that meal and no other. Opening another draft, or editing an
+entry from the Log, sets it aside the same way. Each answer raises its own
+popup, naming the meal, unless that meal is on screen; **View meal** opens it.
+Once its answer is kept in its draft, a meal set aside is an ordinary draft
+again. Stop still ends an estimate, and so does closing the app or reloading
+it, since the request belongs to the page: the draft keeps the description and
+any answers in so far.
+
 While a meal estimate runs, each estimator's figures appear under **Answers so
 far** as it answers. They are shown, not applied: the meal waits for the
 settled answer, which averages them by weight and confidence: a label counts
@@ -691,6 +704,21 @@ deletes that edit's draft, and deleting an entry in the Log deletes any unsaved
 edit of it. Drafts belong to the phone they were typed on and are not sent to
 the server. A draft the form cannot open, as one saved by an older version of
 the form could be, is removed with a notice rather than breaking the app.
+
+Browser tabs on one phone share the drafts, and each has its own form open.
+A reload opens what that tab had; a tab the app was just opened in opens what
+was left in any, unless another tab has it open, when it starts afresh. A
+draft is only ever on one form: the tab that has it holds it
+(`lib/draft-locks.ts`), and every other tab lists it as "Open in another tab",
+neither opening nor deleting it until that tab has moved on from it or
+closed. Two
+tabs typing into one draft would overwrite each other, and since a draft
+carries the ids its meal is saved under, the second save would replace the
+first meal. Holding uses Web Locks, which the browser lets go of when a tab
+closes or crashes. They exist only over HTTPS and on localhost, so reached
+over plain HTTP the tabs are not kept apart. A change to the drafts starts
+from what storage holds then, so one tab never writes an older copy over
+another's typing.
 
 **Food notes** in Setup are a shared list of foods you eat often: a usual
 order, which product a word means ("yogurt" is Fage Total 0% plain), or its
