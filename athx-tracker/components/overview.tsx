@@ -57,7 +57,7 @@ export function Overview({
   history,
   figures,
   today,
-  onLoadFuelDay,
+  onLoadFuelWindow,
   fuelRefresh,
   heldFrom,
   onLoadSessions,
@@ -72,7 +72,7 @@ export function Overview({
   /** The whole-journal figures, which the recent slice alone cannot give. */
   figures: JournalSummary;
   today: string;
-  onLoadFuelDay: (day: string) => Promise<void>;
+  onLoadFuelWindow: (from: string, to: string, signal: AbortSignal) => Promise<void>;
   fuelRefresh: number;
   /** The oldest day the phone holds; null when it holds the whole journal. */
   heldFrom: string | null;
@@ -106,7 +106,8 @@ export function Overview({
         history={history}
         figures={figures}
         today={today}
-        onLoadDay={onLoadFuelDay}
+        onLoadWindow={onLoadFuelWindow}
+        heldFrom={heldFrom}
         refresh={fuelRefresh}
       />
 
