@@ -288,7 +288,7 @@ function savedEstimate(meal: Pick<Meal, "name" | "macros" | "assumptions">): Est
   return { ...meal.macros, name: meal.name, assumptions: meal.assumptions, confidence: "low" };
 }
 
-function Choice<T extends string>({
+export function Choice<T extends string>({
   label,
   value,
   options,
@@ -296,7 +296,8 @@ function Choice<T extends string>({
   fit = false,
 }: {
   label: string;
-  value: T;
+  /** Null shows none of them chosen. */
+  value: T | null;
   options: readonly { value: T; label: string; outline?: AthleteOutline }[];
   onChange: (next: T) => void;
   /**

@@ -4,6 +4,7 @@ import {
   DEFAULT_SETTINGS,
   ENERGY_MAX,
   ENERGY_MIN,
+  ENERGY_TIMINGS,
   REQUEST_TEXT_LIMIT,
   MEAL_TEMPLATE_GRAMS_LIMIT,
   MEAL_TEMPLATE_ITEM_LIMIT,
@@ -162,10 +163,12 @@ export const bodyweightSchema = z.object({
   time,
   kg: finite.positive().max(500),
 }).strict();
-/** How someone feels on a day, a whole number out of 10. */
+/** How someone feels at a timing of a day, a whole number out of 10. */
 export const energySchema = z.object({
   ...base, kind: z.literal("energy"), athlete: z.enum(["hippos", "gators"]),
   time,
+  // Optional: a phone still holding a check-in from before timings sends it without one.
+  timing: z.enum(ENERGY_TIMINGS).optional(),
   level: z.number().int().min(ENERGY_MIN).max(ENERGY_MAX),
 }).strict();
 /** An idea for the app. The pair's, so it is not filed under one athlete. */
