@@ -31,11 +31,17 @@ export type Draft = {
 
 export type DraftBook = {
   drafts: Draft[];
-  /** The draft each form had open, which it opens with again. */
+  /**
+   * The draft each form last had on screen, in whichever tab. A tab with
+   * nothing open of its own yet, as one the app was just opened in, opens
+   * with it, unless another tab still has it on a form.
+   */
   open: Record<DraftKind, string | null>;
 };
 
 export const DRAFTS_KEY = "athx-drafts";
+/** The draft each form in this tab had open, which a reload of this tab opens with. */
+export const TAB_DRAFTS_KEY = "athx-drafts-tab";
 
 const EMPTY: DraftBook = { drafts: [], open: { meal: null, session: null } };
 
@@ -62,11 +68,15 @@ export function parseBook(text: string | null): DraftBook {
   }
 }
 
-/** The latest of a draft replaces the earlier, and the form typing into it has it open. */
-export function keepDraft(book: DraftBook, draft: Draft): DraftBook {
+/**
+ * The latest of a draft replaces the earlier. The form on screen has it open;
+ * a meal set aside while it estimates keeps writing its draft without taking
+ * the form over.
+ */
+export function keepDraft(book: DraftBook, draft: Draft, shown = true): DraftBook {
   return {
     drafts: [draft, ...book.drafts.filter((held) => held.id !== draft.id)],
-    open: { ...book.open, [draft.kind]: draft.id },
+    open: shown ? { ...book.open, [draft.kind]: draft.id } : book.open,
   };
 }
 
@@ -92,9 +102,14 @@ export function openDraft(book: DraftBook, kind: DraftKind, id: string | null): 
   return { ...book, open: { ...book.open, [kind]: id } };
 }
 
-/** The draft a form had open, if it is still there. */
-export function openedDraft(book: DraftBook, kind: DraftKind) {
-  return book.drafts.find((draft) => draft.id === book.open[kind] && draft.kind === kind) ?? null;
+/**
+ * What a form opens with the first time it opens in a tab: the draft this
+ * tab had open, given as mine; or, in a tab with nothing of its own yet
+ * (mine undefined), the one any tab had on screen last. Null is a fresh form.
+ */
+export function draftToReopen(book: DraftBook, kind: DraftKind, mine: string | null | undefined) {
+  const id = mine === undefined ? book.open[kind] : mine;
+  return book.drafts.find((draft) => draft.id === id && draft.kind === kind) ?? null;
 }
 
 /** An unsaved edit of an entry, so editing it again picks up where it was left. */
@@ -102,10 +117,14 @@ export function draftFor(book: DraftBook, recordId: string) {
   return book.drafts.find((draft) => draft.editing?.id === recordId) ?? null;
 }
 
-/** What Drafts lists for a form: the others, newest first. The open one is on the form. */
-export function listedDrafts(book: DraftBook, kind: DraftKind) {
+/**
+ * What Drafts lists for a form: the others, newest first. The one on this
+ * tab's form is not listed. Each tab has its own on screen, so it is named
+ * here rather than read from the book, which every tab shares.
+ */
+export function listedDrafts(book: DraftBook, kind: DraftKind, shown: string | null) {
   return book.drafts
-    .filter((draft) => draft.kind === kind && draft.id !== book.open[kind])
+    .filter((draft) => draft.kind === kind && draft.id !== shown)
     .sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
@@ -140,6 +159,8 @@ export const isText = (item: unknown): item is string => typeof item === "string
  * another tab's change arrives through its storage event.
  */
 let held: DraftBook | null = null;
+/** What storage held when this page last read or wrote it, to tell when another tab has written since. */
+let heldText: string | null = null;
 const listeners = new Set<() => void>();
 
 function storage() {
@@ -150,9 +171,58 @@ function storage() {
   }
 }
 
+function stored() {
+  try {
+    return storage()?.getItem(DRAFTS_KEY) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function draftsSnapshot() {
-  if (held === null) held = parseBook(storage()?.getItem(DRAFTS_KEY) ?? null);
+  if (held === null) {
+    heldText = stored();
+    held = parseBook(heldText);
+  }
   return held;
+}
+
+function tabStorage() {
+  try {
+    return typeof sessionStorage === "undefined" ? null : sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+function tabOpen(): Partial<Record<DraftKind, unknown>> {
+  try {
+    const parsed = JSON.parse(tabStorage()?.getItem(TAB_DRAFTS_KEY) ?? "null") as unknown;
+    return parsed && typeof parsed === "object" ? (parsed as Partial<Record<DraftKind, unknown>>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * The draft this tab's form had open, kept per tab so that two tabs never
+ * reopen the same one: a reload opens what this tab had, null being a fresh
+ * form. Undefined when this tab has had no form open yet, as when the app
+ * has just been opened, which opens with the book's instead.
+ */
+export function tabDraft(kind: DraftKind): string | null | undefined {
+  const open = tabOpen();
+  if (!(kind in open)) return undefined;
+  const id = open[kind];
+  return typeof id === "string" ? id : null;
+}
+
+export function setTabDraft(kind: DraftKind, id: string | null) {
+  try {
+    tabStorage()?.setItem(TAB_DRAFTS_KEY, JSON.stringify({ ...tabOpen(), [kind]: id }));
+  } catch {
+    // Refused: a reload of this tab opens with the book's, as a new tab does.
+  }
 }
 
 /** The server has no drafts, so the page renders first with none. */
@@ -172,14 +242,47 @@ export function subscribeDrafts(listener: () => void) {
   };
 }
 
-export function changeDrafts(change: (book: DraftBook) => DraftBook) {
-  const next = change(draftsSnapshot());
-  if (next === held) return;
-  held = next;
-  try {
-    storage()?.setItem(DRAFTS_KEY, JSON.stringify(next));
-  } catch {
-    // Full or refused: the drafts still last as long as the page does.
+/**
+ * A draft as storage has it now. Another tab may have written to it since
+ * this page last read, without its storage event having arrived yet.
+ */
+export function latestDraft(id: string) {
+  const now = stored();
+  if (held !== null && now !== heldText) {
+    held = parseBook(now);
+    heldText = now;
+    for (const listener of listeners) listener();
   }
+  return draftsSnapshot().drafts.find((draft) => draft.id === id) ?? null;
+}
+
+export function changeDrafts(change: (book: DraftBook) => DraftBook) {
+  // Another tab may have written since this one read, and its storage event
+  // may not have arrived yet. Changing what storage holds now keeps that
+  // tab's latest typing, where changing this page's copy would write an
+  // older one back over it.
+  const now = stored();
+  const reread = held !== null && now !== heldText;
+  if (reread) {
+    held = parseBook(now);
+    heldText = now;
+  }
+  const current = draftsSnapshot();
+  const next = change(current);
+  if (next !== current) {
+    held = next;
+    try {
+      const store = storage();
+      if (store) {
+        const text = JSON.stringify(next);
+        store.setItem(DRAFTS_KEY, text);
+        // Only once it is there: storage that is full, or refused, still
+        // holds what it did, which is no sign of another tab writing.
+        heldText = text;
+      }
+    } catch {
+      // Full or refused: the drafts still last as long as the page does.
+    }
+  } else if (!reread) return;
   for (const listener of listeners) listener();
 }

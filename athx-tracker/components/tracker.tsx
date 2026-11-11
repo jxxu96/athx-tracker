@@ -28,11 +28,12 @@ import {
   useKeyboardShortcutSetting,
   useKeyboardShortcuts,
 } from "@/hooks/use-keyboard-shortcuts";
-import { useLoggingFor } from "@/hooks/use-logging-for";
+import { useLoggingFor, type LoggingFor } from "@/hooks/use-logging-for";
 import { Countdown } from "@/components/countdown";
 import { ThemeSync } from "@/components/theme-toggle";
 import { DraftBoundary } from "@/components/draft-boundary";
 import { Drafts } from "@/components/drafts";
+import { HeldDraft } from "@/components/held-draft";
 import {
   ATHLETES,
   localDay,
@@ -50,7 +51,8 @@ import { athleteOutline } from "@/lib/athlete-outline";
 import { bodyweightHistory } from "@/lib/bodyweight";
 import { sameCheckInDay } from "@/lib/energy-level";
 import { bestLine, type NewBest } from "@/lib/bests";
-import { api, isMeal, isWorkout, message, sortRecords } from "@/lib/client";
+import { api, isMeal, isWorkout, message, newId, sortRecords } from "@/lib/client";
+import { draftsElsewhere, refreshElsewhere, releaseWhenCached } from "@/lib/draft-locks";
 import {
   applyOutbox,
   changeOutbox,
@@ -68,16 +70,50 @@ import { heldFrom as sliceHeldFrom } from "@/lib/session-calendar";
 import {
   changeDrafts,
   draftFor,
+  draftToReopen,
   draftsSnapshot,
   dropDraft,
   dropDraftsFor,
   openDraft,
-  openedDraft,
+  setTabDraft,
+  tabDraft,
   type Draft,
   type DraftKind,
 } from "@/lib/drafts";
 
 type Tab = "today" | "session" | "meal" | "progress" | "log" | "settings";
+
+/** A form, on screen or set aside, and what it opened with. */
+type FormSlot<T extends Meal | Workout> = {
+  /** One per form: a meal set aside keeps its form, and its estimate, mounted. */
+  key: string;
+  /** The draft the form writes, held for this tab while the form is mounted. */
+  draftId: string;
+  draft: Draft | null;
+  editing: T | null;
+  /** Who it is for once set aside. The header's switch is the shown form's. */
+  who: LoggingFor;
+  /** Opened by itself, on coming back to the app: if another tab has it, say nothing. */
+  quiet?: boolean;
+};
+
+/** Every meal form this tab has mounted, and the one on screen. */
+type MealForms = { slots: FormSlot<Meal>[]; shown: string | null };
+
+/** A form with nothing in it, or one opened on a draft or on an entry to edit. */
+function formSlot<T extends Meal | Workout>(
+  who: LoggingFor,
+  { draft = null, editing = null, quiet }: { draft?: Draft | null; editing?: T | null; quiet?: boolean } = {},
+): FormSlot<T> {
+  return {
+    key: newId(),
+    draftId: draft?.id ?? newId(),
+    draft,
+    editing: draft ? (draft.editing as T | null) : editing,
+    who: draft?.who ?? who,
+    ...(quiet ? { quiet } : {}),
+  };
+}
 
 // Five, the most a bottom bar holds. Setup is opened rarely, so it is the
 // gear in the header. Log has its own icon: the circular arrow is Refresh's.
@@ -174,54 +210,122 @@ export function Tracker({
   const command = useCommandKey();
   const estimateChord = chordLabel(command, "e");
   const saveChord = chordLabel(command, "s");
-  // Zero means unopened; advancing a form's key starts a fresh draft after save.
-  const [formKeys, setFormKeys] = useState({ meal: 0, session: 0 });
   const activeTab = useRef(tab);
   // One switch drives both forms: which columns the session shows, and who a
   // new meal is saved for. "both" writes both athletes. Each phone opens on
   // whoever it last logged for, Hippos until it has chosen.
   const [who, setWho] = useLoggingFor();
-  // Editing one kind must not remount the other kind's background estimate.
-  const [editingMeal, setEditingMeal] = useState<Meal | null>(null);
-  const [editingWorkout, setEditingWorkout] = useState<Workout | null>(null);
-  // The draft each form opened with, when it opened with one.
-  const [mealDraft, setMealDraft] = useState<Draft | null>(null);
-  const [sessionDraft, setSessionDraft] = useState<Draft | null>(null);
+  const whoRef = useRef(who);
+  useEffect(() => {
+    whoRef.current = who;
+  }, [who]);
+  // Each kind has its own forms, so editing one kind never remounts the
+  // other's estimate. There can be several meals: one set aside while it
+  // estimates stays mounted, out of sight, until its answer is in its draft.
+  // Nothing until a section is first opened.
+  const [meals, setMeals] = useState<MealForms>({ slots: [], shown: null });
+  const [session, setSession] = useState<FormSlot<Workout> | null>(null);
+  const mealsRef = useRef(meals);
+  useEffect(() => {
+    mealsRef.current = meals;
+  }, [meals]);
+  const sessionRef = useRef(session);
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
+  // Whether each meal form is estimating, as it last said.
+  const mealWorking = useRef(new Map<string, boolean>());
+  useEffect(() => {
+    for (const key of [...mealWorking.current.keys()])
+      if (!meals.slots.some((slot) => slot.key === key)) mealWorking.current.delete(key);
+  }, [meals.slots]);
   const formOpened = useRef({ meal: false, session: false });
   // Setup stays mounted once opened, like the forms, so typing in it survives
   // a visit to another tab.
   const [setupOpened, setSetupOpened] = useState(false);
 
-  /** Opens a draft on its form, as it was left: an edit as that edit. */
-  const openDraftOnForm = useCallback((draft: Draft) => {
-    changeDrafts((book) => openDraft(book, draft.kind, draft.id));
-    if (draft.kind === "meal") {
-      setEditingMeal(draft.editing as Meal | null);
-      setMealDraft(draft);
-    } else {
-      setEditingWorkout(draft.editing as Workout | null);
-      setSessionDraft(draft);
-    }
-    if (!draft.editing) setWho(draft.who);
-  }, [setWho]);
+  /** The draft a form shows, which a reload of this tab, or the next fresh start, opens with. */
+  const markShown = useCallback((kind: DraftKind, id: string) => {
+    setTabDraft(kind, id);
+    changeDrafts((book) => openDraft(book, kind, id));
+  }, []);
+
+  /**
+   * Puts a meal form on screen: one this tab has mounted, or a new one. The
+   * one that was there is set aside: kept mounted while it estimates, so the
+   * answer still lands on it, and otherwise let go, its draft in Drafts.
+   */
+  const showMeal = useCallback((slot: FormSlot<Meal>) => {
+    const mounted = mealsRef.current.slots.find(
+      (held) => held.key === slot.key || held.draftId === slot.draftId,
+    );
+    const next = mounted ?? slot;
+    toast.dismiss(`meal-estimate-${next.draftId}`);
+    if (mealsRef.current.shown === next.key) return;
+    const asideWho = whoRef.current;
+    setMeals((forms) => {
+      if (forms.shown === next.key) return forms;
+      const kept = forms.slots.flatMap((held) => {
+        if (held.key === next.key || held.key !== forms.shown) return [held];
+        return mealWorking.current.get(held.key) ? [{ ...held, who: asideWho }] : [];
+      });
+      return {
+        slots: kept.some((held) => held.key === next.key) ? kept : [...kept, next],
+        shown: next.key,
+      };
+    });
+    // A meal set aside comes back for whoever it was for. A draft opening
+    // afresh takes its athlete once this tab holds it.
+    if (mounted && !mounted.editing) setWho(mounted.who);
+    markShown("meal", next.draftId);
+  }, [markShown, setWho]);
+
+  /** A session has one form, which this replaces. */
+  const showSession = useCallback((slot: FormSlot<Workout>) => {
+    setSession(slot);
+    markShown("session", slot.draftId);
+  }, [markShown]);
+
+  /**
+   * Opens a draft on its form, as it was left: an edit as that edit. It draws
+   * once this tab holds the draft, which a tab that has it open keeps.
+   */
+  const openDraftOnForm = useCallback((draft: Draft, quiet = false) => {
+    const open = () => {
+      if (draft.kind === "meal") showMeal(formSlot(whoRef.current, { draft, quiet }));
+      else if (sessionRef.current?.draftId !== draft.id)
+        showSession(formSlot(whoRef.current, { draft, quiet }));
+    };
+    if (quiet) return open();
+    // Asked afresh rather than as Drafts last showed it, since the tab that
+    // had it may have closed since. One still open there leaves this form be.
+    void refreshElsewhere().then(() => {
+      if (!draftsElsewhere().has(draft.id)) return open();
+      toast(`That ${draft.kind === "meal" ? "meal" : "session"} is open in another tab.`);
+    });
+  }, [showMeal, showSession]);
 
   const navigate = useCallback((next: Tab) => {
     activeTab.current = next;
     setTab(next);
     if (next === "settings") setSetupOpened(true);
     if (next === "meal" || next === "session") {
-      // The first time a form opens, it opens on whatever was left typed in
-      // it, so closing the app mid-meal loses nothing.
+      // The first time a form opens, it opens on whatever this tab left typed
+      // in it, or, in a tab the app was just opened in, whatever was left in
+      // any, so closing the app mid-meal loses nothing. Unless another tab
+      // still has it open: then this one starts afresh.
       if (!formOpened.current[next]) {
         formOpened.current[next] = true;
-        const left = openedDraft(draftsSnapshot(), next);
-        if (left) openDraftOnForm(left);
+        const left = draftToReopen(draftsSnapshot(), next, tabDraft(next));
+        if (left) openDraftOnForm(left, true);
+        else if (next === "meal") showMeal(formSlot(whoRef.current));
+        else showSession(formSlot(whoRef.current));
       }
-      setFormKeys((current) => ({ ...current, [next]: current[next] || 1 }));
-      toast.dismiss(`${next}-estimate`);
+      const onScreen = mealsRef.current.slots.find((slot) => slot.key === mealsRef.current.shown);
+      toast.dismiss(next === "meal" ? `meal-estimate-${onScreen?.draftId}` : "session-estimate");
     }
     window.scrollTo(0, 0);
-  }, [openDraftOnForm]);
+  }, [openDraftOnForm, showMeal, showSession]);
 
   // Setup lists every one of these. The keys are fixed.
   useKeyboardShortcuts(shortcutsEnabled, {
@@ -234,40 +338,38 @@ export function Tracker({
     p: () => navigate("progress"),
   }, (action) => action());
 
-  /** An entry from the Log, picking up any unsaved edit of it. */
+  /** An entry from the Log, picking up any unsaved edit of it. Whatever was on the form is set aside. */
   const openEdit = useCallback((record: Meal | Workout) => {
     const kind: DraftKind = record.kind === "meal" ? "meal" : "session";
     formOpened.current[kind] = true;
     const left = draftFor(draftsSnapshot(), record.id);
     if (left) openDraftOnForm(left);
-    else {
-      // Whatever draft the form had open is set aside for the edit, so it is
-      // listed in Drafts rather than hidden as if it were still on the form.
-      changeDrafts((book) => openDraft(book, kind, null));
-      if (record.kind === "meal") {
-        setEditingMeal(record);
-        setMealDraft(null);
-      } else {
-        setEditingWorkout(record);
-        setSessionDraft(null);
-      }
-    }
+    else if (record.kind === "meal")
+      showMeal(
+        mealsRef.current.slots.find((slot) => slot.editing?.id === record.id) ??
+          formSlot(whoRef.current, { editing: record }),
+      );
+    else showSession(formSlot(whoRef.current, { editing: record }));
     navigate(kind);
-  }, [navigate, openDraftOnForm]);
+  }, [navigate, openDraftOnForm, showMeal, showSession]);
 
   /** A fresh form; whatever was on it stays in Drafts unless it was discarded. */
   const startNew = useCallback((kind: DraftKind) => {
-    changeDrafts((book) => openDraft(book, kind, null));
-    if (kind === "meal") {
-      setEditingMeal(null);
-      setMealDraft(null);
-    } else {
-      setEditingWorkout(null);
-      setSessionDraft(null);
-    }
-    setFormKeys((current) => ({ ...current, [kind]: current[kind] + 1 }));
+    if (kind === "meal") showMeal(formSlot(whoRef.current));
+    else showSession(formSlot(whoRef.current));
     window.scrollTo(0, 0);
-  }, []);
+  }, [showMeal, showSession]);
+
+  /** A meal form that is done with, saved or cancelled, gives way to a fresh one. */
+  const replaceMeal = useCallback((key: string) => {
+    const fresh = formSlot<Meal>(whoRef.current);
+    const onScreen = mealsRef.current.shown === key;
+    setMeals((forms) => ({
+      slots: forms.slots.map((slot) => (slot.key === key ? fresh : slot)),
+      shown: forms.shown === key ? fresh.key : forms.shown,
+    }));
+    if (onScreen) markShown("meal", fresh.draftId);
+  }, [markShown]);
 
   /** A draft the form could not draw is set aside, so it cannot fail again. */
   const draftFailed = useCallback((draft: Draft | null) => {
@@ -275,19 +377,83 @@ export function Tracker({
     changeDrafts((book) => dropDraft(book, draft.id));
     toast.error("A draft could not be opened, so it was removed.");
   }, []);
-  const estimateFinished = useCallback((section: "meal" | "session", error?: string) => {
-    if (activeTab.current === section) return;
-    const label = section === "meal" ? "Meal" : "Session";
+
+  /** Why a draft did not open: another tab has it, or it went while this one waited. */
+  const refusedNotice = (kind: DraftKind, held: boolean) =>
+    held
+      ? "That draft was saved or deleted in another tab."
+      : `That ${kind === "meal" ? "meal" : "session"} is open in another tab.`;
+
+  /** A draft that did not open leaves a fresh form in its place. */
+  const mealRefused = useCallback((slot: FormSlot<Meal>, held: boolean) => {
+    if (!slot.quiet) toast(refusedNotice("meal", held));
+    replaceMeal(slot.key);
+  }, [replaceMeal]);
+  const sessionRefused = useCallback((slot: FormSlot<Workout>, held: boolean) => {
+    if (!slot.quiet) toast(refusedNotice("session", held));
+    showSession(formSlot(whoRef.current));
+  }, [showSession]);
+
+  /** A draft that opened brings its athlete into the header, as the form on screen. */
+  const draftOpened = useCallback((draft: Draft) => {
+    if (!draft.editing) setWho(draft.who);
+  }, [setWho]);
+
+  /**
+   * A meal set aside while it estimates is let go of once it has finished:
+   * its form says so only after writing its draft, which holds the answer.
+   */
+  const mealWorkingChanged = useCallback((key: string, working: boolean) => {
+    mealWorking.current.set(key, working);
+    if (working) return;
+    setMeals((forms) =>
+      forms.shown === key || !forms.slots.some((slot) => slot.key === key)
+        ? forms
+        : { ...forms, slots: forms.slots.filter((slot) => slot.key !== key) },
+    );
+  }, []);
+
+  /** Back to a meal: its form if still mounted, else its draft. */
+  const viewMeal = useCallback((draftId: string) => {
+    navigate("meal");
+    const mounted = mealsRef.current.slots.find((slot) => slot.draftId === draftId);
+    if (mounted) return showMeal(mounted);
+    const draft = draftsSnapshot().drafts.find((item) => item.id === draftId);
+    if (draft) openDraftOnForm(draft);
+  }, [navigate, openDraftOnForm, showMeal]);
+
+  const estimateFinished = useCallback((error?: string) => {
+    if (activeTab.current === "session") return;
     const options = {
-      id: `${section}-estimate`,
+      id: "session-estimate",
       description: error ?? "Review the filled fields before saving.",
       duration: Infinity,
       closeButton: true,
-      action: { label: `View ${section}`, onClick: () => navigate(section) },
+      action: { label: "View session", onClick: () => navigate("session") },
     };
-    if (error) toast.error(`${label} estimate failed`, options);
-    else toast.success(`${label} estimate ready`, options);
+    if (error) toast.error("Session estimate failed", options);
+    else toast.success("Session estimate ready", options);
   }, [navigate]);
+
+  /**
+   * A meal's estimate is in. Said unless that meal is on screen, from another
+   * section or set aside for the next meal, naming the meal and opening it.
+   */
+  const mealEstimateFinished = useCallback(
+    (slot: FormSlot<Meal>, error: string | undefined, called: string) => {
+      if (activeTab.current === "meal" && mealsRef.current.shown === slot.key) return;
+      const options = {
+        id: `meal-estimate-${slot.draftId}`,
+        description: `${called} · ${error ?? "Review the filled fields before saving."}`,
+        duration: Infinity,
+        closeButton: true,
+        action: { label: "View meal", onClick: () => viewMeal(slot.draftId) },
+      };
+      if (error) toast.error("Meal estimate failed", options);
+      else toast.success("Meal estimate ready", options);
+    },
+    [viewMeal],
+  );
   const sides = who === "both" ? (["hippos", "gators"] as const) : ([who] as const);
   const [records, setRecords] = useState(() => sortRecords(initialRecords));
   // Meals seen here while their estimate was still running in the background,
@@ -338,6 +504,15 @@ export function Tracker({
   const shown = useMemo(() => sortRecords(applyOutbox(records, outbox)), [records, outbox]);
   // Newest first, like everything shown: a lift's last time is the first match.
   const workouts = useMemo(() => shown.filter(isWorkout), [shown]);
+  const mealRecords = useMemo(() => shown.filter(isMeal), [shown]);
+  const shownMeal = meals.slots.find((slot) => slot.key === meals.shown) ?? null;
+  // Meals set aside here and still estimating, which Drafts says are.
+  const mealsAside = useMemo(
+    () => new Set(meals.slots.filter((slot) => slot.key !== meals.shown).map((slot) => slot.draftId)),
+    [meals],
+  );
+  // A page kept in the back/forward cache must not go on holding its drafts.
+  useEffect(() => releaseWhenCached(), []);
   // Setup keeps what was typed in it until it is saved or discarded, on any
   // tab, so a refresh in the meantime must not reopen it: the form is keyed on
   // the settings revision. The gear says when it holds unsaved changes.
@@ -518,8 +693,9 @@ export function Tracker({
     return { reason, bests };
   }, [keep]);
 
+  /** A form's submit. That form then gives way to a fresh one; any meal set aside goes on estimating. */
   const save = useCallback(
-    async (batch: (Workout | Meal)[]) => {
+    async (batch: (Workout | Meal)[], slot: FormSlot<Meal> | FormSlot<Workout>) => {
       let result: Awaited<ReturnType<typeof persist>>;
       try {
         result = await persist(batch);
@@ -528,7 +704,7 @@ export function Tracker({
         throw error;
       }
 
-      const label = batch.some((record) => record.id === editingMeal?.id || record.id === editingWorkout?.id)
+      const label = slot.editing && batch.some((record) => record.id === slot.editing?.id)
         ? "Entry updated"
         : batch[0]?.kind === "workout"
           ? batch.length > 1
@@ -540,19 +716,12 @@ export function Tracker({
       if (result.reason) toast("Saved on this phone", { description: result.reason, icon: <CloudOff className="size-4" /> });
       else toast.success(label);
       announceBests(result.bests);
-      if (batch[0]?.kind === "meal") {
-        setEditingMeal(null);
-        setMealDraft(null);
-      } else {
-        setEditingWorkout(null);
-        setSessionDraft(null);
-      }
-      const section = batch[0]?.kind === "meal" ? "meal" : "session";
-      setFormKeys((current) => ({ ...current, [section]: current[section] + 1 }));
+      if (batch[0]?.kind === "meal") replaceMeal(slot.key);
+      else showSession(formSlot(whoRef.current));
       navigate("today");
       if (!result.reason) void refreshSummary();
     },
-    [announceBests, editingMeal, editingWorkout, navigate, persist, refreshSummary],
+    [announceBests, navigate, persist, refreshSummary, replaceMeal, showSession],
   );
 
   /** A weigh-in or check-in edited in the Log: saved where it stands, without leaving it. */
@@ -1048,13 +1217,22 @@ export function Tracker({
           </div>
         ) : null}
         <div hidden={Boolean(problem) || tab !== "session"}>
-        {formKeys.session > 0 ? <Drafts kind="session" today={today} onOpen={openDraftOnForm} /> : null}
-        {formKeys.session > 0 ? (
+        {session ? (
+          <Drafts kind="session" today={today} shown={session.draftId} onOpen={(draft) => openDraftOnForm(draft)} />
+        ) : null}
+        {session ? (
           <DraftBoundary
-            key={sessionDraft ? `draft-${sessionDraft.id}` : editingWorkout?.id ?? `new-session-${formKeys.session}`}
-            onError={() => draftFailed(sessionDraft)}
+            key={session.key}
+            onError={() => draftFailed(session.draft)}
             onReset={() => startNew("session")}
           >
+          <HeldDraft
+            id={session.draftId}
+            draft={session.draft}
+            onOpened={draftOpened}
+            onRefused={(held) => sessionRefused(session, held)}
+          >
+          {(draft) => (
           <WorkoutForm
             today={today}
             grokReady={grokReady}
@@ -1064,54 +1242,81 @@ export function Tracker({
             weightUnit={unit}
             active={tab === "session" && !problem}
             shortcutsEnabled={shortcutsEnabled}
-            editing={editingWorkout}
-            draft={sessionDraft}
-            onCancelEdit={() => {
-              setEditingWorkout(null);
-              setSessionDraft(null);
-            }}
+            draftId={session.draftId}
+            editing={session.editing}
+            draft={draft}
+            onCancelEdit={() => showSession(formSlot(whoRef.current))}
             onStartNew={() => startNew("session")}
-            onEstimateComplete={(error) => estimateFinished("session", error)}
-            onSave={save}
+            onEstimateComplete={estimateFinished}
+            onSave={(batch) => save(batch, session)}
           />
+          )}
+          </HeldDraft>
           </DraftBoundary>
         ) : null}
         </div>
         <div hidden={Boolean(problem) || tab !== "meal"}>
-        {formKeys.meal > 0 ? <Drafts kind="meal" today={today} onOpen={openDraftOnForm} /> : null}
-        {formKeys.meal > 0 ? (
-          <DraftBoundary
-            key={mealDraft ? `draft-${mealDraft.id}` : editingMeal?.id ?? `new-meal-${formKeys.meal}`}
-            onError={() => draftFailed(mealDraft)}
-            onReset={() => startNew("meal")}
-          >
-          <MealForm
-            loggingFor={editingMeal?.athlete ?? who}
-            meals={shown.filter(isMeal)}
-            templates={settings.mealTemplates}
+        {shownMeal ? (
+          <Drafts
+            kind="meal"
             today={today}
-            grokReady={grokReady}
-            queueReady={queueReady}
-            active={tab === "meal" && !problem}
-            shortcutsEnabled={shortcutsEnabled}
-            editing={editingMeal}
-            draft={mealDraft}
-            onLoggingFor={setWho}
-            onCancelEdit={() => {
-              setEditingMeal(null);
-              setMealDraft(null);
-            }}
-            onStartNew={() => startNew("meal")}
-            onEstimateComplete={(error) => estimateFinished("meal", error)}
-            onSave={save}
-            onSaveTemplates={(mealTemplates, notice) =>
-              // Unsaved typing in Setup stays: Setup saves the templates as
-              // they are now, whenever it is saved.
-              saveSettings({ ...settings, mealTemplates }, notice, [], { keepSetup: setupDirty.current })
-            }
+            shown={shownMeal.draftId}
+            estimating={mealsAside}
+            onOpen={(draft) => openDraftOnForm(draft)}
           />
-          </DraftBoundary>
         ) : null}
+        {/* Every meal form this tab has mounted. Only one is on screen; the
+            others were set aside mid-estimate and wait, out of sight, for
+            their answers. */}
+        {meals.slots.map((slot) => {
+          const onScreen = slot.key === meals.shown;
+          return (
+            <div key={slot.key} hidden={!onScreen}>
+              <DraftBoundary onError={() => draftFailed(slot.draft)} onReset={() => replaceMeal(slot.key)}>
+              <HeldDraft
+                id={slot.draftId}
+                draft={slot.draft}
+                onOpened={draftOpened}
+                onRefused={(held) => mealRefused(slot, held)}
+              >
+              {(draft) => (
+              <MealForm
+                draftId={slot.draftId}
+                shown={onScreen}
+                // The header's switch is the meal on screen's. One set aside
+                // keeps whoever it was for when it was.
+                loggingFor={slot.editing?.athlete ?? (onScreen ? who : slot.who)}
+                meals={mealRecords}
+                templates={settings.mealTemplates}
+                today={today}
+                grokReady={grokReady}
+                queueReady={queueReady}
+                active={onScreen && tab === "meal" && !problem}
+                shortcutsEnabled={shortcutsEnabled}
+                editing={slot.editing}
+                draft={draft}
+                onLoggingFor={setWho}
+                onCancelEdit={() => replaceMeal(slot.key)}
+                onStartNew={() => startNew("meal")}
+                onDiscard={() => {
+                  replaceMeal(slot.key);
+                  window.scrollTo(0, 0);
+                }}
+                onWorking={(working) => mealWorkingChanged(slot.key, working)}
+                onEstimateComplete={(error, called) => mealEstimateFinished(slot, error, called ?? "A meal")}
+                onSave={(batch) => save(batch, slot)}
+                onSaveTemplates={(mealTemplates, notice) =>
+                  // Unsaved typing in Setup stays: Setup saves the templates as
+                  // they are now, whenever it is saved.
+                  saveSettings({ ...settings, mealTemplates }, notice, [], { keepSetup: setupDirty.current })
+                }
+              />
+              )}
+              </HeldDraft>
+              </DraftBoundary>
+            </div>
+          );
+        })}
         </div>
       </main>
 

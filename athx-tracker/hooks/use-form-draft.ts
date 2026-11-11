@@ -12,25 +12,35 @@ import { changeDrafts, dropDraft, keepDraft, type Draft, type DraftKind, type Dr
  * athlete it is for is. finish stops the writing for good, and drops the
  * draft when the work is saved or thrown away; a form set aside leaves its
  * draft in Drafts.
+ *
+ * A meal set aside while it estimates stays mounted, out of sight, and keeps
+ * writing: shown false leaves the form on screen as the one open, and its
+ * draft is kept even untouched, as an edit nobody has typed in yet would
+ * not be, so that Drafts can list it while it estimates.
  */
 export function useFormDraft({
   kind,
+  draftId: assigned,
   draft,
   editing,
   who,
   snapshot,
   summary,
   detail,
+  shown = true,
 }: {
   kind: DraftKind;
+  /** The draft this form writes, when whoever opened the form chose it. */
+  draftId?: string;
   draft: Draft | null | undefined;
   editing: Draft["editing"];
   who: DraftWho;
   snapshot: string;
   summary: string;
   detail: string;
+  shown?: boolean;
 }) {
-  const [draftId] = useState(() => draft?.id ?? newId());
+  const [draftId] = useState(() => assigned ?? draft?.id ?? newId());
   const [opened] = useState(snapshot);
   const touched = useRef(false);
   const finished = useRef(false);
@@ -41,8 +51,9 @@ export function useFormDraft({
     // Who it is for lives outside the fields, and a draft opened here follows
     // a change of it too. A new form does not: switching athlete is not typing.
     if (draft && who !== draft.who) touched.current = true;
-    if (!touched.current) return;
-    if (snapshot === opened && !draft) {
+    const aside = !shown && Boolean(draft || editing);
+    if (!touched.current && !aside) return;
+    if (snapshot === opened && !draft && !aside) {
       changeDrafts((book) => dropDraft(book, draftId));
       return;
     }
@@ -56,9 +67,9 @@ export function useFormDraft({
         detail,
         updatedAt: Date.now(),
         state: JSON.parse(snapshot) as Record<string, unknown>,
-      }),
+      }, shown),
     );
-  }, [detail, draft, draftId, editing, kind, opened, snapshot, summary, who]);
+  }, [detail, draft, draftId, editing, kind, opened, shown, snapshot, summary, who]);
 
   const finish = useCallback(
     (discard: boolean) => {
