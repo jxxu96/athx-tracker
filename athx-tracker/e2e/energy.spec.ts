@@ -146,6 +146,23 @@ test("the timing follows a meal's hours, and B, L and D choose it as they do a m
   await expect.poll(() => saved(page)).toEqual([expect.objectContaining({ athlete: "gators", timing: "Dinner", level: 3 })]);
 });
 
+test("an open card turns to lunch at 11:00 by itself, and opens for it", async ({ page }) => {
+  await checkIn(page, "hippos", 7, 0);
+  await checkIn(page, "gators", 5, 0);
+  const date = new Date();
+  date.setHours(10, 59, 30, 0);
+  await page.clock.install({ time: date });
+  await page.reload();
+  // Both have checked in at breakfast, so it opens folded.
+  await expect(card(page).getByText("Today at breakfast: Hippos 7 · Gators 5")).toBeVisible();
+
+  // Nothing else redraws the page across the hour.
+  await page.clock.runFor(60_000);
+  await expect(card(page).getByRole("button", { name: "Collapse Energy" })).toBeVisible();
+  await expect(timings(page).getByRole("button", { name: "Lunch" })).toHaveAttribute("aria-pressed", "true");
+  await expect(card(page).getByText("Not logged at lunch today")).toHaveCount(2);
+});
+
 test("the last seven days list each day's mean and average the days that have one", async ({ page }) => {
   await checkIn(page, "gators", 6, 2);
   await checkIn(page, "gators", 8, 2, { timing: "Dinner", time: "19:00" });

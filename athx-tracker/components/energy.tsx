@@ -30,8 +30,25 @@ const TIMING_SHORTCUTS = {
   l: "Lunch",
   d: "Dinner",
 } as const satisfies Record<string, EnergyTiming>;
-/** Nothing to subscribe to: the phone's clock is read at each render, once hydrated. */
-const noSubscription = () => () => {};
+/** How often an open card looks at the clock, so the timing turns within this long of 11:00 or 17:00. */
+const CLOCK_CHECK_MS = 15_000;
+/**
+ * The clock, read again every few seconds and whenever the app comes back
+ * into view. Read only at a render, a card left open over breakfast still
+ * showed breakfast at lunch, with its level chosen, and the next tap
+ * replaced breakfast rather than logging lunch. It redraws only when the
+ * timing changes.
+ */
+function subscribeClock(onChange: () => void) {
+  const timer = window.setInterval(onChange, CLOCK_CHECK_MS);
+  document.addEventListener("visibilitychange", onChange);
+  window.addEventListener("focus", onChange);
+  return () => {
+    window.clearInterval(timer);
+    document.removeEventListener("visibilitychange", onChange);
+    window.removeEventListener("focus", onChange);
+  };
+}
 /** The server cannot know the phone's clock, so it renders with no timing chosen. */
 const serverTiming = () => null;
 const LEVELS = Array.from({ length: ENERGY_MAX - ENERGY_MIN + 1 }, (_, index) => ENERGY_MIN + index);
@@ -120,7 +137,7 @@ export function Energy({
   const fresh = chosen.asOf === today;
   const day = fresh ? chosen.day : today;
   const clockTiming = useSyncExternalStore<EnergyTiming | null>(
-    noSubscription,
+    subscribeClock,
     () => energyTimingForTime(new Date()),
     serverTiming,
   );
