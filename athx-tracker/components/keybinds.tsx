@@ -8,8 +8,9 @@ import { chordLabel, useCommandKey } from "@/hooks/use-keyboard-shortcuts";
  * nothing here changes which key does what.
  *
  * Anywhere: who you are logging for, and which section opens.
- * Today: the energy card's day. Session and Meal: that form's date, and in
- * Meal the sitting. D is today on a session and dinner on a meal.
+ * Today: the energy card's day and timing, with a meal's keys for the
+ * sittings. Session and Meal: that form's date, and in Meal the sitting. D is
+ * today on a session, and dinner on a meal and on Today.
  * E with Command on a Mac, or Alt elsewhere, runs the estimator on either
  * form, and S saves it; both work from inside a field.
  */
@@ -28,7 +29,12 @@ const GROUPS = [
   },
   {
     title: "Today",
-    items: [{ key: "Y", label: "Energy for yesterday" }],
+    items: [
+      { key: "B", label: "Energy at breakfast" },
+      { key: "L", label: "Energy at lunch" },
+      { key: "D", label: "Energy at dinner" },
+      { key: "Y", label: "Energy for yesterday" },
+    ],
   },
   {
     title: "Session",

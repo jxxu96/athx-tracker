@@ -69,7 +69,9 @@ test("setup lists every shortcut and does not edit them", async ({ page }) => {
   await expect(anywhere.getByText("Log for Gators")).toBeVisible();
   await expect(anywhere.getByText("Log for both")).toBeVisible();
   await expect(anywhere.locator("kbd")).toHaveText(["G", "H", "V", "W", "M", "T", "P"]);
-  await expect(today.locator("kbd")).toHaveText(["Y"]);
+  await expect(today.locator("kbd")).toHaveText(["B", "L", "D", "Y"]);
+  await expect(today.getByText("Energy at breakfast")).toBeVisible();
+  await expect(today.getByText("Energy at dinner")).toBeVisible();
   await expect(today.getByText("Energy for yesterday")).toBeVisible();
   await expect(session.locator("kbd")).toHaveText(["D", "Y", "Alt+E", "Alt+S"]);
   await expect(session.getByText("Fill workout with AI")).toBeVisible();
