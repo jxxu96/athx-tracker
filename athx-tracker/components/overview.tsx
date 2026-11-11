@@ -1,19 +1,20 @@
 "use client";
 
-import { Dumbbell } from "lucide-react";
+import { useMemo } from "react";
+import { Dumbbell, ListOrdered } from "lucide-react";
 import { CollapsibleCard } from "@/components/collapsible-card";
 import { Energy } from "@/components/energy";
 import { Fuel } from "@/components/fuel";
 import { RaceEstimate, RaceProgress, raceLine } from "@/components/race-estimate";
 import { RequestLog } from "@/components/request-log";
+import { RunningOrder, runningOrderLine } from "@/components/running-order";
 import { SessionCalendar } from "@/components/session-calendar";
 import { daysTrained } from "@/lib/session-calendar";
 import { zoneGoals } from "@/lib/race";
+import { lastDone, seenTable } from "@/lib/running-order";
 import {
   ATHLETES,
   DEFAULT_SETTINGS,
-  METCON,
-  metconLoadText,
   type EnergyCheckIn,
   type FeatureRequest,
   type RecordItem,
@@ -95,6 +96,12 @@ export function Overview({
   const unit = settings.weightUnit ?? "lb";
   // A target of days, so 7 at most, whatever older settings saved as sessions.
   const target = Math.min(7, settings.weeklyTarget);
+  // The sessions on this phone, and the whole journal's answer for anything
+  // older than they reach.
+  const seen = useMemo(
+    () => seenTable(lastDone(records, today), figures.lastDone, heldFrom),
+    [records, today, figures.lastDone, heldFrom],
+  );
 
   // The days to go are in the header now. Fuel is what gets checked most, so
   // it leads; Energy folds to a line once both of you have checked in.
@@ -207,25 +214,10 @@ export function Overview({
 
       <Panel
         title="ATHX Lite running order"
-        mini={`${METCON.length} stations, ${METCON[0].name} to ${METCON[METCON.length - 1].name}`}
+        icon={<ListOrdered className="size-4 text-muted-foreground" />}
+        mini={runningOrderLine(seen, today)}
       >
-        <ol className="divide-y text-xs">
-          {METCON.map((station, index) => (
-            <li key={station.name} className="flex gap-3 py-2 first:pt-0 last:pb-0">
-              <span className="w-4 shrink-0 tabular-nums text-muted-foreground">
-                {index + 1}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block font-medium">
-                  {station.target} {station.unit} · {station.name}
-                </span>
-                <span className="block text-muted-foreground">
-                  {metconLoadText(station, unit)}
-                </span>
-              </span>
-            </li>
-          ))}
-        </ol>
+        <RunningOrder seen={seen} today={today} unit={unit} />
       </Panel>
 
       <RequestLog

@@ -37,7 +37,13 @@ single SQLite file on a volume.
   so an old best counts however much has been logged since. Under the counts,
   the last 7 days list each session, including its time, what it burned, and
   the whole-session estimate when the stations support one. The ATHX Lite
-  running order follows. Under that is a request log for features and ideas:
+  running order follows: every workout of race day in the order it is run,
+  the three Strength lifts, the 2.4 km run and the SkiErg, then the seven
+  MetCon X stations, with the refuel and recovery breaks between zones. Beside
+  what each one asks of each of you, such as your load at a station, a pill
+  says when each of you last did it: green within 5 days, yellow within 14,
+  red past that or never. See *The running order* below. Under that is a
+  request log for features and ideas:
   shared between the two of you, kept with the journal, and not listed in the
   Log. Mark one done when it has been dealt with, or delete it.
   Tap any box away from its buttons to fold it to one line, such as this
@@ -500,6 +506,33 @@ you has a strict press logged, a jerk alone places nobody, and the estimate says
 so. Endurance and MetCon X changed format for 2027, so they are not placed until
 2027 results exist. The field lives in `lib/field-data.ts`, and
 `node scripts/pull-field.mjs 2026` rebuilds it from the leaderboard.
+
+### The running order
+
+`RUNNING_ORDER` in `lib/running-order.ts` is race day for a Lite pair in the order
+ATHX runs it (the [timeline](https://athxgames.com/new-to-athx-games)): Strength,
+which is a 1RM shoulder to overhead in minutes 0-5, a 2RM back squat in 5-10 and a
+3RM deadlift in 10-20; a 10-minute refuel; Endurance, 2.4 km each and then the
+SkiErg to the 24:00 cap; a 30-minute recovery; then MetCon X's seven stations to the
+25:00 cap, each athlete's load beside the stations that have one (the 2027
+[workouts](https://athxgames.com/workouts/2027)).
+
+The last time (`lastDone`) is the newest day, on or before today, that the
+athlete's own session did the workout: a lift with reps, at any load, or a station
+with work or time logged against it. A circuit station left at zero was not
+reached, or in pairs was the other one's, so it does not count. The Strength rows
+count what the estimate counts, so any press or jerk from the shoulders is shoulder
+to overhead; everything else is its own name, the way the list spells it, so a
+front squat is not a back squat and a plain burpee is not a burpee over the bench.
+The opening and closing rows are one machine, and a row anywhere counts for both.
+Together sessions count for neither athlete, as they do for the estimate. The pill
+is green at 5 days or less, yellow at 14 or less, and red past that or never; the
+day itself shows beside it on a wider screen, and is read out. Folded, the box
+counts each athlete's red rows.
+
+The phone holds only the recent slice, so the server works the last times out over
+the whole journal (`journalSummary`). The phone still answers for the days it holds
+whole, so a session saved or deleted on it shows at once (`seenTable`).
 
 ### Resting energy and the balance
 

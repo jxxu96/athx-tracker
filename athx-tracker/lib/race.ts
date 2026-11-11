@@ -45,7 +45,7 @@ const workoutsOf = (records: RecordItem[], athlete: RaceAthlete) =>
 const listed = new Map<string, string>();
 
 /** A saved name in the list's spelling, so "SkiErg" and "ski erg" are the same machine. */
-function listedName(name: string) {
+export function listedName(name: string) {
   let known = listed.get(name);
   if (known === undefined) {
     const match = matchMovement(name);

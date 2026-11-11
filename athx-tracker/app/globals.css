@@ -125,6 +125,44 @@
   --athlete-team-ink: #6d28d9;
 }
 
+/*
+ * How long since one of you last did a workout, on Today's running order:
+ * green is 5 days or less, yellow 14 or less, red longer or never. The fill is
+ * a wash of the colour, the dot is the colour, and the ink is a shade of it
+ * that holds at least 6:1 against the fill as 11px text, in either theme. The
+ * words carry the meaning too, so nobody needs the colour to read it.
+ */
+[data-recency="fresh"] {
+  --recency: #16a34a;
+  --recency-fill: #dcfce7;
+  --recency-ink: #166534;
+}
+[data-recency="due"] {
+  --recency: #eab308;
+  --recency-fill: #fef9c3;
+  --recency-ink: #854d0e;
+}
+[data-recency="stale"] {
+  --recency: #dc2626;
+  --recency-fill: #fee2e2;
+  --recency-ink: #991b1b;
+}
+:root[data-theme="dark"] [data-recency="fresh"] {
+  --recency: #22c55e;
+  --recency-fill: #193624;
+  --recency-ink: #86efac;
+}
+:root[data-theme="dark"] [data-recency="due"] {
+  --recency: #eab308;
+  --recency-fill: #3d3314;
+  --recency-ink: #fde047;
+}
+:root[data-theme="dark"] [data-recency="stale"] {
+  --recency: #ef4444;
+  --recency-fill: #3e1f1f;
+  --recency-ink: #fca5a5;
+}
+
 :root[data-theme="light"] {
   color-scheme: light;
 }
