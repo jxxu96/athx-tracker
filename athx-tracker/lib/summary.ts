@@ -11,6 +11,7 @@ import {
 } from "./progress.ts";
 import { proteinWeeks, type ProteinWeek } from "./protein-week.ts";
 import { raceEstimate, raceStart } from "./race.ts";
+import { lastDone, type LastDone } from "./running-order.ts";
 
 /**
  * The figures that need the whole journal: the race-day estimate, Progress,
@@ -35,6 +36,11 @@ export type JournalSummary = {
   togetherOverall: number;
   /** Protein against the target, a Monday week at a time. Older summaries omit it. */
   protein?: Record<"hippos" | "gators", ProteinWeek[]>;
+  /**
+   * The day each of you last did each race workout, which the running order
+   * on Today shows beside what each asks. Older summaries omit it.
+   */
+  lastDone?: LastDone;
 };
 
 export function journalSummary(
@@ -68,5 +74,6 @@ export function journalSummary(
       hippos: proteinWeeks(records, settings, "hippos", today),
       gators: proteinWeeks(records, settings, "gators", today),
     },
+    lastDone: lastDone(records, today),
   };
 }
