@@ -136,24 +136,38 @@ test("energy can be set for a missed day, which takes no time of day", async ({ 
   // The section tab stays the only control named exactly Today.
   await expect(page.getByRole("button", { name: "Today", exact: true })).toHaveCount(1);
   await energy.getByRole("group", { name: "Energy date" }).getByRole("button", { name: "Energy yesterday" }).click();
-  await expect(energy.getByText("Not logged yesterday")).toHaveCount(2);
-  await energy.getByRole("group", { name: "Hippos energy yesterday" }).getByRole("button", { name: "6 out of 10" }).click();
+  await energy.getByRole("group", { name: "Timing" }).getByRole("button", { name: "Lunch" }).click();
+  await expect(energy.getByText("Not logged at lunch yesterday")).toHaveCount(2);
+  await energy.getByRole("group", { name: "Hippos energy at lunch yesterday" }).getByRole("button", { name: "6 out of 10" }).click();
   await expect(energy.getByText("Yesterday 6/10", { exact: true })).toBeVisible();
   await expect.poll(async () => (await records(page)).filter((record) => record.kind === "energy")).toEqual([
-    expect.objectContaining({ athlete: "hippos", day: await dayAgo(page, 1), level: 6 }),
+    expect.objectContaining({ athlete: "hippos", day: await dayAgo(page, 1), timing: "Lunch", level: 6 }),
   ]);
   const saved = (await records(page)).find((record) => record.kind === "energy");
   expect(saved).not.toHaveProperty("time");
 });
 
-test("energy opens folded once both have checked in today", async ({ page }) => {
+test("energy opens folded once both have checked in at the clock's timing, and opens again at the next", async ({ page }) => {
   const today = await dayAgo(page, 0);
-  await post(page, { kind: "energy", athlete: "hippos", day: today, time: "07:00", level: 7 });
+  const at = (hour: number) => {
+    const date = new Date();
+    date.setHours(hour, 0, 0, 0);
+    return date;
+  };
+  // One saved at breakfast, and one from before timings, which its 07:00 makes breakfast.
+  await post(page, { kind: "energy", athlete: "hippos", day: today, time: "07:00", timing: "Breakfast", level: 7 });
   await post(page, { kind: "energy", athlete: "gators", day: today, time: "07:00", level: 5 });
+  await page.clock.setFixedTime(at(8));
   await page.reload();
   const energy = page.locator("section").filter({ has: page.getByRole("heading", { name: "Energy", exact: true }) });
-  await expect(energy.getByText("Today: Hippos 7 · Gators 5")).toBeVisible();
+  await expect(energy.getByText("Today at breakfast: Hippos 7 · Gators 5")).toBeVisible();
   await expect(energy.getByRole("button", { name: "Expand Energy" })).toBeVisible();
+
+  // At lunch neither has checked in, so it opens to log it.
+  await page.clock.setFixedTime(at(12));
+  await page.reload();
+  await expect(energy.getByRole("button", { name: "Collapse Energy" })).toBeVisible();
+  await expect(energy.getByText("Not logged at lunch today")).toHaveCount(2);
 });
 
 test("a phone opens on whoever it last logged for", async ({ page }) => {

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DayButtons, Field } from "@/components/workout-form";
 import { EnergyLevels } from "@/components/energy";
+import { Choice } from "@/components/meal-form";
 import {
   NativeSelect,
   NativeSelectOption,
@@ -13,6 +14,7 @@ import {
 import {
   ATHLETES,
   ENERGY_MAX,
+  ENERGY_TIMINGS,
   ESTIMATORS,
   type FeatureRequest,
   categoryName,
@@ -29,11 +31,13 @@ import {
   type Athlete,
   type Bodyweight,
   type EnergyCheckIn,
+  type EnergyTiming,
   type RecordItem,
   type WeightUnit,
   type Workout,
 } from "@/lib/domain";
 import { bodyweightOn, type BodyweightHistory } from "@/lib/bodyweight";
+import { timingAt, timingOf } from "@/lib/energy-level";
 import { formatDay, isCheckIn, isRequest, isWeighIn, isWorkout } from "@/lib/client";
 import type { OutboxEntry } from "@/lib/outbox";
 
@@ -104,7 +108,11 @@ function WeighInEditor({
   );
 }
 
-/** A check-in edited where it stands, like a weigh-in: the level, the day and the time. */
+/**
+ * A check-in edited where it stands, like a weigh-in: the level, the day, the
+ * time and the timing. The timing follows the time until one is tapped, the
+ * way a meal's sitting does, so one from before timings keeps its own.
+ */
 function CheckInEditor({
   record,
   today,
@@ -119,6 +127,8 @@ function CheckInEditor({
   const [level, setLevel] = useState(record.level);
   const [day, setDay] = useState(record.day);
   const [time, setTime] = useState(record.time ?? "");
+  const [picked, setPicked] = useState<EnergyTiming | null>(record.timing ?? null);
+  const timing = picked ?? timingAt(time);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -132,6 +142,7 @@ function CheckInEditor({
         athlete: record.athlete,
         day,
         ...(time ? { time } : {}),
+        ...(timing ? { timing } : {}),
         level,
       });
       onCancel();
@@ -150,6 +161,12 @@ function CheckInEditor({
         value={level}
         onChoose={setLevel}
       />
+      <Choice
+        label="Timing"
+        value={timing}
+        onChange={setPicked}
+        options={ENERGY_TIMINGS.map((value) => ({ value, label: value }))}
+      />
       <DayButtons today={today} day={day} onChange={setDay} time={time} onTimeChange={setTime} />
       {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
       <div className="flex gap-1.5">
@@ -166,6 +183,11 @@ function CheckInEditor({
 
 /** The time of day, then the rest of an entry's line. */
 const at = (record: RecordItem) => (record.time ? `${record.time} · ` : "");
+/** "breakfast check-in", or just "check-in" for an old one with neither a timing nor a time. */
+const checkInName = (record: EnergyCheckIn) => {
+  const timing = timingOf(record);
+  return timing ? `${timing.toLowerCase()} check-in` : "check-in";
+};
 
 export function History({
   records,
@@ -362,7 +384,7 @@ export function History({
                           </p>
                           <p className="mt-0.5 text-xs text-muted-foreground">
                             {at(record)}
-                            {ATHLETES[record.athlete].name} · check-in
+                            {ATHLETES[record.athlete].name} · {checkInName(record)}
                           </p>
                         </>
                       ) : isWeighIn(record) ? (

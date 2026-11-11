@@ -99,7 +99,7 @@ test("a meal needs an athlete who eats", () => {
   assert.ok(!ok(recordSchema, { ...meal, macros: { ...meal.macros, protein: -1 } }));
 });
 
-test("an energy check-in is a whole number from 1 to 10, for one athlete", () => {
+test("an energy check-in is a whole number from 1 to 10, for one athlete at breakfast, lunch or dinner", () => {
   const checkIn = {
     id: "3f1a5f2e-9c4b-4d7a-8e21-6b0c9d5a1234",
     kind: "energy", athlete: "hippos", day: "2026-10-22", time: "07:45", level: 7,
@@ -108,6 +108,10 @@ test("an energy check-in is a whole number from 1 to 10, for one athlete", () =>
   assert.ok(ok(recordSchema, { ...checkIn, level: 1 }));
   assert.ok(ok(recordSchema, { ...checkIn, level: 10 }));
   assert.ok(ok(recordSchema, { ...checkIn, time: undefined }), "the time of day is optional");
+  for (const timing of ["Breakfast", "Lunch", "Dinner"]) assert.ok(ok(recordSchema, { ...checkIn, timing }));
+  assert.ok(ok(recordSchema, { ...checkIn, timing: undefined }), "one from before timings has none");
+  assert.ok(!ok(recordSchema, { ...checkIn, timing: "Snack" }), "energy has no snack");
+  assert.ok(!ok(recordSchema, { ...checkIn, timing: "breakfast" }));
   assert.ok(!ok(recordSchema, { ...checkIn, level: 0 }));
   assert.ok(!ok(recordSchema, { ...checkIn, level: 11 }));
   assert.ok(!ok(recordSchema, { ...checkIn, level: 6.5 }), "whole numbers only");

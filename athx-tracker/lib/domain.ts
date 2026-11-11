@@ -122,14 +122,23 @@ export type Bodyweight = {
   /** Kilograms, like every other weight here. */
   kg: number;
 };
+/** The points of a day an energy check-in is for: a meal's sittings, without snacks or drinks. */
+export const ENERGY_TIMINGS = ["Breakfast", "Lunch", "Dinner"] as const;
+export type EnergyTiming = (typeof ENERGY_TIMINGS)[number];
 /**
- * How someone feels on a day, out of 10: 1 is exhausted, 10 is full of
- * energy. Subjective, so it is a whole number and nothing is worked out from
- * it. Today takes one a day for each athlete, and setting it again replaces it.
+ * How someone feels, out of 10: 1 is exhausted, 10 is full of energy.
+ * Subjective, so it is a whole number and nothing is worked out from it.
+ * Today takes one for each athlete at each timing of a day, and setting it
+ * again replaces it.
  */
 export type EnergyCheckIn = {
   id: string; kind: "energy"; athlete: Exclude<Athlete, "team">; day: string;
   time?: ClockTime;
+  /**
+   * Which of the day's timings it is for. Check-ins from before there were
+   * timings have none, and are read by their time of day instead.
+   */
+  timing?: EnergyTiming;
   /** 1 to 10. */
   level: number;
 };
