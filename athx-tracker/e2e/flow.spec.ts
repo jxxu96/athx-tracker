@@ -248,12 +248,12 @@ test("the week's average leaves today out, and a bar past its target shows by ho
     await page.reload();
     const hippos = page.getByRole("group", { name: "Hippos fuel" });
     // Today is over target: the bar holds the overshoot, striped, past a tick.
-    await expect(hippos.getByText(/^3,000 \/ 2,000 kcal · 150%$/)).toBeVisible();
+    await expect(hippos.getByText(/^3,000 \/ 2,000 kcal · 150% of target$/)).toBeVisible();
     await expect(hippos.locator("[data-fuel-over]")).toHaveCount(1);
     await expect(hippos.locator("[data-fuel-target]")).toHaveCount(1);
     await page.getByRole("group", { name: "Fuel range" }).getByRole("button", { name: "Fuel for the last 7 days" }).click();
     await expect(page.getByText(/, complete days$/)).toBeVisible();
-    await expect(hippos.getByText(/^avg 1,800 \/ 2,000 kcal · 90%$/)).toBeVisible();
+    await expect(hippos.getByText(/^avg 1,800 \/ 2,000 kcal · 90% of target$/)).toBeVisible();
     await expect(hippos.locator("[data-fuel-over]")).toHaveCount(0);
   } finally {
     await page.evaluate(async (original) => {

@@ -59,7 +59,8 @@ test("fuel switches today, yesterday, the last week, and overall", async ({ page
   await expect(page.getByRole("button", { name: "Today", exact: true })).toHaveCount(1);
 });
 
-test("a macro shows the percent of its target", async ({ page }) => {
+test("fuel labels calorie shares separately from target progress", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
   await signIn(page);
   await page.evaluate(async () => {
     const today = new Intl.DateTimeFormat("en-CA", {
@@ -87,15 +88,18 @@ test("a macro shows the percent of its target", async ({ page }) => {
       body: JSON.stringify({
         id: crypto.randomUUID(), kind: "meal", athlete: "hippos", day: today,
         name: "Half breakfast", meal: "Breakfast", source: "manual", assumptions: "",
-        macros: { calories: 500, protein: 35, carbs: 50, fat: 14 },
+        macros: { calories: 500, protein: 35, carbs: 50, fat: 14, fiber: 10, alcohol: 10 },
       }),
     });
     if (!meal.ok) throw new Error("meal");
   });
   await page.reload();
   const hippos = page.getByRole("group", { name: "Hippos fuel" });
-  await expect(hippos.getByText("500 / 2,000 kcal · 25%")).toBeVisible();
-  await expect(hippos.getByText("14 / 70 g · 20%")).toBeVisible();
+  await expect(hippos.getByText("500 / 2,000 kcal · 25% of target")).toBeVisible();
+  await expect(hippos.getByText("14 / 70 g · 20% of target")).toBeVisible();
+  await expect(hippos.getByText("Estimated share of logged calories")).toBeVisible();
+  await expect(hippos.locator("dt")).toHaveText(["Protein", "Carbs", "Fat"]);
+  await expect(hippos.locator("dd")).toHaveText(["28%", "36%", "25%"]);
   await expect(hippos.getByText(/under/)).toHaveCount(0);
 });
 
@@ -240,9 +244,9 @@ test("pick day includes older meals, that day's targets, empty days and a retry"
     await date.fill("2020-01-02");
     const hippos = page.getByRole("group", { name: "Hippos fuel" });
     const gators = page.getByRole("group", { name: "Gators fuel" });
-    await expect(hippos.getByText("900 / 1,800 kcal · 50%")).toBeVisible();
-    await expect(hippos.getByText("60 / 120 g · 50%")).toBeVisible();
-    await expect(gators.getByText("1,100 / 2,200 kcal · 50%")).toBeVisible();
+    await expect(hippos.getByText("900 / 1,800 kcal · 50% of target")).toBeVisible();
+    await expect(hippos.getByText("60 / 120 g · 50% of target")).toBeVisible();
+    await expect(gators.getByText("1,100 / 2,200 kcal · 50% of target")).toBeVisible();
     await expect(page.getByText("2 Jan 2020", { exact: true })).toBeVisible();
     await expect(page.getByText("against that day's targets")).toHaveCount(0);
     await expect(ranges.getByRole("button", { name: "Pick day for fuel" })).toHaveAttribute("aria-pressed", "true");
@@ -253,11 +257,11 @@ test("pick day includes older meals, that day's targets, empty days and a retry"
     await expect(date).toHaveCount(0);
     await ranges.getByRole("button", { name: "Pick day for fuel" }).click();
     await expect(date).toHaveValue("2020-01-02");
-    await expect(hippos.getByText("900 / 1,800 kcal · 50%")).toBeVisible();
+    await expect(hippos.getByText("900 / 1,800 kcal · 50% of target")).toBeVisible();
 
     await page.getByRole("button", { name: "Refresh from the server" }).click();
     await expect(page.getByRole("button", { name: "Refresh from the server" })).toBeEnabled();
-    await expect(hippos.getByText("900 / 1,800 kcal · 50%")).toBeVisible();
+    await expect(hippos.getByText("900 / 1,800 kcal · 50% of target")).toBeVisible();
 
     await page.route("**/api/records?day=2020-01-03", (route) => route.abort("failed"));
     await date.fill("2020-01-03");

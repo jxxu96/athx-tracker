@@ -11,6 +11,7 @@ import {
   type Workout,
 } from "./domain.ts";
 import { restingOn } from "./energy.ts";
+import { macroCalories } from "./meal-calories.ts";
 import { averageTargets, targetsOn } from "./targets.ts";
 
 export type FuelSpan = "today" | "yesterday" | "week" | "overall";
@@ -119,6 +120,8 @@ export function barMarkPercent(mark: number, target: number) {
 export type AthleteFuel = {
   /** Sum of every meal in the span. */
   eaten: Macros;
+  /** Estimated contributions to the span's logged calories, as whole percentages. */
+  macroCalorieShares: Pick<Macros, "protein" | "carbs" | "fat"> | null;
   /**
    * What the bars show. A single day is that day's total. A longer span is the
    * average of days that have a meal, so a day you did not log is not treated
@@ -189,6 +192,13 @@ export function athleteFuel(
       inFuelWindow(record.day, window),
   );
   const eaten = sumMacros(meals);
+  const macroEnergy = { protein: 0, carbs: 0, fat: 0 };
+  for (const meal of meals) {
+    const { protein, carbs, fiber, fat } = macroCalories(meal.macros);
+    macroEnergy.protein += protein;
+    macroEnergy.carbs += carbs + fiber;
+    macroEnergy.fat += fat;
+  }
   const mealDays = [...new Set(meals.map((meal) => meal.day))];
   const daysWithMeals = mealDays.length;
   const multi = span === "week" || span === "overall";
@@ -221,6 +231,11 @@ export function athleteFuel(
 
   return {
     eaten,
+    macroCalorieShares: eaten.calories > 0 ? {
+      protein: Math.round((macroEnergy.protein / eaten.calories) * 100),
+      carbs: Math.round((macroEnergy.carbs / eaten.calories) * 100),
+      fat: Math.round((macroEnergy.fat / eaten.calories) * 100),
+    } : null,
     shown: multi ? averageMacros(eaten, daysWithMeals) : eaten,
     dailyTarget: multi
       ? averageTargets(settings, athlete, mealDays)

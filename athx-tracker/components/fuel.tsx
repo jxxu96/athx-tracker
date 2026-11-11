@@ -30,11 +30,15 @@ const SPANS = [
   { id: "overall", label: "Overall", name: "Fuel overall" },
 ] as const satisfies readonly { id: FuelSpan; label: string; name: string }[];
 
-const MACRO_KEYS = [
-  { key: "calories", label: "Calories", unit: "kcal" },
+const MACRONUTRIENTS = [
   { key: "protein", label: "Protein", unit: "g" },
   { key: "carbs", label: "Carbs", unit: "g" },
   { key: "fat", label: "Fat", unit: "g" },
+] as const;
+
+const MACRO_KEYS = [
+  { key: "calories", label: "Calories", unit: "kcal" },
+  ...MACRONUTRIENTS,
 ] as const satisfies readonly { key: keyof Macros; label: string; unit: string }[];
 
 const PEOPLE = ["hippos", "gators"] as const;
@@ -107,7 +111,7 @@ function MacroRow({
   const fill = share === null ? 0 : over ? targetAt : share;
   return (
     <div className="space-y-1.5">
-      <div className="flex items-baseline justify-between gap-3 text-xs">
+      <div className="flex items-baseline justify-between gap-2 text-xs">
         <span className="text-muted-foreground">{label}</span>
         <span className="text-right font-medium tabular-nums">
           {average ? <span className="font-normal text-muted-foreground">avg </span> : null}
@@ -116,7 +120,7 @@ function MacroRow({
             <span className="text-muted-foreground"> / {formatAmount(target)}</span>
           ) : null}
           <span className="text-muted-foreground"> {unit}</span>
-          {share !== null ? <span className="text-muted-foreground"> · {share}%</span> : null}
+          {share !== null ? <span className="text-muted-foreground"> · {share}% of target</span> : null}
         </span>
       </div>
       <div className="relative h-1.5">
@@ -218,6 +222,7 @@ function AthleteFuelCard({
       ? `${fuel.daysWithMeals} of 7 days`
       : `${fuel.daysWithMeals} day${fuel.daysWithMeals === 1 ? "" : "s"}`;
   const balance = energyBalance(fuel);
+  const calorieShares = fuel.macroCalorieShares;
   const perDay = multi ? " a day" : "";
   return (
     <div role="group" aria-label={`${ATHLETES[athlete].name} fuel`} className="space-y-3">
@@ -255,6 +260,19 @@ function AthleteFuelCard({
               />
             );
           })}
+          {calorieShares ? (
+            <div className="space-y-1 border-t pt-2 text-xs">
+              <p className="text-muted-foreground">Estimated share of logged calories</p>
+              <dl className="flex flex-wrap gap-x-4 gap-y-1">
+                {MACRONUTRIENTS.map(({ key, label }) => (
+                  <div key={key} className="flex gap-1.5">
+                    <dt className="text-muted-foreground">{label}</dt>
+                    <dd className="font-medium tabular-nums">{calorieShares[key]}%</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          ) : null}
           {multi ? (
             <p className="text-xs text-muted-foreground">
               {formatAmount(fuel.eaten.calories)} kcal eaten · {logged}
