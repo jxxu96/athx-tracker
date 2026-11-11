@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { PASSPHRASE } from "../playwright.config.ts";
 
 test.beforeEach(async ({ page }) => {
@@ -71,9 +71,11 @@ test("setup lists every shortcut and does not edit them", async ({ page }) => {
   await expect(anywhere.locator("kbd")).toHaveText(["G", "H", "V", "W", "M", "T", "P"]);
   await expect(today.locator("kbd")).toHaveText(["Y"]);
   await expect(today.getByText("Energy for yesterday")).toBeVisible();
-  await expect(session.locator("kbd")).toHaveText(["D", "Y", "Alt+E"]);
+  await expect(session.locator("kbd")).toHaveText(["D", "Y", "Alt+E", "Alt+S"]);
   await expect(session.getByText("Fill workout with AI")).toBeVisible();
-  await expect(meal.locator("kbd")).toHaveText(["B", "L", "D", "S", "A", "Y", "Alt+E"]);
+  await expect(session.getByText("Save session")).toBeVisible();
+  await expect(meal.locator("kbd")).toHaveText(["B", "L", "D", "S", "A", "Y", "Alt+E", "Alt+S"]);
+  await expect(meal.getByText("Save meal")).toBeVisible();
   await expect(meal.getByText("Dinner")).toBeVisible();
   await expect(meal.getByText("Estimate macros")).toBeVisible();
   await expect(list.locator("input, textarea, select")).toHaveCount(0);
@@ -148,7 +150,7 @@ test("Alt+E runs the estimator from the description on Meal and Session", async 
   });
   const toggle = page.getByRole("button", { name: "Keyboard shortcuts" });
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
-  await expect(toggle).toHaveAttribute("title", /Alt\+E Estimate/);
+  await expect(toggle).toHaveAttribute("title", /Alt\+E Estimate, Alt\+S Save/);
 
   await page.keyboard.press("m");
   const description = page.getByRole("textbox", { name: "Meal description" });
@@ -184,6 +186,40 @@ test("Alt+E runs the estimator from the description on Meal and Session", async 
   expect(estimates).toHaveLength(1);
 });
 
+const records = (page: Page) => page.evaluate(async () =>
+  (await fetch("/api/records").then((r) => r.json())).records as { kind: string; name?: string; title?: string; macros?: { calories: number } }[]);
+
+test("Alt+S saves the open form from inside a field, through the form's own checks", async ({ page }) => {
+  // The database outlives a test, so each run saves under its own names.
+  const meal = `Shortcut toast ${Date.now()}`;
+  const draft = { ...workoutDraft, title: `Shortcut deadlifts ${Date.now()}` };
+  const toggle = page.getByRole("button", { name: "Keyboard shortcuts" });
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("m");
+  const name = page.getByLabel("Meal", { exact: true });
+  const calories = page.getByLabel("Calories (kcal)");
+  await calories.fill("210");
+  // Unnamed, it is refused just as the button would refuse it.
+  await calories.press("Alt+s");
+  await expect(page.getByRole("alert").filter({ hasText: "Name the meal, or run an estimate first." })).toBeVisible();
+  await name.fill(meal);
+  await calories.press("Alt+s");
+  await expect(name).toHaveValue("");
+  await expect.poll(async () => (await records(page))
+    .filter((record) => record.name === meal).map((record) => record.macros?.calories)).toEqual([210]);
+
+  await page.route("**/api/workout-draft", (route) => route.fulfill({ json: { draft, provider: "codex" } }));
+  await page.keyboard.press("w");
+  const workout = page.getByRole("textbox", { name: "Workout description" });
+  await workout.fill("Deadlift 3 x 5 at 100 kg");
+  await workout.press("Alt+e");
+  await expect(page.getByLabel("Session", { exact: true })).toHaveValue(draft.title);
+  await workout.press("Alt+s");
+  await expect(page.getByLabel("Session", { exact: true })).toHaveValue("");
+  await expect.poll(async () => (await records(page))
+    .filter((record) => record.title === draft.title).length).toBe(1);
+});
+
 test.describe("on a Mac", () => {
   test.beforeEach(async ({ page }) => {
     const toggle = page.getByRole("button", { name: "Keyboard shortcuts" });
@@ -213,7 +249,7 @@ test.describe("on a Mac", () => {
     await page.getByRole("button", { name: "Setup", exact: true }).click();
     const list = page.getByRole("region", { name: "Keyboard shortcuts" });
     const meal = list.getByRole("heading", { name: "Meal", exact: true }).locator("..");
-    await expect(meal.locator("kbd").last()).toHaveText("⌘E");
+    await expect(meal.locator("kbd")).toHaveText(["B", "L", "D", "S", "A", "Y", "⌘E", "⌘S"]);
   });
 });
 

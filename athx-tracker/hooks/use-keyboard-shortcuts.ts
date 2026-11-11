@@ -101,10 +101,12 @@ export const chordLabel = (command: CommandKey, key: string) =>
  * shortcut it fires from inside a field, since the modifier cannot be typed:
  * the point is to act on what was just written without reaching for the mouse.
  * AltGr reports Ctrl+Alt on Windows, so a layout typing € on AltGr+E is left alone.
+ * The chord is the page's while enabled, even when the action declines it, so
+ * a held key or a second press mid-save never reaches the browser's own ⌘S.
  */
 export function useCommandShortcut(enabled: boolean, key: string, action: () => void) {
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
-    if (event.defaultPrevented || event.repeat || event.isComposing) return;
+    if (event.defaultPrevented || event.isComposing) return;
     const mac = apple();
     const held = mac ? event.metaKey : event.altKey;
     const other = event.ctrlKey || event.shiftKey || (mac ? event.altKey : event.metaKey);
@@ -112,7 +114,7 @@ export function useCommandShortcut(enabled: boolean, key: string, action: () => 
     if (document.querySelector(OPEN_MENU)) return;
 
     event.preventDefault();
-    action();
+    if (!event.repeat) action();
   });
 
   useEffect(() => {
