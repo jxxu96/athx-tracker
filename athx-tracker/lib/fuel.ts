@@ -12,9 +12,11 @@ import {
 } from "./domain.ts";
 import { restingOn } from "./energy.ts";
 import { macroCalories } from "./meal-calories.ts";
+import { previousWeek } from "./protein-week.ts";
 import { averageTargets, targetsOn } from "./targets.ts";
 
-export type FuelSpan = "today" | "yesterday" | "week" | "overall";
+export type FuelSpan = "today" | "yesterday" | "week" | "last-week" | "overall";
+export type FuelDateRange = { start: string; end: string };
 export type FuelAthlete = "hippos" | "gators";
 
 /**
@@ -26,16 +28,12 @@ export type FuelWindow = { start: string | null; end: string };
 const EMPTY: Macros = { calories: 0, protein: 0, carbs: 0, fat: 0 };
 
 /**
- * Today, yesterday, the last seven days, and the whole journal. The Monday
- * week on the session panel is a different question (how many times you
- * trained). This one is the food, so it is the days a person means by "the
- * last week".
- *
- * The two averages stop at yesterday. Today is not over: counted in, its
- * breakfast stood for a whole day's eating and pulled the average down until
- * dinner, by an eighth on an ordinary morning. Today joins them tomorrow.
+ * The preset averages cover completed days. A picked date range uses the
+ * dates the user selected, including both ends.
  */
-export function fuelWindow(span: FuelSpan, today: string): FuelWindow {
+export function fuelWindow(span: FuelSpan | FuelDateRange, today: string): FuelWindow {
+  if (typeof span !== "string") return span;
+  if (span === "last-week") return previousWeek(today);
   const yesterday = addDays(today, -1);
   if (span === "today") return { start: today, end: today };
   if (span === "yesterday") return { start: yesterday, end: yesterday };
@@ -154,7 +152,7 @@ export type AthleteFuel = {
   expenditure: number | null;
   /** Days the expenditure average is over: 1, 7, or every day since the first entry. */
   expenditureDays: number;
-  /** 7 for the rolling week, 1 for a day, null for the whole journal. */
+  /** Days in the selected window, or null for the whole journal. */
   spanDays: number | null;
 };
 
@@ -173,7 +171,7 @@ export type FuelSettings = Pick<Settings, "targets" | "targetHistory" | "height"
 export function athleteFuel(
   records: RecordItem[],
   athlete: FuelAthlete,
-  span: FuelSpan,
+  span: FuelSpan | FuelDateRange,
   today: string,
   settings: FuelSettings,
   history: BodyweightHistory,
@@ -201,7 +199,7 @@ export function athleteFuel(
   }
   const mealDays = [...new Set(meals.map((meal) => meal.day))];
   const daysWithMeals = mealDays.length;
-  const multi = span === "week" || span === "overall";
+  const multi = window.start !== window.end;
   const burnKnown = bodyweightKnown(history, athlete);
   let burned = 0;
   let untimed = 0;
@@ -249,7 +247,7 @@ export function athleteFuel(
     resting,
     expenditure: resting === null ? null : resting + burned / days.length,
     expenditureDays: days.length,
-    spanDays: span === "week" ? 7 : span === "overall" ? null : 1,
+    spanDays: window.start === null ? null : days.length,
   };
 }
 
@@ -284,7 +282,7 @@ export function energyBalance(fuel: AthleteFuel) {
 /** Together sessions have no single bodyweight, so they stay out of both totals. */
 export function teamSessions(
   records: RecordItem[],
-  span: FuelSpan,
+  span: FuelSpan | FuelDateRange,
   today: string,
 ) {
   const window = fuelWindow(span, today);

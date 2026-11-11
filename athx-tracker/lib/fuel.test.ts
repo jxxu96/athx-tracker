@@ -61,7 +61,7 @@ const weighIn = (over: Partial<Bodyweight> = {}): Bodyweight => ({
   id: "b", kind: "bodyweight", athlete: "hippos", day: today, kg: 70, ...over,
 });
 
-test("the fuel window is today, yesterday, the seven days before today, or every day before it", () => {
+test("fuel windows distinguish the rolling seven days from the previous Monday–Sunday", () => {
   assert.deepEqual(fuelWindow("today", today), { start: today, end: today });
   assert.deepEqual(fuelWindow("yesterday", today), {
     start: "2026-02-28",
@@ -71,6 +71,8 @@ test("the fuel window is today, yesterday, the seven days before today, or every
     start: "2026-02-22",
     end: "2026-02-28",
   });
+  assert.deepEqual(fuelWindow("last-week", today), { start: "2026-02-16", end: "2026-02-22" });
+  assert.deepEqual(fuelWindow("last-week", "2026-03-02"), { start: "2026-02-23", end: "2026-03-01" });
   assert.deepEqual(fuelWindow("overall", today), { start: null, end: "2026-02-28" });
   assert.deepEqual(fuelWindow("yesterday", "2028-03-01"), {
     start: "2028-02-29",

@@ -19,7 +19,8 @@ test("together is purple", async ({ page }) => {
   for (const bar of await bars.all()) await expect(bar).toHaveCSS("background-color", "rgb(109, 40, 217)");
 });
 
-test("fuel switches today, yesterday, the last week, and overall", async ({ page }) => {
+test("fuel switches today, yesterday, the rolling week, last week, and overall", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-11-11T12:00:00"));
   await signIn(page);
   const fuel = page.getByRole("group", { name: "Fuel range" });
   await expect(fuel.getByRole("button", { name: "Fuel for today" })).toHaveAttribute(
@@ -46,7 +47,12 @@ test("fuel switches today, yesterday, the last week, and overall", async ({ page
     "true",
   );
   await expect(page.getByText(/Daily average of days with a meal/)).toHaveCount(0);
-  await expect(page.getByText(/\d{1,2} [A-Za-z]{3,4} to \d{1,2} [A-Za-z]{3,4}/)).toBeVisible();
+  await expect(page.getByText("4 Nov to 10 Nov, complete days")).toBeVisible();
+
+  const lastWeek = fuel.getByRole("button", { name: "Fuel for last week" });
+  await lastWeek.click();
+  await expect(lastWeek).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("2 Nov to 8 Nov, complete days")).toBeVisible();
 
   await fuel.getByRole("button", { name: "Fuel overall" }).click();
   await expect(fuel.getByRole("button", { name: "Fuel overall" })).toHaveAttribute(
@@ -218,6 +224,8 @@ test("pick day includes older meals, that day's targets, empty days and a retry"
       meal("hippos", "2020-01-02", 500),
       meal("hippos", "2020-01-02", 400),
       meal("gators", "2020-01-02", 1100),
+      meal("hippos", "2020-01-04", 500),
+      meal("hippos", "2020-01-05", 1500),
       // Push those meals outside the initial 400 entries.
       ...Array.from({ length: 400 }, () => meal("hippos", "2025-01-01", 100)),
     ];
@@ -238,7 +246,7 @@ test("pick day includes older meals, that day's targets, empty days and a retry"
     expect((await page.request.get("/api/records?day=2020-02-30")).status()).toBe(400);
     await page.reload();
     const ranges = page.getByRole("group", { name: "Fuel range" });
-    await expect(ranges.getByRole("button")).toHaveText(["Today", "Yesterday", "7 days", "Overall", "Pick day"]);
+    await expect(ranges.getByRole("button")).toHaveText(["Today", "Yesterday", "7 days", "Last Week", "Overall", "Pick day"]);
     await ranges.getByRole("button", { name: "Pick day for fuel" }).click();
     const date = page.getByLabel("Fuel day", { exact: true });
     await date.fill("2020-01-02");
@@ -252,6 +260,21 @@ test("pick day includes older meals, that day's targets, empty days and a retry"
     await expect(ranges.getByRole("button", { name: "Pick day for fuel" })).toHaveAttribute("aria-pressed", "true");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: test.info().outputPath("fuel-day-mobile.png"), fullPage: true });
+
+    const custom = page.getByRole("checkbox", { name: "Custom window" });
+    await custom.check();
+    const start = page.getByLabel("Start date", { exact: true });
+    const end = page.getByLabel("End date", { exact: true });
+    await expect(start).toHaveValue("2020-01-02");
+    await expect(end).toHaveValue("2020-01-02");
+    await end.fill("2020-01-04");
+    await expect(page.getByText("2 Jan 2020 to 4 Jan 2020", { exact: true })).toBeVisible();
+    await expect(hippos.getByText("1,400 kcal eaten · 2 of 3 days")).toBeVisible();
+    await expect(hippos.getByText(/700 \/ 1,800 kcal/)).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await custom.uncheck();
+    await expect(end).toHaveCount(0);
+    await expect(hippos.getByText("900 / 1,800 kcal · 50% of target")).toBeVisible();
 
     await ranges.getByRole("button", { name: "Fuel overall" }).click();
     await expect(date).toHaveCount(0);
