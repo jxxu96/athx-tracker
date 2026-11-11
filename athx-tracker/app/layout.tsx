@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { FaviconFlip } from "@/components/favicon-flip";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -10,8 +11,9 @@ export const metadata: Metadata = {
     title: "Hippos & Gators",
     statusBarStyle: "default",
   },
-  // The running hippo, drawn by scripts/make-icons.mjs. iPhones take no SVG
-  // for the home screen, so theirs is a PNG.
+  // The running hippo, drawn by scripts/make-icons.mjs. The tab swaps it for
+  // the gator and back (FaviconFlip). iPhones take no SVG for the home screen,
+  // so theirs is a PNG.
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
@@ -46,6 +48,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className="antialiased">
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        <FaviconFlip />
         {children}
       </body>
     </html>
