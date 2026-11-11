@@ -19,22 +19,29 @@ import {
   teamSessions,
   type AthleteFuel,
   type FuelAthlete,
+  type FuelDateRange,
   type FuelSpan,
 } from "@/lib/fuel";
+import { needsFetch } from "@/lib/session-calendar";
 import type { JournalSummary } from "@/lib/summary";
 
 const SPANS = [
   { id: "today", label: "Today", name: "Fuel for today" },
   { id: "yesterday", label: "Yesterday", name: "Fuel for yesterday" },
   { id: "week", label: "7 days", name: "Fuel for the last 7 days" },
+  { id: "last-week", label: "Last Week", name: "Fuel for last week" },
   { id: "overall", label: "Overall", name: "Fuel overall" },
 ] as const satisfies readonly { id: FuelSpan; label: string; name: string }[];
 
-const MACRO_KEYS = [
-  { key: "calories", label: "Calories", unit: "kcal" },
+const MACRONUTRIENTS = [
   { key: "protein", label: "Protein", unit: "g" },
   { key: "carbs", label: "Carbs", unit: "g" },
   { key: "fat", label: "Fat", unit: "g" },
+] as const;
+
+const MACRO_KEYS = [
+  { key: "calories", label: "Calories", unit: "kcal" },
+  ...MACRONUTRIENTS,
 ] as const satisfies readonly { key: keyof Macros; label: string; unit: string }[];
 
 const PEOPLE = ["hippos", "gators"] as const;
@@ -53,14 +60,6 @@ function weekdayLetter(day: string) {
     weekday: "narrow",
     timeZone: "UTC",
   }).format(dayToDate(day));
-}
-
-/** The averages count complete days only, so they say where they stop. */
-function spanNote(span: FuelSpan, today: string) {
-  const window = fuelWindow(span, today);
-  if (span === "week") return `${shortDate(window.start!)} to ${shortDate(window.end)}, complete days`;
-  if (span === "overall") return `Every complete day, up to ${shortDate(window.end)}`;
-  return null;
 }
 
 function dayCaption(day: string) {
@@ -107,7 +106,7 @@ function MacroRow({
   const fill = share === null ? 0 : over ? targetAt : share;
   return (
     <div className="space-y-1.5">
-      <div className="flex items-baseline justify-between gap-3 text-xs">
+      <div className="flex items-baseline justify-between gap-2 text-xs">
         <span className="text-muted-foreground">{label}</span>
         <span className="text-right font-medium tabular-nums">
           {average ? <span className="font-normal text-muted-foreground">avg </span> : null}
@@ -116,7 +115,7 @@ function MacroRow({
             <span className="text-muted-foreground"> / {formatAmount(target)}</span>
           ) : null}
           <span className="text-muted-foreground"> {unit}</span>
-          {share !== null ? <span className="text-muted-foreground"> · {share}%</span> : null}
+          {share !== null ? <span className="text-muted-foreground"> · {share}% of target</span> : null}
         </span>
       </div>
       <div className="relative h-1.5">
@@ -164,17 +163,16 @@ const overHatch = (color: string) =>
 const tens = (kcal: number) => Math.round(kcal / 10) * 10;
 const signed = (kcal: number) => (kcal > 0 ? `+${formatAmount(kcal)}` : formatAmount(kcal));
 
-/** The seven days of the week's average, ending yesterday, a dot on each with a meal. */
+/** One dot per day of the week, marked when it has a meal. */
 function WeekDots({
-  today,
+  start,
   days,
   color,
 }: {
-  today: string;
+  start: string;
   days: Set<string>;
   color: string;
 }) {
-  const start = fuelWindow("week", today).start!;
   return (
     <div aria-hidden="true" className="grid grid-cols-7 gap-1">
       {Array.from({ length: 7 }, (_, index) => {
@@ -199,25 +197,24 @@ function WeekDots({
 function AthleteFuelCard({
   athlete,
   fuel,
-  span,
-  today,
+  weekStart,
   mealDays,
   softProtein,
 }: {
   athlete: FuelAthlete;
   fuel: AthleteFuel;
-  span: FuelSpan;
-  today: string;
+  weekStart: string | null;
   mealDays: Set<string>;
   /** Grams. Null when this person has no soft protein line, or no weight to take it from. */
   softProtein: number | null;
 }) {
-  const multi = span === "week" || span === "overall";
+  const multi = fuel.spanDays !== 1;
   const logged =
-    span === "week"
-      ? `${fuel.daysWithMeals} of 7 days`
+    fuel.spanDays !== null
+      ? `${fuel.daysWithMeals} of ${fuel.spanDays} days`
       : `${fuel.daysWithMeals} day${fuel.daysWithMeals === 1 ? "" : "s"}`;
   const balance = energyBalance(fuel);
+  const calorieShares = fuel.macroCalorieShares;
   const perDay = multi ? " a day" : "";
   return (
     <div role="group" aria-label={`${ATHLETES[athlete].name} fuel`} className="space-y-3">
@@ -228,8 +225,8 @@ function AthleteFuelCard({
         />
         <p className="text-sm font-medium">{ATHLETES[athlete].name}</p>
       </div>
-      {span === "week" ? (
-        <WeekDots today={today} days={mealDays} color={ATHLETES[athlete].color} />
+      {weekStart ? (
+        <WeekDots start={weekStart} days={mealDays} color={ATHLETES[athlete].color} />
       ) : null}
       {fuel.daysWithMeals === 0 ? (
         <p className="text-xs text-muted-foreground">No meals logged.</p>
@@ -255,6 +252,19 @@ function AthleteFuelCard({
               />
             );
           })}
+          {calorieShares ? (
+            <div className="space-y-1 border-t pt-2 text-xs">
+              <p className="text-muted-foreground">Estimated share of logged calories</p>
+              <dl className="flex flex-wrap gap-x-4 gap-y-1">
+                {MACRONUTRIENTS.map(({ key, label }) => (
+                  <div key={key} className="flex gap-1.5">
+                    <dt className="text-muted-foreground">{label}</dt>
+                    <dd className="font-medium tabular-nums">{calorieShares[key]}%</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          ) : null}
           {multi ? (
             <p className="text-xs text-muted-foreground">
               {formatAmount(fuel.eaten.calories)} kcal eaten · {logged}
@@ -322,7 +332,8 @@ export function Fuel({
   history,
   figures,
   today,
-  onLoadDay,
+  onLoadWindow,
+  heldFrom,
   refresh,
 }: {
   records: RecordItem[];
@@ -331,55 +342,60 @@ export function Fuel({
   /** Overall needs the whole journal; these are its figures. */
   figures: JournalSummary;
   today: string;
-  onLoadDay: (day: string) => Promise<void>;
+  onLoadWindow: (from: string, to: string, signal: AbortSignal) => Promise<void>;
+  heldFrom: string | null;
   refresh: number;
 }) {
   const [span, setSpan] = useState<FuelView>("today");
   const [day, setDay] = useState(today);
-  const [loaded, setLoaded] = useState({ day: "", refresh });
-  const [dayError, setDayError] = useState<string | null>(null);
+  const [endDay, setEndDay] = useState("");
+  const [custom, setCustom] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [loaded, setLoaded] = useState<{ key: string; failed: boolean }>();
+
+  const period: FuelSpan | FuelDateRange = span === "day"
+    ? { start: day, end: custom ? endDay : day }
+    : span;
+  const window = fuelWindow(period, today);
+  const { start, end } = window;
+  const multi = start !== end;
+  const weekly = span === "week" || span === "last-week";
+  const fetchWindow = start !== null && (
+    (span === "day" && heldFrom !== null) || (weekly && needsFetch(heldFrom, start))
+  );
+  const loadKey = fetchWindow ? `${start}/${end}/${refresh}/${attempt}` : null;
   useEffect(() => {
-    if (span !== "day") return;
-    let active = true;
-    onLoadDay(day).then(() => {
-      if (active) {
-        setLoaded({ day, refresh });
-        setDayError(null);
-      }
+    if (start === null || loadKey === null) return;
+    const controller = new AbortController();
+    onLoadWindow(start, end, controller.signal).then(() => {
+      if (!controller.signal.aborted) setLoaded({ key: loadKey, failed: false });
     }).catch(() => {
-      if (active) setDayError("Could not load this day. Check your connection and try again.");
+      if (!controller.signal.aborted) setLoaded({ key: loadKey, failed: true });
     });
-    return () => { active = false; };
-  }, [span, day, onLoadDay, attempt, refresh]);
-  const loadingDay = span === "day" && (loaded.day !== day || loaded.refresh !== refresh);
-  const period = span === "day" ? "today" : span;
-  const referenceDay = span === "day" ? day : today;
-  const multi = span === "week" || span === "overall";
-  const weightDay = fuelWindow(period, referenceDay).end;
+    return () => controller.abort();
+  }, [start, end, loadKey, onLoadWindow]);
+  const loading = loadKey !== null && loaded?.key !== loadKey;
+  const loadError = loadKey !== null && loaded?.key === loadKey && loaded.failed;
+  const selection = start === end ? "day" : "range";
   const people = PEOPLE.map((athlete) => ({
     athlete,
     fuel:
       span === "overall"
         ? figures.overall[athlete]
-        : athleteFuel(records, athlete, period, referenceDay, settings, history),
-    softProtein: softProteinGoal(athlete, bodyweightOn(history, athlete, weightDay)),
+        : athleteFuel(records, athlete, period, today, settings, history),
+    softProtein: softProteinGoal(athlete, bodyweightOn(history, athlete, end)),
   }));
-  const mealDays = (athlete: FuelAthlete) => {
-    const window = fuelWindow(period, referenceDay);
-    return new Set(
+  const mealDays = (athlete: FuelAthlete) =>
+    new Set(
       records
-        .filter(
-          (record) =>
-            record.kind === "meal" &&
-            record.athlete === athlete &&
-            inFuelWindow(record.day, window),
-        )
+        .filter((record) => record.kind === "meal" && record.athlete === athlete && inFuelWindow(record.day, window))
         .map((record) => record.day),
     );
-  };
-  const together = span === "overall" ? figures.togetherOverall : teamSessions(records, period, referenceDay);
-  const caption = span === "day" ? dayCaption(day) : spanNote(span, today);
+  const together = span === "overall" ? figures.togetherOverall : teamSessions(records, period, today);
+  let caption: string | null = null;
+  if (span === "day") caption = multi ? `${dayCaption(day)} to ${dayCaption(end)}` : dayCaption(day);
+  if (weekly && start !== null) caption = `${shortDate(start)} to ${shortDate(end)}, complete days`;
+  if (span === "overall") caption = `Every complete day, up to ${shortDate(end)}`;
 
   return (
     <CollapsibleCard
@@ -392,7 +408,7 @@ export function Fuel({
         </h2>
       }
       mini={
-        loadingDay || (span === "day" && dayError)
+        loading || loadError
           ? null
           : people
               .map((person) => foldedFuel(ATHLETES[person.athlete].name, person.fuel, multi))
@@ -402,7 +418,7 @@ export function Fuel({
       <div
         role="group"
         aria-label="Fuel range"
-        className="mb-3 grid grid-cols-5 rounded-full bg-muted p-0.5"
+        className="mb-3 grid grid-cols-2 rounded-xl bg-muted p-0.5 min-[420px]:grid-cols-6 min-[420px]:rounded-full"
       >
         {SPANS.map((item) => (
           <button
@@ -422,8 +438,6 @@ export function Fuel({
           aria-pressed={span === "day"}
           onClick={() => {
             setSpan("day");
-            setLoaded({ day: "", refresh });
-            setDayError(null);
             setAttempt((current) => current + 1);
           }}
           className="rounded-full px-1 py-1.5 text-[11px] font-medium transition-colors aria-pressed:bg-background aria-pressed:shadow-sm sm:text-xs"
@@ -432,37 +446,69 @@ export function Fuel({
         </button>
       </div>
       {span === "day" ? (
-        <div className="mb-3 flex items-center gap-3">
-          <label htmlFor="fuel-day" className="shrink-0 text-xs font-medium">Day</label>
-          <Input
-            id="fuel-day"
-            aria-label="Fuel day"
-            type="date"
-            min="0001-01-01"
-            max={today}
-            value={day}
-            onChange={(event) => {
-              if (!event.target.value || !event.target.validity.valid) return;
-              setDay(event.target.value);
-              setLoaded({ day: "", refresh });
-              setDayError(null);
-            }}
-            className="w-auto max-w-full"
-          />
+        <div className="mb-3 space-y-2">
+          <label className="flex w-fit items-center gap-2 py-1 text-xs font-medium">
+            <input
+              type="checkbox"
+              checked={custom}
+              onChange={(event) => {
+                if (event.target.checked && endDay < day) setEndDay(day);
+                setCustom(event.target.checked);
+              }}
+            />
+            Custom window
+          </label>
+          <div className="flex flex-wrap gap-3">
+            <div className="flex flex-col gap-1">
+              <label htmlFor="fuel-day" className="text-xs font-medium">{custom ? "Start" : "Day"}</label>
+              <Input
+                id="fuel-day"
+                aria-label={custom ? "Start date" : "Fuel day"}
+                type="date"
+                min="0001-01-01"
+                max={today}
+                value={day}
+                onChange={(event) => {
+                  if (!event.target.value || !event.target.validity.valid) return;
+                  const next = event.target.value;
+                  setDay(next);
+                  if (custom && endDay < next) setEndDay(next);
+                }}
+                className="w-auto max-w-full"
+              />
+            </div>
+            {custom ? (
+              <div className="flex flex-col gap-1">
+                <label htmlFor="fuel-end" className="text-xs font-medium">End</label>
+                <Input
+                  id="fuel-end"
+                  aria-label="End date"
+                  type="date"
+                  min={day}
+                  max={today}
+                  value={endDay}
+                  onChange={(event) => {
+                    if (event.target.value && event.target.validity.valid) setEndDay(event.target.value);
+                  }}
+                  className="w-auto max-w-full"
+                />
+              </div>
+            ) : null}
+          </div>
         </div>
       ) : null}
       {caption ? <p className="mb-3 text-xs text-muted-foreground">{caption}</p> : null}
-      {span === "day" && dayError ? (
+      {loadError ? (
         <div role="alert" className="text-sm">
-          <p>{dayError}</p>
+          <p>Could not load this {selection}. Check your connection and try again.</p>
           <button
             type="button"
             className="mt-2 text-xs font-medium underline"
-            onClick={() => { setDayError(null); setLoaded({ day: "", refresh }); setAttempt((current) => current + 1); }}
+            onClick={() => setAttempt((current) => current + 1)}
           >Try again</button>
         </div>
-      ) : loadingDay ? (
-        <p role="status" className="text-sm text-muted-foreground">Loading this day…</p>
+      ) : loading ? (
+        <p role="status" className="text-sm text-muted-foreground">Loading this {selection}…</p>
       ) : (
         <>
           <div className="grid gap-5 sm:grid-cols-2">
@@ -471,8 +517,7 @@ export function Fuel({
                 key={person.athlete}
                 athlete={person.athlete}
                 fuel={person.fuel}
-                span={period}
-                today={today}
+                weekStart={weekly ? start : null}
                 mealDays={mealDays(person.athlete)}
                 softProtein={person.softProtein}
               />

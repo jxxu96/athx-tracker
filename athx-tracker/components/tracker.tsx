@@ -616,18 +616,22 @@ export function Tracker({
   const reloadSettings = useCallback(() => reload(scope), [reload, scope]);
   const loadAll = useCallback(() => reload("all"), [reload]);
 
-  const loadFuelDay = useCallback(async (day: string) => {
-    if (complete) return;
+  const loadFuelWindow = useCallback(async (from: string, to: string, signal: AbortSignal) => {
+    const requestTimeout = timeout(SAVE_TIMEOUT_MS);
     const { records: entries } = await api<{ records: RecordItem[] }>(
-      `/api/records?day=${day}`,
-      { signal: timeout(SAVE_TIMEOUT_MS) },
+      from === to ? `/api/records?day=${from}` : `/api/records?from=${from}&to=${to}`,
+      { signal: requestTimeout && typeof AbortSignal.any === "function"
+        ? AbortSignal.any([signal, requestTimeout])
+        : requestTimeout ?? signal },
     );
+    if (signal.aborted) return;
     // Pending edits and deletes are still applied by the outbox over this copy.
+    const ids = new Set(entries.map((record) => record.id));
     setRecords((current) => sortRecords([
-      ...current.filter((record) => record.day !== day),
+      ...current.filter((record) => (record.day < from || record.day > to) && !ids.has(record.id)),
       ...entries,
     ]));
-  }, [complete]);
+  }, []);
 
   /** A calendar's sessions from before the slice, merged in like a picked day's. */
   const loadSessions = useCallback(async (from: string, to: string) => {
@@ -1159,7 +1163,7 @@ export function Tracker({
             history={history}
             figures={figures}
             today={today}
-            onLoadFuelDay={loadFuelDay}
+            onLoadFuelWindow={loadFuelWindow}
             fuelRefresh={fuelRefresh}
             heldFrom={heldFrom}
             onLoadSessions={loadSessions}
