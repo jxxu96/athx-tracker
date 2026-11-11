@@ -171,7 +171,9 @@ export function Tracker({
   const [tab, setTab] = useState<Tab>("today");
   const shortcutSetting = useKeyboardShortcutSetting();
   const shortcutsEnabled = shortcutSetting === "on";
-  const estimateChord = chordLabel(useCommandKey(), "e");
+  const command = useCommandKey();
+  const estimateChord = chordLabel(command, "e");
+  const saveChord = chordLabel(command, "s");
   // Zero means unopened; advancing a form's key starts a fresh draft after save.
   const [formKeys, setFormKeys] = useState({ meal: 0, session: 0 });
   const activeTab = useRef(tab);
@@ -941,7 +943,7 @@ export function Tracker({
               onClick={() => setKeyboardShortcutsEnabled(!shortcutsEnabled)}
               aria-label="Keyboard shortcuts"
               aria-pressed={shortcutsEnabled}
-              title={`Keyboard shortcuts · G Gators, H Hippos, V Both, W Session, M Meal, T Today, P Progress, Y Yesterday · In Session: D Today, ${estimateChord} Fill with AI · In Meal: B Breakfast, L Lunch, D Dinner, S Snack, A Alcohol, ${estimateChord} Estimate`}
+              title={`Keyboard shortcuts · G Gators, H Hippos, V Both, W Session, M Meal, T Today, P Progress, Y Yesterday · In Session: D Today, ${estimateChord} Fill with AI, ${saveChord} Save · In Meal: B Breakfast, L Lunch, D Dinner, S Snack, A Alcohol, ${estimateChord} Estimate, ${saveChord} Save`}
               className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-pressed:bg-primary aria-pressed:text-primary-foreground aria-pressed:hover:bg-primary/85"
             >
               <Keyboard className="size-4" />

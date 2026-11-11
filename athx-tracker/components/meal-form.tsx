@@ -1353,6 +1353,14 @@ export function MealForm({
   const canEstimate = grokReady && !busy && description.trim().length >= 3;
   // Works from the description itself: type the meal, then ⌘E or Alt+E.
   useCommandShortcut(active && canEstimate && shortcutsEnabled, "e", () => void estimate());
+  // ⌘S or Alt+S is Save meal, through the form like the button, so the same
+  // checks run. Mid-estimate or mid-save it does nothing, and still keeps the
+  // browser's Save Page dialog shut.
+  const form = useRef<HTMLFormElement>(null);
+  const canSave = !busy && estimatingDishIds.size === 0;
+  useCommandShortcut(active && shortcutsEnabled, "s", () => {
+    if (canSave) form.current?.requestSubmit();
+  });
   // Not once there is an estimate: a queued meal saves zero macros, and would
   // throw away the figures already on the form.
   const canQueue = queueReady && conversation.length === 0 && !rejected && !splitting && !expanded;
@@ -1364,7 +1372,7 @@ export function MealForm({
   }
 
   return (
-    <form onSubmit={submit} className="space-y-4 pb-4">
+    <form ref={form} onSubmit={submit} className="space-y-4 pb-4">
       {/* Fieldsets, not one: the form locks while an estimate runs, and
           Stop and the background estimate between them must not. */}
       {editing || dirty || draft ? (

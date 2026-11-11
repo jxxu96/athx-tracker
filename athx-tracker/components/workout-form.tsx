@@ -991,6 +991,13 @@ export function WorkoutForm({
   const canFill = grokReady && !drafting && !listening && !saving && description.trim().length >= 3;
   // The same chord as Estimate macros on the Meal tab: ⌘E or Alt+E.
   useCommandShortcut(active && canFill && shortcutsEnabled, "e", () => void fillWorkout());
+  // ⌘S or Alt+S is Save session, through the form like the button. While AI
+  // fills it or it saves, the chord does nothing and the browser's stays shut.
+  const form = useRef<HTMLFormElement>(null);
+  const canSave = !drafting && !listening && !saving;
+  useCommandShortcut(active && shortcutsEnabled, "s", () => {
+    if (canSave) form.current?.requestSubmit();
+  });
 
   async function fillWorkout() {
     setDraftError("");
@@ -1693,7 +1700,7 @@ export function WorkoutForm({
   }
 
   return (
-    <form onSubmit={submit} className="space-y-4 pb-4">
+    <form ref={form} onSubmit={submit} className="space-y-4 pb-4">
       {editing ? (
         <div
           {...athleteOutline(outline, "muted")}
