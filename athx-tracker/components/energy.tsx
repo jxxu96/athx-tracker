@@ -18,7 +18,7 @@ import {
   type EnergyTiming,
   type RecordItem,
 } from "@/lib/domain";
-import { averageEnergy, energyAt, energyDays, formatEnergy } from "@/lib/energy-level";
+import { averageEnergy, checkInsAt, energyAt, energyDays, formatEnergy } from "@/lib/energy-level";
 import { energyTimingForTime } from "@/lib/meal-time";
 
 type Person = "hippos" | "gators";
@@ -58,19 +58,23 @@ const weekday = (day: string) =>
 /**
  * The ten levels in one row, low to high, with what the ends mean under them,
  * so a 7 means the same thing in March as it did in November. The chosen one
- * takes the athlete's ring.
+ * takes the athlete's ring. With logs, a tap adds a check-in rather than
+ * choosing one, so the buttons are actions, not toggles, and the ring only
+ * marks the one being saved.
  */
 export function EnergyLevels({
   athlete,
   label,
   value,
   disabled,
+  logs = false,
   onChoose,
 }: {
   athlete: Person;
   label: string;
   value: number | null;
   disabled?: boolean;
+  logs?: boolean;
   onChoose: (level: number) => void;
 }) {
   return (
@@ -80,12 +84,13 @@ export function EnergyLevels({
           <button
             key={level}
             type="button"
-            aria-pressed={value === level}
-            aria-label={`${level} out of ${ENERGY_MAX}`}
+            aria-pressed={logs ? undefined : value === level}
+            data-chosen={value === level || undefined}
+            aria-label={`${logs ? "Log " : ""}${level} out of ${ENERGY_MAX}`}
             disabled={disabled}
             onClick={() => onChoose(level)}
             {...(value === level ? athleteOutline(athlete, "accent") : {})}
-            className="min-w-0 rounded-md border-2 border-border py-2 text-xs font-medium tabular-nums transition-colors disabled:opacity-60 aria-pressed:bg-accent aria-pressed:font-semibold"
+            className="min-w-0 rounded-md border-2 border-border py-2 text-xs font-medium tabular-nums transition-colors disabled:opacity-60 data-[chosen]:bg-accent data-[chosen]:font-semibold"
           >
             {level}
           </button>
@@ -100,13 +105,12 @@ export function EnergyLevels({
 }
 
 /**
- * How each athlete feels, out of 10, at breakfast, lunch and dinner, set with
- * one tap and changed with another, and the last seven days under it. One for
- * each timing of a day: a second tap replaces the first rather than adding to
- * it. Today at the clock's timing is where it starts, the way a meal picks its
- * sitting; the date and timing buttons, or B, L and D, reach another. Once both
- * of you have checked in at the clock's timing, the box opens folded to that
- * one line.
+ * How each athlete feels, out of 10, at breakfast, lunch and dinner, and the
+ * last seven days under it. Each tap logs one more check-in; a timing takes as
+ * many as are logged, and a mistake is fixed or deleted in the Log. Today at
+ * the clock's timing is where it starts, the way a meal picks its sitting; the
+ * date and timing buttons, or B, L and D, reach another. Once both of you have
+ * checked in at the clock's timing, the box opens folded to that one line.
  */
 export function Energy({
   records,
@@ -120,8 +124,7 @@ export function Energy({
   shortcutsEnabled?: boolean;
 }) {
   // The level tapped while it is being saved, and where. The athlete's row
-  // waits for it, so a second tap cannot race the first and leave two for one
-  // timing.
+  // waits for it, so a double tap logs once, not twice.
   const [pending, setPending] = useState<Record<Person, { level: number; day: string; timing: EnergyTiming } | null>>({
     hippos: null,
     gators: null,
@@ -150,19 +153,16 @@ export function Energy({
 
   async function check(athlete: Person, level: number) {
     if (!timing) return;
-    const current = energyAt(records, athlete, day, timing);
-    if (current?.level === level) return;
     setPending((now) => ({ ...now, [athlete]: { level, day, timing } }));
     try {
       await onCheckIn({
-        id: current?.id ?? newId(),
+        id: newId(),
         kind: "energy",
         athlete,
         day,
-        // Today at the clock's timing is at the clock. Any other keeps the
-        // time it had, and a new one has none: the clock now is not when that
-        // was felt.
-        ...(onToday && timing === clockTiming ? { time: clockTime() } : current?.time ? { time: current.time } : {}),
+        // Today at the clock's timing is at the clock. Any other has no time:
+        // the clock now is not when that was felt.
+        ...(onToday && timing === clockTiming ? { time: clockTime() } : {}),
         timing,
         level,
       });
@@ -174,8 +174,8 @@ export function Energy({
   }
 
   const todayLine = (athlete: Person) => {
-    const level = timing ? energyAt(records, athlete, today, timing)?.level : undefined;
-    return `${ATHLETES[athlete].name} ${level ?? "—"}`;
+    const level = timing ? energyAt(records, athlete, today, timing) : null;
+    return `${ATHLETES[athlete].name} ${level === null ? "—" : formatEnergy(level)}`;
   };
   const both = clockTiming !== null &&
     PEOPLE.every((athlete) => energyAt(records, athlete, today, clockTiming) !== null);
@@ -183,6 +183,16 @@ export function Energy({
   const dayLabel = formatDay(day, today);
   const dayName = onToday ? "today" : day === addDays(today, -1) ? "yesterday" : `on ${dayLabel}`;
   const atTiming = timing ? `at ${timing.toLowerCase()} ` : "";
+  // One check-in as "Today 7/10 · 12:05"; several as their levels and mean.
+  const windowLine = (athlete: Person) => {
+    if (!timing) return "";
+    const logged = checkInsAt(records, athlete, day, timing);
+    if (logged.length === 0) return `Not logged ${atTiming}${dayName}`;
+    if (logged.length === 1)
+      return `${dayLabel} ${logged[0].level}/${ENERGY_MAX}${logged[0].time ? ` · ${logged[0].time}` : ""}`;
+    const level = energyAt(records, athlete, day, timing) ?? 0;
+    return `${dayLabel} ${logged.map((record) => record.level).join(", ")} · avg ${formatEnergy(level)}/${ENERGY_MAX}`;
+  };
 
   useKeyboardShortcuts(shortcutsEnabled, TIMING_SHORTCUTS, (next) => choose({ timing: next }));
   useKeyboardShortcuts(shortcutsEnabled, { y: () => choose({ day: addDays(today, -1) }) }, (action) => action());
@@ -204,7 +214,8 @@ export function Energy({
       }
     >
       <p className="-mt-1 mb-3 text-xs text-muted-foreground">
-        How each of you feels, out of {ENERGY_MAX}, at breakfast, lunch and dinner. Tap again to change it.
+        How each of you feels, out of {ENERGY_MAX}, at breakfast, lunch and dinner. Each tap logs one more; fix a
+        mistake in the Log.
       </p>
       <div className="mb-4 space-y-3">
         <DayButtons today={today} day={day} subject="Energy" onChange={(next) => choose({ day: next })} />
@@ -217,7 +228,6 @@ export function Energy({
       </div>
       <div className="space-y-4">
         {PEOPLE.map((athlete) => {
-          const saved = timing ? energyAt(records, athlete, day, timing) : null;
           const waiting = pending[athlete];
           return (
             <div key={athlete}>
@@ -225,19 +235,14 @@ export function Energy({
                 <span className="font-medium" style={{ color: ATHLETES[athlete].ink }}>
                   {ATHLETES[athlete].name}
                 </span>
-                <span className="tabular-nums text-muted-foreground">
-                  {saved
-                    ? `${dayLabel} ${saved.level}/${ENERGY_MAX}${saved.time ? ` · ${saved.time}` : ""}`
-                    : timing
-                      ? `Not logged ${atTiming}${dayName}`
-                      : ""}
-                </span>
+                <span className="text-right tabular-nums text-muted-foreground">{windowLine(athlete)}</span>
               </p>
               <EnergyLevels
                 athlete={athlete}
                 label={`${ATHLETES[athlete].name} energy ${atTiming}${dayName}`}
-                value={(waiting && waiting.day === day && waiting.timing === timing ? waiting.level : null) ?? saved?.level ?? null}
+                value={waiting && waiting.day === day && waiting.timing === timing ? waiting.level : null}
                 disabled={waiting !== null || timing === null}
+                logs
                 onChoose={(level) => void check(athlete, level)}
               />
             </div>
@@ -246,7 +251,7 @@ export function Energy({
       </div>
       <table className="mt-4 w-full table-fixed border-t text-center text-xs tabular-nums">
         <caption className="sr-only">
-          Energy over the last 7 days, out of {ENERGY_MAX}, each day the mean of its check-ins
+          Energy over the last 7 days, out of {ENERGY_MAX}, each day the mean of its breakfast, lunch and dinner
         </caption>
         <thead>
           <tr className="text-[10px] text-muted-foreground">

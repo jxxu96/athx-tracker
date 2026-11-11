@@ -45,27 +45,28 @@ single SQLite file on a volume.
   go are a chip at the left of the header, "295 d", and read out in full to a
   screen reader.
   **Energy** is how each of you feels, out of 10, from 1 (exhausted) to 10
-  (full of energy), at breakfast, lunch and dinner: one tap on that athlete's
-  row logs it for today at the phone's clock, and tapping another number
-  changes it, so each timing of a day keeps one check-in each. The timing
+  (full of energy), at breakfast, lunch and dinner: each tap on that
+  athlete's row logs one more check-in, as many a day as you like, and none
+  replaces another; a mistake is corrected or deleted in the Log. The timing
   starts where a meal's sitting would at that hour (5–10 breakfast, 11–14
   lunch, 17–21 dinner); energy has no snack, so the afternoon counts as lunch,
   the late evening as dinner and before 5 as breakfast. Tap another timing,
   or press B, L or D as on a meal, to log a different one
-  (`lib/meal-time.ts`). The server holds to one a timing too: a check-in saved
-  from another phone, or moved onto a day and timing in the Log, replaces the
-  one it had. The date buttons above the rows, Today, Yesterday or a day off
-  the calendar, set a missed day the same way. Only today at the clock's
-  timing takes the clock's time; any other keeps the time it had, and a new
-  one has none, since the clock now is not when that was felt. Check-ins from
-  before there were timings count as the timing their time falls in, and one
-  with no time stands alone as the day's. Once both of you have checked in at
-  the clock's timing, the box opens folded to that one line, and it opens
-  again at the next timing. Under the rows, the last 7 days for both of you,
-  each day the mean of its check-ins, and each one's average over the days
-  that have one: a day nobody logged is left out, not counted as no energy,
-  and a day logged three times counts once. It is subjective and nothing else
-  is worked out from it. Check-ins are journal entries, so they wait on the
+  (`lib/meal-time.ts`). Each row says what that timing holds: one check-in's
+  level and time, or several levels and their mean. The date buttons above
+  the rows, Today, Yesterday or a day off the calendar, log a missed day the
+  same way. Only today at the clock's timing takes the clock's time; any
+  other has none, since the clock now is not when that was felt. Check-ins
+  from before there were timings count as the timing their time falls in,
+  and ones with no time as a timing of their own. Once both of you have
+  checked in at the clock's timing, the box opens folded to that one line,
+  and it opens again at the next timing. Under the rows, the last 7 days for
+  both of you and each one's average over the days that have a check-in. A
+  day's level is the mean of its timings' means, so each timing weighs the
+  same however often it was logged: seven at lunch and one each at breakfast
+  and dinner is a third lunch (`lib/energy-level.ts`). A day nobody logged is
+  left out, not counted as no energy. It is subjective and nothing else is
+  worked out from it. Check-ins are journal entries, so they wait on the
   phone without a connection like anything else, and, being small, are always
   sent whole, like weigh-ins, however much of the journal the phone holds.
 - **Session** — log a workout as MetCon, Strength, Endurance, Solidcore, Tennis or
@@ -320,7 +321,7 @@ single SQLite file on a volume.
   **Weekly review** compares each athlete's days trained, training mix, timed work,
   endurance distance, lift volume, energy, benchmark improvements and daily macro
   averages with the previous week. Energy is the average of the days with a
-  check-in, each day the mean of its timings. The current week compares the same weekdays
+  check-in, each day the mean of its timings' means. The current week compares the same weekdays
   through today; earlier weeks run Monday to Sunday. Lift volume counts every
   set's load times reps. Nutrition averages use days with known meal macros;
   unlogged days and pending estimates are excluded, while partial days count.

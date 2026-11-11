@@ -128,8 +128,8 @@ export type EnergyTiming = (typeof ENERGY_TIMINGS)[number];
 /**
  * How someone feels, out of 10: 1 is exhausted, 10 is full of energy.
  * Subjective, so it is a whole number and nothing is worked out from it.
- * Today takes one for each athlete at each timing of a day, and setting it
- * again replaces it.
+ * Each tap on Today is one more, filed under a timing of the day; none
+ * replaces another.
  */
 export type EnergyCheckIn = {
   id: string; kind: "energy"; athlete: Exclude<Athlete, "team">; day: string;

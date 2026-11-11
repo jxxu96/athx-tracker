@@ -13,50 +13,51 @@ export function timingAt(time: string): EnergyTiming | null {
 /**
  * Which timing a check-in is for: the one it was saved with, or, for one
  * from before there were timings, the one its time of day falls in. Null for
- * an old one with no time either; those stand together as the day's.
+ * an old one with no time either; those count together as a window of their own.
  */
 export const timingOf = (record: EnergyCheckIn): EnergyTiming | null =>
   record.timing ?? (record.time ? timingAt(record.time) : null);
 
+const mean = (levels: readonly number[]) => levels.reduce((sum, level) => sum + level, 0) / levels.length;
+
 /**
- * The check-ins that stand for a day, one for each timing, breakfast first
- * and an old untimed one last. Today keeps one a timing, so two only meet
- * when one was moved there in the Log or two phones each made their own;
- * then the one with the later clock stands, an untimed one counting as
- * earlier than a timed one, and at the same time the first in the list,
- * which from the server is the one created last.
+ * One athlete's check-ins in one window of a day, oldest first, an untimed
+ * one counting as earlier than a timed one. A window takes as many as are
+ * logged; none replaces another.
  */
-export function energyOn(records: readonly RecordItem[], athlete: Person, day: string) {
-  const found = new Map<EnergyTiming | null, EnergyCheckIn>();
-  for (const record of records) {
-    if (!isCheckIn(record) || record.athlete !== athlete || record.day !== day) continue;
-    const timing = timingOf(record);
-    const standing = found.get(timing);
-    if (!standing || (record.time ?? "") > (standing.time ?? "")) found.set(timing, record);
-  }
-  return [...ENERGY_TIMINGS, null].flatMap((timing) => found.get(timing) ?? []);
+export function checkInsAt(records: readonly RecordItem[], athlete: Person, day: string, timing: EnergyTiming | null) {
+  return records
+    .filter((record): record is EnergyCheckIn =>
+      isCheckIn(record) && record.athlete === athlete && record.day === day && timingOf(record) === timing)
+    .sort((a, b) => (a.time ?? "").localeCompare(b.time ?? ""));
 }
 
-/** The check-in that stands for one timing of a day, or null when there is none. */
-export const energyAt = (records: readonly RecordItem[], athlete: Person, day: string, timing: EnergyTiming) =>
-  energyOn(records, athlete, day).find((record) => timingOf(record) === timing) ?? null;
-
 /**
- * Whether two entries are check-ins for the same athlete, day and timing, of
- * which the server keeps only the one saved last. The phone drops the other
- * at once too, so it does not show both until the next refresh.
+ * The windows of a day that have a check-in, breakfast first and the old
+ * untimed ones last, each with its check-ins and their mean.
  */
-export const sameCheckInSlot = (a: RecordItem, b: RecordItem) =>
-  a.kind === "energy" && b.kind === "energy" && a.athlete === b.athlete && a.day === b.day &&
-  timingOf(a) === timingOf(b);
+export function windowsOn(records: readonly RecordItem[], athlete: Person, day: string) {
+  return [...ENERGY_TIMINGS, null].flatMap((timing) => {
+    const checkIns = checkInsAt(records, athlete, day, timing);
+    return checkIns.length ? [{ timing, checkIns, level: mean(checkIns.map((record) => record.level)) }] : [];
+  });
+}
+
+/** The mean of one window's check-ins, or null when it has none. */
+export function energyAt(records: readonly RecordItem[], athlete: Person, day: string, timing: EnergyTiming) {
+  const levels = checkInsAt(records, athlete, day, timing).map((record) => record.level);
+  return levels.length ? mean(levels) : null;
+}
 
 /**
- * A day's level: the mean of its timings, so a day checked in three times
- * counts once, like a day checked in once. Null when none was logged.
+ * A day's level: the mean of its windows' means, so each window that has a
+ * check-in weighs the same however many it has. Seven at lunch and one each
+ * at breakfast and dinner is a third lunch, not seven ninths. Null when none
+ * was logged.
  */
 export function energyOnDay(records: readonly RecordItem[], athlete: Person, day: string) {
-  const levels = energyOn(records, athlete, day).map((record) => record.level);
-  return levels.length ? levels.reduce((sum, level) => sum + level, 0) / levels.length : null;
+  const windows = windowsOn(records, athlete, day);
+  return windows.length ? mean(windows.map(({ level }) => level)) : null;
 }
 
 /** Each day's level from one day to another, both included, oldest first; null where none was logged. */
@@ -68,18 +69,15 @@ export function energyDays(records: readonly RecordItem[], athlete: Person, from
 }
 
 /**
- * The mean of the days that have a check-in, each day its own mean, so a day
- * nobody logged is not read as a day with no energy, and a day logged at
- * every timing does not outweigh one logged once. Null when none has one.
+ * The mean of the days that have a check-in, each day its own level, so a
+ * day nobody logged is not read as a day with no energy, and a day logged
+ * often does not outweigh one logged once. Null when none has one.
  */
 export function averageEnergy(records: readonly RecordItem[], athlete: Person, from: string, to: string) {
   const levels = energyDays(records, athlete, from, to)
     .map(({ level }) => level)
     .filter((level): level is number => level !== null);
-  return {
-    average: levels.length ? levels.reduce((sum, level) => sum + level, 0) / levels.length : null,
-    days: levels.length,
-  };
+  return { average: levels.length ? mean(levels) : null, days: levels.length };
 }
 
 /** One decimal, without a trailing ".0": 6.5, 7. */

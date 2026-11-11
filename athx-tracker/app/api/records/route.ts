@@ -1,7 +1,6 @@
 import { BodyTooLarge, database, guard, json, readBody, tooLarge } from "@/lib/server";
 import { newBests } from "@/lib/bests";
 import type { RecordItem, Workout } from "@/lib/domain";
-import { sameCheckInSlot } from "@/lib/energy-level";
 import { readRecords, readRecordsBetween, readRecordsOn } from "@/lib/journal";
 import { kickQueue } from "@/lib/queue";
 import { daySchema, recordSchema } from "@/lib/validation";
@@ -66,7 +65,7 @@ export async function POST(request: Request) {
     const bests = record.kind === "workout" ? bestsFor(record) : [];
     const sqlite = database();
     sqlite.transaction(() => {
-      const { changes } = sqlite
+      sqlite
         .prepare(
           "INSERT INTO records (id, kind, athlete, day, payload, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET athlete=excluded.athlete, day=excluded.day, payload=excluded.payload WHERE records.kind=excluded.kind",
         )
@@ -78,19 +77,6 @@ export async function POST(request: Request) {
           JSON.stringify(record),
           new Date().toISOString(),
         );
-      // One energy check-in for each athlete at each timing of a day. Two
-      // phones that had not seen each other's would each make its own, and a
-      // check-in moved in the Log can land on a timing that has one: whichever
-      // is saved last stands. The timing is read in code, not SQL, because
-      // one from before timings has none and goes by its time of day.
-      if (record.kind === "energy" && changes > 0) {
-        const others = sqlite
-          .prepare("SELECT id, payload FROM records WHERE kind = 'energy' AND athlete = ? AND day = ? AND id != ?")
-          .all(record.athlete, record.day, record.id) as { id: string; payload: string }[];
-        const remove = sqlite.prepare("DELETE FROM records WHERE id = ?");
-        for (const other of others)
-          if (sameCheckInSlot(record, JSON.parse(other.payload) as RecordItem)) remove.run(other.id);
-      }
     })();
     // Saved to be estimated in the background: start now, not at the timer.
     if (record.kind === "meal" && record.source === "queued") kickQueue();

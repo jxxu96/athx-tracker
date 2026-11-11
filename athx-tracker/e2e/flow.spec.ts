@@ -138,7 +138,7 @@ test("energy can be set for a missed day, which takes no time of day", async ({ 
   await energy.getByRole("group", { name: "Energy date" }).getByRole("button", { name: "Energy yesterday" }).click();
   await energy.getByRole("group", { name: "Timing" }).getByRole("button", { name: "Lunch" }).click();
   await expect(energy.getByText("Not logged at lunch yesterday")).toHaveCount(2);
-  await energy.getByRole("group", { name: "Hippos energy at lunch yesterday" }).getByRole("button", { name: "6 out of 10" }).click();
+  await energy.getByRole("group", { name: "Hippos energy at lunch yesterday" }).getByRole("button", { name: "Log 6 out of 10" }).click();
   await expect(energy.getByText("Yesterday 6/10", { exact: true })).toBeVisible();
   await expect.poll(async () => (await records(page)).filter((record) => record.kind === "energy")).toEqual([
     expect.objectContaining({ athlete: "hippos", day: await dayAgo(page, 1), timing: "Lunch", level: 6 }),
