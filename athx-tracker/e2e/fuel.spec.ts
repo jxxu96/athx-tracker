@@ -103,44 +103,42 @@ test("calorie breakdown expands with mouse, keyboard, and touch", async ({ page,
   await expect(hippos.getByText("500 / 2,000 kcal · 25% of target")).toBeVisible();
   await expect(hippos.getByText("14 / 70 g · 20% of target")).toBeVisible();
   const bar = hippos.getByRole("button", { name: "Calorie breakdown" });
-  const details = hippos.getByRole("group", { name: "Estimated share of logged calories" });
-  const proteinSegment = bar.locator('[data-fuel-slice="protein"]');
-  const protein = details.getByRole("button", { name: "Protein 28%" });
-  const fat = details.getByRole("button", { name: "Fat 25%" });
+  const labels = bar.locator("[data-fuel-labels]");
+  const proteinSegment = bar.locator('[data-fuel-slice="protein"]:visible');
+  const protein = labels.locator('[data-fuel-slice="protein"]');
+  const carbs = labels.locator('[data-fuel-slice="carbs"]');
+  const fat = labels.locator('[data-fuel-slice="fat"]');
   await expect(bar).toHaveAttribute("aria-expanded", "false");
-  await expect(proteinSegment).toHaveCSS("height", "8px");
   await proteinSegment.hover();
-  await expect(details).toBeVisible();
-  await expect(proteinSegment).toHaveCSS("height", "16px");
-  await expect(protein).toHaveAttribute("aria-pressed", "true");
-  await expect(details.getByRole("button")).toHaveText([
-    "Close", "Protein28%", "Carbs36%", "Fat25%", "Other11%",
+  await expect(labels).toBeVisible();
+  await expect(protein).toHaveAttribute("data-active", "");
+  await expect(labels.locator("[data-fuel-slice]")).toHaveText([
+    "Protein28%", "Carbs36%", "Fat25%", "Other11%",
   ]);
+  await expect(bar).toHaveAccessibleDescription(/Protein 28%, Carbs 36%, Fat 25%, Other 11%/);
   await expect(hippos.getByText(/% of kcal$/)).toHaveText(["~28% of kcal", "~36% of kcal", "~25% of kcal"]);
-  await bar.locator('[data-fuel-slice="fat"]').hover();
-  await expect(fat).toHaveAttribute("aria-pressed", "true");
   await fat.hover();
-  await expect(details).toBeVisible();
+  await expect(fat).toHaveAttribute("data-active", "");
   await hippos.getByText("Expenditure", { exact: true }).hover();
-  await expect(details).toBeHidden();
+  await expect(labels).toBeHidden();
 
   await bar.focus();
   await page.keyboard.press("Enter");
   await expect(bar).toHaveAttribute("aria-expanded", "true");
-  await bar.locator('[data-fuel-slice="fat"]').hover();
-  await page.keyboard.press("Tab");
-  await page.keyboard.press("Tab");
-  await expect(protein).toBeFocused();
-  await page.keyboard.press("Space");
-  await expect(protein).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("ArrowRight");
+  await expect(protein).toHaveAttribute("data-active", "");
+  await fat.hover();
+  await page.keyboard.press("ArrowLeft");
+  await expect(carbs).toHaveAttribute("data-active", "");
+  await expect(hippos.getByRole("status")).toHaveText("Carbs, 36% selected");
   await page.keyboard.press("Escape");
-  await expect(details).toBeHidden();
+  await expect(labels).toBeHidden();
   await expect(bar).toBeFocused();
 
   const mobile = await browser.newContext({
     hasTouch: true,
     isMobile: true,
-    viewport: { width: 375, height: 812 },
+    viewport: { width: 320, height: 812 },
     storageState: await page.context().storageState(),
     serviceWorkers: "block",
   });
@@ -149,18 +147,19 @@ test("calorie breakdown expands with mouse, keyboard, and touch", async ({ page,
     await phone.goto(page.url());
     const card = phone.getByRole("group", { name: "Hippos fuel" });
     const touchBar = card.getByRole("button", { name: "Calorie breakdown" });
-    const touchDetails = card.getByRole("group", { name: "Estimated share of logged calories" });
-    await touchBar.locator('[data-fuel-slice="carbs"]').tap();
-    await expect(touchDetails.getByRole("button", { name: "Carbs 36%" })).toHaveAttribute("aria-pressed", "true");
-    const touchFat = touchDetails.getByRole("button", { name: "Fat 25%" });
+    const touchLabels = touchBar.locator("[data-fuel-labels]");
+    await touchBar.locator('[data-fuel-slice="carbs"]:visible').tap();
+    await expect(touchLabels.locator('[data-fuel-slice="carbs"]')).toHaveAttribute("data-active", "");
+    await expect(touchLabels.getByText("11%", { exact: true })).toBeInViewport();
+    const touchFat = touchLabels.locator('[data-fuel-slice="fat"]');
     await touchFat.tap();
-    await expect(touchFat).toHaveAttribute("aria-pressed", "true");
-    await card.getByText("Expenditure", { exact: true }).tap();
-    await expect(touchDetails).toBeHidden();
+    await expect(touchFat).toHaveAttribute("data-active", "");
+    await phone.getByRole("button", { name: "Fuel for today" }).tap();
+    await expect(touchLabels).toBeHidden();
     await touchBar.tap({ position: { x: 12, y: 5 } });
-    await expect(touchDetails).toBeVisible();
-    await touchDetails.getByRole("button", { name: "Close" }).tap();
-    await expect(touchDetails).toBeHidden();
+    await expect(touchLabels).toBeVisible();
+    await touchBar.locator("svg").tap();
+    await expect(touchLabels).toBeHidden();
   } finally {
     await mobile.close();
   }
