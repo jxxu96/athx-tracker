@@ -29,7 +29,12 @@ single SQLite file on a volume.
   stood for a whole day of eating and pulled the average down until dinner. A
   bar past its target no longer stops at the end: the bar stands for all that
   was eaten, a tick marks where the target falls inside it, and the part past
-  the target is striped. Under each athlete's food is their
+  the target is striped. The calorie bar is split into protein, carbs and fat,
+  each a tint of the athlete's colour, by its estimated share of the calories
+  logged (`macroCalories`), with grey for calories the macros do not account
+  for, such as alcohol. Each macro's row gives that share beside its name with
+  the matching swatch, as "~28% of kcal", apart from its "% of target" on the
+  right. Under each athlete's food is their
   expenditure, resting energy and training together, and the balance of eating
   against it: for a day, that day's; for a longer range, a day's average. See
   *Resting energy and the balance* below. The race-day estimate, Progress and

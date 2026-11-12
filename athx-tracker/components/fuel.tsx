@@ -10,6 +10,7 @@ import { addDays, dayToDate } from "@/lib/client";
 import {
   athleteFuel,
   barMarkPercent,
+  calorieSlices,
   energyBalance,
   formatAmount,
   fuelWindow,
@@ -21,6 +22,7 @@ import {
   type FuelAthlete,
   type FuelDateRange,
   type FuelSpan,
+  type MacroShares,
 } from "@/lib/fuel";
 import { needsFetch } from "@/lib/session-calendar";
 import type { JournalSummary } from "@/lib/summary";
@@ -79,6 +81,35 @@ function foldedFuel(name: string, fuel: AthleteFuel, average: boolean) {
   return `${name} ${average ? "avg " : ""}${figure}`;
 }
 
+/**
+ * Each macro's slice of the calorie bar is a tint of the athlete's colour,
+ * strongest first in the order the rows run, so the rows below read as its key.
+ * Tinted toward white in both themes: toward a dark card the faintest slice
+ * sank into the empty track.
+ */
+const SLICE_STRENGTH = { protein: 100, carbs: 65, fat: 35 } as const;
+const sliceColor = (color: string, key: keyof MacroShares) =>
+  `color-mix(in srgb, ${color} ${SLICE_STRENGTH[key]}%, white)`;
+/** Calories no macro accounts for: grey, so it reads as none of them. */
+const OTHER_SLICE = "color-mix(in srgb, var(--muted-foreground) 40%, var(--card))";
+/** Over the fill past the target, so each slice keeps its colour under the stripes. */
+const OVER_HATCH = "repeating-linear-gradient(-45deg, transparent 0 2px, var(--muted) 2px 4px)";
+
+type Slice = { key: string; label: string; size: number; color: string };
+
+function calorieBar(shares: MacroShares, color: string): Slice[] {
+  const sizes = calorieSlices(shares);
+  return [
+    ...MACRONUTRIENTS.map(({ key, label }) => ({
+      key,
+      label: `${label.toLowerCase()} ${shares[key]}%`,
+      size: sizes[key],
+      color: sliceColor(color, key),
+    })),
+    { key: "other", label: `other ${Math.round(sizes.other)}%`, size: sizes.other, color: OTHER_SLICE },
+  ].filter((slice) => slice.size > 0);
+}
+
 function MacroRow({
   label,
   unit,
@@ -87,6 +118,8 @@ function MacroRow({
   color,
   average,
   mark,
+  slices,
+  calorieShare,
 }: {
   label: string;
   unit: string;
@@ -96,6 +129,10 @@ function MacroRow({
   average: boolean;
   /** A tick on the bar, as a percent of the target. Null draws none. */
   mark: { at: number; label: string } | null;
+  /** The calorie bar's split by macro. Null fills it in one colour. */
+  slices: Slice[] | null;
+  /** This macro's estimated share of the calories logged, with its slice's colour. */
+  calorieShare: { percent: number; color: string } | null;
 }) {
   const share = targetPercent(value, target);
   // Past the target the bar stands for everything eaten, so the target moves
@@ -103,12 +140,26 @@ function MacroRow({
   // used to stop at the end, and 130% looked the same as 100%.
   const over = share !== null && share > 100;
   const targetAt = over ? (100 / share) * 100 : 100;
-  const fill = share === null ? 0 : over ? targetAt : share;
+  const fill = share === null ? 0 : over ? 100 : share;
+  const split = slices ? slices.map((slice) => slice.label).join(", ") : null;
   return (
     <div className="space-y-1.5">
-      <div className="flex items-baseline justify-between gap-2 text-xs">
-        <span className="text-muted-foreground">{label}</span>
-        <span className="text-right font-medium tabular-nums">
+      {/* Too narrow for both, the figures drop to their own line rather than break mid-phrase. */}
+      <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 text-xs">
+        <span className="flex items-baseline gap-2 whitespace-nowrap text-muted-foreground">
+          {label}
+          {calorieShare ? (
+            <span title="Estimated share of logged calories" className="inline-flex items-center gap-1 tabular-nums">
+              <span
+                aria-hidden="true"
+                className="size-2 shrink-0 self-center rounded-[2px]"
+                style={{ background: calorieShare.color }}
+              />
+              ~{calorieShare.percent}% of kcal
+            </span>
+          ) : null}
+        </span>
+        <span className="ml-auto whitespace-nowrap text-right font-medium tabular-nums">
           {average ? <span className="font-normal text-muted-foreground">avg </span> : null}
           {formatAmount(value)}
           {target > 0 ? (
@@ -121,14 +172,26 @@ function MacroRow({
       <div className="relative h-1.5">
         <div className="absolute inset-0 overflow-hidden rounded-full bg-muted">
           <div
-            className={`h-full transition-[width] ${over ? "rounded-l-full" : "rounded-full"}`}
-            style={{ width: `${fill}%`, background: color }}
-          />
+            role={split ? "img" : undefined}
+            aria-label={split ? `Estimated share of logged calories: ${split}` : undefined}
+            title={split ? `Estimated share of logged calories: ${split}` : undefined}
+            className="flex h-full gap-px overflow-hidden rounded-full transition-[width]"
+            style={{ width: `${fill}%` }}
+          >
+            {(slices ?? [{ key: "all", size: 100, color }]).map((slice) => (
+              <div
+                key={slice.key}
+                data-fuel-slice={slices ? slice.key : undefined}
+                className="h-full"
+                style={{ flexGrow: slice.size, flexBasis: 0, background: slice.color }}
+              />
+            ))}
+          </div>
           {over ? (
             <div
               data-fuel-over=""
               className="absolute inset-y-0 right-0"
-              style={{ left: `${targetAt}%`, backgroundImage: overHatch(color) }}
+              style={{ left: `${targetAt}%`, backgroundImage: OVER_HATCH }}
             />
           ) : null}
         </div>
@@ -154,10 +217,6 @@ function MacroRow({
     </div>
   );
 }
-
-/** Stripes in the athlete's colour for what is past the target, so it reads apart from the fill. */
-const overHatch = (color: string) =>
-  `repeating-linear-gradient(-45deg, ${color} 0 2px, transparent 2px 4px)`;
 
 /** Estimates to the nearest ten, which is all the methods are worth. */
 const tens = (kcal: number) => Math.round(kcal / 10) * 10;
@@ -215,6 +274,7 @@ function AthleteFuelCard({
       : `${fuel.daysWithMeals} day${fuel.daysWithMeals === 1 ? "" : "s"}`;
   const balance = energyBalance(fuel);
   const calorieShares = fuel.macroCalorieShares;
+  const color = ATHLETES[athlete].color;
   const perDay = multi ? " a day" : "";
   return (
     <div role="group" aria-label={`${ATHLETES[athlete].name} fuel`} className="space-y-3">
@@ -246,25 +306,18 @@ function AthleteFuelCard({
                 unit={unit}
                 value={fuel.shown[key]}
                 target={fuel.dailyTarget[key]}
-                color={ATHLETES[athlete].color}
+                color={color}
                 average={multi}
                 mark={mark}
+                slices={key === "calories" && calorieShares ? calorieBar(calorieShares, color) : null}
+                calorieShare={
+                  key !== "calories" && calorieShares
+                    ? { percent: calorieShares[key], color: sliceColor(color, key) }
+                    : null
+                }
               />
             );
           })}
-          {calorieShares ? (
-            <div className="space-y-1 border-t pt-2 text-xs">
-              <p className="text-muted-foreground">Estimated share of logged calories</p>
-              <dl className="flex flex-wrap gap-x-4 gap-y-1">
-                {MACRONUTRIENTS.map(({ key, label }) => (
-                  <div key={key} className="flex gap-1.5">
-                    <dt className="text-muted-foreground">{label}</dt>
-                    <dd className="font-medium tabular-nums">{calorieShares[key]}%</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-          ) : null}
           {multi ? (
             <p className="text-xs text-muted-foreground">
               {formatAmount(fuel.eaten.calories)} kcal eaten · {logged}
@@ -511,7 +564,8 @@ export function Fuel({
         <p role="status" className="text-sm text-muted-foreground">Loading this {selection}…</p>
       ) : (
         <>
-          <div className="grid gap-5 sm:grid-cols-2">
+          {/* Side by side only from md: narrower, a macro row has no room for its calorie share. */}
+          <div className="grid gap-5 md:grid-cols-2">
             {people.map((person) => (
               <AthleteFuelCard
                 key={person.athlete}

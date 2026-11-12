@@ -103,9 +103,12 @@ test("fuel labels calorie shares separately from target progress", async ({ page
   const hippos = page.getByRole("group", { name: "Hippos fuel" });
   await expect(hippos.getByText("500 / 2,000 kcal · 25% of target")).toBeVisible();
   await expect(hippos.getByText("14 / 70 g · 20% of target")).toBeVisible();
-  await expect(hippos.getByText("Estimated share of logged calories")).toBeVisible();
-  await expect(hippos.locator("dt")).toHaveText(["Protein", "Carbs", "Fat"]);
-  await expect(hippos.locator("dd")).toHaveText(["28%", "36%", "25%"]);
+  // The calorie bar is split by macro, and each macro row carries its slice's share.
+  await expect(hippos.getByRole("img", {
+    name: "Estimated share of logged calories: protein 28%, carbs 36%, fat 25%, other 11%",
+  })).toBeVisible();
+  await expect(hippos.locator("[data-fuel-slice]")).toHaveCount(4);
+  await expect(hippos.getByText(/% of kcal$/)).toHaveText(["~28% of kcal", "~36% of kcal", "~25% of kcal"]);
   await expect(hippos.getByText(/under/)).toHaveCount(0);
 });
 

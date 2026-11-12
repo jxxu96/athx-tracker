@@ -6,6 +6,7 @@ import { LB_PER_KG } from "./domain.ts";
 import {
   athleteFuel,
   barMarkPercent,
+  calorieSlices,
   energyBalance,
   calorieTracking,
   formatAmount,
@@ -123,6 +124,16 @@ test("a macro's share of its target is a whole percent", () => {
   assert.equal(targetPercent(2500, 2000), 125);
   assert.equal(targetPercent(1, 2000), 0);
   assert.equal(targetPercent(500, 0), null);
+});
+
+test("the calorie bar splits by macro, and what the macros miss is other", () => {
+  assert.deepEqual(calorieSlices({ protein: 28, carbs: 36, fat: 25 }), {
+    protein: 28, carbs: 36, fat: 25, other: 11,
+  });
+  // Macros pricing past the logged calories still fill the bar exactly.
+  assert.deepEqual(calorieSlices({ protein: 50, carbs: 50, fat: 25 }), {
+    protein: 40, carbs: 40, fat: 20, other: 0,
+  });
 });
 
 test("a day shows that day's meals and not the days around it", () => {
