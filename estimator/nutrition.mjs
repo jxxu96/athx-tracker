@@ -9,6 +9,8 @@ import { dirname } from 'node:path';
 export const FIGURES = ['calories', 'protein', 'carbs', 'fat', 'fiber', 'alcohol'];
 const LIMITS = [20000, 2000, 3000, 2000, 3000, 500];
 export const SOURCE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const LEVELS = ['low', 'medium', 'high'];
+const weaker = (a, b) => LEVELS.indexOf(a) <= LEVELS.indexOf(b) ? a : b;
 const text = { type: 'string' };
 const number = { type: 'number', minimum: 0 };
 const itemProperties = {
@@ -71,7 +73,11 @@ export function nutritionTask(task, onEvidence) {
       // They never populate the verified source cache.
       let value = raw;
       if (computed) {
-        const confidence = items => items.some(i => i.basis === 'estimated') ? 'low' : items.every(i => i.basis === 'label') ? 'high' : 'medium';
+        // The bases can only lower what the provider said. A named product it
+        // could not find is low by the meal instructions, though its stand-in
+        // figures are reference values, and low is what asks the other providers.
+        const supported = items => items.some(i => i.basis === 'estimated') ? 'low' : items.every(i => i.basis === 'label') ? 'high' : 'medium';
+        const confidence = (items, stated) => weaker(LEVELS.includes(stated) ? stated : 'low', supported(items));
         const working = (items) => items.map(i => {
           const scaled = Object.fromEntries(FIGURES.map(k => [k, Math.round(i[k] * i.amount / i.basisAmount * 10) / 10]));
           const figures = `${scaled.calories} kcal, ${scaled.protein}P, ${scaled.carbs}C, ${scaled.fat}F${scaled.fiber ? `, ${scaled.fiber} fiber` : ''}${scaled.alcohol ? `, ${scaled.alcohol} ethanol` : ''}`;
@@ -81,12 +87,12 @@ export function nutritionTask(task, onEvidence) {
         // ingredient parser. Preserve preparation/reply notes separately.
         const notes = typeof raw.nutrition.notes === 'string' ? raw.nutrition.notes.slice(0, 2000) : '';
         const assumptions = items => `${working(items)}${notes ? `\n\n${notes}` : ''}`;
-        value = { ...raw, ...computed.whole, confidence: confidence(raw.nutrition.items), assumptions: assumptions(raw.nutrition.items) };
+        value = { ...raw, ...computed.whole, confidence: confidence(raw.nutrition.items, raw.confidence), assumptions: assumptions(raw.nutrition.items) };
         if (count > 1 || task.name === 'dishes') {
           value.assumptions = notes;
           value.dishes = raw.dishes.map((dish, i) => {
             const items = raw.nutrition.items.filter(item => item.dish === i);
-            return { ...dish, ...computed.dishes[i], confidence: confidence(items), assumptions: assumptions(items) };
+            return { ...dish, ...computed.dishes[i], confidence: confidence(items, dish?.confidence), assumptions: assumptions(items) };
           });
         }
       }

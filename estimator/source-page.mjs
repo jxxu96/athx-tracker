@@ -54,6 +54,63 @@ const normalized = text => text.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '
   .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]*>/g, ' ')
   .replace(/&nbsp;|&#160;/gi, ' ').replace(/&amp;/gi, '&').replace(/\s+/g, ' ').trim().toLowerCase();
 
+// A figure counts only beside its own nutrient's name. A number anywhere in the
+// excerpt is not enough: "18 g protein, 7 g total carbs" must not support
+// protein 7 and carbs 18.
+const NUMBER = String.raw`(\d+(?:\.\d+)?)`;
+const NAMES = {
+  calories: String.raw`(?:calories|energy)`,
+  protein: String.raw`proteins?`,
+  carbs: String.raw`(?<!net )(?:total )?(?:carbohydrates?|carbs?)`,
+  // The sub-lines of a label are other nutrients, not total fat or fiber.
+  fat: String.raw`(?<!(?:saturated|sat\.?|trans|unsaturated|monounsaturated|polyunsaturated|from) )(?:total )?fats?`,
+  fiber: String.raw`(?<!(?:soluble|insoluble) )(?:dietary |total )?fib(?:er|re)s?`,
+  alcohol: String.raw`(?<!sugar )(?:alcohol|ethanol)`,
+};
+// A number in another unit is another quantity: sodium in mg, energy in kJ,
+// a share of the daily value or of volume.
+const ELSEWHERE = String.raw`(?!\.?\d)(?! ?(?:mg|mcg|kj|ml|oz)\b)(?! ?%)`;
+const KCAL = new RegExp(String.raw`(?<![\d.])${NUMBER} ?(?:kcal|cal|calories)\b`, 'g');
+const ORDERS = {
+  // A printed label: "Total Fat 8g Protein 3g".
+  nameFirst: Object.fromEntries(Object.entries(NAMES).map(([key, name]) => [key, new RegExp(
+    String.raw`\b${name}\b[ :|–-]{0,3}${NUMBER}${ELSEWHERE}${key === 'calories' ? String.raw`(?! ?g\b)` : ''}`, 'g',
+  )])),
+  // Prose: "18 g protein, 7 g total carbs". The unit is required, so a bare
+  // number between two names is not read both ways. "250 kcal" names itself,
+  // so it counts under either reading.
+  valueFirst: Object.fromEntries(Object.entries(NAMES).map(([key, name]) => [key, key === 'calories' ? KCAL : new RegExp(
+    String.raw`(?<![\d.])${NUMBER} ?(?:g|grams?) (?:of )?${name}\b`, 'g',
+  )])),
+};
+// The serving the figures are per: "per 100 g", "Serving size 2/3 cup (55g)",
+// "30 g serving". "Servings per container 8" is not one.
+const SERVINGS = [
+  new RegExp(String.raw`\b(?:per|serving size|serving|portion size|portion)\b:? ?\(? ?${NUMBER}(?!\.?\d)(?:/\d+)?(?:[^()\d,;]{0,15}\( ?${NUMBER} ?(?:g|grams?|ml|oz)\b)?`, 'g'),
+  new RegExp(String.raw`(?<![\d.])${NUMBER} ?(?:g|grams?|ml|oz)? ?(?:serving|portion)\b`, 'g'),
+];
+
+const numbersFrom = (pattern, text) => [...text.matchAll(pattern)].flatMap(match => match.slice(1)).filter(Boolean).map(Number);
+
+/**
+ * Whether the excerpt states this item's serving and each of its figures beside
+ * the matching name. An excerpt reads one way throughout, so every figure must
+ * hold under the same reading. A zero needs saying too, except ethanol, which a
+ * food label leaves out.
+ */
+export function excerptSupports(item, excerpt) {
+  const text = normalized(excerpt).replace(/(\d),(\d{3})\b/g, '$1$2');
+  const servings = new Set(SERVINGS.flatMap(pattern => numbersFrom(pattern, text)));
+  if (!servings.has(item.basisAmount)) return false;
+  const kcal = numbersFrom(KCAL, text);
+  return Object.entries(ORDERS).some(([reading, order]) => FIGURES.every(key => {
+    const found = new Set(numbersFrom(order[key], text));
+    if (key === 'calories' && reading === 'nameFirst') kcal.forEach(value => found.add(value));
+    if (found.has(item[key])) return true;
+    return key === 'alcohol' && item[key] === 0 && !new RegExp(String.raw`\b${NAMES.alcohol}\b`).test(text);
+  }));
+}
+
 /** Unreadable/dynamic pages simply aren't cached. Never delay a partial answer. */
 export async function verifyNutritionEvidence(evidence, { readPage = publicPage, signal } = {}) {
   if (!evidence?.complete || !evidence.items?.length || !evidence.items.every(i => i.basis === 'label')) return false;
@@ -64,10 +121,7 @@ export async function verifyNutritionEvidence(evidence, { readPage = publicPage,
     const page = await pages.get(item.url);
     const excerpt = normalized(item.excerpt ?? '');
     // A substantial verbatim excerpt, rather than a URL/confidence claim alone.
-    const numbers = new Set((excerpt.match(/\d+(?:\.\d+)?/g) ?? []).map(Number));
-    const supported = [item.basisAmount, ...FIGURES.map(key => item[key])]
-      .every(value => value === 0 || numbers.has(value));
-    return supported && typeof page === 'string' && excerpt.length >= 30 && normalized(page).includes(excerpt);
+    return excerptSupports(item, excerpt) && typeof page === 'string' && excerpt.length >= 30 && normalized(page).includes(excerpt);
   }));
   return verified.every(Boolean);
 }
