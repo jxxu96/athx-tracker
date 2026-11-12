@@ -115,11 +115,34 @@ export function barMarkPercent(mark: number, target: number) {
   return Math.min(100, Math.round((mark / target) * 1000) / 10);
 }
 
+export type MacroShares = Pick<Macros, "protein" | "carbs" | "fat">;
+
+/**
+ * How the calorie bar's fill splits between the macros, as percents of the
+ * fill. Calories the macros do not account for, such as alcohol or an estimate
+ * whose macros come up short, are other, so the fill still stands for every
+ * calorie logged. Macros that price to more than the logged calories are
+ * scaled down to fit, and nothing is other.
+ */
+export function calorieSlices(shares: MacroShares): MacroShares & { other: number } {
+  const protein = Math.max(shares.protein, 0);
+  const carbs = Math.max(shares.carbs, 0);
+  const fat = Math.max(shares.fat, 0);
+  const total = protein + carbs + fat;
+  const scale = total > 100 ? 100 / total : 1;
+  return {
+    protein: protein * scale,
+    carbs: carbs * scale,
+    fat: fat * scale,
+    other: Math.max(100 - total, 0),
+  };
+}
+
 export type AthleteFuel = {
   /** Sum of every meal in the span. */
   eaten: Macros;
   /** Estimated contributions to the span's logged calories, as whole percentages. */
-  macroCalorieShares: Pick<Macros, "protein" | "carbs" | "fat"> | null;
+  macroCalorieShares: MacroShares | null;
   /**
    * What the bars show. A single day is that day's total. A longer span is the
    * average of days that have a meal, so a day you did not log is not treated
