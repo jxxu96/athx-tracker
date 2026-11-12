@@ -304,7 +304,8 @@ keep the configured provider order and fallback behavior.
 
 Only complete label-backed evidence is persisted, after the sidecar independently
 finds its verbatim excerpt on the public HTTPS source page. The excerpt must state
-the serving and every figure, zeros included, beside its own nutrient name, read
+the serving, quantity and unit together (`2/3 cup (55g)` is 2/3 cup or 55 g,
+not 2 g), and every figure, zeros included, beside its own nutrient name, read
 in one direction throughout (`Protein 3g` or `3 g protein`), so transposed
 figures or a saturated-fat line taken for total fat are not saved. Ethanol may be
 left out when it is 0. A provider's own confidence is kept when it is lower than

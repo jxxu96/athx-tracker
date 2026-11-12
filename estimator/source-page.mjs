@@ -83,12 +83,38 @@ const ORDERS = {
     String.raw`(?<![\d.])${NUMBER} ?(?:g|grams?) (?:of )?${name}\b`, 'g',
   )])),
 };
-// The serving the figures are per: "per 100 g", "Serving size 2/3 cup (55g)",
-// "30 g serving". "Servings per container 8" is not one.
+// The serving the figures are per, as a whole quantity and its unit: "per 100 g",
+// "Serving size 2/3 cup (55g)", which is both 2/3 cup and 55 g, and "30 g
+// serving". "Servings per container 8" is not one.
+const QUANTITY = String.raw`(\d+ \d+/\d+|\d+/\d+|\d+(?:\.\d+)?)(?!\.?\d)`;
+const UNIT = String.raw`(fl\.? ?oz|[a-z]+)`;
 const SERVINGS = [
-  new RegExp(String.raw`\b(?:per|serving size|serving|portion size|portion)\b:? ?\(? ?${NUMBER}(?!\.?\d)(?:/\d+)?(?:[^()\d,;]{0,15}\( ?${NUMBER} ?(?:g|grams?|ml|oz)\b)?`, 'g'),
-  new RegExp(String.raw`(?<![\d.])${NUMBER} ?(?:g|grams?|ml|oz)? ?(?:serving|portion)\b`, 'g'),
+  [new RegExp(String.raw`\b(?:per|serving size|serving|portion size|portion)\b:? ?\(? ?${QUANTITY} ?${UNIT}?(?:[^()\d,;]{0,15}\( ?${QUANTITY} ?${UNIT}\b)?`, 'g')],
+  // "1 serving" is per serving.
+  [new RegExp(String.raw`(?<![\d./])${QUANTITY} ?(?:${UNIT} )?(?:serving|portion)\b`, 'g'), 'serving'],
 ];
+const VULGAR = { '½': '1/2', '⅓': '1/3', '⅔': '2/3', '¼': '1/4', '¾': '3/4', '⅛': '1/8' };
+const UNIT_NAMES = {
+  gram: 'g', gr: 'g', gramme: 'g', milliliter: 'ml', millilitre: 'ml', ounce: 'oz', fluidounce: 'floz',
+  tablespoon: 'tbsp', teaspoon: 'tsp', liter: 'l', litre: 'l',
+};
+
+/** One spelling per unit, singular: "Grams" and "g", "fl. oz" and "fl oz", "glasses" and "glass". */
+const unitKey = unit => {
+  const key = String(unit).toLowerCase().replace(/[.\s]/g, '').replace(/(?<=(?:s|x|ch|sh))es$/, '').replace(/(?<!s)s$/, '');
+  return UNIT_NAMES[key] ?? key;
+};
+
+/** "55", "1.5", "2/3" or "1 1/2". A fraction is written rounded, so it is matched to within 0.005. */
+const quantity = written => {
+  const [, whole = '0', top, bottom] = written.match(/^(?:(\d+(?:\.\d+)?) )?(?:(\d+)\/(\d+))?$/) ?? written.match(/^(\d+(?:\.\d+)?)$/) ?? [];
+  const value = Number(whole) + (top ? Number(top) / Number(bottom) : 0);
+  return { value, tolerance: top ? 0.005 : 0 };
+};
+
+const servingsIn = text => SERVINGS.flatMap(([pattern, bare]) => [...text.matchAll(pattern)].flatMap(match => [
+  [match[1], match[2] ?? bare], [match[3], match[4]],
+].filter(([written, unit]) => written && unit).map(([written, unit]) => ({ ...quantity(written), unit: unitKey(unit) }))));
 
 const numbersFrom = (pattern, text) => [...text.matchAll(pattern)].flatMap(match => match.slice(1)).filter(Boolean).map(Number);
 
@@ -99,9 +125,12 @@ const numbersFrom = (pattern, text) => [...text.matchAll(pattern)].flatMap(match
  * food label leaves out.
  */
 export function excerptSupports(item, excerpt) {
-  const text = normalized(excerpt).replace(/(\d),(\d{3})\b/g, '$1$2');
-  const servings = new Set(SERVINGS.flatMap(pattern => numbersFrom(pattern, text)));
-  if (!servings.has(item.basisAmount)) return false;
+  const text = normalized(excerpt).replace(/(\d),(\d{3})\b/g, '$1$2')
+    .replace(/(\d)?([½⅓⅔¼¾⅛])/g, (_, whole, part) => `${whole ? `${whole} ` : ''}${VULGAR[part]}`);
+  const unit = unitKey(item.unit);
+  const served = servingsIn(text).some(serving => serving.unit === unit
+    && Math.abs(serving.value - item.basisAmount) <= serving.tolerance);
+  if (!served) return false;
   const kcal = numbersFrom(KCAL, text);
   return Object.entries(ORDERS).some(([reading, order]) => FIGURES.every(key => {
     const found = new Set(numbersFrom(order[key], text));

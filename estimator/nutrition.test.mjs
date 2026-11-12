@@ -108,7 +108,17 @@ test('each label figure and the serving must sit beside its own name', () => {
     [{ carbs: 160 }, 'sodium in mg'],
     [{ fat: 10 }, 'a daily value percentage'],
     [{ basisAmount: 8 }, 'servings per container'],
+    [{ basisAmount: 2 }, 'the numerator of 2/3 cup is not 2 g'],
+    [{ basisAmount: 55, unit: 'cup' }, '55 is grams, not cups'],
+    [{ basisAmount: 0.6, unit: 'cup' }, 'too far from 2/3'],
   ]) assert.equal(excerptSupports(item({ ...bar, ...wrong }), us), false, why);
+  for (const [right, why] of [
+    [{ basisAmount: 55, unit: 'grams' }, 'grams spelled out'],
+    [{ basisAmount: 0.67, unit: 'cups' }, 'a rounded fraction of a cup'],
+    [{ basisAmount: 2 / 3, unit: 'cup' }, 'the exact fraction'],
+  ]) assert.equal(excerptSupports(item({ ...bar, ...right }), us), true, why);
+  assert.equal(excerptSupports(item({ ...bar, basisAmount: 1.5, unit: 'cup' }), us.replace('2/3 cup', '1½ cups')), true, 'a mixed vulgar fraction');
+  assert.equal(excerptSupports(item({ ...bar, basisAmount: 1, unit: 'serving' }), us.replace('Amount per serving', '1 serving')), true, 'per one serving');
 
   const eu = 'Typical values per 100 g: Energy 1046 kJ / 250 kcal, Fat 8 g of which saturates 3 g, Carbohydrate 37 g of which sugars 12 g, Fibre 4 g, Protein 3 g';
   const biscuit = { ...bar, basisAmount: 100, calories: 250 };
