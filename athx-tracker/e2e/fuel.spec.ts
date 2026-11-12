@@ -154,7 +154,7 @@ test("calorie breakdown expands with mouse, keyboard, and touch", async ({ page,
     const touchFat = touchLabels.locator('[data-fuel-slice="fat"]');
     await touchFat.tap();
     await expect(touchFat).toHaveAttribute("data-active", "");
-    await phone.getByRole("heading", { level: 1 }).tap();
+    await phone.getByRole("button", { name: "Fuel for today" }).tap();
     await expect(touchLabels).toBeHidden();
     await touchBar.tap({ position: { x: 12, y: 5 } });
     await expect(touchLabels).toBeVisible();
