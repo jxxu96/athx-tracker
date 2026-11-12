@@ -63,7 +63,7 @@ if (!slow) setTimeout(() => {
 }, label ? 200 : 1000);
 `;
 
-test("a complex meal asks every estimator at once, and a simple one goes in order", async (t) => {
+test("a complex meal shares its first lookup, and a simple one goes in order", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "athx-fake-cli-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const bin = (name) => {
@@ -115,13 +115,14 @@ test("a complex meal asks every estimator at once, and a simple one goes in orde
     };
   };
 
-  // Complex: three items. Everyone starts before anyone finishes.
+  // Complex: retrieve with Claude first, then the other two check together.
   const guessed = await post("zz rice, beans, cheese");
   assert.equal(guessed.provider, "average");
   // 600 x 40% + 700 x 35% + 1100 x 25%.
   assert.equal(guessed.body.calories, 760);
   assert.equal(guessed.body.confidence, "low");
-  assert.deepEqual(guessed.log.slice(0, 3).sort(), ["start claude", "start codex", "start grok"], "asked together");
+  assert.deepEqual(guessed.log.slice(0, 2), ["start claude", "end claude"], "source lookup first");
+  assert.deepEqual(guessed.log.slice(2, 4).sort(), ["start codex", "start grok"], "remaining checks together");
 
   // A label does not stop the search: everyone still answers. One label alone
   // leaves nobody out, and counts double while the guesses count half:
@@ -191,11 +192,11 @@ test("a complex meal asks every estimator at once, and a simple one goes in orde
     body: JSON.stringify({ description: "zzgrokdown rice, beans, cheese", budgetMs: 130000, stream: true }),
   });
   const downLines = (await down.text()).trim().split("\n").map((line) => JSON.parse(line));
-  assert.equal(downLines[0].type, "missed");
-  assert.equal(downLines[0].provider, "grok");
-  assert.match(downLines[0].detail, /^exit 1 Not signed in\. mcps false, effort low, cwd athx-estimator-grok-[0-9a-f]+$/);
+  const missed = downLines.find(line => line.type === "missed");
+  assert.equal(missed.provider, "grok");
+  assert.match(missed.detail, /^exit 1 Not signed in\. mcps false, effort low, cwd athx-estimator-grok-[0-9a-f]+$/);
   assert.deepEqual(
-    downLines.slice(1).map(({ type, provider }) => [type, provider]).sort(),
+    downLines.filter(line => line.type !== "missed").map(({ type, provider }) => [type, provider]).sort(),
     [["done", "average"], ["partial", "claude"], ["partial", "codex"]],
   );
   assert.equal(downLines.at(-1).type, "done");
@@ -252,5 +253,5 @@ test("a complex meal asks every estimator at once, and a simple one goes in orde
   await abandoned.text().catch(() => {});
   await new Promise((resolve) => setTimeout(resolve, 1200));
   const after = readFileSync(log, "utf8").trim().split("\n");
-  assert.deepEqual(after.sort(), ["start claude", "start codex", "start grok"], "stopped before answering");
+  assert.deepEqual(after, ["start claude"], "stopped during source lookup; peers never started");
 });

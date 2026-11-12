@@ -143,19 +143,22 @@ function relay(body: ReadableStream<Uint8Array>, bucket: string, upstream: Abort
     if (failed) releaseEstimate(bucket);
   };
   let left = false;
+  let answered = false;
   return new Response(
     new ReadableStream<Uint8Array>({
       async pull(controller) {
         const { value, done } = await events.next();
         if (left) return;
         if (done) return controller.close();
+        if (value.type === "partial") answered = true;
         if (value.type === "done" || value.type === "error") settle(value.type === "error");
         controller.enqueue(encoder.encode(`${JSON.stringify(value)}\n`));
       },
       async cancel() {
         left = true;
         upstream.abort();
-        settle(true);
+        // An early accepted answer still consumes one daily estimate.
+        settle(!answered);
         await events.return(undefined);
       },
     }),
