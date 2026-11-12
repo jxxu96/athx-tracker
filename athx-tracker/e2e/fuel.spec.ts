@@ -127,6 +127,7 @@ test("calorie breakdown expands with mouse, keyboard, and touch", async ({ page,
   await bar.focus();
   await page.keyboard.press("Enter");
   await expect(bar).toHaveAttribute("aria-expanded", "true");
+  await bar.locator('[data-fuel-slice="fat"]').hover();
   await page.keyboard.press("Tab");
   await page.keyboard.press("Tab");
   await expect(protein).toBeFocused();

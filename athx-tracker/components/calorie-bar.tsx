@@ -46,6 +46,12 @@ export function CalorieBar({
     setSelected(null);
   }, []);
 
+  function select(key: ComponentKey | null) {
+    setSelected(key);
+    setPinned(true);
+    setPreview((current) => current === null ? null : key ?? "bar");
+  }
+
   useEffect(() => {
     if (!open) return;
     function outside(event: PointerEvent) {
@@ -90,8 +96,7 @@ export function CalorieBar({
           if (pinned && !segment) {
             dismiss();
           } else {
-            setSelected(segment?.key ?? null);
-            setPinned(true);
+            select(segment?.key ?? null);
           }
         }}
       >
@@ -159,10 +164,7 @@ export function CalorieBar({
                     setPreview((current) => current === null ? null : key);
                   }
                 }}
-                onClick={() => {
-                  setSelected(key);
-                  setPinned(true);
-                }}
+                onClick={() => select(key)}
               >
                 <span aria-hidden="true" className="size-2.5 shrink-0 rounded-[2px]" style={{ background: color }} />
                 <span className="flex-1">{label}</span>
