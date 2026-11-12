@@ -36,15 +36,23 @@ export function CalorieBar({
   const open = pinned || preview !== null;
   const active = preview && preview !== "bar" ? preview : selected;
   const id = useId();
-  const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  const selectedSlice = slices.find(({ key }) => key === selected);
+  const exceedsTotal = slices.reduce((sum, slice) => sum + slice.share, 0) > 100.01;
+  const estimateNote = exceedsTotal ? "Macro estimates exceed logged calories." : "";
 
-  const dismiss = useCallback((restoreFocus = false) => {
-    if (restoreFocus && root.current?.contains(document.activeElement)) trigger.current?.focus();
+  const dismiss = useCallback(() => {
     setPinned(false);
     setPreview(null);
     setSelected(null);
   }, []);
+
+  function sliceAt(target: EventTarget) {
+    const key = target instanceof Element
+      ? target.closest<HTMLElement>("[data-fuel-slice]")?.dataset.fuelSlice
+      : undefined;
+    return slices.find((slice) => slice.key === key)?.key ?? null;
+  }
 
   function select(key: ComponentKey | null) {
     setSelected(key);
@@ -54,129 +62,120 @@ export function CalorieBar({
 
   useEffect(() => {
     if (!open) return;
-    function outside(event: PointerEvent) {
-      if (event.target instanceof Node && !root.current?.contains(event.target)) dismiss();
+    function outside(event: MouseEvent) {
+      if (event.target instanceof Node && !trigger.current?.contains(event.target)) dismiss();
     }
     function escape(event: KeyboardEvent) {
-      if (event.key === "Escape" && !event.defaultPrevented) dismiss(true);
+      if (event.key === "Escape" && !event.defaultPrevented) dismiss();
     }
-    document.addEventListener("pointerdown", outside);
+    document.addEventListener("click", outside);
     document.addEventListener("keydown", escape);
     return () => {
-      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("click", outside);
       document.removeEventListener("keydown", escape);
     };
   }, [open, dismiss]);
 
   return (
-    <div
-      ref={root}
-      onPointerLeave={(event) => {
-        if (event.pointerType === "mouse") setPreview(null);
-      }}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) dismiss();
-      }}
-    >
+    <div>
       <button
         ref={trigger}
         type="button"
         aria-label="Calorie breakdown"
         aria-expanded={open}
         aria-controls={id}
+        aria-describedby={`${id}-description`}
         className="flex min-h-11 w-full cursor-pointer items-center rounded-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:min-h-7"
         onPointerEnter={(event) => {
-          if (event.pointerType === "mouse") setPreview("bar");
+          if (event.pointerType === "mouse") setPreview(sliceAt(event.target) ?? "bar");
+        }}
+        onPointerMove={(event) => {
+          if (event.pointerType !== "mouse" || preview === null) return;
+          const key = sliceAt(event.target);
+          if (key) setPreview(key);
+        }}
+        onPointerLeave={(event) => {
+          if (event.pointerType === "mouse") setPreview(null);
         }}
         onClick={(event) => {
-          const key = event.target instanceof Element
-            ? event.target.closest<HTMLElement>("[data-fuel-slice]")?.dataset.fuelSlice
-            : undefined;
-          const segment = slices.find((component) => component.key === key);
-          if (pinned && !segment) {
-            dismiss();
-          } else {
-            select(segment?.key ?? null);
-          }
+          const key = sliceAt(event.target);
+          if (open && key === null) dismiss();
+          else select(key);
+        }}
+        onKeyDown={(event) => {
+          if (!open || slices.length === 0) return;
+          if (event.key === "Tab") dismiss();
+          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+          event.preventDefault();
+          const index = slices.findIndex(({ key }) => key === active);
+          const next = event.key === "ArrowRight"
+            ? (index + 1) % slices.length
+            : (Math.max(index, 0) + slices.length - 1) % slices.length;
+          select(slices[next].key);
         }}
       >
-        <span className="relative block flex-1">
-          <span className={`block overflow-hidden rounded-full bg-muted ${open ? "h-4" : "h-2"}`}>
-            <span className="flex h-full gap-px overflow-hidden rounded-full" style={{ width: `${fill}%` }}>
-              {slices.map(({ key, color, size }) => (
+        <span className="block min-w-0 flex-1">
+          <span id={id} data-fuel-labels="" hidden={!open} className="block">
+            <span className="flex min-h-11 overflow-hidden rounded-t-md">
+              {slices.map(({ key, label, color, share, size }) => (
                 <span
                   key={key}
                   data-fuel-slice={key}
-                  className={`h-full ${active === key ? "z-10 outline-2 -outline-offset-2 outline-solid outline-foreground" : ""}`}
-                  style={{ flexGrow: size, flexBasis: 0, background: color }}
-                  onPointerEnter={(event) => {
-                    if (event.pointerType === "mouse") {
-                      setPreview((current) => current === null ? null : key);
-                    }
-                  }}
-                />
+                  data-active={active === key ? "" : undefined}
+                  className="flex min-w-min flex-col items-center justify-center gap-0.5 px-1 py-1.5 text-center text-xs leading-none text-neutral-950 data-active:font-semibold data-active:ring-2 data-active:ring-neutral-950 data-active:ring-inset"
+                  style={{ flexGrow: size, flexBasis: 0, background: `color-mix(in srgb, ${color} 58%, white)` }}
+                >
+                  <span>{label}</span>
+                  <span className="text-sm font-semibold tabular-nums">{percent(share)}</span>
+                </span>
               ))}
+            </span>
+            {estimateNote ? (
+              <span className="block bg-muted px-1.5 py-0.5 text-left text-[11px] text-muted-foreground">
+                {estimateNote}
+              </span>
+            ) : null}
+          </span>
+          {/* The lower edge keeps the real calorie and target proportions when labels need more room. */}
+          <span className="relative block">
+            <span className={`block h-2 overflow-hidden bg-muted ${open ? "rounded-b-md" : "rounded-full"}`}>
+              <span className="flex h-full gap-px overflow-hidden" style={{ width: `${fill}%` }}>
+                {slices.map(({ key, color, size }) => (
+                  <span
+                    key={key}
+                    data-fuel-slice={key}
+                    className="h-full"
+                    style={{ flexGrow: size, flexBasis: 0, background: color }}
+                  />
+                ))}
+              </span>
+              {targetAt !== null ? (
+                <span
+                  data-fuel-over=""
+                  className="pointer-events-none absolute inset-y-0 right-0 rounded-r-full opacity-75"
+                  style={{ left: `${targetAt}%`, backgroundImage: FUEL_OVER_HATCH }}
+                />
+              ) : null}
             </span>
             {targetAt !== null ? (
               <span
-                data-fuel-over=""
-                className="pointer-events-none absolute inset-y-0 right-0 rounded-r-full opacity-75"
-                style={{ left: `${targetAt}%`, backgroundImage: FUEL_OVER_HATCH }}
+                data-fuel-target=""
+                className="pointer-events-none absolute top-1/2 z-10 h-3 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground/70"
+                style={{ left: `${targetAt}%` }}
               />
             ) : null}
           </span>
-          {targetAt !== null ? (
-            <span
-              data-fuel-target=""
-              className="pointer-events-none absolute top-1/2 z-10 h-[calc(100%+4px)] w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground/70"
-              style={{ left: `${targetAt}%` }}
-            />
-          ) : null}
         </span>
         <ChevronDown aria-hidden="true" className={`ml-1.5 size-4 shrink-0 text-muted-foreground ${open ? "rotate-180" : ""}`} />
       </button>
-      <div
-        id={id}
-        role="group"
-        aria-labelledby={`${id}-title`}
-        hidden={!open}
-        className="rounded-lg border bg-muted/30 px-2 pb-2"
-      >
-        <div className="flex items-center justify-between gap-2 px-1">
-          <p id={`${id}-title`} className="text-xs text-muted-foreground">Estimated share of logged calories</p>
-          <button
-            type="button"
-            onClick={() => dismiss(true)}
-            className="min-h-8 shrink-0 cursor-pointer rounded px-1 text-xs underline underline-offset-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-          >
-            Close
-          </button>
-        </div>
-        <ul className="space-y-0.5">
-          {slices.map(({ key, label, color, share }) => (
-            <li key={key}>
-              <button
-                type="button"
-                aria-pressed={active === key}
-                className="flex min-h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-left text-sm tabular-nums aria-pressed:bg-background aria-pressed:font-semibold aria-pressed:ring-1 aria-pressed:ring-inset aria-pressed:ring-foreground/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                onPointerEnter={(event) => {
-                  if (event.pointerType === "mouse") {
-                    setPreview((current) => current === null ? null : key);
-                  }
-                }}
-                onClick={() => select(key)}
-              >
-                <span aria-hidden="true" className="size-2.5 shrink-0 rounded-[2px]" style={{ background: color }} />
-                <span className="flex-1">{label}</span>
-                <span>{percent(share)}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-        {slices.reduce((sum, slice) => sum + slice.share, 0) > 100.01 ? (
-          <p className="px-1 pt-2 text-xs text-muted-foreground">Macro estimates exceed logged calories.</p>
-        ) : null}
-      </div>
+      <span id={`${id}-description`} className="sr-only">
+        {open
+          ? `Estimated share of logged calories. ${slices.map(({ label, share }) => `${label} ${percent(share)}`).join(", ")}. ${estimateNote} Use the Left and Right arrow keys to select a component.`
+          : "Press Enter or Space to show each component’s share of logged calories."}
+      </span>
+      <span role="status" className="sr-only">
+        {open && selectedSlice ? `${selectedSlice.label}, ${percent(selectedSlice.share)} selected` : ""}
+      </span>
     </div>
   );
 }
