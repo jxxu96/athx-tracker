@@ -141,7 +141,7 @@ export function calorieSlices(shares: MacroShares): MacroShares & { other: numbe
 export type AthleteFuel = {
   /** Sum of every meal in the span. */
   eaten: Macros;
-  /** Estimated contributions to the span's logged calories, as whole percentages. */
+  /** Estimated contributions to the span's logged calories, rounded for display. */
   macroCalorieShares: MacroShares | null;
   /**
    * What the bars show. A single day is that day's total. A longer span is the
@@ -253,9 +253,9 @@ export function athleteFuel(
   return {
     eaten,
     macroCalorieShares: eaten.calories > 0 ? {
-      protein: Math.round((macroEnergy.protein / eaten.calories) * 100),
-      carbs: Math.round((macroEnergy.carbs / eaten.calories) * 100),
-      fat: Math.round((macroEnergy.fat / eaten.calories) * 100),
+      protein: (macroEnergy.protein / eaten.calories) * 100,
+      carbs: (macroEnergy.carbs / eaten.calories) * 100,
+      fat: (macroEnergy.fat / eaten.calories) * 100,
     } : null,
     shown: multi ? averageMacros(eaten, daysWithMeals) : eaten,
     dailyTarget: multi
