@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Flame } from "lucide-react";
+import { CalorieBar, FUEL_OVER_HATCH, type CalorieSlice } from "@/components/calorie-bar";
 import { CollapsibleCard } from "@/components/collapsible-card";
 import { Input } from "@/components/ui/input";
 import { ATHLETES, type Macros, type RecordItem, type Settings } from "@/lib/domain";
@@ -92,22 +93,19 @@ const sliceColor = (color: string, key: keyof MacroShares) =>
   `color-mix(in srgb, ${color} ${SLICE_STRENGTH[key]}%, white)`;
 /** Calories no macro accounts for: grey, so it reads as none of them. */
 const OTHER_SLICE = "color-mix(in srgb, var(--muted-foreground) 40%, var(--card))";
-/** Over the fill past the target, so each slice keeps its colour under the stripes. */
-const OVER_HATCH = "repeating-linear-gradient(-45deg, transparent 0 2px, var(--muted) 2px 4px)";
-
-type Slice = { key: string; label: string; size: number; color: string };
-
-function calorieBar(shares: MacroShares, color: string): Slice[] {
+function calorieBar(shares: MacroShares, color: string): CalorieSlice[] {
   const sizes = calorieSlices(shares);
-  return [
+  const slices: CalorieSlice[] = [
     ...MACRONUTRIENTS.map(({ key, label }) => ({
       key,
-      label: `${label.toLowerCase()} ${shares[key]}%`,
+      label,
+      share: shares[key],
       size: sizes[key],
       color: sliceColor(color, key),
     })),
-    { key: "other", label: `other ${Math.round(sizes.other)}%`, size: sizes.other, color: OTHER_SLICE },
-  ].filter((slice) => slice.size > 0);
+    { key: "other", label: "Other", share: sizes.other, size: sizes.other, color: OTHER_SLICE },
+  ];
+  return slices.filter(({ size }) => size > 0.000001);
 }
 
 function MacroRow({
@@ -130,7 +128,7 @@ function MacroRow({
   /** A tick on the bar, as a percent of the target. Null draws none. */
   mark: { at: number; label: string } | null;
   /** The calorie bar's split by macro. Null fills it in one colour. */
-  slices: Slice[] | null;
+  slices: CalorieSlice[] | null;
   /** This macro's estimated share of the calories logged, with its slice's colour. */
   calorieShare: { percent: number; color: string } | null;
 }) {
@@ -141,7 +139,6 @@ function MacroRow({
   const over = share !== null && share > 100;
   const targetAt = over ? (100 / share) * 100 : 100;
   const fill = share === null ? 0 : over ? 100 : share;
-  const split = slices ? slices.map((slice) => slice.label).join(", ") : null;
   return (
     <div className="space-y-1.5">
       {/* Too narrow for both, the figures drop to their own line rather than break mid-phrase. */}
@@ -169,51 +166,43 @@ function MacroRow({
           {share !== null ? <span className="text-muted-foreground"> · {share}% of target</span> : null}
         </span>
       </div>
-      <div className="relative h-1.5">
-        <div className="absolute inset-0 overflow-hidden rounded-full bg-muted">
-          <div
-            role={split ? "img" : undefined}
-            aria-label={split ? `Estimated share of logged calories: ${split}` : undefined}
-            title={split ? `Estimated share of logged calories: ${split}` : undefined}
-            className="flex h-full gap-px overflow-hidden rounded-full transition-[width]"
-            style={{ width: `${fill}%` }}
-          >
-            {(slices ?? [{ key: "all", size: 100, color }]).map((slice) => (
+      {slices ? (
+        <CalorieBar slices={slices} fill={share === null ? 100 : fill} targetAt={over ? targetAt : null} />
+      ) : (
+        <div className="relative h-1.5">
+          <div className="absolute inset-0 overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full transition-[width]"
+              style={{ width: `${fill}%`, background: color }}
+            />
+            {over ? (
               <div
-                key={slice.key}
-                data-fuel-slice={slices ? slice.key : undefined}
-                className="h-full"
-                style={{ flexGrow: slice.size, flexBasis: 0, background: slice.color }}
+                data-fuel-over=""
+                className="absolute inset-y-0 right-0"
+                style={{ left: `${targetAt}%`, backgroundImage: FUEL_OVER_HATCH }}
               />
-            ))}
+            ) : null}
           </div>
           {over ? (
-            <div
-              data-fuel-over=""
-              className="absolute inset-y-0 right-0"
-              style={{ left: `${targetAt}%`, backgroundImage: OVER_HATCH }}
+            <span
+              aria-hidden="true"
+              data-fuel-target=""
+              className="absolute top-1/2 h-3 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground/70"
+              style={{ left: `${targetAt}%` }}
+            />
+          ) : null}
+          {mark ? (
+            <span
+              role="img"
+              aria-label={mark.label}
+              title={mark.label}
+              className="absolute top-1/2 z-10 h-2.5 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground"
+              // A mark is placed against the target, which has moved in.
+              style={{ left: `${(mark.at * targetAt) / 100}%` }}
             />
           ) : null}
         </div>
-        {over ? (
-          <span
-            aria-hidden="true"
-            data-fuel-target=""
-            className="absolute top-1/2 h-3 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground/70"
-            style={{ left: `${targetAt}%` }}
-          />
-        ) : null}
-        {mark ? (
-          <span
-            role="img"
-            aria-label={mark.label}
-            title={mark.label}
-            className="absolute top-1/2 z-10 h-2.5 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground"
-            // A mark is placed against the target, which has moved in.
-            style={{ left: `${(mark.at * targetAt) / 100}%` }}
-          />
-        ) : null}
-      </div>
+      )}
     </div>
   );
 }
@@ -312,7 +301,7 @@ function AthleteFuelCard({
                 slices={key === "calories" && calorieShares ? calorieBar(calorieShares, color) : null}
                 calorieShare={
                   key !== "calories" && calorieShares
-                    ? { percent: calorieShares[key], color: sliceColor(color, key) }
+                    ? { percent: Math.round(calorieShares[key]), color: sliceColor(color, key) }
                     : null
                 }
               />
