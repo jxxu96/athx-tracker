@@ -161,6 +161,5 @@ test("expenditure counts resting energy once there is a height and a birth year"
   await expect(page.getByText("Settings saved", { exact: true })).toBeVisible();
 
   await nav(page, "Today");
-  await expect(gators).toContainText(`~${shown}kcal`);
-  await expect(gators).toContainText(`Resting ~${shown} · training ~0`);
+  await expect(gators).toContainText(`Expenditure ${shown} kcal · Resting ${shown} · training 0`);
 });

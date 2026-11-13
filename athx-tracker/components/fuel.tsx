@@ -319,44 +319,28 @@ function AthleteFuelCard({
           ) : null}
         </>
       )}
-      <div className="border-t pt-3">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
-          Expenditure
+      <div className="border-t pt-2">
+        <p className="text-xs text-muted-foreground tabular-nums">
+          <span className="font-semibold">Expenditure</span>
+          {fuel.expenditure !== null && fuel.resting !== null ? (
+            <>
+              {" "}<strong className="font-semibold text-foreground">{formatAmount(tens(fuel.expenditure))} kcal{perDay}</strong>
+              {" · "}Resting {formatAmount(tens(fuel.resting))} · training {formatAmount(tens(fuel.burned / fuel.expenditureDays))}
+              {balance !== null ? (
+                <>
+                  {" · "}Balance <strong className="font-semibold text-foreground">{signed(tens(balance))} kcal{perDay}</strong>
+                </>
+              ) : null}
+            </>
+          ) : fuel.burnKnown ? (
+            <>
+              {" "}<strong className="font-semibold text-foreground">{formatAmount(fuel.burned)} kcal</strong>
+              {" · "}Training only. Add a height and birth year in Setup to count resting energy too.
+            </>
+          ) : (
+            <>{" · "}Add a bodyweight in Setup to estimate calories burned.</>
+          )}
         </p>
-        {fuel.expenditure !== null && fuel.resting !== null ? (
-          <>
-            <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">
-              ~{formatAmount(tens(fuel.expenditure))}
-              <span className="ml-1 text-sm font-normal text-muted-foreground">kcal{perDay}</span>
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Resting ~{formatAmount(tens(fuel.resting))} · training ~
-              {formatAmount(tens(fuel.burned / fuel.expenditureDays))}
-            </p>
-            {balance !== null ? (
-              <p className="mt-1 text-xs">
-                <span className="text-muted-foreground">Balance </span>
-                <span className="font-medium tabular-nums">
-                  {signed(tens(balance))} kcal{perDay}
-                </span>
-              </p>
-            ) : null}
-          </>
-        ) : fuel.burnKnown ? (
-          <>
-            <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">
-              ~{formatAmount(fuel.burned)}
-              <span className="ml-1 text-sm font-normal text-muted-foreground">kcal</span>
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Training only. Add a height and birth year in Setup to count resting energy too.
-            </p>
-          </>
-        ) : (
-          <p className="mt-1 text-xs text-muted-foreground">
-            Add a bodyweight in Setup to estimate calories burned.
-          </p>
-        )}
         {fuel.untimed > 0 ? (
           <p className="mt-1 text-xs text-muted-foreground">
             {fuel.untimed} session{fuel.untimed === 1 ? "" : "s"} had no duration, so{" "}
