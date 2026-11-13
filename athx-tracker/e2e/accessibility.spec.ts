@@ -42,6 +42,55 @@ test.describe("signed in", () => {
     });
   }
 
+  test("Energy, once logged and while logging another, is usable without sight in both themes", async ({ page }) => {
+    // Lunchtime, with Hippos logged at every timing and Gators at breakfast
+    // only: Hippos' row keeps a level and offers Log another, Gators' is
+    // empty, and the timings carry filled and hollow dots.
+    const date = new Date();
+    date.setHours(12, 30, 0, 0);
+    await page.clock.setFixedTime(date);
+    const ids = await page.evaluate(async () => {
+      const day = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+      const made: string[] = [];
+      for (const [athlete, timing, level] of [
+        ["hippos", "Breakfast", 7], ["hippos", "Lunch", 6], ["hippos", "Dinner", 5], ["gators", "Breakfast", 6],
+      ] as const) {
+        const id = crypto.randomUUID();
+        const response = await fetch("/api/records", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, kind: "energy", athlete, day, timing, level }),
+        });
+        if (!response.ok) throw new Error(await response.text());
+        made.push(id);
+      }
+      return made;
+    });
+    try {
+      for (const theme of ["Light", "Dark"]) {
+        await page.getByRole("button", { name: "Setup", exact: true }).click();
+        await page.getByRole("button", { name: theme, exact: true }).click();
+        await page.getByRole("button", { name: "Today", exact: true }).click();
+        await page.reload();
+        const another = page.getByRole("button", { name: "Log another for Hippos at lunch today" });
+        await expect(another).toBeVisible();
+        await audit(page, `${theme} theme, Energy logged`);
+        await another.click();
+        await expect(page.getByText("Tap a level to log another")).toBeVisible();
+        await audit(page, `${theme} theme, Energy logging another`);
+      }
+    } finally {
+      await page.evaluate(async (ids) => {
+        for (const id of ids)
+          await fetch("/api/records", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id }),
+          });
+      }, ids);
+    }
+  });
+
   test("both themes carry enough contrast", async ({ page }) => {
     // The theme is chosen in Setup now, and Today is audited in each.
     for (const theme of ["Light", "Dark"]) {

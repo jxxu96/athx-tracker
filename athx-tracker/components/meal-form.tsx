@@ -298,7 +298,11 @@ export function Choice<T extends string>({
   label: string;
   /** Null shows none of them chosen. */
   value: T | null;
-  options: readonly { value: T; label: string; outline?: AthleteOutline }[];
+  /**
+   * detail is drawn after the label, for the eye only; name, when given, is
+   * what the button is read as instead of its label, and should begin with it.
+   */
+  options: readonly { value: T; label: string; outline?: AthleteOutline; detail?: React.ReactNode; name?: string }[];
   onChange: (next: T) => void;
   /**
    * Columns as wide as their labels, then stretched to fill the row. Five
@@ -327,6 +331,7 @@ export function Choice<T extends string>({
               type="button"
               onClick={() => onChange(option.value)}
               aria-pressed={selected}
+              aria-label={option.name}
               {...(selected && option.outline ? athleteOutline(option.outline, "accent") : {})}
               // An athlete is told apart by its coloured ring. A plain option has
               // only its fill, and accent on a card was too faint to see which
@@ -340,6 +345,7 @@ export function Choice<T extends string>({
               }`}
             >
               {option.label}
+              {option.detail ? <span aria-hidden="true">{option.detail}</span> : null}
             </button>
           );
         })}

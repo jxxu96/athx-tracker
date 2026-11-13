@@ -1,9 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 import { PASSPHRASE } from "../playwright.config.ts";
 
-// How each athlete feels, out of 10: each tap on Today logs one more, at
-// breakfast, lunch or dinner, and a check-in is corrected in the Log like a
-// weigh-in.
+// How each athlete feels, out of 10, at breakfast, lunch or dinner: a tap on
+// Today logs a check-in, a tap on another level changes it, Log another adds a
+// second, and the Log corrects any of them like a weigh-in.
 
 async function signIn(page: Page) {
   await page.goto("/login");
@@ -83,27 +83,53 @@ test.afterEach(async ({ page }) => {
   await reset(page);
 });
 
-test("each tap logs one more check-in at the clock's timing, and another timing is its own", async ({ page }) => {
+/** One athlete's check-ins as "level time", sorted, "none" for no time. */
+const levels = async (page: Page, athlete: string) =>
+  (await saved(page))
+    .filter((record) => record.athlete === athlete)
+    .map(({ level, time }) => `${level} ${time ?? "none"}`)
+    .sort();
+
+test("a tap logs a check-in at the clock's timing, a tap on another level changes it, and Log another adds one", async ({ page }) => {
   await clockAt(page, 8, 15);
   const energy = card(page);
   await expect(timings(page).getByRole("button", { name: "Breakfast" })).toHaveAttribute("aria-pressed", "true");
   const hippos = energy.getByRole("group", { name: "Hippos energy at breakfast today" });
   await expect(energy.getByText("Not logged at breakfast today")).toHaveCount(2);
+  // Nothing is logged yet, so there is nothing to log another of.
+  await expect(energy.getByRole("button", { name: /^Log another/ })).toHaveCount(0);
 
   await hippos.getByRole("button", { name: "Log 7 out of 10" }).click();
   await expect(energy.getByText("Today 7/10 · 08:15", { exact: true })).toBeVisible();
   await expect.poll(() => saved(page)).toEqual([
     expect.objectContaining({ athlete: "hippos", timing: "Breakfast", time: "08:15", level: 7 }),
   ]);
-  // The buttons log rather than choose, so none stays pressed.
-  await expect(hippos.getByRole("button", { name: "Log 7 out of 10" })).not.toHaveAttribute("aria-pressed");
+  // The level it holds keeps the ring, and the timing's button says who has logged it.
+  await expect(hippos.getByRole("button", { name: "7 out of 10", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(timings(page).getByRole("button", { name: "Breakfast, logged for Hippos" })).toBeVisible();
 
-  // A second tap adds a check-in; it does not change the first.
+  // A tap on another level changes it and keeps its time: a correction, not a second check-in.
   await page.clock.setFixedTime(new Date(new Date().setHours(8, 40, 0, 0)));
+  await hippos.getByRole("button", { name: "8 out of 10", exact: true }).click();
+  await expect(energy.getByText("Today 8/10 · 08:15", { exact: true })).toBeVisible();
+  await expect(hippos.getByRole("button", { name: "8 out of 10", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => levels(page, "hippos")).toEqual(["8 08:15"]);
+
+  // Log another adds one at the clock, and the row then shows and changes that one.
+  await energy.getByRole("button", { name: "Log another for Hippos at breakfast today" }).click();
+  await expect(energy.getByText("Tap a level to log another")).toBeVisible();
   await hippos.getByRole("button", { name: "Log 5 out of 10" }).click();
-  await expect(energy.getByText("Today 7, 5 · avg 6/10", { exact: true })).toBeVisible();
-  await expect.poll(async () => (await saved(page)).map(({ level, time }) => `${level} ${time}`).sort())
-    .toEqual(["5 08:40", "7 08:15"]);
+  await expect(energy.getByText("Today 8, 5 · avg 6.5/10", { exact: true })).toBeVisible();
+  await expect.poll(() => levels(page, "hippos")).toEqual(["5 08:40", "8 08:15"]);
+  await hippos.getByRole("button", { name: "4 out of 10", exact: true }).click();
+  await expect(energy.getByText("Today 8, 4 · avg 6/10", { exact: true })).toBeVisible();
+  await expect.poll(() => levels(page, "hippos")).toEqual(["4 08:40", "8 08:15"]);
+
+  // Cancelled, it logs nothing and the row goes back to changing the latest.
+  await energy.getByRole("button", { name: "Log another for Hippos at breakfast today" }).click();
+  await energy.getByRole("button", { name: "Cancel logging another for Hippos" }).click();
+  await expect(hippos.getByRole("button", { name: "4 out of 10", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(async () => (await saved(page)).length).toBe(2);
 
   // Lunch is its own. It is not lunchtime, so it takes no time of day.
   await timings(page).getByRole("button", { name: "Lunch" }).click();
@@ -114,15 +140,51 @@ test("each tap logs one more check-in at the clock's timing, and another timing 
   // Today's cell weighs breakfast and lunch the same: (6 + 9) / 2.
   await expect(energy.getByRole("row", { name: /^Hippos/ }).getByRole("cell").nth(6)).toHaveText("7.5");
 
-  // Gators is untouched, and it all survives a reload, which goes back to the clock's timing.
+  // Gators is untouched, and it all survives a reload, which goes back to the
+  // clock's timing and to the latest check-in in it.
   await page.reload();
   await expect(timings(page).getByRole("button", { name: "Breakfast" })).toHaveAttribute("aria-pressed", "true");
-  await expect(card(page).getByText("Today 7, 5 · avg 6/10", { exact: true })).toBeVisible();
+  await expect(card(page).getByText("Today 8, 4 · avg 6/10", { exact: true })).toBeVisible();
+  await expect(
+    card(page).getByRole("group", { name: "Hippos energy at breakfast today" }).getByRole("button", { name: "4 out of 10", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
   await expect(card(page).getByText("Not logged at breakfast today")).toHaveCount(1);
 
   // Folded, the box keeps the timing's mean.
   await card(page).getByRole("button", { name: "Collapse Energy" }).click();
   await expect(card(page).getByText("Today at breakfast: Hippos 6 · Gators —")).toBeVisible();
+});
+
+test("each timing's button says who has logged it, and an earlier timing is changed where it stands", async ({ page }) => {
+  await checkIn(page, "hippos", 7, 0);
+  await checkIn(page, "gators", 5, 0);
+  await checkIn(page, "gators", 6, 0, { timing: "Lunch", time: "12:10" });
+  await clockAt(page, 13);
+  const energy = card(page);
+  await expect(timings(page).getByRole("button", { name: "Breakfast, logged for both" })).toBeVisible();
+  await expect(timings(page).getByRole("button", { name: "Lunch, logged for Gators" })).toHaveAttribute("aria-pressed", "true");
+  await expect(timings(page).getByRole("button", { name: "Dinner", exact: true })).toBeVisible();
+
+  // Breakfast, hours ago: its levels keep their rings, and a tap changes one where it stands.
+  await timings(page).getByRole("button", { name: "Breakfast" }).click();
+  const hippos = energy.getByRole("group", { name: "Hippos energy at breakfast today" });
+  await expect(hippos.getByRole("button", { name: "7 out of 10", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await hippos.getByRole("button", { name: "4 out of 10", exact: true }).click();
+  await expect(energy.getByText("Today 4/10 · 08:00", { exact: true })).toBeVisible();
+  await expect.poll(() => saved(page)).toContainEqual(
+    expect.objectContaining({ athlete: "hippos", timing: "Breakfast", time: "08:00", level: 4 }),
+  );
+
+  // One more for breakfast at lunchtime has no time, so it counts as earlier
+  // than the 08:00 one; having just been logged, it is still the one shown and changed.
+  await energy.getByRole("button", { name: "Log another for Hippos at breakfast today" }).click();
+  await hippos.getByRole("button", { name: "Log 9 out of 10" }).click();
+  await expect(hippos.getByRole("button", { name: "9 out of 10", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await hippos.getByRole("button", { name: "8 out of 10", exact: true }).click();
+  await expect(hippos.getByRole("button", { name: "8 out of 10", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => levels(page, "hippos")).toEqual(["4 08:00", "8 none"]);
+  // Gators' are as they were.
+  await expect.poll(() => levels(page, "gators")).toEqual(["5 08:00", "6 12:10"]);
 });
 
 test("the timing follows a meal's hours, and B, L and D choose it as they do a meal's sitting", async ({ page }) => {
