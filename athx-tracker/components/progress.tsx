@@ -27,7 +27,6 @@ import {
   progressMarks,
   shownGap,
   toGo,
-  VOLUME_WEEKS,
   type EstimatedMax,
   type LiftProgress,
   type LiftTotal,
@@ -394,7 +393,7 @@ function Lift({
   const { start, latest, best } = lift;
   const marks = progressMarks(lift, unit);
   const heading = (
-    <h3 className="text-sm font-medium">
+    <h3 className="text-lg font-medium">
       {lift.name} <span className="font-normal text-muted-foreground">· {lift.reps}RM</span>
     </h3>
   );
@@ -496,31 +495,23 @@ function Volume({
   if (!weeks.some((kg) => kg > 0)) return null;
   const shown = weeks.map((kg) => Math.round(fromKilograms(kg, unit)));
   const most = Math.max(...shown);
-  const now = shown[shown.length - 1];
-  const before = shown[shown.length - 2] ?? 0;
   return (
-    <div className="space-y-1.5">
-      <div
-        role="img"
-        aria-label={`${name} weekly volume, oldest first: ${shown.map((value) => `${formatAmount(value)} ${unit}`).join(", ")}`}
-        className="flex h-8 items-end gap-1"
-      >
-        {shown.map((value, index) => (
-          <span
-            key={index}
-            className="flex-1 rounded-sm"
-            style={{
-              height: `${Math.max(value > 0 ? 8 : 2, (value / most) * 100)}%`,
-              background: value > 0 ? color : "var(--muted)",
-              opacity: index === shown.length - 1 || value === 0 ? 1 : 0.45,
-            }}
-          />
-        ))}
-      </div>
-      <p className="text-[11px] text-muted-foreground">
-        Volume, {unit} × reps · this week {formatAmount(now)} · last week {formatAmount(before)} ·{" "}
-        {VOLUME_WEEKS} weeks shown
-      </p>
+    <div
+      role="img"
+      aria-label={`${name} weekly volume, oldest first: ${shown.map((value) => `${formatAmount(value)} ${unit}`).join(", ")}`}
+      className="flex h-8 items-end gap-1"
+    >
+      {shown.map((value, index) => (
+        <span
+          key={index}
+          className="flex-1 rounded-sm"
+          style={{
+            height: `${Math.max(value > 0 ? 8 : 2, (value / most) * 100)}%`,
+            background: value > 0 ? color : "var(--muted)",
+            opacity: index === shown.length - 1 || value === 0 ? 1 : 0.45,
+          }}
+        />
+      ))}
     </div>
   );
 }
