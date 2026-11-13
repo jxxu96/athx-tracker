@@ -94,18 +94,28 @@ export function movementsIn(workout: Pick<Workout, "lifts" | "segments">) {
 export type LastDone = Record<RaceAthlete, Partial<Record<Movement, string>>>;
 
 /**
+ * Whose a session is for the running order. A Together session is both of
+ * yours: you were both there and both did the work. The estimate still leaves
+ * it out, since it scores a number and cannot say whose that number is.
+ */
+const athletesOf = (athlete: RecordItem["athlete"]): readonly RaceAthlete[] =>
+  athlete === "team" ? RACE_ATHLETES : [athlete];
+
+/**
  * When each of you last did each race workout, on or before today: a session
- * dated ahead has not happened yet. A Together session belongs to neither of
- * you, as it does for the estimate, since it cannot say who did what.
+ * dated ahead has not happened yet.
  */
 export function lastDone(records: readonly RecordItem[], today: string): LastDone {
   const last: LastDone = { hippos: {}, gators: {} };
   for (const record of records) {
-    if (record.kind !== "workout" || record.athlete === "team" || record.day > today) continue;
-    const mine = last[record.athlete];
-    for (const movement of movementsIn(record)) {
-      const held = mine[movement];
-      if (held === undefined || record.day > held) mine[movement] = record.day;
+    if (record.kind !== "workout" || record.day > today) continue;
+    const movements = movementsIn(record);
+    for (const athlete of athletesOf(record.athlete)) {
+      const mine = last[athlete];
+      for (const movement of movements) {
+        const held = mine[movement];
+        if (held === undefined || record.day > held) mine[movement] = record.day;
+      }
     }
   }
   return last;
@@ -195,17 +205,20 @@ export type WeekDays = Record<RaceAthlete, Partial<Record<Movement, string[]>>>;
 /**
  * The days each of you did each race workout in the last WEEK_DAYS, today
  * included. Days, not sessions: two sessions at it on one day count once, as
- * training days do in the Sessions box. Together is nobody's, as for lastDone.
+ * training days do in the Sessions box. Together is both of yours, as for lastDone.
  */
 export function weekDays(records: readonly RecordItem[], today: string): WeekDays {
   const from = weekFrom(today);
   const days: Record<RaceAthlete, Map<Movement, Set<string>>> = { hippos: new Map(), gators: new Map() };
   for (const record of records) {
-    if (record.kind !== "workout" || record.athlete === "team" || record.day < from || record.day > today) continue;
-    const mine = days[record.athlete];
-    for (const movement of movementsIn(record)) {
-      if (!mine.has(movement)) mine.set(movement, new Set());
-      mine.get(movement)!.add(record.day);
+    if (record.kind !== "workout" || record.day < from || record.day > today) continue;
+    const movements = movementsIn(record);
+    for (const athlete of athletesOf(record.athlete)) {
+      const mine = days[athlete];
+      for (const movement of movements) {
+        if (!mine.has(movement)) mine.set(movement, new Set());
+        mine.get(movement)!.add(record.day);
+      }
     }
   }
   const week: WeekDays = { hippos: {}, gators: {} };

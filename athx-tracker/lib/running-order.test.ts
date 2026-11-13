@@ -104,7 +104,7 @@ test("a workout counts with work logged against it, at any load", () => {
   assert.equal(movementsIn(workout({ lifts: [lift("Back squat", 100, 0, 0)] })).size, 0);
 });
 
-test("the last time is each athlete's newest day at it, up to today, and Together is nobody's", () => {
+test("the last time is each athlete's newest day at it, up to today, and Together is both of yours", () => {
   const records: RecordItem[] = [
     workout({ id: "a", day: "2026-11-01", lifts: [lift("Back squat")] }),
     workout({ id: "b", day: "2026-11-09", lifts: [lift("Back squat")] }),
@@ -115,8 +115,8 @@ test("the last time is each athlete's newest day at it, up to today, and Togethe
     workout({ id: "f", athlete: "team", day: TODAY, lifts: [lift("Deadlift")] }),
   ];
   const last = lastDone(records, TODAY);
-  assert.deepEqual(last.gators, { squat: "2026-11-09" });
-  assert.deepEqual(last.hippos, { run: "2026-11-10" });
+  assert.deepEqual(last.gators, { squat: "2026-11-09", deadlift: TODAY });
+  assert.deepEqual(last.hippos, { run: "2026-11-10", deadlift: TODAY });
 });
 
 const done = (over: Partial<Record<"hippos" | "gators", LastDone["hippos"]>>): LastDone => ({
@@ -200,13 +200,15 @@ test("the week is the days in the last 7 each of you did it, today included, eac
     workout({ id: "d", day: "2026-11-04", lifts: [lift("Back squat")] }),
     workout({ id: "e", day: TODAY, segments: [station("Closing row", 40, "cal", 180)] }),
     workout({ id: "f", day: "2026-11-08", segments: [station("Opening row", 40, "cal", 180)] }),
-    // Logged ahead has not happened, and Together is nobody's.
+    // Logged ahead has not happened, and Together is both of yours.
     workout({ id: "g", athlete: "hippos", day: "2026-11-12", segments: [station("Run", 5, "km", 1800)] }),
     workout({ id: "h", athlete: "team", day: TODAY, lifts: [lift("Deadlift")] }),
   ];
   const week = weekDays(records, TODAY);
-  assert.deepEqual(week.gators, { squat: ["2026-11-05", "2026-11-10"], row: ["2026-11-08", TODAY] });
-  assert.deepEqual(week.hippos, {});
+  assert.deepEqual(week.gators, {
+    squat: ["2026-11-05", "2026-11-10"], row: ["2026-11-08", TODAY], deadlift: [TODAY],
+  });
+  assert.deepEqual(week.hippos, { deadlift: [TODAY] });
 });
 
 const days = (over: Partial<WeekDays>): WeekDays => ({ hippos: {}, gators: {}, ...over });

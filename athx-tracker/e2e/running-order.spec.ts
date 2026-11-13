@@ -73,10 +73,13 @@ test("every race workout is in order, with each of your loads and when you last 
       athlete: "hippos", category: "Endurance", seconds: 900,
       segments: [{ name: "Run", unit: "km", completed: 2.4, target: 2.4, seconds: 900, block: "endurance" }],
     }),
-    // Together cannot say which of you skied, so it is neither's.
+    // Together is both of yours.
     workout({
       athlete: "team", category: "Endurance", context: "pairs", day: "2026-10-27",
-      segments: [{ name: "Ski erg", unit: "m", completed: 2000, target: 2000, seconds: 480, block: "endurance" }],
+      segments: [
+        { name: "Run", unit: "km", completed: 2.4, target: 2.4, seconds: 900, block: "endurance" },
+        { name: "Ski erg", unit: "m", completed: 2000, target: 2000, seconds: 480, block: "endurance" },
+      ],
     }),
     workout({ category: "MetCon", day: "2026-10-22", segments: halfCircuit }),
   ]);
@@ -104,8 +107,9 @@ test("every race workout is in order, with each of your loads and when you last 
   await expect(pill(page, /^Deadlift/, "hippos")).toHaveText(/Never/);
   await expect(pill(page, /^Deadlift/, "hippos")).toHaveAttribute("data-recency", "stale");
   await expect(pill(page, /^Run/, "hippos")).toHaveText(/Today/);
-  await expect(pill(page, /^SkiErg/, "hippos")).toHaveText(/Never/);
-  await expect(pill(page, /^SkiErg/, "gators")).toHaveText(/Never/);
+  await expect(pill(page, /^Run/, "gators")).toHaveText(/1d ago/);
+  await expect(pill(page, /^SkiErg/, "hippos")).toHaveText(/1d ago/);
+  await expect(pill(page, /^SkiErg/, "gators")).toHaveText(/1d ago/);
 
   // A row is a row, at either end of the circuit; a station left at zero was not reached.
   await expect(pill(page, /^Opening row/, "gators")).toHaveText(/6d ago/);
@@ -119,8 +123,11 @@ test("every race workout is in order, with each of your loads and when you last 
   await expect(week(page, /^Shoulder to overhead/, "gators")).toContainText("Done on 2 of the last 7 days");
   await expect(week(page, /^Back squat/, "hippos")).toHaveAttribute("data-week", "0");
   await expect(week(page, /^Back squat/, "hippos")).toContainText("Not done in the last 7 days");
-  await expect(week(page, /^Run/, "hippos")).toHaveAttribute("data-twice", "short");
-  await expect(week(page, /^Run/, "hippos")).toHaveText(/1×/);
+  // Today's run and Together's yesterday make two for Hippos; Together's alone is one for Gators.
+  await expect(week(page, /^Run/, "hippos")).toHaveAttribute("data-twice", "met");
+  await expect(week(page, /^Run/, "hippos")).toHaveText(/2×/);
+  await expect(week(page, /^Run/, "gators")).toHaveAttribute("data-twice", "short");
+  await expect(week(page, /^Run/, "gators")).toHaveText(/1×/);
   await expect(week(page, /^Opening row/, "gators")).toHaveAttribute("data-week", "1");
   await expect(week(page, /^Closing row/, "gators")).toHaveAttribute("data-week", "1");
   await expect(week(page, /^SkiErg/, "gators")).toHaveCount(0);
@@ -136,7 +143,7 @@ test("every race workout is in order, with each of your loads and when you last 
   await expect(cell(page, /^Sandbag carry/, "gators")).toContainText("30 kg");
 
   await card(page).getByRole("button", { name: "Collapse ATHX Lite running order" }).click();
-  await expect(card(page)).toContainText("Not done in 14 days: Hippos 10 · Gators 8");
+  await expect(card(page)).toContainText("Not done in 14 days: Hippos 9 · Gators 6");
 });
 
 test("the running order comes before Sessions on Today", async ({ page }) => {

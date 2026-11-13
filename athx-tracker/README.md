@@ -543,7 +543,8 @@ count what the estimate counts, so any press or jerk from the shoulders is shoul
 to overhead; everything else is its own name, the way the list spells it, so a
 front squat is not a back squat and a plain burpee is not a burpee over the bench.
 The opening and closing rows are one machine, and a row anywhere counts for both.
-Together sessions count for neither athlete, as they do for the estimate. The pill
+A Together session counts for both of you, since you both did the work; the
+estimate still leaves it out, since it cannot say whose number it is. The pill
 is green at 5 days or less, yellow at 14 or less, and red past that or never; the
 day itself shows beside it on a wider screen, and is read out. Folded, the box
 counts each athlete's red rows.
@@ -551,7 +552,8 @@ counts each athlete's red rows.
 The three lifts, the run and the rows (`TWICE_WEEKLY`) also count the last 7 days,
 today and the six before it as the Sessions box counts them, against twice a week
 (`weekDays`). It counts days, not sessions, so two sessions at it on one day count
-once; what counts as doing it, and whose it is, is the same as for the last time.
+once; what counts as doing it, and whose it is, Together included, is the same as
+for the last time.
 Two dots under the pill fill in the athlete's colour, one for each day, and the
 count beside them carries a third day and more. The SkiErg and MetCon X's other
 stations are not counted.
