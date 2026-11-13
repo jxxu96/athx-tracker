@@ -174,7 +174,9 @@ export function Energy({
     gators: null,
   });
   // Where each of you asked to log another, so a timing that has a check-in
-  // logs a second rather than changing the first. Elsewhere it lapses by itself.
+  // logs a second rather than changing the first. Choosing a day or timing
+  // ends it, and the clock moving the card on leaves it behind, so coming
+  // back finds the row changing its check-in again rather than adding one.
   const [adding, setAdding] = useState<Record<Person, string | null>>({ hippos: null, gators: null });
   // The check-in this card last logged or changed for each of you. Its row
   // keeps showing it, and changing it, while it is in the timing on screen,
@@ -200,8 +202,10 @@ export function Energy({
   const onToday = day === today;
   const from = addDays(today, -6);
   const days = Array.from({ length: 7 }, (_, index) => addDays(from, index));
-  const choose = (next: { day?: string; timing?: EnergyTiming }) =>
+  const choose = (next: { day?: string; timing?: EnergyTiming }) => {
     setChosen((now) => ({ ...(now.asOf === today ? now : { day: today, timing: null }), ...next, asOf: today }));
+    setAdding({ hippos: null, gators: null });
+  };
 
   const slot = timing ? slotOf(day, timing) : null;
 

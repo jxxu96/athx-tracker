@@ -130,6 +130,12 @@ test("a tap logs a check-in at the clock's timing, a tap on another level change
   await energy.getByRole("button", { name: "Cancel logging another for Hippos" }).click();
   await expect(hippos.getByRole("button", { name: "4 out of 10", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect.poll(async () => (await saved(page)).length).toBe(2);
+  // Leaving for another timing ends it too: back at breakfast, a tap changes again.
+  await energy.getByRole("button", { name: "Log another for Hippos at breakfast today" }).click();
+  await timings(page).getByRole("button", { name: "Lunch" }).click();
+  await timings(page).getByRole("button", { name: "Breakfast" }).click();
+  await expect(energy.getByText("Tap a level to log another")).toHaveCount(0);
+  await expect(hippos.getByRole("button", { name: "4 out of 10", exact: true })).toHaveAttribute("aria-pressed", "true");
 
   // Lunch is its own. It is not lunchtime, so it takes no time of day.
   await timings(page).getByRole("button", { name: "Lunch" }).click();
