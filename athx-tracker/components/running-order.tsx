@@ -7,13 +7,20 @@ import {
   DUE_DAYS,
   FRESH_DAYS,
   RUNNING_ORDER,
+  TIMES_A_WEEK,
+  TWICE_WEEKLY,
+  WEEK_DAYS,
   recency,
   seenLabel,
   seenSpoken,
   staleCount,
+  weekLabel,
+  weekSpoken,
   type Recency,
   type Seen,
   type SeenTable,
+  type WeekCount,
+  type WeekTable,
 } from "@/lib/running-order";
 
 /** Each zone's steps with their place in the whole day, 1 to 12. */
@@ -61,6 +68,43 @@ function Since({ seen, today }: { seen: Seen; today: string }) {
   );
 }
 
+/** One dot for each time a week asks for, filled for each day it was done. */
+function Pips({ days, color }: { days: number; color: string }) {
+  return (
+    <span aria-hidden="true" className="flex shrink-0 gap-0.5">
+      {Array.from({ length: TIMES_A_WEEK }, (_, index) =>
+        index < days ? (
+          <span key={index} className="size-2 rounded-full" style={{ background: color }} />
+        ) : (
+          <span key={index} className="size-2 rounded-full border border-muted-foreground" />
+        ),
+      )}
+    </span>
+  );
+}
+
+/**
+ * How many of the last WEEK_DAYS one of you did it on, against twice: a dot
+ * for each, in your colour, and the count beside them, which also carries a
+ * third time and more.
+ */
+function Week({ count, color }: { count: WeekCount; color: string }) {
+  const met = count.days >= TIMES_A_WEEK;
+  return (
+    <span
+      data-week={count.days}
+      data-twice={met ? "met" : "short"}
+      className="mt-1 flex items-center gap-1 px-1.5 text-[11px] leading-4 tabular-nums"
+    >
+      <Pips days={count.days} color={color} />
+      <span aria-hidden="true" className={met ? "font-medium" : "text-muted-foreground"}>
+        {weekLabel(count)}
+      </span>
+      <span className="sr-only">{weekSpoken(count)}</span>
+    </span>
+  );
+}
+
 /** The folded line: how many workouts each of you has let go red. */
 export function runningOrderLine(seen: SeenTable, today: string) {
   const counts = RACE_ATHLETES.map((athlete) => ({ athlete, stale: staleCount(seen, athlete, today) }));
@@ -73,9 +117,20 @@ export function runningOrderLine(seen: SeenTable, today: string) {
 /**
  * Race day, every workout in the order it is run, with what each asks of
  * each of you and when each of you last did it: green within FRESH_DAYS,
- * yellow within DUE_DAYS, red past that or never.
+ * yellow within DUE_DAYS, red past that or never. The lifts, the run and the
+ * rows also count the last WEEK_DAYS against twice.
  */
-export function RunningOrder({ seen, today, unit }: { seen: SeenTable; today: string; unit: WeightUnit }) {
+export function RunningOrder({
+  seen,
+  week,
+  today,
+  unit,
+}: {
+  seen: SeenTable;
+  week: WeekTable;
+  today: string;
+  unit: WeightUnit;
+}) {
   return (
     <>
       <table className="w-full table-fixed text-left text-xs">
@@ -137,6 +192,9 @@ export function RunningOrder({ seen, today, unit }: { seen: SeenTable; today: st
                 {RACE_ATHLETES.map((athlete) => (
                   <td key={athlete} className="py-2 pl-1.5 align-top">
                     <Since seen={seen[athlete][step.movement]} today={today} />
+                    {TWICE_WEEKLY.includes(step.movement) ? (
+                      <Week count={week[athlete][step.movement]} color={ATHLETES[athlete].color} />
+                    ) : null}
                     {step.kg ? (
                       <span className="mt-0.5 block px-1.5 text-[11px] leading-4 whitespace-nowrap tabular-nums text-muted-foreground">
                         {formatWeight(step.kg[athlete], unit)}
@@ -166,6 +224,17 @@ export function RunningOrder({ seen, today, unit }: { seen: SeenTable; today: st
         <Pill band="fresh">≤{FRESH_DAYS}d</Pill>
         <Pill band="due">≤{DUE_DAYS}d</Pill>
         <Pill band="stale">&gt;{DUE_DAYS}d or never</Pill>
+      </p>
+      <p className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+        <span className="mr-0.5">Days in the last {WEEK_DAYS}, lifts, run and rows</span>
+        <span className="inline-flex items-center gap-1">
+          <Pips days={TIMES_A_WEEK} color="var(--muted-foreground)" />
+          twice
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <Pips days={1} color="var(--muted-foreground)" />
+          once
+        </span>
       </p>
     </>
   );

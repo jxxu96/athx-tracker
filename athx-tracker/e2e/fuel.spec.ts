@@ -244,8 +244,8 @@ test("each person's expenditure sits under that person", async ({ page }) => {
   const hippos = page.getByRole("group", { name: "Hippos fuel" });
   const gators = page.getByRole("group", { name: "Gators fuel" });
   await expect(hippos.getByText("Add a bodyweight in Setup to estimate calories burned.")).toBeVisible();
-  await expect(hippos.getByText("~620")).toHaveCount(0);
-  await expect(gators.getByText("~620")).toBeVisible();
+  await expect(hippos.getByText("620 kcal", { exact: true })).toHaveCount(0);
+  await expect(gators.getByText("620 kcal", { exact: true })).toBeVisible();
   await expect(gators.getByText("Add a bodyweight in Setup")).toHaveCount(0);
 });
 

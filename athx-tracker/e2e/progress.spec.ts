@@ -292,8 +292,9 @@ test("a lift's figure is the rep max its sets show, never carried up, beside the
   // Five at 225 is a 225 lb 3RM, not the 239 lb a formula would carry it up to.
   await expect(deadlift.getByRole("definition")).toContainText(["225 lb", "225 lb × 5"]);
   // Three sets of five at 225 lb.
-  await expect(deadlift).toContainText("this week 3,375");
-  await expect(deadlift.getByRole("img", { name: /^Gators deadlift weekly volume/ })).toBeVisible();
+  await expect(deadlift.getByRole("img", { name: /^Gators deadlift weekly volume,.*3,375 lb$/ }))
+    .toBeVisible();
+  await expect(deadlift).not.toContainText("weeks shown");
 
   // Twelves are a 2RM of their own load, and their volume counts.
   await logLifts(page, [
@@ -303,7 +304,8 @@ test("a lift's figure is the rep max its sets show, never carried up, beside the
   await openProgress(page);
   const squat = page.getByRole("group", { name: "Gators back squat" });
   await expect(squat.getByRole("definition")).toContainText(["135 lb", "135 lb × 12"]);
-  await expect(squat).toContainText("this week 4,860");
+  await expect(squat.getByRole("img", { name: /^Gators back squat weekly volume,.*4,860 lb$/ }))
+    .toBeVisible();
 });
 
 test("the hippo and the gator run their bars, with a bagel only through Wednesday", async ({ page }) => {

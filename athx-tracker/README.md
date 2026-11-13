@@ -10,8 +10,16 @@ single SQLite file on a volume.
   zone's progress from its first estimate to its goal (Strength's from the lift
   targets), then a race-day estimate: the pair's Strength score, each athlete's share
   of it, and where it would have placed among last season's mixed Lite pairs; the
-  2.4 km run times and SkiErg distance for Endurance; and the MetCon X time. Then
-  the days each of you trained this week and over the last 7 days against the
+  2.4 km run times and SkiErg distance for Endurance; and the MetCon X time. The
+  ATHX Lite running order follows: every workout of race day in the order it is
+  run, the three Strength lifts, the 2.4 km run and the SkiErg, then the seven
+  MetCon X stations, with the refuel and recovery breaks between zones. Beside
+  what each one asks of each of you, such as your load at a station, a pill
+  says when each of you last did it: green within 5 days, yellow within 14,
+  red past that or never. Under the pill on the three lifts, the run and the
+  two rows, two dots in your colour fill for each day of the last 7 you did it,
+  so twice a week shows as both filled, with the count beside them. See *The
+  running order* below. Then the days each of you trained this week and over the last 7 days against the
   weekly target of training days (two sessions on one day count once), and
   under them the last 7 days as a strip, a dot for each session in
   its athlete's colour, with what each one was listed beneath: the time, who and
@@ -41,13 +49,7 @@ single SQLite file on a volume.
   Fuel over the whole journal are worked out on the server from every entry,
   so an old best counts however much has been logged since. Under the counts,
   the last 7 days list each session, including its time, what it burned, and
-  the whole-session estimate when the stations support one. The ATHX Lite
-  running order follows: every workout of race day in the order it is run,
-  the three Strength lifts, the 2.4 km run and the SkiErg, then the seven
-  MetCon X stations, with the refuel and recovery breaks between zones. Beside
-  what each one asks of each of you, such as your load at a station, a pill
-  says when each of you last did it: green within 5 days, yellow within 14,
-  red past that or never. See *The running order* below. Under that is a
+  the whole-session estimate when the stations support one. Under that is a
   request log for features and ideas:
   shared between the two of you, kept with the journal, and not listed in the
   Log. Mark one done when it has been dealt with, or delete it.
@@ -548,14 +550,26 @@ count what the estimate counts, so any press or jerk from the shoulders is shoul
 to overhead; everything else is its own name, the way the list spells it, so a
 front squat is not a back squat and a plain burpee is not a burpee over the bench.
 The opening and closing rows are one machine, and a row anywhere counts for both.
-Together sessions count for neither athlete, as they do for the estimate. The pill
+A Together session counts for both of you, since you both did the work; the
+estimate still leaves it out, since it cannot say whose number it is. The pill
 is green at 5 days or less, yellow at 14 or less, and red past that or never; the
 day itself shows beside it on a wider screen, and is read out. Folded, the box
 counts each athlete's red rows.
 
-The phone holds only the recent slice, so the server works the last times out over
-the whole journal (`journalSummary`). The phone still answers for the days it holds
-whole, so a session saved or deleted on it shows at once (`seenTable`).
+The three lifts, the run and the rows (`TWICE_WEEKLY`) also count the last 7 days,
+today and the six before it as the Sessions box counts them, against twice a week
+(`weekDays`). It counts days, not sessions, so two sessions at it on one day count
+once; what counts as doing it, and whose it is, Together included, is the same as
+for the last time.
+Two dots under the pill fill in the athlete's colour, one for each day, and the
+count beside them carries a third day and more. The SkiErg and MetCon X's other
+stations are not counted.
+
+The phone holds only the recent slice, so the server works the last times and the
+week's days out over the whole journal (`journalSummary`). The phone still answers
+for the days it holds whole, so a session saved or deleted on it shows at once
+(`seenTable`, `weekTable`). Without the server's answer, a week that reaches past
+the slice shows the phone's count with a "+", as at least that many.
 
 ### Resting energy and the balance
 
