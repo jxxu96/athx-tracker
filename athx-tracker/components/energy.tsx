@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
-import { BatteryMedium } from "lucide-react";
+import { BatteryMedium, Plus } from "lucide-react";
 import { CollapsibleCard } from "@/components/collapsible-card";
 import { Choice } from "@/components/meal-form";
 import { DayButtons } from "@/components/workout-form";
@@ -54,13 +54,52 @@ const serverTiming = () => null;
 const LEVELS = Array.from({ length: ENERGY_MAX - ENERGY_MIN + 1 }, (_, index) => ENERGY_MIN + index);
 const weekday = (day: string) =>
   new Intl.DateTimeFormat("en-GB", { weekday: "short", timeZone: "UTC" }).format(dayToDate(day));
+/** A day and one of its timings: where a row's check-ins are filed. */
+const slotOf = (day: string, timing: EnergyTiming) => `${day} ${timing}`;
+/**
+ * A row's text buttons. Padded to a 24px target, the least WCAG 2.2 allows,
+ * and pulled back by as much, so the line is as tall with them as without.
+ */
+const ROW_ACTION =
+  "-my-1 inline-flex shrink-0 items-center gap-0.5 rounded py-1 font-medium text-foreground hover:underline disabled:opacity-60";
+
+/**
+ * Who has logged a timing on the chosen day, on its button: a dot each in
+ * the athlete's colour, Hippos first as in the rows, filled once logged and
+ * hollow while the other has not, and nothing while neither has. The
+ * button's name says the same in words.
+ */
+function LoggedMarks({ logged }: { logged: readonly Person[] }) {
+  if (logged.length === 0) return null;
+  return (
+    <span className="ml-1.5 inline-flex gap-0.5 align-middle">
+      {PEOPLE.map((athlete) => (
+        <span
+          key={athlete}
+          className="size-1.5 rounded-full border"
+          style={{
+            borderColor: ATHLETES[athlete].color,
+            background: logged.includes(athlete) ? ATHLETES[athlete].color : "transparent",
+          }}
+        />
+      ))}
+    </span>
+  );
+}
+
+/** A timing's button read with who has logged it: "Lunch, logged for Hippos", or just "Lunch". */
+const timingName = (timing: EnergyTiming, logged: readonly Person[]) =>
+  logged.length === 0
+    ? timing
+    : `${timing}, logged for ${logged.length === PEOPLE.length ? "both" : ATHLETES[logged[0]].name}`;
 
 /**
  * The ten levels in one row, low to high, with what the ends mean under them,
  * so a 7 means the same thing in March as it did in November. The chosen one
- * takes the athlete's ring. With logs, a tap adds a check-in rather than
- * choosing one, so the buttons are actions, not toggles, and the ring only
- * marks the one being saved.
+ * takes the athlete's ring: on Today, the level a timing's check-in holds,
+ * which a tap on another changes. With logs, a tap adds a check-in rather
+ * than choosing one, so the buttons are actions, not toggles, and the ring
+ * only marks the one being saved.
  */
 export function EnergyLevels({
   athlete,
@@ -106,11 +145,16 @@ export function EnergyLevels({
 
 /**
  * How each athlete feels, out of 10, at breakfast, lunch and dinner, and the
- * last seven days under it. Each tap logs one more check-in; a timing takes as
- * many as are logged, and a mistake is fixed or deleted in the Log. Today at
- * the clock's timing is where it starts, the way a meal picks its sitting; the
- * date and timing buttons, or B, L and D, reach another. Once both of you have
- * checked in at the clock's timing, the box opens folded to that one line.
+ * last seven days under it. A tap on an empty timing logs a check-in. Once a
+ * timing has one, its level keeps the athlete's ring and a tap on another
+ * changes it, since a second tap that quietly logged a second check-in
+ * averaged a slip away instead of correcting it; Log another adds one on
+ * purpose. A timing takes as many as are logged, the row changes the latest,
+ * and the Log moves or deletes any of them. Today at the clock's timing is
+ * where it starts, the way a meal picks its sitting; the date and timing
+ * buttons, or B, L and D, reach another, and each timing's button marks who
+ * has logged it. Once both of you have checked in at the clock's timing, the
+ * box opens folded to that one line.
  */
 export function Energy({
   records,
@@ -129,6 +173,16 @@ export function Energy({
     hippos: null,
     gators: null,
   });
+  // Where each of you asked to log another, so a timing that has a check-in
+  // logs a second rather than changing the first. Choosing a day or timing
+  // ends it, and the clock moving the card on leaves it behind, so coming
+  // back finds the row changing its check-in again rather than adding one.
+  const [adding, setAdding] = useState<Record<Person, string | null>>({ hippos: null, gators: null });
+  // The check-in this card last logged or changed for each of you. Its row
+  // keeps showing it, and changing it, while it is in the timing on screen,
+  // even where the timing's order puts another after it: one logged for
+  // lunch at dinnertime has no time, so it counts as earlier than one at 12:05.
+  const [latest, setLatest] = useState<Record<Person, string | null>>({ hippos: null, gators: null });
   // Which day and timing the rows set; a null timing follows the clock. A day
   // that turned while the app was open follows today and the clock again,
   // rather than staying on yesterday.
@@ -148,26 +202,43 @@ export function Energy({
   const onToday = day === today;
   const from = addDays(today, -6);
   const days = Array.from({ length: 7 }, (_, index) => addDays(from, index));
-  const choose = (next: { day?: string; timing?: EnergyTiming }) =>
+  const choose = (next: { day?: string; timing?: EnergyTiming }) => {
     setChosen((now) => ({ ...(now.asOf === today ? now : { day: today, timing: null }), ...next, asOf: today }));
+    setAdding({ hippos: null, gators: null });
+  };
 
-  async function check(athlete: Person, level: number) {
+  const slot = timing ? slotOf(day, timing) : null;
+
+  /**
+   * A tap on a row: a new check-in where the row shows none, or else the one
+   * it shows at the level tapped. That keeps its day, timing and time, being
+   * a correction rather than a second reading.
+   */
+  async function check(athlete: Person, level: number, shown: EnergyCheckIn | null) {
     if (!timing) return;
+    // Already at that level, so there is nothing to change.
+    if (shown?.level === level) return;
+    const record: EnergyCheckIn = shown
+      ? { ...shown, level }
+      : {
+          id: newId(),
+          kind: "energy",
+          athlete,
+          day,
+          // Today at the clock's timing is at the clock. Any other has no time:
+          // the clock now is not when that was felt.
+          ...(onToday && timing === clockTiming ? { time: clockTime() } : {}),
+          timing,
+          level,
+        };
     setPending((now) => ({ ...now, [athlete]: { level, day, timing } }));
     try {
-      await onCheckIn({
-        id: newId(),
-        kind: "energy",
-        athlete,
-        day,
-        // Today at the clock's timing is at the clock. Any other has no time:
-        // the clock now is not when that was felt.
-        ...(onToday && timing === clockTiming ? { time: clockTime() } : {}),
-        timing,
-        level,
-      });
+      await onCheckIn(record);
+      setLatest((now) => ({ ...now, [athlete]: record.id }));
+      setAdding((now) => ({ ...now, [athlete]: null }));
     } catch {
-      // The tracker has already said why; the row shows what is saved.
+      // The tracker has already said why; the row shows what is saved, and
+      // Log another stays open for a second try.
     } finally {
       setPending((now) => ({ ...now, [athlete]: null }));
     }
@@ -214,8 +285,8 @@ export function Energy({
       }
     >
       <p className="-mt-1 mb-3 text-xs text-muted-foreground">
-        How each of you feels, out of {ENERGY_MAX}, at breakfast, lunch and dinner. Each tap logs one more; fix a
-        mistake in the Log.
+        How each of you feels, out of {ENERGY_MAX}, at breakfast, lunch and dinner. Tap a level to log it, and
+        another to change it.
       </p>
       <div className="mb-4 space-y-3">
         <DayButtons today={today} day={day} subject="Energy" onChange={(next) => choose({ day: next })} />
@@ -223,27 +294,70 @@ export function Energy({
           label="Timing"
           value={timing}
           onChange={(next) => choose({ timing: next })}
-          options={ENERGY_TIMINGS.map((value) => ({ value, label: value }))}
+          options={ENERGY_TIMINGS.map((value) => {
+            const logged = PEOPLE.filter((athlete) => checkInsAt(records, athlete, day, value).length > 0);
+            return { value, label: value, name: timingName(value, logged), detail: <LoggedMarks logged={logged} /> };
+          })}
         />
       </div>
       <div className="space-y-4">
         {PEOPLE.map((athlete) => {
           const waiting = pending[athlete];
+          const name = ATHLETES[athlete].name;
+          const logged = timing ? checkInsAt(records, athlete, day, timing) : [];
+          const another = slot !== null && adding[athlete] === slot && logged.length > 0;
+          // What the row shows and a tap changes: nothing while it logs
+          // another, or else the one just logged or changed here, or else the
+          // timing's latest.
+          const shown = another
+            ? null
+            : logged.find((record) => record.id === latest[athlete]) ?? logged.at(-1) ?? null;
           return (
             <div key={athlete}>
-              <p className="mb-1.5 flex items-baseline justify-between gap-2 text-xs">
+              <div className="mb-1.5 flex items-center justify-between gap-2 text-xs">
                 <span className="font-medium" style={{ color: ATHLETES[athlete].ink }}>
-                  {ATHLETES[athlete].name}
+                  {name}
                 </span>
-                <span className="text-right tabular-nums text-muted-foreground">{windowLine(athlete)}</span>
-              </p>
+                <span className="flex min-w-0 flex-wrap items-center justify-end gap-x-2.5 text-right tabular-nums text-muted-foreground">
+                  {another ? (
+                    <>
+                      <span>Tap a level to log another</span>
+                      <button
+                        type="button"
+                        disabled={waiting !== null}
+                        aria-label={`Cancel logging another for ${name}`}
+                        onClick={() => setAdding((now) => ({ ...now, [athlete]: null }))}
+                        className={ROW_ACTION}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span>{windowLine(athlete)}</span>
+                      {shown ? (
+                        <button
+                          type="button"
+                          disabled={waiting !== null}
+                          aria-label={`Log another for ${name} ${atTiming}${dayName}`}
+                          onClick={() => setAdding((now) => ({ ...now, [athlete]: slot }))}
+                          className={ROW_ACTION}
+                        >
+                          <Plus className="size-3" aria-hidden="true" />
+                          Log another
+                        </button>
+                      ) : null}
+                    </>
+                  )}
+                </span>
+              </div>
               <EnergyLevels
                 athlete={athlete}
-                label={`${ATHLETES[athlete].name} energy ${atTiming}${dayName}`}
-                value={waiting && waiting.day === day && waiting.timing === timing ? waiting.level : null}
+                label={`${name} energy ${atTiming}${dayName}`}
+                value={waiting && waiting.day === day && waiting.timing === timing ? waiting.level : shown?.level ?? null}
                 disabled={waiting !== null || timing === null}
-                logs
-                onChoose={(level) => void check(athlete, level)}
+                logs={shown === null}
+                onChoose={(level) => void check(athlete, level, shown)}
               />
             </div>
           );

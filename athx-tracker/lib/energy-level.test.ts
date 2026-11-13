@@ -32,6 +32,20 @@ test("a window keeps every check-in logged in it, oldest first, for that athlete
   assert.equal(energyAt(records, "hippos", "2026-11-05", "Dinner"), null);
 });
 
+test("two at the same minute, or with no time, go in the order they were saved, so the last is the latest", () => {
+  // The journal holds them newest saved first.
+  const records: RecordItem[] = [
+    checkIn("2026-11-05", 5, { id: "second", time: "08:15" }),
+    checkIn("2026-11-05", 7, { id: "first", time: "08:15" }),
+    checkIn("2026-11-05", 4, { id: "untimed second" }),
+    checkIn("2026-11-05", 3, { id: "untimed first" }),
+  ];
+  assert.deepEqual(
+    checkInsAt(records, "hippos", "2026-11-05", "Breakfast").map(({ id }) => id),
+    ["untimed first", "untimed second", "first", "second"],
+  );
+});
+
 test("a day lists its windows breakfast first, each with its own mean", () => {
   const records = [
     checkIn("2026-11-05", 5, { timing: "Dinner" }),

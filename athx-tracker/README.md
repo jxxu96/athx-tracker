@@ -58,14 +58,21 @@ single SQLite file on a volume.
   go are a chip at the left of the header, "295 d", and read out in full to a
   screen reader.
   **Energy** is how each of you feels, out of 10, from 1 (exhausted) to 10
-  (full of energy), at breakfast, lunch and dinner: each tap on that
-  athlete's row logs one more check-in, as many a day as you like, and none
-  replaces another; a mistake is corrected or deleted in the Log. The timing
+  (full of energy), at breakfast, lunch and dinner. A tap on an athlete's
+  row logs a check-in, and its level then keeps the athlete's ring: a tap on
+  another level changes it and keeps its time, and **Log another** beside it
+  adds a second on purpose. A second tap used to add one every time, so a
+  slip could only be averaged in, not corrected, without going to the Log. A
+  timing takes as many as are logged; its row shows and changes the latest,
+  and the Log moves or deletes any of them. The timing
   starts where a meal's sitting would at that hour (5–10 breakfast, 11–14
   lunch, 17–21 dinner); energy has no snack, so the afternoon counts as lunch,
   the late evening as dinner and before 5 as breakfast. Tap another timing,
-  or press B, L or D as on a meal, to log a different one
-  (`lib/meal-time.ts`). Each row says what that timing holds: one check-in's
+  or press B, L or D as on a meal, to log or change a different one
+  (`lib/meal-time.ts`). Once either of you has logged a timing on the chosen
+  day, its button carries a dot for each of you, Hippos first, filled for
+  whoever has logged it and hollow for whoever has not, so a missed one shows
+  without opening it. Each row says what that timing holds: one check-in's
   level and time, or several levels and their mean. The date buttons above
   the rows, Today, Yesterday or a day off the calendar, log a missed day the
   same way. Only today at the clock's timing takes the clock's time; any

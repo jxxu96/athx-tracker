@@ -22,13 +22,17 @@ const mean = (levels: readonly number[]) => levels.reduce((sum, level) => sum + 
 
 /**
  * One athlete's check-ins in one window of a day, oldest first, an untimed
- * one counting as earlier than a timed one. A window takes as many as are
- * logged; none replaces another.
+ * one counting as earlier than a timed one. Two at the same minute, or two
+ * with no time, go in the order they were saved: the journal holds those
+ * newest first, so they are turned round before the sort, which keeps them.
+ * The last is then the latest, the one Today shows and changes. A window
+ * takes as many as are logged; none replaces another.
  */
 export function checkInsAt(records: readonly RecordItem[], athlete: Person, day: string, timing: EnergyTiming | null) {
   return records
     .filter((record): record is EnergyCheckIn =>
       isCheckIn(record) && record.athlete === athlete && record.day === day && timingOf(record) === timing)
+    .reverse()
     .sort((a, b) => (a.time ?? "").localeCompare(b.time ?? ""));
 }
 
