@@ -11,7 +11,7 @@ import { RunningOrder, runningOrderLine } from "@/components/running-order";
 import { SessionCalendar } from "@/components/session-calendar";
 import { daysTrained } from "@/lib/session-calendar";
 import { zoneGoals } from "@/lib/race";
-import { lastDone, seenTable } from "@/lib/running-order";
+import { lastDone, seenTable, weekDays, weekTable } from "@/lib/running-order";
 import {
   ATHLETES,
   DEFAULT_SETTINGS,
@@ -102,6 +102,10 @@ export function Overview({
     () => seenTable(lastDone(records, today), figures.lastDone, heldFrom),
     [records, today, figures.lastDone, heldFrom],
   );
+  const week = useMemo(
+    () => weekTable(weekDays(records, today), figures.weekDays, heldFrom, today),
+    [records, today, figures.weekDays, heldFrom],
+  );
 
   // The days to go are in the header now. Fuel is what gets checked most, so
   // it leads; Energy folds to a line once both of you have checked in.
@@ -134,6 +138,14 @@ export function Overview({
         />
         <RaceEstimate estimate={figures.race} placing={figures.placing} unit={unit} />
       </CollapsibleCard>
+
+      <Panel
+        title="ATHX Lite running order"
+        icon={<ListOrdered className="size-4 text-muted-foreground" />}
+        mini={runningOrderLine(seen, today)}
+      >
+        <RunningOrder seen={seen} week={week} today={today} unit={unit} />
+      </Panel>
 
       <Panel
         title="Sessions"
@@ -211,14 +223,6 @@ export function Overview({
           onLoad={onLoadSessions}
           refresh={fuelRefresh}
         />
-      </Panel>
-
-      <Panel
-        title="ATHX Lite running order"
-        icon={<ListOrdered className="size-4 text-muted-foreground" />}
-        mini={runningOrderLine(seen, today)}
-      >
-        <RunningOrder seen={seen} today={today} unit={unit} />
       </Panel>
 
       <RequestLog

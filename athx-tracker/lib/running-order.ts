@@ -1,4 +1,4 @@
-import { daysBetween } from "./client.ts";
+import { addDays, daysBetween } from "./client.ts";
 import { METCON, liftEffort, type RecordItem, type Workout } from "./domain.ts";
 import {
   ENDURANCE,
@@ -174,6 +174,91 @@ export function seenSpoken(seen: Seen, today: string) {
   if (days === 0 && !seen.onOrBefore) return "today";
   const count = `${days} day${days === 1 ? "" : "s"}`;
   return seen.onOrBefore ? `${count} or more ago` : `${count} ago`;
+}
+
+/**
+ * The workouts the running order marks against the last WEEK_DAYS: the three
+ * lifts, the run and the row, each worth doing twice a week. A row counts at
+ * either end of the circuit, as it does for the last time. The rest of MetCon
+ * X is not marked, and neither is the SkiErg.
+ */
+export const TWICE_WEEKLY: readonly Movement[] = ["overhead", "squat", "deadlift", "run", "row"];
+export const WEEK_DAYS = 7;
+export const TIMES_A_WEEK = 2;
+
+/** The first day of the last WEEK_DAYS, today being the last, as the Sessions box counts them. */
+export const weekFrom = (today: string) => addDays(today, -(WEEK_DAYS - 1));
+
+/** The days, oldest first, each athlete did each workout in the last WEEK_DAYS. */
+export type WeekDays = Record<RaceAthlete, Partial<Record<Movement, string[]>>>;
+
+/**
+ * The days each of you did each race workout in the last WEEK_DAYS, today
+ * included. Days, not sessions: two sessions at it on one day count once, as
+ * training days do in the Sessions box. Together is nobody's, as for lastDone.
+ */
+export function weekDays(records: readonly RecordItem[], today: string): WeekDays {
+  const from = weekFrom(today);
+  const days: Record<RaceAthlete, Map<Movement, Set<string>>> = { hippos: new Map(), gators: new Map() };
+  for (const record of records) {
+    if (record.kind !== "workout" || record.athlete === "team" || record.day < from || record.day > today) continue;
+    const mine = days[record.athlete];
+    for (const movement of movementsIn(record)) {
+      if (!mine.has(movement)) mine.set(movement, new Set());
+      mine.get(movement)!.add(record.day);
+    }
+  }
+  const week: WeekDays = { hippos: {}, gators: {} };
+  for (const athlete of RACE_ATHLETES)
+    for (const [movement, held] of days[athlete]) week[athlete][movement] = [...held].sort();
+  return week;
+}
+
+/**
+ * How many of the last WEEK_DAYS a workout was done on. atLeast marks a count
+ * that can only be higher: part of the week is older than the phone holds and
+ * the server's answer is missing.
+ */
+export type WeekCount = { days: number; atLeast?: true };
+export type WeekTable = Record<RaceAthlete, Record<Movement, WeekCount>>;
+
+/**
+ * The phone's days against the whole journal's, split at heldFrom the way
+ * seenTable splits the last time: after it the phone is the answer, and up to
+ * it the server's days join the phone's.
+ */
+export function weekTable(
+  phone: WeekDays,
+  journal: WeekDays | undefined,
+  heldFrom: string | null,
+  today: string,
+): WeekTable {
+  const from = weekFrom(today);
+  const within = (days: readonly string[] | undefined) => (days ?? []).filter((day) => day >= from && day <= today);
+  const table = { hippos: {}, gators: {} } as WeekTable;
+  for (const athlete of RACE_ATHLETES) {
+    for (const movement of MOVEMENTS) {
+      const here = within(phone[athlete][movement]);
+      let count: WeekCount;
+      if (heldFrom === null || heldFrom < from) count = { days: here.length };
+      else if (!journal) count = { days: here.length, atLeast: true };
+      else {
+        const there = within(journal[athlete][movement]).filter((day) => day <= heldFrom);
+        count = { days: new Set([...here, ...there]).size };
+      }
+      table[athlete][movement] = count;
+    }
+  }
+  return table;
+}
+
+/** "2×", or "1×+" when that is only how many at least. */
+export const weekLabel = (count: WeekCount) => `${count.days}×${count.atLeast ? "+" : ""}`;
+
+/** The same, read aloud: "Done on 2 of the last 7 days". */
+export function weekSpoken(count: WeekCount) {
+  if (count.days === 0 && !count.atLeast) return `Not done in the last ${WEEK_DAYS} days`;
+  return `Done on ${count.atLeast ? "at least " : ""}${count.days} of the last ${WEEK_DAYS} days`;
 }
 
 export type RunningStep = {

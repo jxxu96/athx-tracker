@@ -5,6 +5,7 @@ import { journalSummary } from "./summary.ts";
 import {
   MOVEMENTS,
   RUNNING_ORDER,
+  TWICE_WEEKLY,
   lastDone,
   movementOf,
   movementsIn,
@@ -13,7 +14,12 @@ import {
   seenSpoken,
   seenTable,
   staleCount,
+  weekDays,
+  weekLabel,
+  weekSpoken,
+  weekTable,
   type LastDone,
+  type WeekDays,
 } from "./running-order.ts";
 
 const TODAY = "2026-11-11";
@@ -174,4 +180,64 @@ test("the folded line counts the red rows on screen, both rows included", () => 
 test("the whole-journal summary carries the last times, for a phone holding only the recent slice", () => {
   const records = [workout({ day: "2026-06-01", segments: [station("Sandbag carry", 60, "m", 45)] })];
   assert.deepEqual(journalSummary(records, undefined, TODAY).lastDone, done({ gators: { carry: "2026-06-01" } }));
+});
+
+test("twice a week is marked for the three lifts, the run and the rows, and no other station", () => {
+  assert.deepEqual([...TWICE_WEEKLY].sort(), ["deadlift", "overhead", "row", "run", "squat"]);
+  const marked = RUNNING_ORDER.flatMap((zone) => zone.steps)
+    .filter((step) => TWICE_WEEKLY.includes(step.movement))
+    .map((step) => step.name);
+  assert.deepEqual(marked, ["Shoulder to overhead", "Back squat", "Deadlift", "Run", "Opening row", "Closing row"]);
+});
+
+test("the week is the days in the last 7 each of you did it, today included, each day once", () => {
+  const records: RecordItem[] = [
+    // Two sessions on one day are one day at it.
+    workout({ id: "a", day: "2026-11-10", lifts: [lift("Back squat")] }),
+    workout({ id: "b", day: "2026-11-10", lifts: [lift("Back squat")] }),
+    workout({ id: "c", day: "2026-11-05", lifts: [lift("Back squat")] }),
+    // Eight days back is outside the week.
+    workout({ id: "d", day: "2026-11-04", lifts: [lift("Back squat")] }),
+    workout({ id: "e", day: TODAY, segments: [station("Closing row", 40, "cal", 180)] }),
+    workout({ id: "f", day: "2026-11-08", segments: [station("Opening row", 40, "cal", 180)] }),
+    // Logged ahead has not happened, and Together is nobody's.
+    workout({ id: "g", athlete: "hippos", day: "2026-11-12", segments: [station("Run", 5, "km", 1800)] }),
+    workout({ id: "h", athlete: "team", day: TODAY, lifts: [lift("Deadlift")] }),
+  ];
+  const week = weekDays(records, TODAY);
+  assert.deepEqual(week.gators, { squat: ["2026-11-05", "2026-11-10"], row: ["2026-11-08", TODAY] });
+  assert.deepEqual(week.hippos, {});
+});
+
+const days = (over: Partial<WeekDays>): WeekDays => ({ hippos: {}, gators: {}, ...over });
+
+test("the phone counts the week alone when it holds all of it, and with the server's days when it does not", () => {
+  const phone = days({ gators: { squat: ["2026-11-07", "2026-11-10"], run: ["2026-11-09"] } });
+  const whole = weekTable(phone, undefined, null, TODAY);
+  assert.deepEqual(whole.gators.squat, { days: 2 });
+  assert.deepEqual(whole.hippos.squat, { days: 0 });
+  // A slice reaching back past the week holds it whole too.
+  assert.deepEqual(weekTable(phone, undefined, "2026-11-01", TODAY).gators.run, { days: 1 });
+
+  const journal = days({
+    gators: { squat: ["2026-11-06", "2026-11-07"], run: ["2026-11-08", "2026-11-09"], deadlift: ["2026-11-10"] },
+  });
+  const slice = weekTable(phone, journal, "2026-11-08", TODAY);
+  assert.deepEqual(slice.gators.squat, { days: 3 });
+  assert.deepEqual(slice.gators.run, { days: 2 });
+  // The server still has a deadlift the phone deleted and has not sent yet.
+  assert.deepEqual(slice.gators.deadlift, { days: 0 });
+
+  const unknown = weekTable(phone, undefined, "2026-11-08", TODAY);
+  assert.deepEqual(unknown.gators.squat, { days: 2, atLeast: true });
+  assert.equal(weekLabel(unknown.gators.squat), "2×+");
+  assert.equal(weekSpoken(unknown.gators.squat), "Done on at least 2 of the last 7 days");
+  assert.equal(weekLabel(whole.gators.run), "1×");
+  assert.equal(weekSpoken(whole.gators.run), "Done on 1 of the last 7 days");
+  assert.equal(weekSpoken(whole.hippos.run), "Not done in the last 7 days");
+});
+
+test("the whole-journal summary carries the week, for a phone holding only the recent slice", () => {
+  const records = [workout({ day: "2026-11-06", lifts: [lift("Deadlift")] })];
+  assert.deepEqual(journalSummary(records, undefined, TODAY).weekDays, days({ gators: { deadlift: ["2026-11-06"] } }));
 });

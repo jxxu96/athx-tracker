@@ -38,6 +38,9 @@ const cell = (page: Page, name: RegExp, athlete: "hippos" | "gators") =>
     .nth(athlete === "hippos" ? 1 : 2);
 const pill = (page: Page, name: RegExp, athlete: "hippos" | "gators") =>
   cell(page, name, athlete).locator("[data-recency]");
+/** The days in the last 7 under the pill, on the rows that count against twice a week. */
+const week = (page: Page, name: RegExp, athlete: "hippos" | "gators") =>
+  cell(page, name, athlete).locator("[data-week]");
 
 test.beforeEach(async ({ page }) => {
   await page.clock.setFixedTime(NOW);
@@ -63,6 +66,7 @@ const halfCircuit = METCON.map((station, index) => ({
 test("every race workout is in order, with each of your loads and when you last did it", async ({ page }) => {
   await seed(page, [
     workout({ day: "2026-10-26", lifts: [{ name: "Split jerk", kg: 80, sets: 3, reps: 1 }] }),
+    workout({ day: "2026-10-24", lifts: [{ name: "Push press", kg: 70, sets: 3, reps: 3 }] }),
     workout({ athlete: "hippos", day: "2026-10-19", lifts: [{ name: "Back squat", kg: 70, sets: 3, reps: 5 }] }),
     workout({ day: "2026-10-08", lifts: [{ name: "Deadlift", kg: 160, sets: 3, reps: 3 }] }),
     workout({
@@ -109,6 +113,20 @@ test("every race workout is in order, with each of your loads and when you last 
   await expect(pill(page, /^DB ground to overhead/, "gators")).toHaveAttribute("data-recency", "due");
   await expect(pill(page, /^DB bench press/, "gators")).toHaveText(/Never/);
 
+  // The lifts, the run and the rows count the last 7 days against twice; the rest do not.
+  await expect(week(page, /^Shoulder to overhead/, "gators")).toHaveAttribute("data-twice", "met");
+  await expect(week(page, /^Shoulder to overhead/, "gators")).toHaveText(/2×/);
+  await expect(week(page, /^Shoulder to overhead/, "gators")).toContainText("Done on 2 of the last 7 days");
+  await expect(week(page, /^Back squat/, "hippos")).toHaveAttribute("data-week", "0");
+  await expect(week(page, /^Back squat/, "hippos")).toContainText("Not done in the last 7 days");
+  await expect(week(page, /^Run/, "hippos")).toHaveAttribute("data-twice", "short");
+  await expect(week(page, /^Run/, "hippos")).toHaveText(/1×/);
+  await expect(week(page, /^Opening row/, "gators")).toHaveAttribute("data-week", "1");
+  await expect(week(page, /^Closing row/, "gators")).toHaveAttribute("data-week", "1");
+  await expect(week(page, /^SkiErg/, "gators")).toHaveCount(0);
+  await expect(week(page, /^DB ground to overhead/, "gators")).toHaveCount(0);
+  await expect(week(page, /^Burpees over bench/, "hippos")).toHaveCount(0);
+
   // Each of you carries your own load, in the unit at the top.
   await expect(cell(page, /^DB ground to overhead/, "hippos")).toContainText("16.5 lb");
   await expect(cell(page, /^DB ground to overhead/, "gators")).toContainText("33.1 lb");
@@ -119,6 +137,13 @@ test("every race workout is in order, with each of your loads and when you last 
 
   await card(page).getByRole("button", { name: "Collapse ATHX Lite running order" }).click();
   await expect(card(page)).toContainText("Not done in 14 days: Hippos 10 · Gators 8");
+});
+
+test("the running order comes before Sessions on Today", async ({ page }) => {
+  const headings = await page.getByRole("heading", { level: 2 }).allTextContents();
+  const order = headings.indexOf("ATHX Lite running order");
+  expect(order).toBeGreaterThanOrEqual(0);
+  expect(order).toBeLessThan(headings.indexOf("Sessions"));
 });
 
 test("a last time older than the phone's recent slice is still the exact day", async ({ page }) => {
@@ -133,6 +158,17 @@ test("a last time older than the phone's recent slice is still the exact day", a
   await expect(pill(page, /^SkiErg/, "gators")).toHaveText(/48d ago/);
   await expect(pill(page, /^SkiErg/, "gators")).toHaveAttribute("data-recency", "stale");
   await expect(pill(page, /^SkiErg/, "hippos")).toHaveText(/Never/);
+});
+
+test("a week partly older than the phone's recent slice still counts every day of it", async ({ page }) => {
+  // Newer meals fill the slice, so the phone holds only the newest days of the week.
+  await seed(page, [
+    workout({ day: "2026-10-22", lifts: [{ name: "Deadlift", kg: 160, sets: 3, reps: 3 }] }),
+    workout({ day: "2026-10-23", lifts: [{ name: "Deadlift", kg: 160, sets: 3, reps: 3 }] }),
+    ...Array.from({ length: RECENT_LIMIT + 5 }, () => meal({ day: "2026-10-28" })),
+  ]);
+  await expect(week(page, /^Deadlift/, "gators")).toHaveAttribute("data-week", "2");
+  await expect(week(page, /^Deadlift/, "gators")).toHaveAttribute("data-twice", "met");
 });
 
 test("every colour reads in both themes", async ({ page }) => {
