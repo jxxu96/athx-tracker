@@ -733,6 +733,7 @@ test("a template keeps options that are off, and each one turns on, slides and i
   await page.route("**/api/estimate", (route) => {
     const { description } = route.request().postDataJSON() as { description: string };
     asked.push(description);
+    if (description === "5 g honey") return route.fulfill({ status: 502, json: { error: "No answer from the estimator." } });
     const single = singles[description];
     return route.fulfill({ json: {
       estimate: single
@@ -809,6 +810,15 @@ test("a template keeps options that are off, and each one turns on, slides and i
     await page.getByRole("button", { name: `Edit ${name}` }).click();
     const editor = page.getByRole("dialog", { name: "Edit Hippos template" });
     await expect(editor.getByRole("checkbox", { name: "Include item 4" })).not.toBeChecked();
+    // A new item whose estimate fails still has to be estimated before saving.
+    await editor.getByRole("button", { name: "Add item" }).click();
+    await editor.getByLabel("Grams, item 5").fill("5");
+    await editor.getByLabel("Item 5", { exact: true }).fill("honey");
+    await editor.getByRole("button", { name: "Estimate the new item" }).click();
+    await expect(editor.getByText("No answer from the estimator.")).toBeVisible();
+    await editor.getByRole("button", { name: "Save template" }).click();
+    await expect(editor.getByText("Estimate the changed ingredients before saving.")).toBeVisible();
+    await editor.getByRole("button", { name: "Remove item 5" }).click();
     await editor.getByRole("button", { name: "Add item" }).click();
     await editor.getByLabel("Grams, item 5").fill("3");
     await editor.getByLabel("Item 5", { exact: true }).fill("decaf coffee");
@@ -829,9 +839,42 @@ test("a template keeps options that are off, and each one turns on, slides and i
       expect.stringContaining("whey"),
       "250 g 2% milk",
       "250 g 0% milk",
+      "5 g honey",
       "3 g decaf coffee",
     ]);
   } finally {
     await clear();
+  }
+});
+
+test("an item is only left out of a template once every item has its own figures", async ({ page }) => {
+  try {
+    await loggingFor(page, "Hippos").click();
+    await page.getByLabel("Meal description").fill("80 g oats, 2 eggs");
+    await page.getByLabel("Meal", { exact: true }).fill("Typed oats");
+    await page.getByLabel("Calories (kcal)").fill("455");
+    await page.getByLabel("Protein (g)").fill("30");
+    await page.getByLabel("Carbs (g)").fill("50");
+    await page.getByLabel("Fat (g)").fill("15");
+    await page.getByRole("button", { name: "Save this meal as a template" }).click();
+    await expect(page.getByText("Template saved", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Manage templates" }).click();
+    await page.getByRole("button", { name: "Edit Typed oats" }).click();
+    const editor = page.getByRole("dialog", { name: "Edit Hippos template" });
+    // The 455 typed in covers both, so leaving the eggs out would still count them.
+    await editor.getByRole("checkbox", { name: "Include item 2" }).click();
+    await editor.getByRole("button", { name: "Save template" }).click();
+    await expect(editor.getByText("Estimate these items before leaving any unticked.")).toBeVisible();
+    await editor.getByRole("checkbox", { name: "Include item 2" }).click();
+    await editor.getByRole("button", { name: "Save template" }).click();
+    await expect(page.getByText("Template updated", { exact: true })).toBeVisible();
+  } finally {
+    const current = await page.request.get("/api/settings").then((response) => response.json()) as {
+      settings: Record<string, unknown>;
+      revision: number;
+    };
+    await page.request.put("/api/settings", {
+      data: { revision: current.revision, settings: { ...current.settings, mealTemplates: { hippos: [], gators: [] } } },
+    });
   }
 });

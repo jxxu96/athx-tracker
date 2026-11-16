@@ -213,6 +213,12 @@ export function MealTemplateList({
       setEditorError("Estimate the changed ingredients before saving.");
       return;
     }
+    // The saved macros cover the whole meal. Leaving an item out needs each
+    // item's own figures, or the meal would still count it.
+    if (!totals && read.items.some((item) => item.off)) {
+      setEditorError("Estimate these items before leaving any unticked.");
+      return;
+    }
     const built = buildTemplate({
       id: editor.draft.id,
       name: editor.draft.name,
@@ -312,7 +318,8 @@ export function MealTemplateList({
               ...item,
               grams: item.nutrition?.grams ? String(item.grams) : formatGrams(item.grams),
             })),
-            hadNutrition: !!ingredientTotals(items),
+            // A failed one still has to be estimated before saving.
+            hadNutrition: current.draft.hadNutrition || !!ingredientTotals(items),
           },
         });
         return;
