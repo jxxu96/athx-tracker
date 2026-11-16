@@ -53,9 +53,11 @@ import {
   hasIngredientNutrition,
   ingredientTotals,
   itemWithEstimate,
+  leftOut,
   loggedIngredients,
+  normalizeItems,
   servedItems,
-  switchItem,
+  withAmount,
 } from "@/lib/meal-ingredients";
 import {
   buildTemplate,
@@ -429,7 +431,7 @@ export function MealForm({
   // A queued meal keeps what was typed in its assumptions; anything else saved
   // starts from its name, so it can be estimated again without retyping.
   const [ingredients, setIngredients] = useState<MealTemplateItem[]>(() =>
-    Array.isArray(from?.ingredients) ? from.ingredients as MealTemplateItem[] : editing ? loggedIngredients(editing) : [],
+    Array.isArray(from?.ingredients) ? normalizeItems(from.ingredients as MealTemplateItem[]) : editing ? loggedIngredients(editing) : [],
   );
   const [description, setDescription] = useState(textOf(
     from?.description,
@@ -851,9 +853,9 @@ export function MealForm({
       setItemsEdited(false);
     }
     const items = itemsFromText(description, estimate.name);
-    // The estimate only saw what is in the meal. Options that are off keep
+    // The estimate only saw what is in the meal. Options slid to zero keep
     // their own figures and stay offered, so updating the template keeps them.
-    const options = ingredients.filter((item) => item.off && item.nutrition);
+    const options = ingredients.filter(leftOut);
     setIngredients([...captureIngredientNutrition(
       items,
       estimate,
@@ -1168,19 +1170,20 @@ export function MealForm({
     markManual();
   }
 
-  function changeIngredient(index: number, grams: number) {
-    if (!Number.isFinite(grams) || grams < 0 || grams > MEAL_TEMPLATE_GRAMS_LIMIT) return;
-    writeIngredients(ingredients.map((item, i) => i === index ? { ...item, grams: Math.round(grams * 10) / 10 } : item));
+  /** Grams for a weighed item, how many for a counted one. Zero leaves it out. */
+  function changeIngredient(index: number, amount: number) {
+    if (!Number.isFinite(amount) || amount < 0 || amount > MEAL_TEMPLATE_GRAMS_LIMIT) return;
+    writeIngredients(ingredients.map((item, i) => (i === index ? withAmount(item, amount) : item)));
   }
 
-  /** An option turned on or off: the meal's figures follow from what is on. */
-  function toggleIngredient(index: number, on: boolean) {
-    writeIngredients(ingredients.map((item, i) => (i === index ? switchItem(item, on) : item)));
+  /** Off the meal, and off the template once that is updated. */
+  function removeIngredient(index: number) {
+    writeIngredients(ingredients.filter((_, i) => i !== index));
   }
 
   /**
    * A food estimated on its own and added to the meal. It is in this meal
-   * until it is unticked, and kept with the template once that is updated.
+   * until it is slid to zero, and kept with the template once that is updated.
    */
   async function addIngredient(item: MealTemplateItem) {
     if (addingIngredient || estimating) return false;
@@ -1422,7 +1425,7 @@ export function MealForm({
     const listed = read?.ok ? read.items : null;
     // Saved items stay with the meal, weighed or counted, as long as every
     // one of them still has its figures.
-    // Options left off were not eaten, so they are not part of the record.
+    // Items slid to zero were not eaten, so they are not part of the record.
     const served = servedItems(ingredients);
     const savedItems = listed ?? (
       hasIngredientNutrition(served) || (served.length > 0 && served.every((item) => item.nutrition))
@@ -1622,8 +1625,8 @@ export function MealForm({
               canAdd={grokReady}
               adding={addingIngredient}
               error={ingredientError}
-              onGrams={changeIngredient}
-              onToggle={toggleIngredient}
+              onAmount={changeIngredient}
+              onRemove={removeIngredient}
               onAdd={addIngredient}
             />
           ) : kept && !splitting && !expanded ? (

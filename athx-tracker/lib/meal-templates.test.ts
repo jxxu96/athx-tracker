@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_SETTINGS, MEAL_TEMPLATE_LIMIT, type Meal, type MealTemplate } from "./domain.ts";
+import { DEFAULT_SETTINGS, MEAL_TEMPLATE_LIMIT, type Meal, type MealTemplate, type MealTemplateItem } from "./domain.ts";
 import { settingsSchema } from "./validation.ts";
 import {
   buildTemplate,
@@ -12,7 +12,17 @@ import {
   upsertTemplate,
 } from "./meal-templates.ts";
 
-import { ingredientTotals, itemWithEstimate, servedItems, switchItem } from "./meal-ingredients.ts";
+import {
+  amountOf,
+  countOf,
+  hasIngredientNutrition,
+  ingredientTotals,
+  itemWithEstimate,
+  leftOut,
+  servedItems,
+  withAmount,
+  withCount,
+} from "./meal-ingredients.ts";
 
 const today = "2026-10-23";
 const macros = { calories: 455, protein: 30, carbs: 50, fat: 15, alcohol: 0, fiber: 0 };
@@ -205,29 +215,30 @@ test("settings saved before templates still parse, and a template has to be a re
   }).success, false);
 });
 
-test("an option that is off stays with the template but out of the meal", () => {
-  const per = (calories: number, protein: number, carbs: number, fat: number) =>
-    ({ calories, protein, carbs, fat, fiber: 0, alcohol: 0 });
+const per = (calories: number, protein: number, carbs: number, fat: number) =>
+  ({ calories, protein, carbs, fat, fiber: 0, alcohol: 0 });
+
+test("an item slid to zero stays with the template but out of the meal", () => {
   const items = [
     { name: "whey concentrate", grams: 34, nutrition: { grams: 34, macros: per(130, 26, 3, 2) } },
     { name: "2% milk", grams: 250, nutrition: { grams: 250, macros: per(125, 8.5, 12, 5) } },
-    { name: "0% milk", grams: 250, nutrition: { grams: 250, macros: per(85, 8.5, 12, 0) }, off: true as const },
-    { name: "decaf coffee powder", grams: 3, nutrition: { grams: 3, macros: per(3, 0.4, 0.2, 0) }, off: true as const },
+    { name: "0% milk", grams: 0, nutrition: { grams: 250, macros: per(85, 8.5, 12, 0) } },
+    { name: "decaf coffee powder", grams: 0, nutrition: { grams: 3, macros: per(3, 0.4, 0.2, 0) } },
   ];
   assert.equal(templateDescription(items), "34 g whey concentrate, 250 g 2% milk");
   assert.deepEqual(servedItems(items).map((item) => item.name), ["whey concentrate", "2% milk"]);
   assert.deepEqual(ingredientTotals(items), { calories: 255, protein: 34.5, carbs: 15, fat: 7, fiber: 0, alcohol: 0 });
 
-  // Swap the milk and add the coffee, at half a portion.
-  const swapped = items.map((item, index) =>
-    index === 1 ? switchItem(item, false) : index === 2 ? switchItem(item, true) : index === 3 ? { ...switchItem(item, true), grams: 1.5 } : item);
-  assert.equal("off" in swapped[2], false);
-  assert.equal(swapped[1].off, true);
+  // Swap the milk and add half a portion of coffee.
+  const swapped = [items[0], withAmount(items[1], 0), withAmount(items[2], 250), withAmount(items[3], 1.5)];
   assert.equal(templateDescription(swapped), "34 g whey concentrate, 250 g 0% milk, 1.5 g decaf coffee powder");
   assert.deepEqual(ingredientTotals(swapped), { calories: 216.5, protein: 34.7, carbs: 15.1, fat: 2, fiber: 0, alcohol: 0 });
 
-  // An option without its own figures could not be turned on, so there are no totals.
-  assert.equal(ingredientTotals([...items, { name: "honey", grams: 10, off: true as const }]), undefined);
+  // Zero is only an option once the item has its own figures; otherwise it is counted, as "2 eggs" is.
+  assert.equal(leftOut({ name: "oats", grams: 0 }), false);
+  assert.equal(templateDescription([{ name: "oats", grams: 0 }]), "oats");
+  // One without its own figures could not be slid up, so there are no totals.
+  assert.equal(ingredientTotals([...items, { name: "honey", grams: 10 }]), undefined);
 
   const built = buildTemplate({
     id: "00000000-0000-4000-8000-000000000005",
@@ -240,38 +251,98 @@ test("an option that is off stays with the template but out of the meal", () => 
   });
   assert.equal(built.ok, true);
   if (!built.ok) return;
-  assert.deepEqual(built.template.items.map((item) => item.off ?? false), [false, false, true, true]);
+  assert.deepEqual(built.template.items.map((item) => item.grams), [34, 250, 0, 0]);
   const base = settingsSchema.parse(DEFAULT_SETTINGS);
   assert.equal(settingsSchema.safeParse({
     ...base,
     mealTemplates: { hippos: [built.template], gators: [] },
   }).success, true);
-  assert.equal(settingsSchema.safeParse({
-    ...base,
-    mealTemplates: { hippos: [{ ...built.template, items: [{ ...items[0], off: false }] }], gators: [] },
-  }).success, false);
 
-  const allOff = buildTemplate({
+  const allZero = buildTemplate({
     id: "00000000-0000-4000-8000-000000000006",
     name: "Nothing",
     meal: "Snack",
-    items: items.map((item) => switchItem(item, false)),
+    items: items.map((item) => withAmount(item, 0)),
     macros,
     assumptions: "",
     sourceKey: "",
   });
-  assert.deepEqual(allOff, { ok: false, error: "Leave at least one item on." });
+  assert.deepEqual(allZero, { ok: false, error: "Keep at least one item above zero." });
+});
+
+test("an option ticked off in an older template reads as zero and is not written again", () => {
+  const ticked = template({
+    id: "00000000-0000-4000-8000-000000000007",
+    name: "Shake",
+    items: [
+      { name: "whey concentrate", grams: 34, nutrition: { grams: 34, macros: per(130, 26, 3, 2) } },
+      { name: "0% milk", grams: 250, nutrition: { grams: 250, macros: per(85, 8.5, 12, 0) }, off: true },
+      { name: "1 banana", grams: 0, nutrition: { grams: 0, macros: per(105, 1, 27, 0) }, off: true },
+    ],
+    macros: per(130, 26, 3, 2),
+  });
+  // Still readable from settings saved while it was written.
+  const base = settingsSchema.parse(DEFAULT_SETTINGS);
+  assert.equal(settingsSchema.safeParse({ ...base, mealTemplates: { hippos: [ticked], gators: [] } }).success, true);
+
+  const [offer] = mealOffers([ticked], [], today);
+  assert.deepEqual(offer.items.map((item) => [item.name, item.grams, "off" in item]), [
+    ["whey concentrate", 34, false],
+    ["0% milk", 0, false],
+    ["0 banana", 0, false],
+  ]);
+  assert.equal(templateDescription(offer.items), "34 g whey concentrate");
+  assert.equal(ingredientTotals(offer.items)?.calories, 130);
+  const built = buildTemplate({ ...ticked, items: ticked.items });
+  assert.equal(built.ok && built.template.items.some((item) => "off" in item), false);
+});
+
+test("a counted item slides by how many, from the count in its name", () => {
+  assert.deepEqual(countOf("2 eggs"), { count: 2, base: "eggs", plain: true });
+  assert.deepEqual(countOf("1.5 × 250ml 2% milk"), { count: 1.5, base: "250ml 2% milk", plain: false });
+  assert.deepEqual(countOf("2% milk"), { count: 1, base: "2% milk", plain: false });
+  assert.deepEqual(countOf("250ml 2% milk"), { count: 1, base: "250ml 2% milk", plain: false });
+  assert.equal(withCount("2 eggs", 3), "3 eggs");
+  assert.equal(withCount("250ml 2% milk", 1.5), "1.5 × 250ml 2% milk");
+  assert.equal(withCount("1.5 × 250ml 2% milk", 1), "250ml 2% milk");
+
+  const eggs: MealTemplateItem = { name: "2 eggs", grams: 0, nutrition: { grams: 0, macros: per(140, 12, 1, 10) } };
+  const milk: MealTemplateItem = { name: "250ml 2% milk", grams: 0, nutrition: { grams: 0, macros: per(125, 8, 12, 5) } };
+  const oats: MealTemplateItem = { name: "oats", grams: 80, nutrition: { grams: 80, macros: per(300, 10, 54, 6) } };
+  // Before any slide, the count in the name is the one its figures are for.
+  assert.equal(ingredientTotals([oats, eggs, milk])?.calories, 565);
+
+  const more = withAmount(eggs, 3);
+  assert.deepEqual(more, { name: "3 eggs", grams: 0, nutrition: { grams: 0, macros: eggs.nutrition!.macros, count: 2 } });
+  assert.equal(amountOf(more), 3);
+  const less = withAmount(withAmount(milk, 1.5), 0.5);
+  assert.equal(less.name, "0.5 × 250ml 2% milk");
+  assert.equal(less.nutrition?.count, 1);
+  assert.deepEqual(ingredientTotals([oats, more, less]), {
+    calories: 572.5, protein: 32, carbs: 61.5, fat: 23.5, fiber: 0, alcohol: 0,
+  });
+  assert.equal(templateDescription([oats, more, less]), "80 g oats, 3 eggs, 0.5 × 250ml 2% milk");
+
+  // Every item priced is enough to slide them, weighed or not.
+  assert.equal(hasIngredientNutrition([eggs, milk]), true);
+  assert.equal(hasIngredientNutrition([eggs, { name: "toast", grams: 0 }]), false);
+  assert.equal(hasIngredientNutrition([]), false);
+
+  const none = withAmount(eggs, 0);
+  assert.equal(leftOut(none), true);
+  assert.equal(templateDescription([oats, none]), "80 g oats");
+  // Back up from zero, against the two it was estimated for.
+  assert.equal(ingredientTotals([oats, withAmount(none, 1)])?.calories, 370);
 });
 
 test("a food estimated on its own keeps the estimate as its figures at that portion", () => {
   const item = itemWithEstimate(
-    { name: "decaf coffee powder", grams: 3, off: true },
+    { name: "decaf coffee powder", grams: 3 },
     { calories: 4, protein: 0.4, carbs: 0.5, fat: 0, fiber: 0.9 },
   );
   assert.deepEqual(item, {
     name: "decaf coffee powder",
     grams: 3,
-    off: true,
     nutrition: { grams: 3, macros: { calories: 4, protein: 0.4, carbs: 0.5, fat: 0, fiber: 0.5, alcohol: 0 } },
   });
   // A counted food keeps a fixed portion.

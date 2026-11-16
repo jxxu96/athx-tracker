@@ -272,6 +272,13 @@ test("saved ingredients open at the grams they are at, and keep scaling from the
   const slid = setItemGrams(itemDraft("g", seeds[1]), "15");
   assert.deepEqual([slid.calories, slid.fiber, slid.carbs], ["65", "1.5", "9"]);
   assert.deepEqual(seedsFromIngredients([{ name: "yogurt", grams: 100 }], totals(1, 1, 1, 1)), []);
+
+  // Eggs slid from the two they were estimated for up to four count double.
+  const counted = seedsFromIngredients([
+    { name: "oats", grams: 80, nutrition: { grams: 80, macros: totals(300, 10, 54, 6) } },
+    { name: "4 eggs", grams: 0, nutrition: { grams: 0, macros: totals(140, 12, 1, 10), count: 2 } },
+  ], totals(580, 34, 56, 26));
+  assert.deepEqual(counted.map((seed) => [seed.name, seed.macros!.calories]), [["oats", 300], ["4 eggs", 280]]);
 });
 
 test("a meal with no figures opens into blank items where it was written as several", () => {

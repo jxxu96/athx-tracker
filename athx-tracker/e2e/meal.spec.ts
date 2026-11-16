@@ -692,7 +692,8 @@ test("saved ingredient weights rescale locally and the template keeps its defaul
   await expect(page.getByLabel("Protein (g)")).toHaveValue("25");
   await expect(page.getByLabel("Fiber (g)")).toHaveValue("1.5");
   await expect(page.getByLabel("Meal description")).toHaveValue(
-    "225 g fage 0% greek yogurt, 0 g kirkland creamy pb, 15 g trader joe pb protein granola",
+    // Slid to zero, the peanut butter is left out of the meal.
+    "225 g fage 0% greek yogurt, 15 g trader joe pb protein granola",
   );
   await page.getByRole("button", { name: "Save meal", exact: true }).click();
   await expect(page.getByText("Meal saved", { exact: true }).first()).toBeVisible();
@@ -713,7 +714,7 @@ test("saved ingredient weights rescale locally and the template keeps its defaul
   expect(estimates).toBe(1);
 });
 
-test("a template keeps options that are off, and each one turns on, slides and is added without estimating the rest", async ({ page }) => {
+test("every template item slides, zero keeps it as an option, and an item can be added or removed", async ({ page }) => {
   const clear = async () => {
     const current = await page.request.get("/api/settings").then((response) => response.json()) as {
       settings: Record<string, unknown>;
@@ -727,6 +728,7 @@ test("a template keeps options that are off, and each one turns on, slides and i
   const singles: Record<string, { calories: number; protein: number; carbs: number; fat: number }> = {
     "250 g 2% milk": { calories: 125, protein: 8, carbs: 12, fat: 5 },
     "250 g 0% milk": { calories: 85, protein: 8, carbs: 12, fat: 0 },
+    "1 banana": { calories: 105, protein: 1, carbs: 27, fat: 0 },
     "3 g decaf coffee": { calories: 5, protein: 0, carbs: 1, fat: 0 },
   };
   const asked: string[] = [];
@@ -750,29 +752,39 @@ test("a template keeps options that are off, and each one turns on, slides and i
   });
   const calories = page.getByLabel("Calories (kcal)");
   const description = page.getByLabel("Meal description");
-  const include = (food: string) => page.getByRole("checkbox", { name: `Include ${food}` });
-  const add = async (grams: string, food: string) => {
-    await page.getByLabel("New ingredient grams").fill(grams);
-    await page.getByLabel("New ingredient", { exact: true }).fill(food);
+  const grams = (food: string) => page.getByRole("spinbutton", { name: `${food} grams` });
+  const add = async (text: string, slider: string) => {
+    await page.getByLabel("New ingredient", { exact: true }).fill(text);
     await page.getByRole("button", { name: "Add", exact: true }).click();
-    await expect(include(food)).toBeChecked();
+    await expect(page.getByRole("slider", { name: slider })).toBeVisible();
   };
   try {
     await loggingFor(page, "Hippos").click();
     await description.fill("34 g whey concentrate, 7 g dutch process cocoa");
     await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
     await expect(calories).toHaveValue("145");
+    // Every item slides; there is nothing to tick.
+    await expect(page.getByRole("checkbox")).toHaveCount(0);
 
-    await add("250", "2% milk");
+    await add("250 g 2% milk", "2% milk weight");
     await expect(calories).toHaveValue("270");
-    await expect(page.getByRole("slider", { name: "2% milk weight" })).toHaveValue("250");
-    await add("250", "0% milk");
+    await add("250 g 0% milk", "0% milk weight");
     await expect(calories).toHaveValue("355");
-    await include("0% milk").click();
-    await expect(include("0% milk")).not.toBeChecked();
-    await expect(page.getByRole("slider", { name: "0% milk weight" })).toHaveCount(0);
+    await page.getByRole("slider", { name: "0% milk weight" }).press("Home");
+    await expect(grams("0% milk")).toHaveValue("0");
     await expect(calories).toHaveValue("270");
     await expect(description).toHaveValue("34 g whey concentrate, 7 g dutch process cocoa, 250 g 2% milk");
+
+    // A counted item slides by how many.
+    await add("1 banana", "banana count");
+    await expect(calories).toHaveValue("375");
+    await page.getByRole("spinbutton", { name: "How many banana" }).fill("2");
+    await expect(calories).toHaveValue("480");
+    await expect(description).toHaveValue("34 g whey concentrate, 7 g dutch process cocoa, 250 g 2% milk, 2 banana");
+    // And any item comes off.
+    await page.getByRole("button", { name: "Remove banana" }).click();
+    await expect(page.getByRole("slider", { name: "banana count" })).toHaveCount(0);
+    await expect(calories).toHaveValue("270");
     await page.getByRole("button", { name: "Save this meal as a template" }).click();
     await expect(page.getByText("Template saved", { exact: true })).toBeVisible();
 
@@ -782,34 +794,35 @@ test("a template keeps options that are off, and each one turns on, slides and i
     const template = page.getByRole("button", { name: `Hippos: ${name}` });
     await template.click();
     await expect(calories).toHaveValue("270");
-    await expect(include("0% milk")).not.toBeChecked();
+    await expect(grams("0% milk")).toHaveValue("0");
+    await expect(page.getByRole("slider", { name: "banana count" })).toHaveCount(0);
 
     // Swap the milk, and halve it.
-    await include("0% milk").click();
-    await include("2% milk").click();
-    await page.getByRole("spinbutton", { name: "0% milk grams" }).fill("125");
+    await grams("0% milk").fill("125");
+    await page.getByRole("slider", { name: "2% milk weight" }).press("Home");
     await expect(calories).toHaveValue("187.5");
     await expect(description).toHaveValue("34 g whey concentrate, 7 g dutch process cocoa, 125 g 0% milk");
     await page.getByRole("button", { name: "Save meal", exact: true }).click();
     await expect(page.getByText("Meal saved", { exact: true }).first()).toBeVisible();
     const logged = await page.evaluate(async (title) => {
       const data = await fetch("/api/records").then((r) => r.json());
-      return (data.records as { name: string; macros: { calories: number }; items?: { name: string; off?: boolean }[] }[])
+      return (data.records as { name: string; macros: { calories: number }; items?: { name: string }[] }[])
         .find((entry) => entry.name === title);
     }, name);
     expect(logged?.macros.calories).toBe(187.5);
     expect(logged?.items?.map((item) => item.name)).toEqual(["whey concentrate", "dutch process cocoa", "0% milk"]);
 
-    // The template's own defaults are untouched by what was logged.
+    // The template's own amounts are untouched by what was logged.
     await page.getByRole("button", { name: "Meal", exact: true }).click();
     await template.click();
     await expect(calories).toHaveValue("270");
-    await expect(include("2% milk")).toBeChecked();
+    await expect(grams("2% milk")).toHaveValue("250");
 
     await page.getByRole("button", { name: "Manage templates" }).click();
     await page.getByRole("button", { name: `Edit ${name}` }).click();
     const editor = page.getByRole("dialog", { name: "Edit Hippos template" });
-    await expect(editor.getByRole("checkbox", { name: "Include item 4" })).not.toBeChecked();
+    await expect(editor.getByRole("checkbox")).toHaveCount(0);
+    await expect(editor.getByLabel("Grams, item 4")).toHaveValue("0");
     // A new item whose estimate fails still has to be estimated before saving.
     await editor.getByRole("button", { name: "Add item" }).click();
     await editor.getByLabel("Grams, item 5").fill("5");
@@ -819,12 +832,12 @@ test("a template keeps options that are off, and each one turns on, slides and i
     await editor.getByRole("button", { name: "Save template" }).click();
     await expect(editor.getByText("Estimate the changed ingredients before saving.")).toBeVisible();
     await editor.getByRole("button", { name: "Remove item 5" }).click();
+    // Added, estimated on its own, then kept at zero as an option.
     await editor.getByRole("button", { name: "Add item" }).click();
     await editor.getByLabel("Grams, item 5").fill("3");
     await editor.getByLabel("Item 5", { exact: true }).fill("decaf coffee");
-    await editor.getByRole("checkbox", { name: "Include item 5" }).click();
     await editor.getByRole("button", { name: "Estimate the new item" }).click();
-    await expect(editor.getByRole("button", { name: "Estimate these items" })).toBeVisible();
+    await editor.getByRole("slider", { name: "decaf coffee weight" }).press("Home");
     await editor.getByRole("button", { name: "Save template" }).click();
     await expect(page.getByText("Template updated", { exact: true })).toBeVisible();
     await expect(page.getByText(/Options: 0% milk, decaf coffee/)).toBeVisible();
@@ -832,49 +845,26 @@ test("a template keeps options that are off, and each one turns on, slides and i
     await page.getByRole("button", { name: "Done" }).click();
     await template.click();
     await expect(calories).toHaveValue("270");
-    await include("decaf coffee").click();
+    await grams("decaf coffee").fill("3");
     await expect(calories).toHaveValue("275");
+    // With only a counted item left, it still slides, and it is the one that stays.
+    await add("1 banana", "banana count");
+    for (const food of ["whey concentrate", "dutch process cocoa", "2% milk", "0% milk", "decaf coffee"])
+      await page.getByRole("button", { name: `Remove ${food}` }).click();
+    await expect(calories).toHaveValue("105");
+    await expect(page.getByRole("slider", { name: "banana count" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Remove banana" })).toBeDisabled();
     // Only the meal once, then each food that was new, on its own.
     expect(asked).toEqual([
       expect.stringContaining("whey"),
       "250 g 2% milk",
       "250 g 0% milk",
+      "1 banana",
       "5 g honey",
       "3 g decaf coffee",
+      "1 banana",
     ]);
   } finally {
     await clear();
-  }
-});
-
-test("an item is only left out of a template once every item has its own figures", async ({ page }) => {
-  try {
-    await loggingFor(page, "Hippos").click();
-    await page.getByLabel("Meal description").fill("80 g oats, 2 eggs");
-    await page.getByLabel("Meal", { exact: true }).fill("Typed oats");
-    await page.getByLabel("Calories (kcal)").fill("455");
-    await page.getByLabel("Protein (g)").fill("30");
-    await page.getByLabel("Carbs (g)").fill("50");
-    await page.getByLabel("Fat (g)").fill("15");
-    await page.getByRole("button", { name: "Save this meal as a template" }).click();
-    await expect(page.getByText("Template saved", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Manage templates" }).click();
-    await page.getByRole("button", { name: "Edit Typed oats" }).click();
-    const editor = page.getByRole("dialog", { name: "Edit Hippos template" });
-    // The 455 typed in covers both, so leaving the eggs out would still count them.
-    await editor.getByRole("checkbox", { name: "Include item 2" }).click();
-    await editor.getByRole("button", { name: "Save template" }).click();
-    await expect(editor.getByText("Estimate these items before leaving any unticked.")).toBeVisible();
-    await editor.getByRole("checkbox", { name: "Include item 2" }).click();
-    await editor.getByRole("button", { name: "Save template" }).click();
-    await expect(page.getByText("Template updated", { exact: true })).toBeVisible();
-  } finally {
-    const current = await page.request.get("/api/settings").then((response) => response.json()) as {
-      settings: Record<string, unknown>;
-      revision: number;
-    };
-    await page.request.put("/api/settings", {
-      data: { revision: current.revision, settings: { ...current.settings, mealTemplates: { hippos: [], gators: [] } } },
-    });
   }
 });
