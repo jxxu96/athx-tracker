@@ -678,20 +678,21 @@ test("advanced sets keep their own weight and reps", async ({ page }) => {
 
   await openLog(page);
   const entry = page.getByRole("listitem").filter({ hasText: "Back squat" });
-  await expect(entry.getByText("Back squat 0 lb×6, 185 lb×3, 225 lb×1 (last rep failed)")).toBeVisible();
+  // An unweighted set is its reps on the log, and opens blank: a 0 is a box left empty.
+  await expect(entry.getByText("Back squat 6 reps, 185 lb×3, 225 lb×1 (last rep failed)")).toBeVisible();
 
   await entry.getByLabel("Edit entry").click();
-  await expect(weight(1)).toHaveValue("0");
+  await expect(weight(1)).toHaveValue("");
   await expect(weight(2)).toHaveValue("185");
   await expect(reps(3)).toHaveValue("1");
   await expect(page.getByRole("checkbox", { name: "Gators set 3 failed the final rep" })).toBeChecked();
   await expect(page.getByRole("checkbox", { name: "Gators set 1 failed the final rep" })).not.toBeChecked();
   const unitSwitch = page.getByRole("group", { name: "Weight unit" });
   await unitSwitch.getByRole("button", { name: "kg" }).click();
-  await expect(weight(1)).toHaveValue("0");
+  await expect(weight(1)).toHaveValue("");
   await expect(weight(3)).toHaveValue("102.1");
   await unitSwitch.getByRole("button", { name: "lb" }).click();
-  await expect(weight(1)).toHaveValue("0");
+  await expect(weight(1)).toHaveValue("");
   await expect(weight(3)).toHaveValue("225");
   await page.getByRole("button", { name: "Update session" }).click();
   await expect.poll(async () => (await read())[0].lifts[0].kg).toBe(saved.lifts[0].kg);
