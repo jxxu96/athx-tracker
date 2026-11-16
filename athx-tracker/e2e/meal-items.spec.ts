@@ -203,7 +203,7 @@ test("a dish with no weight slides to a size, and every figure follows it", asyn
   expect(violations).toEqual([]);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
-  await page.getByRole("region", { name: "Items" }).screenshot({ path: "test-results/meal-item-size-mobile.png" });
+  await niangao.screenshot({ path: "test-results/meal-item-size-mobile.png" });
 
   // The sizes outlive a reload.
   await page.reload();
