@@ -218,7 +218,10 @@ per call.
 - The assumptions go item by item, a blank line between each: the item and
   its own macros in brackets, such as `Chicken breast, 150 g cooked [248 kcal,
   47P, 0C, 5F]`, then how those figures were reached. Meal-wide notes, and the
-  answer to a reply, come after the items.
+  answer to a reply, come after the items. The items follow the description's
+  order. Several dishes come back one item each, even "beef with broccoli" or
+  a Chinese dish: the oil, sauce, coating and broth assumed for a dish stay
+  in its item. An ingredient listed on its own still gets its own line.
 - A meal may search the web and open a page, and nothing else. Codex gets live
   web search. Claude gets web search and page fetch, and Grok web search
   alone, which opens a page as well as searching, each for up to ten turns.

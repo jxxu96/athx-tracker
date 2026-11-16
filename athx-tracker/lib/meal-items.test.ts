@@ -15,6 +15,7 @@ import {
   itemDraftsOf,
   itemSums,
   itemTotals,
+  listedCount,
   readItems,
   seedsFromIngredients,
   setItemFigure,
@@ -120,6 +121,90 @@ test("estimators that list the same foods are averaged by weight; one that lists
   assert.deepEqual(apart.map((seed) => seed.macros!.calories), [200, 300]);
 });
 
+// Four Shang Gong Chu leftovers, as the three estimators answered them: Codex
+// and Grok one item a dish, Claude every dish cut into its oil, starch and broth.
+const LEFTOVERS = [
+  "shang gong chu leftovers:",
+  "1 serving of niangao w mustard greens",
+  "1/2 serving of pork ribs",
+  "1 serving wintermelon w/ pork rib soup",
+  "1/2 serving of xiaocaohuangniurou",
+].join("\n");
+const LEFTOVERS_CODEX = [
+  "Niangao with mustard greens, 1 serving [550 kcal, 10P, 118C, 16F, 4 fiber]. Matched G4 on the menu.",
+  "Taro pork ribs, 1/2 serving [240 kcal, 20P, 22C, 15F, 3 fiber]. Matched A2.",
+  "Wintermelon with pork rib soup, 1 serving [210 kcal, 21P, 5C, 12F, 1 fiber]. Matched F3.",
+  "Xiaocaohuangniurou, 1/2 serving [240 kcal, 24P, 2C, 15F, 1 fiber]. Matched B3.",
+].join("\n\n");
+const LEFTOVERS_GROK = [
+  "Stir-fried pickled mustard greens with rice cakes, 1 serving [460 kcal, 7P, 68C, 18F, 3 fiber] Shang Gong Chu G4 雪菜炒年糕.",
+  "Pressure-cooked taro pork ribs, 0.5 serving [400 kcal, 21P, 30C, 22F, 4 fiber] Shang Gong Chu A2.",
+  "Winter melon and pork ribs soup, 1 serving [400 kcal, 28P, 10C, 22F, 3 fiber] Shang Gong Chu F3.",
+  "Sauteed beef with celery (xiaocaohuangniurou), 0.5 serving [320 kcal, 26P, 6C, 22F, 1 fiber] Shang Gong Chu B3.",
+].join("\n\n");
+const LEFTOVERS_CLAUDE = [
+  "Niangao (Shanghai-style rice cakes), stir-fried, 200 g [280 kcal, 6P, 60C, 1F, 1 fiber]: assumed one serving.",
+  "Mustard greens stir-fried, 100 g [25 kcal, 2P, 4C, 0F, 2 fiber]: cooked leafy greens.",
+  "Cooking oil for the niangao dish, 10 g [90 kcal, 0P, 0C, 10F]: 1 tablespoon.",
+  "Taro pork ribs, pork spare rib meat (edible), 110 g cooked [330 kcal, 28P, 0C, 24F]: half a serving.",
+  "Taro, cooked, 60 g [67 kcal, 1P, 16C, 0F, 2 fiber]: half a serving of taro.",
+  "Starch coating for the taro ribs, 10 g [40 kcal, 0P, 10C, 0F]: a light coating.",
+  "Frying oil for the taro ribs, 15 g [135 kcal, 0P, 0C, 15F]: absorbed in frying.",
+  "Wintermelon, cooked in soup, 150 g [28 kcal, 1P, 5C, 0F, 2 fiber]: one serving.",
+  "Pork rib meat in the soup, 60 g edible [180 kcal, 15P, 0C, 13F]: fatty rib.",
+  "Pork rib broth, 250 g [40 kcal, 2P, 3C, 2F]: a standard bowl.",
+  "Xiaochaohuangniurou (stir-fried yellow beef), beef, cooked, 120 g [276 kcal, 32P, 0C, 16F]: half a serving.",
+  "Green pepper and onion, 50 g [15 kcal, 1P, 3C, 0F, 1 fiber]: half the vegetables.",
+  "Cooking oil for the beef dish, 10 g [90 kcal, 0P, 0C, 10F]: 1 tablespoon.",
+  "Chili and soy seasoning sauce, 10 g [8 kcal, 1P, 1C, 0F]: a light mix.",
+].join("\n\n");
+
+test("several dishes written open into one item a dish, from the lists that kept them whole", () => {
+  const sources = [
+    { assumptions: LEFTOVERS_CODEX, weight: 15 },
+    { assumptions: LEFTOVERS_CLAUDE, weight: 45 },
+    { assumptions: LEFTOVERS_GROK, weight: 40 },
+  ];
+  const meal = totals(1566.1, 83.3, 113.9, 84.8, 8.9);
+  // Claude counts most, and its fourteen used to be the list.
+  assert.equal(breakdown(sources, meal).length, 14);
+
+  // Four dishes were written, under a heading that is none of them. Grok
+  // leads the two lists of four, and Codex is averaged in by place, since
+  // "Niangao with mustard greens" and "Stir-fried pickled mustard greens with
+  // rice cakes" share too few words to match by name. The soup is
+  // (400 x 40 + 210 x 15) / 55 = 348.2 of the 1487.3 the two lists average
+  // to, shared out over the 1566.1 on the meal.
+  const seeds = breakdown(sources, meal, LEFTOVERS);
+  assert.deepEqual(seeds.map((seed) => seed.name), [
+    "Stir-fried pickled mustard greens with rice cakes, 1 serving",
+    "Pressure-cooked taro pork ribs, 0.5 serving",
+    "Winter melon and pork ribs soup, 1 serving",
+    "Sauteed beef with celery (xiaocaohuangniurou), 0.5 serving",
+  ]);
+  assert.deepEqual(seeds.map((seed) => seed.macros!.calories), [510.2, 375.3, 366.6, 314]);
+  assert.equal(Math.round(seeds.reduce((sum, seed) => sum + seed.macros!.calories * 10, 0)) / 10, 1566.1);
+
+  // Two lists of two for three foods written follow neither, so they are not
+  // paired by place: the one that counts most gives the split alone.
+  const apart = breakdown([
+    { assumptions: "Gai lan, 150 g [100 kcal, 4P, 8C, 6F]\n\nJasmine rice, 200 g [260 kcal, 5P, 56C, 1F]", weight: 60 },
+    { assumptions: "Chinese broccoli, 150 g [300 kcal, 4P, 8C, 6F]\n\nSteamed rice, 200 g [60 kcal, 5P, 56C, 1F]", weight: 40 },
+  ], totals(360, 9, 64, 7), "gai lan, rice, oyster sauce");
+  assert.deepEqual(apart.map((seed) => seed.macros!.calories), [100, 260]);
+});
+
+test("a description's foods are counted by the dish cut, with a heading counting for none", () => {
+  assert.equal(listedCount(LEFTOVERS), 4);
+  assert.equal(listedCount("番茄炒蛋、宫保鸡丁，米饭"), 3);
+  assert.equal(listedCount("beef with broccoli"), 1);
+  assert.equal(listedCount("Mains:\n- mapo tofu\n- kung pao chicken\nSides:\n- rice"), 3);
+  assert.equal(listedCount("sushi platter: 2 rolls and 6 nigiri"), 1);
+  // A line on its own is the food, colon or not.
+  assert.equal(listedCount("leftovers:"), 1);
+  assert.equal(listedCount(""), 0);
+});
+
 test("a blended meal's working gives each estimator's items with its share", () => {
   const blend = blendEstimates([
     { provider: "codex", estimate: { name: "Bowl", calories: 500, protein: 46, carbs: 60, fat: 6, fiber: 0, alcohol: 0, confidence: "medium", assumptions: "Chicken, 150 g [200 kcal, 40P, 0C, 4F]\n\nRice, 200 g [300 kcal, 6P, 60C, 2F]" } },
@@ -174,6 +259,12 @@ test("a meal with no figures opens into blank items where it was written as seve
     ["a flat white", null],
   ]);
   assert.deepEqual(blankSeeds("mac and cheese"), []);
+  assert.deepEqual(blankSeeds(LEFTOVERS).map((seed) => seed.name), [
+    "1 serving of niangao w mustard greens",
+    "1/2 serving of pork ribs",
+    "1 serving wintermelon w/ pork rib soup",
+    "1/2 serving of xiaocaohuangniurou",
+  ]);
 });
 
 test("grams scale a weighed item's figures, typing a figure sets them at its weight, and leaving the box ties them", () => {
