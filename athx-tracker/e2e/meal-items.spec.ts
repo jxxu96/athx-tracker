@@ -237,9 +237,12 @@ test("a meal with no figures opens into blank items to type in, and a weight typ
   await expect(figures(page).getByLabel("Fat (g)")).toHaveValue("6");
 
   // A weight typed in ties the figures to it once the box is left, digit by digit or not.
-  await expect(item(page, 2).getByRole("slider")).toHaveCount(0);
+  // Until then it has no weight to slide, only a size; with one, its grams take over.
+  await expect(item(page, 2).getByRole("slider", { name: "toast weight" })).toHaveCount(0);
+  await expect(item(page, 2).getByRole("slider", { name: "toast size" })).toHaveValue("100");
   await item(page, 2).getByLabel("Grams").pressSequentially("40");
   await expect(item(page, 2).getByLabel("Calories (kcal)")).toHaveValue("80");
+  await expect(item(page, 2).getByRole("slider", { name: "toast size" })).toHaveCount(0);
   await item(page, 2).getByLabel("Grams").blur();
   await item(page, 2).getByRole("slider", { name: "toast weight" }).fill("80");
   await expect(item(page, 2).getByLabel("Calories (kcal)")).toHaveValue("160");
