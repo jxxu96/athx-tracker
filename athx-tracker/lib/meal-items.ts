@@ -5,7 +5,15 @@ import {
   type Meal,
   type MealTemplateItem,
 } from "./domain.ts";
-import { ingredientRow, providerSections, readFigures, sameFood, type Figures } from "./meal-ingredients.ts";
+import {
+  ingredientRow,
+  ingredientScale,
+  providerSections,
+  readFigures,
+  sameFood,
+  type Figures,
+  type SavedItem,
+} from "./meal-ingredients.ts";
 import { splitDishText } from "./dish-split.ts";
 import { textOf } from "./drafts.ts";
 import {
@@ -443,9 +451,9 @@ export function seedsFromIngredients(items: readonly MealTemplateItem[], totals:
   });
   const fitted = fitItems(
     items.map((item, index) => {
-      const { grams, macros } = references[index];
-      const scale = grams ? item.grams / grams : 1;
-      return Object.fromEntries(FIGURES.map((key) => [key, macros[key] * scale])) as Figures;
+      // A counted item slid from the count it was estimated for scales too.
+      const scale = ingredientScale(item as SavedItem);
+      return Object.fromEntries(FIGURES.map((key) => [key, references[index].macros[key] * scale])) as Figures;
     }),
     totals,
   );

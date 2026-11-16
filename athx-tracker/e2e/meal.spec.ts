@@ -847,6 +847,13 @@ test("every template item slides, zero keeps it as an option, and an item can be
     await expect(calories).toHaveValue("270");
     await grams("decaf coffee").fill("3");
     await expect(calories).toHaveValue("275");
+    // With only a counted item left, it still slides, and it is the one that stays.
+    await add("1 banana", "banana count");
+    for (const food of ["whey concentrate", "dutch process cocoa", "2% milk", "0% milk", "decaf coffee"])
+      await page.getByRole("button", { name: `Remove ${food}` }).click();
+    await expect(calories).toHaveValue("105");
+    await expect(page.getByRole("slider", { name: "banana count" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Remove banana" })).toBeDisabled();
     // Only the meal once, then each food that was new, on its own.
     expect(asked).toEqual([
       expect.stringContaining("whey"),
@@ -855,6 +862,7 @@ test("every template item slides, zero keeps it as an option, and an item can be
       "1 banana",
       "5 g honey",
       "3 g decaf coffee",
+      "1 banana",
     ]);
   } finally {
     await clear();

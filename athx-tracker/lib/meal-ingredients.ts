@@ -9,7 +9,8 @@ import { mealKey } from "./common-meals.ts";
 
 const FIGURES = ["calories", "protein", "carbs", "fat", "fiber", "alcohol"] as const;
 export type Figures = Record<(typeof FIGURES)[number], number>;
-type SavedItem = MealTemplateItem & { nutrition: NonNullable<MealTemplateItem["nutrition"]> };
+/** An item with its own figures. */
+export type SavedItem = MealTemplateItem & { nutrition: NonNullable<MealTemplateItem["nutrition"]> };
 
 const FIGURE_NAMES = [/^kcal$/i, /^(p|protein)$/i, /^(c|carbs?)$/i, /^(f|fat)$/i, /^fib(?:er|re)$/i, /^(ethanol|alcohol)$/i];
 const PROVIDER_BREAKDOWN = /^From (?:Codex|Claude|Grok) \[[^\n]+\]:\s*/m;
@@ -103,9 +104,9 @@ function matchRows(items: readonly MealTemplateItem[], assumptions: string) {
   return ordered;
 }
 
+/** Every item has its own figures, so each can slide without estimating again. */
 export function hasIngredientNutrition(items: MealTemplateItem[]): items is SavedItem[] {
-  return items.some((item) => (item.nutrition?.grams ?? 0) > 0) &&
-    items.every((item) => item.nutrition);
+  return items.length > 0 && items.every((item) => item.nutrition);
 }
 
 /**
@@ -237,8 +238,8 @@ export function normalizeItems(items: readonly MealTemplateItem[]): MealTemplate
   });
 }
 
-/** How far an item is from the portion its figures are for. */
-function scaleOf(item: SavedItem) {
+/** How far an item is from the portion its figures are for: by weight, or by count when counted. */
+export function ingredientScale(item: SavedItem) {
   const { grams, count } = item.nutrition;
   if (grams > 0) return item.grams / grams;
   if (item.off) return 0;
@@ -254,7 +255,7 @@ export function ingredientTotals(items: readonly MealTemplateItem[]): Meal["macr
   if (!items.length || !items.every((item): item is SavedItem => !!item.nutrition)) return;
   const totals = Object.fromEntries(FIGURES.map((key) => [
     key,
-    Math.round(items.reduce((sum, item) => sum + (item.nutrition.macros[key] ?? 0) * scaleOf(item), 0) * 1000) / 1000,
+    Math.round(items.reduce((sum, item) => sum + (item.nutrition.macros[key] ?? 0) * ingredientScale(item), 0) * 1000) / 1000,
   ])) as Figures;
   totals.fiber = Math.min(totals.fiber, totals.carbs);
   return totals;

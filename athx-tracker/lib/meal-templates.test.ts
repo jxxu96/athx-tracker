@@ -15,6 +15,7 @@ import {
 import {
   amountOf,
   countOf,
+  hasIngredientNutrition,
   ingredientTotals,
   itemWithEstimate,
   leftOut,
@@ -321,6 +322,11 @@ test("a counted item slides by how many, from the count in its name", () => {
     calories: 572.5, protein: 32, carbs: 61.5, fat: 23.5, fiber: 0, alcohol: 0,
   });
   assert.equal(templateDescription([oats, more, less]), "80 g oats, 3 eggs, 0.5 × 250ml 2% milk");
+
+  // Every item priced is enough to slide them, weighed or not.
+  assert.equal(hasIngredientNutrition([eggs, milk]), true);
+  assert.equal(hasIngredientNutrition([eggs, { name: "toast", grams: 0 }]), false);
+  assert.equal(hasIngredientNutrition([]), false);
 
   const none = withAmount(eggs, 0);
   assert.equal(leftOut(none), true);
