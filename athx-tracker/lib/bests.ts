@@ -55,7 +55,8 @@ function bestsOf(workouts: readonly Workout[]) {
     for (const lift of workout.lifts) {
       const key = liftKey(lift.name);
       let held = bests.get(key) ?? { kg: 0, reps: 0 };
-      for (const set of setsOf(lift)) if (heavier(set, held)) held = { kg: set.kg, reps: set.reps };
+      // A set with no reps recorded shows nothing lifted, however heavy.
+      for (const set of setsOf(lift)) if (set.reps >= 1 && heavier(set, held)) held = { kg: set.kg, reps: set.reps };
       bests.set(key, held);
     }
   }

@@ -104,8 +104,15 @@ single SQLite file on a volume.
   squat, the bench press and anything else (`DEFAULT_SETS` and `defaultReps`
   in `lib/exercises.ts`). Choosing another lift moves them to its defaults
   until you type in them. The boxes used to show a grey 3 and 5 that were
-  only placeholders, and leaving them saved one set of one; a lift with a
-  weight and an empty sets or reps box is now turned away instead. Under the
+  only placeholders, and leaving them saved one set of one. A box left blank
+  now reads as 0: no weight is an unweighted lift, such as pull-ups, and no
+  sets or reps are none recorded, never one. The log leaves out what was
+  blank: "Pull-up 3×8", "Dumbbell row 60 lb 3 sets", and opening the session
+  again shows those boxes blank. A set with no reps is never a best. A lift
+  counts once anything is typed into it; logging one athlete, a lift chosen
+  and left at its defaults with no weight saves as it shows, but logging
+  both, defaults alone do not, since the other one may not have done it
+  (`liftLogged` in `components/workout-form.tsx`). Under the
   lift's name, each athlete's column shows their last time at it, such as
   "Last 225 lb 3×3 · Wed 4 Nov", from the newest session on or before the
   session's day (`lastLift` in `lib/last-lift.ts`, names matched the way a
@@ -116,7 +123,8 @@ single SQLite file on a volume.
   with its own weight and reps. Advanced opens a row per set from sets and reps
   you typed, but over the form's defaults it opens one set at your weight with
   the reps empty, and **+ Set** adds the rest; closing it untouched gives the
-  defaults back. An empty rep box in a set is asked for, not saved as one rep.
+  defaults back. An empty box in a set reads as 0 too, and a set left wholly
+  blank is left out.
   Sets that differ are listed one by one in the
   log, every rep counts towards the burn, and Progress takes the heaviest.
   **Mixed** puts lifts, MetCon and endurance in one session: **Complete ATHX
@@ -145,8 +153,8 @@ single SQLite file on a volume.
   means **1 set of 2 reps**. Include weights and units; an omitted unit follows
   the lb/kg switch. Sets that differ, such as `135x5, 185x3, 225x1` (a
   weight, then its reps), open Advanced with a row for each. Named results stay
-  with that athlete, and missing numbers stay blank for review; a lift saves
-  only once its blanks, a set's reps included, are filled in. Lifts, workouts
+  with that athlete, and missing numbers stay blank for review, saving as 0
+  if left: a weight never said is unweighted. Lifts, workouts
   and MetCons are matched to the names already in the list, including typos and
   loose phrasing. A name that is not one of those is kept as typed and called
   out in the notes. AI replaces the workout fields but saves only when you

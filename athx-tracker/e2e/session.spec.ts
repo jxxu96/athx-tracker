@@ -724,21 +724,22 @@ test("advanced opens one set over the form's defaults, not three copies of them"
   await expect(page.getByRole("textbox", { name: "Sets", exact: true })).toHaveValue("3");
   await expect(page.getByRole("textbox", { name: "Reps", exact: true })).toHaveValue("5");
 
-  // An empty rep box is asked for, not saved as one rep.
+  // An empty rep box saves as none recorded, not as one rep, and a set left
+  // wholly blank is not one you did.
   await toggle.click();
-  await page.getByRole("button", { name: "Save session" }).click();
-  await expect(page.locator("form").getByRole("alert")).toContainText("Back squat, set 1: add the reps.");
-  await reps(1).fill("5");
   await page.getByRole("button", { name: "Gators add set" }).click();
   await weight(2).fill("155");
   await reps(2).fill("3");
+  await page.getByRole("button", { name: "Gators add set" }).click();
+  await weight(3).fill("");
+  await reps(3).fill("");
   await page.getByRole("button", { name: "Save session" }).click();
 
   const read = () =>
     page.evaluate(async () => (await fetch("/api/records").then((r) => r.json())).records);
   await expect.poll(async () => (await read()).length).toBe(1);
   const [saved] = await read();
-  expect(saved.lifts[0].detail.map((set: { reps: number }) => set.reps)).toEqual([5, 3]);
+  expect(saved.lifts[0].detail.map((set: { reps: number }) => set.reps)).toEqual([0, 3]);
 });
 
 test("one session holds lifts, a part-finished MetCon with loads, and a run", async ({ page }) => {

@@ -178,6 +178,19 @@ test("settings reject nonsense bodyweights", () => {
   assert.ok(!ok(settingsSchema, { ...base, bodyweight: { hippos: 0, gators: 900 } }));
 });
 
+test("a lift's boxes left blank save as 0: unweighted, or no sets or reps recorded", () => {
+  assert.ok(ok(workoutSchema, workout({
+    category: "Strength",
+    lifts: [
+      { name: "Pull-up", kg: 0, sets: 3, reps: 8 },
+      { name: "Dumbbell row", kg: 27.2, sets: 3, reps: 0 },
+      { name: "Deadlift", kg: 140, sets: 0, reps: 0 },
+      { name: "Back squat", kg: 100, sets: 1, reps: 0, detail: [{ kg: 60, reps: 5 }, { kg: 100, reps: 0 }] },
+    ],
+  })));
+  assert.ok(!ok(workoutSchema, workout({ category: "Strength", lifts: [{ name: "Pull-up", kg: 0, sets: -1, reps: 8 }] })));
+});
+
 test("a lift can list each set, and the summary has to be the heaviest", () => {
   const varied = {
     name: "Back squat", kg: 100, sets: 2, reps: 1,

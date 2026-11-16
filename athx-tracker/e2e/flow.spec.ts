@@ -94,14 +94,22 @@ test("a chosen lift starts at its usual sets and reps, and saves what it shows",
   await expect(reps).toHaveValue("4");
 
   await lifts(page).getByRole("textbox", { name: "lb", exact: true }).fill("225");
+  // Reps cleared are none recorded, never one: the save goes ahead with 0.
   await reps.fill("");
-  await page.getByRole("button", { name: "Save session" }).click();
-  await expect(page.locator("form").getByRole("alert")).toContainText("Back squat: add the sets and reps.");
-  await reps.fill("5");
   await page.getByRole("button", { name: "Save session" }).click();
   await expect(page.getByText("Session saved", { exact: true })).toBeVisible();
   const saved = (await records(page)).find((record) => record.kind === "workout") as { lifts: unknown[] };
-  expect(saved.lifts).toEqual([{ name: "Back squat", kg: 102.06, sets: 3, reps: 5 }]);
+  expect(saved.lifts).toEqual([{ name: "Back squat", kg: 102.06, sets: 3, reps: 0 }]);
+});
+
+test("a lift chosen with no weight saves unweighted, at the sets and reps it shows", async ({ page }) => {
+  await openStrength(page);
+  await lifts(page).getByLabel("Lift", { exact: true }).selectOption("Deadlift");
+  await expect(lifts(page).getByRole("textbox", { name: "Sets", exact: true })).toHaveValue("3");
+  await page.getByRole("button", { name: "Save session" }).click();
+  await expect(page.getByText("Session saved", { exact: true })).toBeVisible();
+  const saved = (await records(page)).find((record) => record.kind === "workout") as { lifts: unknown[] };
+  expect(saved.lifts).toEqual([{ name: "Deadlift", kg: 0, sets: 3, reps: 3 }]);
 });
 
 test("a lift offers the athlete's last time at it, and Use copies it", async ({ page }) => {

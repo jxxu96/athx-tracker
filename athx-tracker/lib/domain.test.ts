@@ -179,6 +179,18 @@ test("a varied lift burns every rep, and its summary is the heaviest sets", () =
   );
 });
 
+test("a lift line leaves out what was left blank: an unweighted lift, or sets and reps not recorded", () => {
+  assert.equal(formatLift({ name: "Pull-up", kg: 0, sets: 3, reps: 8 }, "lb"), "Pull-up 3×8");
+  assert.equal(formatLift({ name: "Dumbbell row", kg: 27.2155422, sets: 3, reps: 0 }, "lb"), "Dumbbell row 60 lb 3 sets");
+  assert.equal(formatLift({ name: "Plank", kg: 0, sets: 0, reps: 1 }, "lb"), "Plank 1 rep");
+  assert.equal(formatLift({ name: "Deadlift", kg: 140, sets: 0, reps: 0 }, "kg"), "Deadlift 140 kg");
+  assert.equal(formatLift({ name: "Carry", kg: 0, sets: 0, reps: 0 }, "kg"), "Carry");
+  assert.equal(
+    formatLift({ name: "Pull-up", kg: 10, sets: 1, reps: 5, detail: [{ kg: 0, reps: 8 }, { kg: 10, reps: 5 }, { kg: 10, reps: 0 }] }, "kg"),
+    "Pull-up 8 reps, 10 kg×5, 10 kg",
+  );
+});
+
 test("burn follows MET x 3.5 x kg / 200 per minute", () => {
   // MetCon is 8 MET: 8 * 3.5 * 80 / 200 * 30 = 336, rounded to the nearest ten.
   assert.equal(estimateBurn(workout({ seconds: 1800 }), 80), 340);
