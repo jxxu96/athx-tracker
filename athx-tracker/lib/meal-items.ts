@@ -131,22 +131,58 @@ export function itemBlocks(text: string): Row[] {
 }
 
 /**
- * Several estimators' items as one list. The one that counts most gives the
- * list; another that lists the same foods, one for one, is averaged into it
- * by weight. One that listed the meal another way is left out, since its
- * items cannot be told apart, and one that gave it as a single item has no
- * list to give. The grams are the leading list's.
+ * A line that ends in a colon with more lines under it says what they are,
+ * "shang gong chu leftovers:", and is not a food of its own.
  */
-function blendRows(sources: readonly { rows: Row[]; weight: number }[]): Row[] {
-  const listed = sources.filter((source) => source.rows.length >= 2);
-  if (!listed.length) return [];
-  const lead = listed.reduce((best, source) => (source.weight > best.weight ? source : best));
+function withoutHeadings(text: string) {
+  const lines = text.split(/\r?\n/);
+  let last = lines.length - 1;
+  while (last >= 0 && !lines[last].trim()) last -= 1;
+  return lines.filter((line, index) => index >= last || !/:\s*$/.test(line)).join("\n");
+}
+
+/**
+ * How many dishes and foods a description lists: the dish cut, at lines,
+ * bullets, commas and periods but never at "with" or "and", so "niangao with
+ * mustard greens" and a Chinese dish are one each. A heading is none.
+ */
+export function listedCount(description: string) {
+  return splitDishText(withoutHeadings(description), Number.MAX_SAFE_INTEGER).length;
+}
+
+/**
+ * Several estimators' items as one list. With two or more foods written, the
+ * list nearest to that many leads, since it followed what was written rather
+ * than cutting a dish into its oil, starch and broth; otherwise, and between
+ * lists as near, the one that counts most; an answer weighed at nothing leads
+ * only when no other gave a list. Another that lists the same foods, one for
+ * one, is averaged into it by weight: matched by name, or, when both list
+ * exactly the foods written and no name that matches sits in another place,
+ * by place, since a dish's name in pinyin, English or Chinese shares no words
+ * with its others. One that listed the
+ * meal another way is left out, since its items cannot be told apart, and one
+ * that gave it as a single item has no list to give. The grams are the
+ * leading list's.
+ */
+function blendRows(sources: readonly { rows: Row[]; weight: number }[], written = 0): Row[] {
+  const lists = sources.filter((source) => source.rows.length >= 2);
+  if (!lists.length) return [];
+  // An answer weighed at nothing counts for nothing beside one that counts,
+  // so it cannot lead and leave out the ones that do.
+  const listed = lists.some((source) => source.weight > 0) ? lists.filter((source) => source.weight > 0) : lists;
+  const off = (source: { rows: Row[] }) => (written >= 2 ? Math.abs(source.rows.length - written) : 0);
+  const lead = listed.reduce((best, source) =>
+    off(source) < off(best) || (off(source) === off(best) && source.weight > best.weight) ? source : best);
+  const asWritten = written >= 2 && lead.rows.length === written;
   const partners = listed.flatMap((source) => {
     if (source === lead || source.rows.length !== lead.rows.length) return [];
     const found = lead.rows.map((row) => source.rows.filter((other) => sameFood(row.name, other.name)));
-    if (found.some((matches) => matches.length !== 1)) return [];
     const rows = found.map(([match]) => match);
-    return new Set(rows).size === rows.length ? [{ rows, weight: source.weight }] : [];
+    if (found.every((matches) => matches.length === 1) && new Set(rows).size === rows.length)
+      return [{ rows, weight: source.weight }];
+    // By place only when no name it does match says the places differ.
+    const inPlace = found.every((matches, index) => matches.length !== 1 || matches[0] === source.rows[index]);
+    return asWritten && inPlace ? [{ rows: source.rows, weight: source.weight }] : [];
   });
   const group = [lead, ...partners];
   const mass = group.reduce((sum, source) => sum + Math.max(source.weight, 0), 0);
@@ -221,13 +257,18 @@ export function fitItems(portions: readonly Figures[], totals: Figures): Figures
 /**
  * The items an estimate's working breaks the meal into, shared out to add up
  * to the totals. Fewer than two is not a breakdown, and more than a meal can
- * keep is not one either.
+ * keep is not one either. The description, when given, is what was written,
+ * which a list that follows it is preferred for.
  */
 export function breakdown(
   sources: readonly { assumptions: string; weight: number }[],
   totals: Figures,
+  description = "",
 ): ItemSeed[] {
-  const rows = blendRows(sources.map((source) => ({ rows: itemBlocks(source.assumptions), weight: source.weight })));
+  const rows = blendRows(
+    sources.map((source) => ({ rows: itemBlocks(source.assumptions), weight: source.weight })),
+    listedCount(description),
+  );
   if (rows.length < 2 || rows.length > MEAL_TEMPLATE_ITEMS) return [];
   const fitted = fitItems(rows.map((row) => row.macros), totals);
   return rows.map((row, index) => {
@@ -418,9 +459,9 @@ export function seedsFromIngredients(items: readonly MealTemplateItem[], totals:
   }));
 }
 
-/** A meal with no figures yet, as items to type in: cut where it was written as several, including on "and". */
+/** A meal with no figures yet, as items to type in: cut where it was written as several, including on "and". A heading is not one. */
 export function blankSeeds(description: string): ItemSeed[] {
-  const parts = splitDishText(description, MEAL_TEMPLATE_ITEMS, true);
+  const parts = splitDishText(withoutHeadings(description), MEAL_TEMPLATE_ITEMS, true);
   if (parts.length < 2) return [];
   return parts.map((part) => ({ name: clipName(part), label: part, grams: 0, macros: null, per: null, working: "" }));
 }

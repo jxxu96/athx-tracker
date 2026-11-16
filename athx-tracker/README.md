@@ -181,12 +181,21 @@ single SQLite file on a volume.
   saved yet is kept as a draft; see *Drafts*.
   A meal of two or more items offers **Expand into N items** under its
   figures. The items come from the estimate's working, which lists each item
-  with its own figures in brackets; a blend averages the estimators that
-  listed the same foods, by their weights, and the list is shared out so the
-  items add up to the figures already on the meal (`breakdown` in
+  with its own figures in brackets. A meal written as several dishes, cut as
+  a shared meal's dishes are, at lines, bullets, commas and periods, takes
+  its items from the list nearest to that many, so four Chinese dishes open
+  into four and not into their oil, starch and broth; a line ending in a
+  colon above the others, such as "leftovers:", is a heading and not a dish
+  (`listedCount`). Otherwise, and between lists as near, the estimator that
+  counts most gives the list. A blend averages the estimators that listed
+  the same foods, by their weights: matched by name, or by place when each
+  lists exactly the dishes written and no name that matches sits elsewhere,
+  since a dish in pinyin, English or Chinese shares no words with itself. An
+  estimator weighed at 0 gives the list only when no other gave one. The list is shared out so the items
+  add up to the figures already on the meal (`breakdown` in
   `lib/meal-items.ts`). Items saved with the meal open as they were saved, and
   a meal with no figures yet opens into blank items where it was written as
-  several, to type in. Each item has a name, its grams, and its own figures:
+  several, to type in, a heading left out. Each item has a name, its grams, and its own figures:
   a weighed item has a slider, and moving it or typing grams scales that
   item's figures; typing a figure sets them at the grams it is at. Remove an
   item, or add one. While expanded, the meal's figures are the items added

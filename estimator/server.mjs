@@ -198,7 +198,10 @@ const MEAL_LINES = [
   "Scale the figures to the stated serving size, weight or count.",
   "In assumptions, name each product you matched and the page or label the figures came from, alongside the portions, oils and preparation you assumed.",
   // Each item's own figures lead, so the split is readable before the reasoning.
-  "Write assumptions one item at a time. Give every explicitly listed ingredient its own line, even when it was mixed into one dish. Keep its stated grams and preserve enough of its name to match it to the description.",
+  // Several dishes come back one item each: the app opens a meal into these
+  // items, and four Chinese dishes cut into their oil, starch and broth gave
+  // fourteen.
+  "Write assumptions one item at a time, in the order the description lists them. Give every explicitly listed ingredient its own line, even when it was mixed into one dish. Keep its stated grams and preserve enough of its name to match it to the description. When the description lists several dishes, each dish is one item, even when its name says what is in it, such as 'beef with broccoli' or 'winter melon and pork rib soup', and a Chinese dish stays one item: the oil, sauce, coating, broth and garnish you assume for a dish go in that dish's item and its working, not on lines of their own.",
   "Start each item with its name, its portion and its own macros in square brackets, such as 'Chicken breast, 150 g cooked [248 kcal, 47P, 0C, 5F]', adding fiber and ethanol grams inside the brackets only when they are not 0, such as '4 fiber' or '14 ethanol'.",
   "Then say how you reached that item's figures.",
   "Leave a blank line between items, and make the items add up to the totals.",

@@ -270,6 +270,19 @@ test("whoever goes first leaves the fallback something to work with", () => {
   assert.equal(budgetSlice(49000 + 12600, false), 49000);
 });
 
+test("several dishes come back one item each, in the order written", () => {
+  // The app opens a meal into these items: four Chinese dishes cut into their
+  // oil, starch and broth gave fourteen.
+  for (const phrase of [
+    "in the order the description lists them",
+    "When the description lists several dishes, each dish is one item",
+    "a Chinese dish stays one item",
+    "not on lines of their own",
+    "Give every explicitly listed ingredient its own line",
+  ]) assert.ok(INSTRUCTIONS.includes(phrase), phrase);
+  assert.ok(DISH_INSTRUCTIONS.includes("a Chinese dish stays one item"));
+});
+
 test("a named product is looked up, and a workout is not", () => {
   assert.match(INSTRUCTIONS, /look that exact product up/);
   assert.match(INSTRUCTIONS, /do not estimate a named product by analogy/);

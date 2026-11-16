@@ -839,7 +839,7 @@ export function MealForm({
         fat: estimate.fat,
         fiber: estimate.fiber ?? 0,
         alcohol: estimate.alcohol ?? 0,
-      });
+      }, description);
       setItems(seeds.map((seed) => itemDraft(newId(), seed)));
       setItemsEdited(false);
     }
@@ -1118,7 +1118,7 @@ export function MealForm({
     const sources = source === "grok" && !adjusted && counting.length > 1
       ? counting.map((answer) => ({ assumptions: answer.estimate.assumptions, weight: weights[answer.provider] }))
       : assumptionSources(assumptions);
-    return itemBreakdown(sources, counted);
+    return itemBreakdown(sources, counted, description);
   }
 
   /** The assumptions with the items listed first, once they were changed. */
