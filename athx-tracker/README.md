@@ -208,7 +208,10 @@ single SQLite file on a volume.
   a meal with no figures yet opens into blank items where it was written as
   several, to type in, a heading left out. Each item has a name, its grams, and its own figures:
   a weighed item has a slider, and moving it or typing grams scales that
-  item's figures; typing a figure sets them at the grams it is at. Remove an
+  item's figures; typing a figure sets them at the grams it is at. One with
+  no weight, such as "1 serving", has a size under its figures instead, as a
+  dish does, so half a serving is 50% (`scaleItem`); giving it a weight hands
+  that over to its grams. Remove an
   item, or add one. While expanded, the meal's figures are the items added
   up and cannot be typed into, and changing a figure or a weight saves the
   meal as your own numbers. Saving keeps the items with the meal, and once
@@ -278,12 +281,14 @@ single SQLite file on a volume.
   is said, and one past 5% of the calories stands out. It is advice only: it
   never stops a save and never changes a figure. A working cut short to fit is
   not checked, and a lone item, being the dish itself, is mentioned only when
-  it is out (`dishItemCheck` in `lib/meal-items.ts`). **Scale size** makes a
-  dish bigger or smaller by a percentage. Ticked, it opens at 100% with a
-  slider, 10% to 300% in steps of 5, and a box for anything from 1% to 1000%,
-  and every figure follows the size from the dish's figures at 100%, so
-  sliding back loses nothing; a figure typed meanwhile is that figure at the
-  size shown. Unticked, the figures go back to 100%. A scaled estimate saves
+  it is out (`dishItemCheck` in `lib/meal-items.ts`). A size under each
+  dish's figures makes it bigger or smaller by a percentage: one slim row, a
+  slider from 10% to 300% in steps of 5 and the size it is at, which takes
+  anything from 1% to 1000% typed. It sits at 100% and quiet, and once moved
+  says what 100% was, "of 800 kcal". Every figure follows the size from the
+  dish's figures at 100%, so sliding back loses nothing; a figure typed
+  meanwhile is that figure at the size shown. Back at 100%, the dish is as it
+  came (`SizeSlider` in `components/size-slider.tsx`). A scaled estimate saves
   as your own numbers, and since its working was written for 100%, each meal's
   assumptions say "Scaled to 120% of 800 kcal." under the whole dish, and the
   item check holds the working to the dish at 100%. Estimating the dish again

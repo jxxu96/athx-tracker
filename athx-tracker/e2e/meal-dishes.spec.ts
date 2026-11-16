@@ -824,12 +824,11 @@ test("a dish's items are checked against its calories without being enforced, an
   await expect(naanDish).toContainText("Answered by Codex · Confidence: medium");
   await expect(naanDish).not.toContainText("saved as your own numbers");
 
-  // The scale stays shut until it is ticked, and opens at 100% with nothing changed.
-  await expect(curryDish.getByLabel("Size (%)")).toHaveCount(0);
-  await curryDish.getByRole("checkbox", { name: "Scale size" }).check();
+  // The size sits under the figures at 100%, with nothing changed and nothing to tick.
+  await expect(curryDish.getByRole("checkbox", { name: "Scale size" })).toHaveCount(0);
   await expect(curryDish.getByLabel("Size (%)")).toHaveValue("100");
   await expect(curryDish.getByLabel("Size", { exact: true })).toHaveValue("100");
-  await expect(curryDish).toContainText("100% is 800 kcal.");
+  await expect(curryDish).not.toContainText("of 800 kcal");
   await expect(curryDish.getByLabel("Calories (kcal)")).toHaveValue("800");
   await expect(curryDish).not.toContainText("saved as your own numbers");
 
@@ -841,6 +840,7 @@ test("a dish's items are checked against its calories without being enforced, an
   await expect(curryDish.getByLabel("Fiber (g)")).toHaveValue("7.2");
   await expect(curryDish.getByLabel("Fat (g)")).toHaveValue("36");
   await expect(curryDish.getByLabel("Size", { exact: true })).toHaveValue("120");
+  await expect(curryDish).toContainText("of 800 kcal");
   await expect(curryDish).toContainText("saved as your own numbers after your edit");
   // The working was written for 100%, so that is what its items are held to.
   await expect(curryDish.getByRole("status", { name: "Items check" })).toHaveText(
@@ -857,13 +857,17 @@ test("a dish's items are checked against its calories without being enforced, an
   await expect(curryDish.getByLabel("Calories (kcal)")).toHaveValue("440");
   await expect(curryDish.getByLabel("Size (%)")).toHaveValue("55");
 
-  // Unticked, the dish is back at 100%.
-  await curryDish.getByRole("checkbox", { name: "Scale size" }).uncheck();
-  await expect(curryDish.getByLabel("Size (%)")).toHaveCount(0);
+  // Back at 100%, the dish is as it came, and says nothing more.
+  await curryDish.getByLabel("Size (%)").fill("100");
   await expect(curryDish.getByLabel("Calories (kcal)")).toHaveValue("800");
   await expect(curryDish.getByLabel("Fiber (g)")).toHaveValue("6");
+  await expect(curryDish).not.toContainText("of 800 kcal");
 
-  await curryDish.getByRole("checkbox", { name: "Scale size" }).check();
+  // A size the box cannot take is said, and changes nothing.
+  await curryDish.getByLabel("Size (%)").fill("0");
+  await expect(curryDish).toContainText("1% to 1000%");
+  await expect(curryDish.getByLabel("Calories (kcal)")).toHaveValue("800");
+
   await curryDish.getByLabel("Size (%)").fill("120");
   await expect(curryDish.getByLabel("Calories (kcal)")).toHaveValue("960");
 
@@ -881,7 +885,7 @@ test("a dish's items are checked against its calories without being enforced, an
   await page.getByRole("button", { name: "Meal", exact: true }).click();
   await expect(dish(page, 1).getByLabel("Size (%)")).toHaveValue("120");
   await expect(dish(page, 1).getByLabel("Calories (kcal)")).toHaveValue("960");
-  await expect(dish(page, 1)).toContainText("100% is 800 kcal.");
+  await expect(dish(page, 1)).toContainText("of 800 kcal");
 
   // The naan's gap does not stand in the way of saving.
   await page.getByLabel("Meal", { exact: true }).fill("Curry night");
