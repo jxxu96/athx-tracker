@@ -177,18 +177,19 @@ single SQLite file on a volume.
   offered from the log with a dashed edge, are one row of buttons that scrolls
   sideways; **Manage templates** opens the full list to save, edit or remove
   them, and saving the meal on the form as a template is at the end of the
-  row. Once every ingredient has its own figures, **Ingredient weights** lists
-  them with a tick each. Unticked ones are options, like a second milk: kept
-  with the meal, but out of the description, the macros and the logged meal
-  until ticked. A ticked weighed one slides; a counted one ("2 eggs") only
-  ticks. An ingredient added there is estimated on its own, once, so the
-  others keep their figures; **Update this template** keeps it, and keeps
-  which ones start ticked. A fresh **Estimate macros** prices only what is
-  ticked and leaves the options as they were. In **Manage templates**, the On
-  column sets which items start ticked, and **Estimate the new item** prices
-  just the items that have no figures yet (`servedItems` and
-  `itemWithEstimate` in `lib/meal-ingredients.ts`). Amounts are grams; a
-  portion written in ml stays a counted item with no slider. A meal typed and not
+  row. Once every ingredient has its own figures, **Ingredient weights** gives
+  each one a slider: a weighed one slides in grams, and a counted one ("2
+  eggs", "250ml 2% milk") by how many, which rewrites the count in its name
+  ("3 eggs", "1.5 × 250ml 2% milk"). Slid to zero, an item is an option, like a
+  second milk: kept with the meal, but out of the description, the macros and
+  the logged meal until it is slid up again. Any item can be removed, but not
+  the last. An ingredient added there is estimated on its own, once, so the
+  others keep their figures. **Update this template** keeps what was added,
+  removed or slid. A fresh **Estimate macros** prices only what is above zero
+  and leaves the options as they were. In **Manage templates**, every item
+  slides the same way, and **Estimate the new item** prices just the items
+  that have no figures yet (`servedItems`, `withAmount` and `itemWithEstimate`
+  in `lib/meal-ingredients.ts`). A meal typed and not
   saved yet is kept as a draft; see *Drafts*.
   A meal of two or more items offers **Expand into N items** under its
   figures. The items come from the estimate's working, which lists each item

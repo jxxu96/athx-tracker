@@ -7,7 +7,7 @@ import {
   MEAL_TEMPLATE_NAME_LIMIT,
 } from "./domain.ts";
 import { commonMeals, mealKey, type CommonMeal } from "./common-meals.ts";
-import { captureIngredientNutrition, loggedIngredients, servedItems } from "./meal-ingredients.ts";
+import { captureIngredientNutrition, loggedIngredients, normalizeItems, servedItems } from "./meal-ingredients.ts";
 
 const LEADING_GRAMS = /^(\d+(?:\.\d+)?)\s*(?:g|grams)\b\s*(?:of\s+)?(.+)$/i;
 const TRAILING_GRAMS = /^(.+?)\s+(\d+(?:\.\d+)?)\s*(?:g|grams)\b\.?$/i;
@@ -77,14 +77,14 @@ export function parseMealItems(text: string): MealTemplateItem[] {
 
 /**
  * The description a template fills in, so a later estimate sees the grams.
- * An option that is off is not part of the meal, so it is not described.
+ * An item slid to zero is not part of the meal, so it is not described.
  */
 export function templateDescription(items: MealTemplateItem[]) {
   return servedItems(items)
     .filter((item) => item.name.trim())
     .map((item) => {
       const name = item.name.trim();
-      const grams = item.nutrition?.grams && item.grams === 0 ? "0" : formatGrams(item.grams);
+      const grams = formatGrams(item.grams);
       return grams ? `${grams} g ${name}` : name;
     })
     .join(", ");
@@ -119,16 +119,15 @@ export function buildTemplate(input: {
 }): { ok: true; template: MealTemplate } | { ok: false; error: string } {
   const name = input.name.trim().slice(0, MEAL_TEMPLATE_NAME_LIMIT);
   if (!name) return { ok: false, error: "Name the template." };
-  const items = input.items
+  const items = normalizeItems(input.items)
     .map((item) => ({
       name: item.name.trim().slice(0, MEAL_TEMPLATE_ITEM_LIMIT),
       grams: roundGrams(item.grams),
       ...(item.nutrition ? { nutrition: item.nutrition } : {}),
-      ...(item.off ? { off: true as const } : {}),
     }))
     .filter((item) => item.name);
   if (!items.length) return { ok: false, error: "Add at least one item." };
-  if (!servedItems(items).length) return { ok: false, error: "Leave at least one item on." };
+  if (!servedItems(items).length) return { ok: false, error: "Keep at least one item above zero." };
   if (items.length > MEAL_TEMPLATE_ITEMS) return { ok: false, error: "That meal has too many items." };
   for (const item of items) {
     if (!Number.isFinite(item.grams) || item.grams < 0 || item.grams > MEAL_TEMPLATE_GRAMS_LIMIT)
@@ -202,7 +201,7 @@ export function mealOffers(templates: MealTemplate[], meals: Meal[], today: stri
     saved: true,
     name: template.name,
     meal: template.meal,
-    items: captureIngredientNutrition(template.items, template.macros, template.assumptions),
+    items: captureIngredientNutrition(normalizeItems(template.items), template.macros, template.assumptions),
     macros: copyMacros(template.macros),
     assumptions: template.assumptions,
     sourceKey: template.sourceKey,

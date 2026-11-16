@@ -85,12 +85,16 @@ export const MEAL_TEMPLATE_GRAMS_LIMIT = 5000;
 export type MealTemplateItem = {
   name: string;
   grams: number;
-  /** Macros at the reference portion, which stays fixed when the serving changes. */
-  nutrition?: { grams: number; macros: Meal["macros"] };
   /**
-   * An option kept with a template but not in this serving, such as a second
-   * kind of milk. It stays out of the description, the totals and the logged
-   * meal until it is turned on. Omitted means it is in.
+   * Macros at the reference portion, which stays fixed when the serving
+   * changes. A counted item ("2 eggs") has zero grams here, and count is how
+   * many its macros are for once the count in its name has been slid; before
+   * that, the count in the name is the reference.
+   */
+  nutrition?: { grams: number; macros: Meal["macros"]; count?: number };
+  /**
+   * Older templates only, from when an option was ticked off: it is read as
+   * an amount of zero, which is how an option is kept now, and never written.
    */
   off?: true;
 };

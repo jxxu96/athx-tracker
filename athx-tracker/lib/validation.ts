@@ -96,7 +96,9 @@ const mealItemsSchema = z.array(z.object({
   nutrition: z.object({
     grams: finite.max(MEAL_TEMPLATE_GRAMS_LIMIT),
     macros: mealMacroSchema,
+    count: z.number().finite().positive().max(1000).optional(),
   }).strict().optional(),
+  // Read from templates saved while options were ticked off; never written now.
   off: z.literal(true).optional(),
 }).strict()).min(1).max(MEAL_TEMPLATE_ITEMS);
 export const mealSchema = z.object({

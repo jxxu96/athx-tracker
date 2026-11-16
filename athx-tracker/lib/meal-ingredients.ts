@@ -173,31 +173,88 @@ export function loggedIngredients(meal: Pick<Meal, "items" | "macros" | "assumpt
   return hasIngredientNutrition(items) ? items : [];
 }
 
-/** The items in this serving: everything but the options that are off. */
-export function servedItems<T extends Pick<MealTemplateItem, "off">>(items: readonly T[]): T[] {
-  return items.filter((item) => !item.off);
+const COUNT_TIMES = /^(\d+(?:\.\d+)?)\s*[×x]\s+(.+)$/i;
+const COUNT_PLAIN = /^(\d+(?:\.\d+)?)\s+(?![/%])(.+)$/;
+
+/**
+ * How many of a counted item there are, from its name: "3 eggs" is 3 of
+ * "eggs", "1.5 × 250ml 2% milk" is 1.5 of "250ml 2% milk", and a name with
+ * no count of its own, "banana" or "2% milk", is one.
+ */
+export function countOf(name: string): { count: number; base: string; plain: boolean } {
+  const times = name.match(COUNT_TIMES);
+  if (times) return { count: Number(times[1]), base: times[2], plain: false };
+  const plain = name.match(COUNT_PLAIN);
+  if (plain) return { count: Number(plain[1]), base: plain[2], plain: true };
+  return { count: 1, base: name, plain: false };
 }
 
-/** The same item turned on, which drops the flag, or off, which sets it. */
-export function switchItem<T extends Pick<MealTemplateItem, "off">>(item: T, on: boolean): T {
-  const next = { ...item };
-  if (on) delete next.off;
-  else next.off = true;
-  return next;
+/** The name with a new count: "3 eggs", or "1.5 × 250ml 2% milk" where the name had none. */
+export function withCount(name: string, count: number) {
+  const { base, plain } = countOf(name);
+  const figure = String(Math.round(count * 100) / 100);
+  const next = plain ? `${figure} ${base}` : count === 1 ? base : `${figure} × ${base}`;
+  return next.slice(0, MEAL_TEMPLATE_ITEM_LIMIT);
+}
+
+/** Weighed items are measured in grams; anything else by how many. */
+export function amountOf(item: MealTemplateItem) {
+  return item.nutrition && item.nutrition.grams === 0 ? countOf(item.name).count : item.grams;
+}
+
+/** The same item at a new amount: grams when weighed, the count in its name when counted. */
+export function withAmount<T extends MealTemplateItem>(item: T, amount: number): T {
+  if (!item.nutrition || item.nutrition.grams > 0) return { ...item, grams: Math.round(amount * 10) / 10 };
+  return {
+    ...item,
+    name: withCount(item.name, Math.round(amount * 100) / 100),
+    // The count its figures were for, kept once the name stops saying it.
+    nutrition: { ...item.nutrition, count: item.nutrition.count ?? countOf(item.name).count },
+  };
 }
 
 /**
- * Every item needs its own figures, options included, so turning one on
- * never leaves the meal without totals. Only the items served are counted.
+ * Slid to zero: an option kept with the meal but not in it. Only an item
+ * with its own figures can be, so the meal's macros always know about it.
+ */
+export function leftOut(item: MealTemplateItem) {
+  if (item.off) return true;
+  return !!item.nutrition && amountOf(item) <= 0;
+}
+
+/** The items in this serving: everything but those slid to zero. */
+export function servedItems<T extends MealTemplateItem>(items: readonly T[]): T[] {
+  return items.filter((item) => !leftOut(item));
+}
+
+/** A template from when options were ticked off: those are read as zero. */
+export function normalizeItems(items: readonly MealTemplateItem[]): MealTemplateItem[] {
+  return items.map((item) => {
+    if (!item.off) return item;
+    const next = { ...item };
+    delete next.off;
+    return withAmount(next, 0);
+  });
+}
+
+/** How far an item is from the portion its figures are for. */
+function scaleOf(item: SavedItem) {
+  const { grams, count } = item.nutrition;
+  if (grams > 0) return item.grams / grams;
+  if (item.off) return 0;
+  const reference = count ?? countOf(item.name).count;
+  return reference > 0 ? countOf(item.name).count / reference : 1;
+}
+
+/**
+ * Every item needs its own figures, options included, so sliding one up
+ * never leaves the meal without totals. One at zero adds nothing.
  */
 export function ingredientTotals(items: readonly MealTemplateItem[]): Meal["macros"] | undefined {
   if (!items.length || !items.every((item): item is SavedItem => !!item.nutrition)) return;
   const totals = Object.fromEntries(FIGURES.map((key) => [
     key,
-    Math.round(servedItems(items).reduce((sum, item) => {
-      const { grams, macros } = item.nutrition;
-      return sum + (macros[key] ?? 0) * (grams ? item.grams / grams : 1);
-    }, 0) * 1000) / 1000,
+    Math.round(items.reduce((sum, item) => sum + (item.nutrition.macros[key] ?? 0) * scaleOf(item), 0) * 1000) / 1000,
   ])) as Figures;
   totals.fiber = Math.min(totals.fiber, totals.carbs);
   return totals;
@@ -205,6 +262,11 @@ export function ingredientTotals(items: readonly MealTemplateItem[]): Meal["macr
 
 export function ingredientSliderMax(grams: number, reference: number) {
   return Math.min(MEAL_TEMPLATE_GRAMS_LIMIT, Math.max(100, Math.ceil(Math.max(grams, reference * 3) / 10) * 10));
+}
+
+/** Up to three times the count its figures are for, and at least four. */
+export function countSliderMax(count: number, reference: number) {
+  return Math.min(1000, Math.max(4, Math.ceil(Math.max(count, reference * 3))));
 }
 
 /**

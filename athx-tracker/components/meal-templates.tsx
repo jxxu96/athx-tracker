@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { Plus, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -20,10 +19,13 @@ import { api, message, newId } from "@/lib/client";
 import { mealKey } from "@/lib/common-meals";
 import {
   captureIngredientNutrition,
+  countOf,
+  countSliderMax,
   ingredientSliderMax,
   ingredientTotals,
   itemWithEstimate,
-  switchItem,
+  leftOut,
+  withCount,
 } from "@/lib/meal-ingredients";
 import type { MealEstimate } from "@/lib/estimate-conversation";
 import {
@@ -88,14 +90,9 @@ function macroLine(macros: Meal["macros"]) {
   ].join(" · ");
 }
 
-/** Every item, options too, as the estimator should see them. */
-function describeAll(items: MealTemplateItem[]) {
-  return templateDescription(items.map((item) => ({ ...item, off: undefined })));
-}
-
-/** "Options: 0% milk, decaf coffee", for the list under Manage. */
+/** "Options: 0% milk, decaf coffee": the items kept at zero, for the list under Manage. */
 function optionLine(items: MealTemplateItem[]) {
-  const options = items.filter((item) => item.off).map((item) => item.name);
+  const options = items.filter(leftOut).map((item) => countOf(item.name).base);
   return options.length ? `Options: ${options.join(", ")}` : "";
 }
 
@@ -213,10 +210,10 @@ export function MealTemplateList({
       setEditorError("Estimate the changed ingredients before saving.");
       return;
     }
-    // The saved macros cover the whole meal. Leaving an item out needs each
-    // item's own figures, or the meal would still count it.
-    if (!totals && read.items.some((item) => item.off)) {
-      setEditorError("Estimate these items before leaving any unticked.");
+    // Some items priced and some not: the saved macros cannot follow the
+    // items, so the rest are estimated first.
+    if (!totals && read.items.some((item) => item.nutrition)) {
+      setEditorError("Estimate the changed ingredients before saving.");
       return;
     }
     const built = buildTemplate({
@@ -279,7 +276,7 @@ export function MealTemplateList({
       setEditorError(read.error);
       return;
     }
-    const description = describeAll(read.items);
+    const description = templateDescription(read.items);
     if (description.trim().length < 3) {
       setEditorError("Add an item before estimating.");
       return;
@@ -301,7 +298,7 @@ export function MealTemplateList({
           try {
             const { estimate } = await api<{ estimate: MealEstimate }>("/api/estimate", {
               method: "POST",
-              body: JSON.stringify({ description: describeAll([item]) }),
+              body: JSON.stringify({ description: templateDescription([item]) }),
             });
             items.push(itemWithEstimate(item, estimate));
           } catch (problem) {
@@ -328,24 +325,21 @@ export function MealTemplateList({
         method: "POST",
         body: JSON.stringify({ description }),
       });
-      const items = captureIngredientNutrition(
-        read.items.map(({ name, grams, off }) => ({ name, grams, ...(off ? { off } : {}) })),
-        estimate,
-        estimate.assumptions,
-      );
-      // The estimate covers the options too. Without each item's own figures
-      // there is no telling what the meal comes to with them left off.
-      if (read.items.some((item) => item.off) && !ingredientTotals(items)) {
-        setEditorError("The estimate did not break down by item, so options cannot be priced. Try again, or turn every item on.");
-        return;
-      }
+      // Items kept at zero were not described, so they keep their own figures.
+      const served = read.items.filter((item) => !leftOut(item));
+      const captured = captureIngredientNutrition(served.map(({ name, grams }) => ({ name, grams })), estimate, estimate.assumptions);
+      let next = 0;
+      const items = read.items.map((item) => (leftOut(item) ? item : captured[next++]));
       setEditor((current) => {
         if (!current) return current;
         return {
           ...current,
           draft: {
             ...current.draft,
-            items: items.map((item) => ({ ...item, grams: formatGrams(item.grams) })),
+            items: items.map((item) => ({
+              ...item,
+              grams: item.nutrition?.grams ? String(item.grams) : formatGrams(item.grams),
+            })),
             hadNutrition: !!ingredientTotals(items),
             meal: (estimate.alcohol ?? 0) > 0 ? "Alcohol" : current.draft.meal,
             macros: {
@@ -373,7 +367,7 @@ export function MealTemplateList({
   }
 
   const read = editor ? readItems(editor.draft.items) : null;
-  const preview = read && "items" in read ? describeAll(read.items) : "";
+  const preview = read && "items" in read ? templateDescription(read.items) : "";
   const unpriced = read && "items" in read && read.items.some((item) => item.nutrition)
     ? read.items.filter((item) => !item.nutrition).length
     : 0;
@@ -552,24 +546,13 @@ export function MealTemplateList({
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <div className="grid grid-cols-[1.25rem_5.5rem_1fr_auto] gap-1.5 text-[11px] text-muted-foreground">
-                    <span title="In the meal unless it is unticked; unticked ones are options">On</span>
+                  <div className="grid grid-cols-[5.5rem_1fr_auto] gap-1.5 text-[11px] text-muted-foreground">
                     <span>Grams</span>
                     <span>Item</span>
                     <span className="sr-only">Remove</span>
                   </div>
                   {editor.draft.items.map((item, index) => (
-                    <div key={index} className="grid grid-cols-[1.25rem_5.5rem_1fr_auto] items-center gap-1.5">
-                      <Checkbox
-                        aria-label={`Include item ${index + 1}`}
-                        checked={!item.off}
-                        disabled={saving || estimating}
-                        onCheckedChange={(value) => {
-                          const items = editor.draft.items.slice();
-                          items[index] = switchItem(item, value === true);
-                          updateDraft({ items });
-                        }}
-                      />
+                    <div key={index} className="grid grid-cols-[5.5rem_1fr_auto] items-center gap-1.5">
                       <Input
                         aria-label={`Grams, item ${index + 1}`}
                         inputMode="decimal"
@@ -580,9 +563,7 @@ export function MealTemplateList({
                           const items = editor.draft.items.slice();
                           const grams = event.target.value;
                           const weighed = item.nutrition?.grams === 0 && Number(grams) > 0;
-                          items[index] = weighed
-                            ? { name: item.name, grams, ...(item.off ? { off: true as const } : {}) }
-                            : { ...item, grams };
+                          items[index] = weighed ? { name: item.name, grams } : { ...item, grams };
                           updateDraft({ items });
                         }}
                       />
@@ -594,11 +575,7 @@ export function MealTemplateList({
                         disabled={saving || estimating}
                         onChange={(event) => {
                           const items = editor.draft.items.slice();
-                          items[index] = {
-                            name: event.target.value,
-                            grams: item.grams,
-                            ...(item.off ? { off: true as const } : {}),
-                          };
+                          items[index] = { name: event.target.value, grams: item.grams };
                           updateDraft({ items });
                         }}
                       />
@@ -618,7 +595,7 @@ export function MealTemplateList({
                       {item.nutrition && item.nutrition.grams > 0 ? (
                         <input
                           type="range"
-                          className="col-span-2 col-start-2 w-full accent-primary"
+                          className="col-span-2 w-full accent-primary"
                           aria-label={`${item.name} weight`}
                           aria-valuetext={`${Number(item.grams)} g`}
                           min={0}
@@ -629,6 +606,29 @@ export function MealTemplateList({
                           onChange={(event) => {
                             const items = editor.draft.items.slice();
                             items[index] = { ...item, grams: event.target.value };
+                            updateDraft({ items });
+                          }}
+                        />
+                      ) : item.nutrition ? (
+                        // A counted item slides by how many: "2 eggs" to "3 eggs".
+                        <input
+                          type="range"
+                          className="col-span-2 w-full accent-primary"
+                          aria-label={`${countOf(item.name).base} count`}
+                          aria-valuetext={`${countOf(item.name).count}`}
+                          min={0}
+                          max={countSliderMax(countOf(item.name).count, item.nutrition.count ?? countOf(item.name).count)}
+                          step={0.25}
+                          value={countOf(item.name).count}
+                          disabled={saving || estimating}
+                          onChange={(event) => {
+                            const items = editor.draft.items.slice();
+                            const nutrition = item.nutrition!;
+                            items[index] = {
+                              ...item,
+                              name: withCount(item.name, event.target.valueAsNumber),
+                              nutrition: { ...nutrition, count: nutrition.count ?? countOf(item.name).count },
+                            };
                             updateDraft({ items });
                           }}
                         />
