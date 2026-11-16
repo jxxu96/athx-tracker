@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Field } from "@/components/workout-form";
 import { MEAL_TEMPLATE_ITEM_LIMIT, MEAL_TEMPLATE_ITEMS } from "@/lib/domain";
 import { ingredientSliderMax } from "@/lib/meal-ingredients";
-import { setItemFigure, setItemGrams, type ItemBox, type ItemDraft } from "@/lib/meal-items";
+import { scaleItem, setItemFigure, setItemGrams, type ItemBox, type ItemDraft } from "@/lib/meal-items";
+import { SizeSlider } from "@/components/size-slider";
 
 /** The same boxes, in the same places, as a meal's: three across, then fiber and fat. */
 const FIGURES = [
@@ -43,8 +44,11 @@ function ItemCard({
   const label = `Item ${index + 1}`;
   const named = item.name.trim() || `item ${index + 1}`;
   const grams = Number(item.grams);
-  // A slider only where moving it scales something: a weighed item.
+  // A slider only where moving it scales something: a weighed item's grams,
+  // or the size of one with no weight but figures to resize.
   const slides = item.per !== null && Number.isFinite(grams) && grams >= 0;
+  const weighed = Number.isFinite(grams) && grams > 0;
+  const sized = !slides && !weighed && FIGURES.some(({ key }) => item[key].trim() !== "");
   return (
     <div role="group" aria-label={label} className="space-y-3 rounded-xl border p-3">
       <div className="flex items-end gap-2">
@@ -124,6 +128,14 @@ function ItemCard({
           </Field>
         ))}
       </div>
+      {sized ? (
+        <SizeSlider
+          label={`${named} size`}
+          percent={item.scale?.percent ?? 100}
+          full={item.scale ? item.scale.base.calories : null}
+          onPercent={(percent) => onItem((current) => scaleItem(current, percent))}
+        />
+      ) : null}
     </div>
   );
 }

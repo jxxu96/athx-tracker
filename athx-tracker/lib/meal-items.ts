@@ -14,8 +14,11 @@ import {
   ETHANOL_LIMIT,
   FIBER_LIMIT,
   MACRO_LIMITS,
+  SCALE_MAX,
+  SCALE_MIN,
   emptyDish,
   looseDishes,
+  readScale,
   unscaledCalories,
   type DishDraft,
 } from "./meal-dishes.ts";
@@ -42,6 +45,7 @@ export const ITEM_BOX = {
   alcohol: "ethanol",
 } as const satisfies Record<Figure, string>;
 export type ItemBox = (typeof ITEM_BOX)[Figure];
+const FIGURE_OF = Object.fromEntries(FIGURES.map((key) => [ITEM_BOX[key], key])) as Record<ItemBox, Figure>;
 
 /** One item as typed: every box as its text, so a half-typed number survives a draft. */
 export type ItemDraft = {
@@ -63,6 +67,14 @@ export type ItemDraft = {
    * it again at the grams it was typed at. Null until the item has both.
    */
   per: { grams: number; macros: Figures } | null;
+  /**
+   * An item with no weight made bigger or smaller, as a dish is: its figures
+   * at 100% stay put while the size moves, so sliding to 50% and back loses
+   * nothing, and a figure typed meanwhile is that figure at the size shown.
+   * Null while it is as it came. A weighed item's grams already do this, so
+   * one that gets a weight drops its size.
+   */
+  scale: { percent: number; base: Figures } | null;
 };
 
 /** What an item starts from, before it has an id. */
@@ -479,6 +491,7 @@ export function itemDraft(id: string, seed: ItemSeed): ItemDraft {
     fiber: box("fiber"),
     ethanol: box("alcohol"),
     per: seed.per,
+    scale: null,
   };
 }
 
@@ -509,7 +522,32 @@ function readGrams(text: string) {
 export function setItemFigure(item: ItemDraft, box: ItemBox, text: string): ItemDraft {
   const next = { ...item, [box]: text };
   const grams = readGrams(next.grams);
-  return { ...next, per: grams ? { grams, macros: looseFigures(next) } : null };
+  if (grams) return { ...next, per: { grams, macros: looseFigures(next) }, scale: null };
+  // On a resized item, the figure at the size shown; the one at 100% follows it.
+  const value = amount(text);
+  const scale = item.scale && Number.isFinite(value) && value >= 0
+    ? { ...item.scale, base: { ...item.scale.base, [FIGURE_OF[box]]: (value * 100) / item.scale.percent } }
+    : item.scale;
+  return { ...next, per: null, scale };
+}
+
+/**
+ * An item with no weight at a size, its figures at 100% scaled to it, to a
+ * tenth. A box that is blank, or does not read as a number, is left as
+ * typed, so a size never writes over an edit. A size the box cannot take
+ * changes nothing.
+ */
+export function scaleItem(item: ItemDraft, percent: number): ItemDraft {
+  if (!Number.isFinite(percent) || percent < SCALE_MIN || percent > SCALE_MAX) return item;
+  const scale = item.scale ?? { percent: 100, base: looseFigures(item) };
+  if (item.scale && percent === scale.percent) return item;
+  const boxes = Object.fromEntries(FIGURES.map((key) => {
+    const box = ITEM_BOX[key];
+    const typed = amount(item[box]);
+    const unread = item[box].trim() === "" || !Number.isFinite(typed) || typed < 0;
+    return [box, unread ? item[box] : String(round1((scale.base[key] * percent) / 100))];
+  }));
+  return { ...item, ...boxes, scale: { ...scale, percent } };
 }
 
 /**
@@ -534,7 +572,7 @@ export function setItemGrams(item: ItemDraft, text: string): ItemDraft {
 export function anchorItem(item: ItemDraft): ItemDraft {
   if (item.per) return item;
   const grams = readGrams(item.grams);
-  return grams ? { ...item, per: { grams, macros: looseFigures(item) } } : item;
+  return grams ? { ...item, per: { grams, macros: looseFigures(item) }, scale: null } : item;
 }
 
 /**
@@ -670,6 +708,18 @@ export function withItemList(assumptions: string, items: readonly MealTemplateIt
   return rest && room > 1 ? `${list}\n\n${shorten(rest, room)}` : list;
 }
 
+/** An item's size from a draft, or null for one from before sizes or damaged in storage. */
+function scaleOf(value: unknown): ItemDraft["scale"] {
+  if (!value || typeof value !== "object") return null;
+  const held = value as { percent?: unknown; base?: Record<string, unknown> | null };
+  if (typeof held.percent !== "number" || readScale(String(held.percent)) === null) return null;
+  const base = held.base;
+  if (!base || typeof base !== "object") return null;
+  if (!FIGURES.every((key) => typeof base[key] === "number" && Number.isFinite(base[key]) && (base[key] as number) >= 0))
+    return null;
+  return { percent: held.percent, base: Object.fromEntries(FIGURES.map((key) => [key, base[key]])) as Figures };
+}
+
 /** Items from a draft. One damaged in storage keeps what still reads as an item. */
 export function itemDraftsOf(value: unknown): ItemDraft[] {
   if (!Array.isArray(value)) return [];
@@ -695,6 +745,8 @@ export function itemDraftsOf(value: unknown): ItemDraft[] {
       fiber: textOf(held.fiber, ""),
       ethanol: textOf(held.ethanol, ""),
       per: reference,
+      // Drafts from before sizes have none.
+      scale: scaleOf(held.scale),
     });
   }
   return items;

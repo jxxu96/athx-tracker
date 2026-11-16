@@ -57,10 +57,13 @@ test("an estimated meal expands into its items, and changing an item changes the
   await expect(item(page, 1).getByLabel("Grams")).toHaveValue("150");
   await expect(item(page, 1).getByLabel("Calories (kcal)")).toHaveValue("248");
   await expect(item(page, 2).getByLabel("Fiber (g)")).toHaveValue("1");
-  // A counted item keeps its count in its name, and has no weight to slide.
+  // A counted item keeps its count in its name, and has no weight to slide,
+  // so it slides by size instead; a weighed one slides by its grams alone.
   await expect(item(page, 3).getByLabel("Item", { exact: true })).toHaveValue("2 large eggs");
   await expect(item(page, 3).getByLabel("Grams")).toHaveValue("");
-  await expect(item(page, 3).getByRole("slider")).toHaveCount(0);
+  await expect(item(page, 3).getByRole("slider", { name: "2 large eggs weight" })).toHaveCount(0);
+  await expect(item(page, 3).getByRole("slider", { name: "2 large eggs size" })).toHaveValue("100");
+  await expect(item(page, 1).getByRole("slider", { name: "Chicken breast size" })).toHaveCount(0);
   // Opening it up changes nothing: the items add up to the meal, which is still the estimate's.
   await expect(figures(page).getByLabel("Calories (kcal)")).toHaveValue("648");
   await expect(figures(page).getByLabel("Calories (kcal)")).toHaveAttribute("readonly", "");
@@ -136,6 +139,86 @@ test("an estimated meal expands into its items, and changing an item changes the
   }).toEqual([null, "Sriracha [5 kcal, 0P, 0C, 0F]"]);
 });
 
+// Four Shang Gong Chu leftovers, one item a dish, as Codex answered them.
+const LEFTOVERS = [
+  "Niangao with mustard greens, 1 serving [550 kcal, 10P, 118C, 16F, 4 fiber]. Matched G4 on the menu.",
+  "",
+  "Taro pork ribs, 1/2 serving [240 kcal, 20P, 22C, 15F, 3 fiber]. Matched A2.",
+  "",
+  "Wintermelon with pork rib soup, 1 serving [210 kcal, 21P, 5C, 12F, 1 fiber]. Matched F3.",
+  "",
+  "Xiaocaohuangniurou, 1/2 serving [240 kcal, 24P, 2C, 15F, 1 fiber]. Matched B3.",
+].join("\n");
+
+test("a dish with no weight slides to a size, and every figure follows it", async ({ page }) => {
+  await page.route("**/api/estimate", (route) => route.fulfill({
+    json: {
+      estimate: {
+        name: "Shang Gong Chu leftovers", calories: 1240, protein: 75, carbs: 147, fat: 58, fiber: 9, alcohol: 0,
+        confidence: "low", assumptions: LEFTOVERS,
+      },
+      provider: "codex",
+    },
+  }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await loggingFor(page, "Gators").click();
+  await page.getByLabel("Meal description").fill([
+    "shang gong chu leftovers:",
+    "1 serving of niangao w mustard greens",
+    "1/2 serving of pork ribs",
+    "1 serving wintermelon w/ pork rib soup",
+    "1/2 serving of xiaocaohuangniurou",
+  ].join("\n"));
+  await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
+  await expect(figures(page).getByLabel("Calories (kcal)")).toHaveValue("1240");
+  await page.getByRole("button", { name: "Expand into 4 items" }).click();
+
+  // Each sits at 100%, quietly, under its figures.
+  const niangao = item(page, 1);
+  await expect(niangao.getByLabel("Niangao with mustard greens, 1 serving size (%)")).toHaveValue("100");
+  await expect(niangao).not.toContainText("of 550 kcal");
+
+  // Half a serving: every figure halves, and the meal follows.
+  await niangao.getByRole("slider", { name: "Niangao with mustard greens, 1 serving size" }).fill("50");
+  await expect(niangao.getByLabel("Calories (kcal)")).toHaveValue("275");
+  await expect(niangao.getByLabel("Protein (g)")).toHaveValue("5");
+  await expect(niangao.getByLabel("Carbs (g)")).toHaveValue("59");
+  await expect(niangao.getByLabel("Fiber (g)")).toHaveValue("2");
+  await expect(niangao.getByLabel("Fat (g)")).toHaveValue("8");
+  await expect(niangao.getByLabel("Niangao with mustard greens, 1 serving size (%)")).toHaveValue("50");
+  await expect(niangao).toContainText("of 550 kcal");
+  await expect(figures(page).getByLabel("Calories (kcal)")).toHaveValue("965");
+  await expect(page.getByText(/saved as your own numbers after your edit/)).toBeVisible();
+
+  // Half again as much beef, typed.
+  await item(page, 4).getByLabel("Xiaocaohuangniurou, 1/2 serving size (%)").fill("150");
+  await expect(item(page, 4).getByLabel("Calories (kcal)")).toHaveValue("360");
+  await expect(item(page, 4).getByLabel("Protein (g)")).toHaveValue("36");
+  await expect(figures(page).getByLabel("Calories (kcal)")).toHaveValue("1085");
+
+  const { violations } = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .include("form")
+    .analyze();
+  expect(violations).toEqual([]);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+  await niangao.screenshot({ path: "test-results/meal-item-size-mobile.png" });
+
+  // The sizes outlive a reload.
+  await page.reload();
+  await page.getByRole("button", { name: "Meal", exact: true }).click();
+  await expect(item(page, 1).getByLabel("Niangao with mustard greens, 1 serving size (%)")).toHaveValue("50");
+  await expect(item(page, 1).getByLabel("Calories (kcal)")).toHaveValue("275");
+  await expect(item(page, 1)).toContainText("of 550 kcal");
+
+  await page.getByRole("button", { name: "Save meal", exact: true }).click();
+  await expect(page.getByText("Meal saved", { exact: true }).first()).toBeVisible();
+  const saved = (await meals(page)).find((meal) => meal.name === "Shang Gong Chu leftovers");
+  expect(saved?.macros).toMatchObject({ calories: 1085, protein: 82, fat: 57.5 });
+  expect(saved?.items?.map((each) => each.nutrition?.macros.calories)).toEqual([275, 240, 210, 360]);
+});
+
 test("a meal with no figures opens into blank items to type in, and a weight typed in scales its item", async ({ page }) => {
   await loggingFor(page, "Gators").click();
   await page.getByLabel("Meal description").fill("2 eggs, toast and a flat white");
@@ -154,9 +237,12 @@ test("a meal with no figures opens into blank items to type in, and a weight typ
   await expect(figures(page).getByLabel("Fat (g)")).toHaveValue("6");
 
   // A weight typed in ties the figures to it once the box is left, digit by digit or not.
-  await expect(item(page, 2).getByRole("slider")).toHaveCount(0);
+  // Until then it has no weight to slide, only a size; with one, its grams take over.
+  await expect(item(page, 2).getByRole("slider", { name: "toast weight" })).toHaveCount(0);
+  await expect(item(page, 2).getByRole("slider", { name: "toast size" })).toHaveValue("100");
   await item(page, 2).getByLabel("Grams").pressSequentially("40");
   await expect(item(page, 2).getByLabel("Calories (kcal)")).toHaveValue("80");
+  await expect(item(page, 2).getByRole("slider", { name: "toast size" })).toHaveCount(0);
   await item(page, 2).getByLabel("Grams").blur();
   await item(page, 2).getByRole("slider", { name: "toast weight" }).fill("80");
   await expect(item(page, 2).getByLabel("Calories (kcal)")).toHaveValue("160");

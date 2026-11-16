@@ -17,6 +17,7 @@ import {
   itemTotals,
   listedCount,
   readItems,
+  scaleItem,
   seedsFromIngredients,
   setItemFigure,
   setItemGrams,
@@ -310,6 +311,33 @@ test("grams scale a weighed item's figures, typing a figure sets them at its wei
   assert.equal(setItemGrams(blank, "20").fat, "20");
 });
 
+test("an item with no weight resizes by a percentage, from its figures at 100%", () => {
+  // Niangao with mustard greens, 1 serving, as it opened from the estimate.
+  const niangao = { ...emptyItem("n"), name: "Niangao with mustard greens", calories: "550", protein: "10", carbs: "118", fat: "16", fiber: "4" };
+  const half = scaleItem(niangao, 50);
+  assert.deepEqual([half.calories, half.protein, half.carbs, half.fat, half.fiber, half.ethanol], ["275", "5", "59", "8", "2", ""]);
+  assert.equal(half.scale?.percent, 50);
+  const more = scaleItem(half, 150);
+  assert.deepEqual([more.calories, more.protein, more.carbs, more.fat, more.fiber], ["825", "15", "177", "24", "6"]);
+  // Back to 100% loses nothing, and the same size changes nothing.
+  assert.deepEqual([scaleItem(more, 100).calories, scaleItem(more, 100).carbs], ["550", "118"]);
+  assert.equal(scaleItem(more, 150), more);
+  // A size the box cannot take changes nothing.
+  assert.equal(scaleItem(niangao, 0), niangao);
+  assert.equal(scaleItem(niangao, 1001), niangao);
+
+  // A figure typed at 50% is that figure at 50%, so 100% follows it.
+  const typed = setItemFigure(half, "calories", "300");
+  assert.equal(typed.scale?.base.calories, 600);
+  assert.equal(scaleItem(typed, 100).calories, "600");
+  // A box that does not read is left as typed.
+  assert.equal(scaleItem({ ...niangao, protein: "1o" }, 50).protein, "1o");
+
+  // Given a weight, its grams take over, and the size goes.
+  assert.equal(anchorItem(setItemGrams(half, "200")).scale, null);
+  assert.equal(setItemFigure({ ...half, grams: "200" }, "fat", "9").scale, null);
+});
+
 test("the meal's boxes are the items added up, blank where nothing was typed", () => {
   const items = [
     { ...emptyItem("a"), calories: "0.1", protein: "10" },
@@ -357,6 +385,11 @@ test("items survive a draft, and a damaged one keeps what still reads", () => {
     { ...emptyItem("b") },
   ]);
   assert.deepEqual(itemDraftsOf("nope"), []);
+  // A size outlives a draft; one damaged in storage, or from before sizes, is none.
+  const sized = scaleItem({ ...emptyItem("s"), name: "Soup", calories: "400", protein: "28", carbs: "10", fat: "22" }, 75);
+  assert.deepEqual(itemDraftsOf(JSON.parse(JSON.stringify([sized]))), [sized]);
+  assert.equal(itemDraftsOf([{ ...sized, scale: { percent: 0, base: sized.scale!.base } }])[0].scale, null);
+  assert.equal(itemDraftsOf([{ ...sized, scale: { percent: 75 } }])[0].scale, null);
 });
 
 test("a shared dish opens into dishes of its own, each with the dish's share and a weighed one counted in grams", () => {
