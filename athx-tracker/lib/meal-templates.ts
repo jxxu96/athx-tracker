@@ -7,7 +7,7 @@ import {
   MEAL_TEMPLATE_NAME_LIMIT,
 } from "./domain.ts";
 import { commonMeals, mealKey, type CommonMeal } from "./common-meals.ts";
-import { captureIngredientNutrition, loggedIngredients } from "./meal-ingredients.ts";
+import { captureIngredientNutrition, loggedIngredients, servedItems } from "./meal-ingredients.ts";
 
 const LEADING_GRAMS = /^(\d+(?:\.\d+)?)\s*(?:g|grams)\b\s*(?:of\s+)?(.+)$/i;
 const TRAILING_GRAMS = /^(.+?)\s+(\d+(?:\.\d+)?)\s*(?:g|grams)\b\.?$/i;
@@ -75,9 +75,12 @@ export function parseMealItems(text: string): MealTemplateItem[] {
   return items;
 }
 
-/** The description a template fills in, so a later estimate sees the grams. */
+/**
+ * The description a template fills in, so a later estimate sees the grams.
+ * An option that is off is not part of the meal, so it is not described.
+ */
 export function templateDescription(items: MealTemplateItem[]) {
-  return items
+  return servedItems(items)
     .filter((item) => item.name.trim())
     .map((item) => {
       const name = item.name.trim();
@@ -121,9 +124,11 @@ export function buildTemplate(input: {
       name: item.name.trim().slice(0, MEAL_TEMPLATE_ITEM_LIMIT),
       grams: roundGrams(item.grams),
       ...(item.nutrition ? { nutrition: item.nutrition } : {}),
+      ...(item.off ? { off: true as const } : {}),
     }))
     .filter((item) => item.name);
   if (!items.length) return { ok: false, error: "Add at least one item." };
+  if (!servedItems(items).length) return { ok: false, error: "Leave at least one item on." };
   if (items.length > MEAL_TEMPLATE_ITEMS) return { ok: false, error: "That meal has too many items." };
   for (const item of items) {
     if (!Number.isFinite(item.grams) || item.grams < 0 || item.grams > MEAL_TEMPLATE_GRAMS_LIMIT)

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Plus, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -17,7 +18,13 @@ import { ATHLETES, MEAL_TEMPLATE_GRAMS_LIMIT, MEAL_TEMPLATE_ITEMS } from "@/lib/
 import type { Meal, MealTemplateItem } from "@/lib/domain";
 import { api, message, newId } from "@/lib/client";
 import { mealKey } from "@/lib/common-meals";
-import { captureIngredientNutrition, ingredientSliderMax, ingredientTotals } from "@/lib/meal-ingredients";
+import {
+  captureIngredientNutrition,
+  ingredientSliderMax,
+  ingredientTotals,
+  itemWithEstimate,
+  switchItem,
+} from "@/lib/meal-ingredients";
 import type { MealEstimate } from "@/lib/estimate-conversation";
 import {
   buildTemplate,
@@ -79,6 +86,17 @@ function macroLine(macros: Meal["macros"]) {
     ...(macros.fiber ? [`${Math.round(macros.fiber)} g fiber`] : []),
     ...(macros.alcohol ? [`${Math.round(macros.alcohol)} g ethanol`] : []),
   ].join(" · ");
+}
+
+/** Every item, options too, as the estimator should see them. */
+function describeAll(items: MealTemplateItem[]) {
+  return templateDescription(items.map((item) => ({ ...item, off: undefined })));
+}
+
+/** "Options: 0% milk, decaf coffee", for the list under Manage. */
+function optionLine(items: MealTemplateItem[]) {
+  const options = items.filter((item) => item.off).map((item) => item.name);
+  return options.length ? `Options: ${options.join(", ")}` : "";
 }
 
 export function MealTemplateList({
@@ -255,7 +273,7 @@ export function MealTemplateList({
       setEditorError(read.error);
       return;
     }
-    const description = templateDescription(read.items);
+    const description = describeAll(read.items);
     if (description.trim().length < 3) {
       setEditorError("Add an item before estimating.");
       return;
@@ -263,11 +281,57 @@ export function MealTemplateList({
     setEstimating(true);
     setEditorError("");
     try {
+      // With the rest already priced, only the new ones are asked about, one
+      // at a time, so adding an option does not move the others' figures.
+      if (read.items.some((item) => item.nutrition) && read.items.some((item) => !item.nutrition)) {
+        const items: MealTemplateItem[] = [];
+        // One that fails leaves the ones already priced priced.
+        let failure = "";
+        for (const item of read.items) {
+          if (item.nutrition || failure) {
+            items.push(item);
+            continue;
+          }
+          try {
+            const { estimate } = await api<{ estimate: MealEstimate }>("/api/estimate", {
+              method: "POST",
+              body: JSON.stringify({ description: describeAll([item]) }),
+            });
+            items.push(itemWithEstimate(item, estimate));
+          } catch (problem) {
+            failure = message(problem);
+            items.push(item);
+          }
+        }
+        if (failure) setEditorError(failure);
+        setEditor((current) => current && {
+          ...current,
+          draft: {
+            ...current.draft,
+            items: items.map((item) => ({
+              ...item,
+              grams: item.nutrition?.grams ? String(item.grams) : formatGrams(item.grams),
+            })),
+            hadNutrition: !!ingredientTotals(items),
+          },
+        });
+        return;
+      }
       const { estimate } = await api<{ estimate: MealEstimate }>("/api/estimate", {
         method: "POST",
         body: JSON.stringify({ description }),
       });
-      const items = captureIngredientNutrition(read.items.map(({ name, grams }) => ({ name, grams })), estimate, estimate.assumptions);
+      const items = captureIngredientNutrition(
+        read.items.map(({ name, grams, off }) => ({ name, grams, ...(off ? { off } : {}) })),
+        estimate,
+        estimate.assumptions,
+      );
+      // The estimate covers the options too. Without each item's own figures
+      // there is no telling what the meal comes to with them left off.
+      if (read.items.some((item) => item.off) && !ingredientTotals(items)) {
+        setEditorError("The estimate did not break down by item, so options cannot be priced. Try again, or turn every item on.");
+        return;
+      }
       setEditor((current) => {
         if (!current) return current;
         return {
@@ -302,7 +366,10 @@ export function MealTemplateList({
   }
 
   const read = editor ? readItems(editor.draft.items) : null;
-  const preview = read && "items" in read ? templateDescription(read.items) : "";
+  const preview = read && "items" in read ? describeAll(read.items) : "";
+  const unpriced = read && "items" in read && read.items.some((item) => item.nutrition)
+    ? read.items.filter((item) => !item.nutrition).length
+    : 0;
   const totals = read && "items" in read ? ingredientTotals(read.items) : undefined;
 
   const busy = disabled || saving || estimating;
@@ -338,7 +405,7 @@ export function MealTemplateList({
         // editing and removing are under Manage, out of the way of logging.
         <div role="group" aria-label="Fill from a template" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5 scrollbar-none">
           {offers.map(({ athlete, offer }) => {
-            const summary = templateDescription(offer.items);
+            const summary = [templateDescription(offer.items), optionLine(offer.items)].filter(Boolean).join(" · ");
             return (
               <button
                 key={`${athlete}-${offer.id}`}
@@ -389,7 +456,7 @@ export function MealTemplateList({
             </p>
           ) : null}
           {group.offers.map((offer) => {
-            const summary = templateDescription(offer.items);
+            const summary = [templateDescription(offer.items), optionLine(offer.items)].filter(Boolean).join(" · ");
             return (
               <div key={offer.id} className="flex items-stretch gap-1.5">
                 <button
@@ -478,13 +545,24 @@ export function MealTemplateList({
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <div className="grid grid-cols-[5.5rem_1fr_auto] gap-1.5 text-[11px] text-muted-foreground">
+                  <div className="grid grid-cols-[1.25rem_5.5rem_1fr_auto] gap-1.5 text-[11px] text-muted-foreground">
+                    <span title="In the meal unless it is unticked; unticked ones are options">On</span>
                     <span>Grams</span>
                     <span>Item</span>
                     <span className="sr-only">Remove</span>
                   </div>
                   {editor.draft.items.map((item, index) => (
-                    <div key={index} className="grid grid-cols-[5.5rem_1fr_auto] gap-1.5">
+                    <div key={index} className="grid grid-cols-[1.25rem_5.5rem_1fr_auto] items-center gap-1.5">
+                      <Checkbox
+                        aria-label={`Include item ${index + 1}`}
+                        checked={!item.off}
+                        disabled={saving || estimating}
+                        onCheckedChange={(value) => {
+                          const items = editor.draft.items.slice();
+                          items[index] = switchItem(item, value === true);
+                          updateDraft({ items });
+                        }}
+                      />
                       <Input
                         aria-label={`Grams, item ${index + 1}`}
                         inputMode="decimal"
@@ -495,7 +573,9 @@ export function MealTemplateList({
                           const items = editor.draft.items.slice();
                           const grams = event.target.value;
                           const weighed = item.nutrition?.grams === 0 && Number(grams) > 0;
-                          items[index] = weighed ? { name: item.name, grams } : { ...item, grams };
+                          items[index] = weighed
+                            ? { name: item.name, grams, ...(item.off ? { off: true as const } : {}) }
+                            : { ...item, grams };
                           updateDraft({ items });
                         }}
                       />
@@ -507,7 +587,11 @@ export function MealTemplateList({
                         disabled={saving || estimating}
                         onChange={(event) => {
                           const items = editor.draft.items.slice();
-                          items[index] = { name: event.target.value, grams: item.grams };
+                          items[index] = {
+                            name: event.target.value,
+                            grams: item.grams,
+                            ...(item.off ? { off: true as const } : {}),
+                          };
                           updateDraft({ items });
                         }}
                       />
@@ -527,7 +611,7 @@ export function MealTemplateList({
                       {item.nutrition && item.nutrition.grams > 0 ? (
                         <input
                           type="range"
-                          className="col-span-2 w-full accent-primary"
+                          className="col-span-2 col-start-2 w-full accent-primary"
                           aria-label={`${item.name} weight`}
                           aria-valuetext={`${Number(item.grams)} g`}
                           min={0}
@@ -571,7 +655,13 @@ export function MealTemplateList({
                     onClick={() => void estimateItems()}
                   >
                     <Sparkles />
-                    {estimating ? "Estimating…" : "Estimate these items"}
+                    {estimating
+                      ? "Estimating…"
+                      : unpriced === 1
+                        ? "Estimate the new item"
+                        : unpriced > 1
+                          ? `Estimate ${unpriced} new items`
+                          : "Estimate these items"}
                   </Button>
                 ) : null}
                 {editorError ? (

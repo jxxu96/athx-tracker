@@ -97,6 +97,7 @@ const mealItemsSchema = z.array(z.object({
     grams: finite.max(MEAL_TEMPLATE_GRAMS_LIMIT),
     macros: mealMacroSchema,
   }).strict().optional(),
+  off: z.literal(true).optional(),
 }).strict()).min(1).max(MEAL_TEMPLATE_ITEMS);
 export const mealSchema = z.object({
   ...base, kind: z.literal("meal"), athlete: z.enum(["hippos", "gators"]),

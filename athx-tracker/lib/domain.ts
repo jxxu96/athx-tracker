@@ -87,6 +87,12 @@ export type MealTemplateItem = {
   grams: number;
   /** Macros at the reference portion, which stays fixed when the serving changes. */
   nutrition?: { grams: number; macros: Meal["macros"] };
+  /**
+   * An option kept with a template but not in this serving, such as a second
+   * kind of milk. It stays out of the description, the totals and the logged
+   * meal until it is turned on. Omitted means it is in.
+   */
+  off?: true;
 };
 /**
  * A meal kept so it can be logged again. The name is only the label.
