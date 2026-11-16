@@ -173,11 +173,28 @@ export function loggedIngredients(meal: Pick<Meal, "items" | "macros" | "assumpt
   return hasIngredientNutrition(items) ? items : [];
 }
 
+/** The items in this serving: everything but the options that are off. */
+export function servedItems<T extends Pick<MealTemplateItem, "off">>(items: readonly T[]): T[] {
+  return items.filter((item) => !item.off);
+}
+
+/** The same item turned on, which drops the flag, or off, which sets it. */
+export function switchItem<T extends Pick<MealTemplateItem, "off">>(item: T, on: boolean): T {
+  const next = { ...item };
+  if (on) delete next.off;
+  else next.off = true;
+  return next;
+}
+
+/**
+ * Every item needs its own figures, options included, so turning one on
+ * never leaves the meal without totals. Only the items served are counted.
+ */
 export function ingredientTotals(items: readonly MealTemplateItem[]): Meal["macros"] | undefined {
   if (!items.length || !items.every((item): item is SavedItem => !!item.nutrition)) return;
   const totals = Object.fromEntries(FIGURES.map((key) => [
     key,
-    Math.round(items.reduce((sum, item) => {
+    Math.round(servedItems(items).reduce((sum, item) => {
       const { grams, macros } = item.nutrition;
       return sum + (macros[key] ?? 0) * (grams ? item.grams / grams : 1);
     }, 0) * 1000) / 1000,
@@ -188,4 +205,17 @@ export function ingredientTotals(items: readonly MealTemplateItem[]): Meal["macr
 
 export function ingredientSliderMax(grams: number, reference: number) {
   return Math.min(MEAL_TEMPLATE_GRAMS_LIMIT, Math.max(100, Math.ceil(Math.max(grams, reference * 3) / 10) * 10));
+}
+
+/**
+ * One food estimated on its own, as when an option is added: the estimate's
+ * totals are that food's figures at the portion it was asked about.
+ */
+export function itemWithEstimate(
+  item: MealTemplateItem,
+  estimate: Pick<Meal["macros"], "calories" | "protein" | "carbs" | "fat" | "fiber" | "alcohol">,
+): MealTemplateItem {
+  const macros = Object.fromEntries(FIGURES.map((key) => [key, estimate[key] ?? 0])) as Figures;
+  macros.fiber = Math.min(macros.fiber, macros.carbs);
+  return { ...item, nutrition: { grams: item.grams, macros } };
 }

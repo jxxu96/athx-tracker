@@ -712,3 +712,169 @@ test("saved ingredient weights rescale locally and the template keeps its defaul
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("250");
   expect(estimates).toBe(1);
 });
+
+test("a template keeps options that are off, and each one turns on, slides and is added without estimating the rest", async ({ page }) => {
+  const clear = async () => {
+    const current = await page.request.get("/api/settings").then((response) => response.json()) as {
+      settings: Record<string, unknown>;
+      revision: number;
+    };
+    await page.request.put("/api/settings", {
+      data: { revision: current.revision, settings: { ...current.settings, mealTemplates: { hippos: [], gators: [] } } },
+    });
+  };
+  const name = "Chocolate whey shake";
+  const singles: Record<string, { calories: number; protein: number; carbs: number; fat: number }> = {
+    "250 g 2% milk": { calories: 125, protein: 8, carbs: 12, fat: 5 },
+    "250 g 0% milk": { calories: 85, protein: 8, carbs: 12, fat: 0 },
+    "3 g decaf coffee": { calories: 5, protein: 0, carbs: 1, fat: 0 },
+  };
+  const asked: string[] = [];
+  await page.route("**/api/estimate", (route) => {
+    const { description } = route.request().postDataJSON() as { description: string };
+    asked.push(description);
+    if (description === "5 g honey") return route.fulfill({ status: 502, json: { error: "No answer from the estimator." } });
+    const single = singles[description];
+    return route.fulfill({ json: {
+      estimate: single
+        ? { name: description, ...single, fiber: 0, alcohol: 0, confidence: "medium", assumptions: description }
+        : {
+            name, calories: 145, protein: 27, carbs: 7, fat: 3, fiber: 2, confidence: "high",
+            assumptions: [
+              "Whey concentrate, 34 g [130 kcal, 26P, 3C, 2F]",
+              "Dutch process cocoa, 7 g [15 kcal, 1P, 4C, 1F, 2 fiber]",
+            ].join("\n\n"),
+          },
+      provider: "codex",
+    } });
+  });
+  const calories = page.getByLabel("Calories (kcal)");
+  const description = page.getByLabel("Meal description");
+  const include = (food: string) => page.getByRole("checkbox", { name: `Include ${food}` });
+  const add = async (grams: string, food: string) => {
+    await page.getByLabel("New ingredient grams").fill(grams);
+    await page.getByLabel("New ingredient", { exact: true }).fill(food);
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(include(food)).toBeChecked();
+  };
+  try {
+    await loggingFor(page, "Hippos").click();
+    await description.fill("34 g whey concentrate, 7 g dutch process cocoa");
+    await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
+    await expect(calories).toHaveValue("145");
+
+    await add("250", "2% milk");
+    await expect(calories).toHaveValue("270");
+    await expect(page.getByRole("slider", { name: "2% milk weight" })).toHaveValue("250");
+    await add("250", "0% milk");
+    await expect(calories).toHaveValue("355");
+    await include("0% milk").click();
+    await expect(include("0% milk")).not.toBeChecked();
+    await expect(page.getByRole("slider", { name: "0% milk weight" })).toHaveCount(0);
+    await expect(calories).toHaveValue("270");
+    await expect(description).toHaveValue("34 g whey concentrate, 7 g dutch process cocoa, 250 g 2% milk");
+    await page.getByRole("button", { name: "Save this meal as a template" }).click();
+    await expect(page.getByText("Template saved", { exact: true })).toBeVisible();
+
+    await page.reload();
+    await page.getByRole("button", { name: "Meal", exact: true }).click();
+    await loggingFor(page, "Hippos").click();
+    const template = page.getByRole("button", { name: `Hippos: ${name}` });
+    await template.click();
+    await expect(calories).toHaveValue("270");
+    await expect(include("0% milk")).not.toBeChecked();
+
+    // Swap the milk, and halve it.
+    await include("0% milk").click();
+    await include("2% milk").click();
+    await page.getByRole("spinbutton", { name: "0% milk grams" }).fill("125");
+    await expect(calories).toHaveValue("187.5");
+    await expect(description).toHaveValue("34 g whey concentrate, 7 g dutch process cocoa, 125 g 0% milk");
+    await page.getByRole("button", { name: "Save meal", exact: true }).click();
+    await expect(page.getByText("Meal saved", { exact: true }).first()).toBeVisible();
+    const logged = await page.evaluate(async (title) => {
+      const data = await fetch("/api/records").then((r) => r.json());
+      return (data.records as { name: string; macros: { calories: number }; items?: { name: string; off?: boolean }[] }[])
+        .find((entry) => entry.name === title);
+    }, name);
+    expect(logged?.macros.calories).toBe(187.5);
+    expect(logged?.items?.map((item) => item.name)).toEqual(["whey concentrate", "dutch process cocoa", "0% milk"]);
+
+    // The template's own defaults are untouched by what was logged.
+    await page.getByRole("button", { name: "Meal", exact: true }).click();
+    await template.click();
+    await expect(calories).toHaveValue("270");
+    await expect(include("2% milk")).toBeChecked();
+
+    await page.getByRole("button", { name: "Manage templates" }).click();
+    await page.getByRole("button", { name: `Edit ${name}` }).click();
+    const editor = page.getByRole("dialog", { name: "Edit Hippos template" });
+    await expect(editor.getByRole("checkbox", { name: "Include item 4" })).not.toBeChecked();
+    // A new item whose estimate fails still has to be estimated before saving.
+    await editor.getByRole("button", { name: "Add item" }).click();
+    await editor.getByLabel("Grams, item 5").fill("5");
+    await editor.getByLabel("Item 5", { exact: true }).fill("honey");
+    await editor.getByRole("button", { name: "Estimate the new item" }).click();
+    await expect(editor.getByText("No answer from the estimator.")).toBeVisible();
+    await editor.getByRole("button", { name: "Save template" }).click();
+    await expect(editor.getByText("Estimate the changed ingredients before saving.")).toBeVisible();
+    await editor.getByRole("button", { name: "Remove item 5" }).click();
+    await editor.getByRole("button", { name: "Add item" }).click();
+    await editor.getByLabel("Grams, item 5").fill("3");
+    await editor.getByLabel("Item 5", { exact: true }).fill("decaf coffee");
+    await editor.getByRole("checkbox", { name: "Include item 5" }).click();
+    await editor.getByRole("button", { name: "Estimate the new item" }).click();
+    await expect(editor.getByRole("button", { name: "Estimate these items" })).toBeVisible();
+    await editor.getByRole("button", { name: "Save template" }).click();
+    await expect(page.getByText("Template updated", { exact: true })).toBeVisible();
+    await expect(page.getByText(/Options: 0% milk, decaf coffee/)).toBeVisible();
+
+    await page.getByRole("button", { name: "Done" }).click();
+    await template.click();
+    await expect(calories).toHaveValue("270");
+    await include("decaf coffee").click();
+    await expect(calories).toHaveValue("275");
+    // Only the meal once, then each food that was new, on its own.
+    expect(asked).toEqual([
+      expect.stringContaining("whey"),
+      "250 g 2% milk",
+      "250 g 0% milk",
+      "5 g honey",
+      "3 g decaf coffee",
+    ]);
+  } finally {
+    await clear();
+  }
+});
+
+test("an item is only left out of a template once every item has its own figures", async ({ page }) => {
+  try {
+    await loggingFor(page, "Hippos").click();
+    await page.getByLabel("Meal description").fill("80 g oats, 2 eggs");
+    await page.getByLabel("Meal", { exact: true }).fill("Typed oats");
+    await page.getByLabel("Calories (kcal)").fill("455");
+    await page.getByLabel("Protein (g)").fill("30");
+    await page.getByLabel("Carbs (g)").fill("50");
+    await page.getByLabel("Fat (g)").fill("15");
+    await page.getByRole("button", { name: "Save this meal as a template" }).click();
+    await expect(page.getByText("Template saved", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Manage templates" }).click();
+    await page.getByRole("button", { name: "Edit Typed oats" }).click();
+    const editor = page.getByRole("dialog", { name: "Edit Hippos template" });
+    // The 455 typed in covers both, so leaving the eggs out would still count them.
+    await editor.getByRole("checkbox", { name: "Include item 2" }).click();
+    await editor.getByRole("button", { name: "Save template" }).click();
+    await expect(editor.getByText("Estimate these items before leaving any unticked.")).toBeVisible();
+    await editor.getByRole("checkbox", { name: "Include item 2" }).click();
+    await editor.getByRole("button", { name: "Save template" }).click();
+    await expect(page.getByText("Template updated", { exact: true })).toBeVisible();
+  } finally {
+    const current = await page.request.get("/api/settings").then((response) => response.json()) as {
+      settings: Record<string, unknown>;
+      revision: number;
+    };
+    await page.request.put("/api/settings", {
+      data: { revision: current.revision, settings: { ...current.settings, mealTemplates: { hippos: [], gators: [] } } },
+    });
+  }
+});

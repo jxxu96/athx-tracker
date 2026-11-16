@@ -45,14 +45,17 @@ import { useCommandShortcut, useKeyboardShortcuts } from "@/hooks/use-keyboard-s
 import { MealTemplateList } from "@/components/meal-templates";
 import { DishShares, MealDishes } from "@/components/meal-dishes";
 import { MealItems } from "@/components/meal-items";
+import { IngredientWeights } from "@/components/meal-ingredients";
 import { EstimatorWeights, type Answer, type AnswerFigure } from "@/components/estimator-weights";
 import { mealKey } from "@/lib/common-meals";
 import {
   captureIngredientNutrition,
   hasIngredientNutrition,
-  ingredientSliderMax,
   ingredientTotals,
+  itemWithEstimate,
   loggedIngredients,
+  servedItems,
+  switchItem,
 } from "@/lib/meal-ingredients";
 import {
   buildTemplate,
@@ -501,6 +504,9 @@ export function MealForm({
   // rather than adding a second copy. Null is a new template.
   const [kept, setKept] = useState<Kept | null>(keptOf(from?.kept));
   const [templateSaving, setTemplateSaving] = useState(false);
+  // An ingredient being estimated on its own, to add to the meal.
+  const [addingIngredient, setAddingIngredient] = useState(false);
+  const [ingredientError, setIngredientError] = useState("");
   // A shared meal written down dish by dish. Any dishes at all make this a
   // split meal; removing the last goes back to one meal. An edit is one
   // person's record, so it never splits.
@@ -642,6 +648,7 @@ export function MealForm({
     setDescription("");
     setPrompt("");
     setIngredients([]);
+    setIngredientError("");
     setName("");
     setMacros(emptyMacros);
     setEthanol("");
@@ -844,7 +851,10 @@ export function MealForm({
       setItemsEdited(false);
     }
     const items = itemsFromText(description, estimate.name);
-    setIngredients(captureIngredientNutrition(
+    // The estimate only saw what is in the meal. Options that are off keep
+    // their own figures and stay offered, so updating the template keeps them.
+    const options = ingredients.filter((item) => item.off && item.nutrition);
+    setIngredients([...captureIngredientNutrition(
       items,
       estimate,
       estimate.assumptions,
@@ -852,7 +862,7 @@ export function MealForm({
         assumptions: answer.estimate.assumptions,
         weight: answerWeights[answer.provider],
       })) : undefined,
-    ));
+    ), ...options]);
     setName(estimate.name.slice(0, 300));
     setEthanol(String(estimate.alcohol ?? 0));
     setFiber(String(estimate.fiber ?? 0));
@@ -1071,6 +1081,7 @@ export function MealForm({
     if (loggingFor !== athlete) onLoggingFor(athlete);
     setDescription(templateDescription(offer.items) || offer.name);
     setIngredients(offer.items);
+    setIngredientError("");
     setConversation([{ estimate: savedEstimate(offer) }]);
     setReply("");
     setReplyError("");
@@ -1112,7 +1123,7 @@ export function MealForm({
       fiber.trim() !== "" || ethanol.trim() !== "";
     if (!figured) return blankSeeds(description.trim());
     if (!canCheckCalories) return [];
-    const saved = seedsFromIngredients(ingredients, counted);
+    const saved = seedsFromIngredients(servedItems(ingredients), counted);
     if (saved.length) return saved;
     const counting = partials.filter((partial) => chosen.includes(partial.provider));
     const sources = source === "grok" && !adjusted && counting.length > 1
@@ -1159,7 +1170,42 @@ export function MealForm({
 
   function changeIngredient(index: number, grams: number) {
     if (!Number.isFinite(grams) || grams < 0 || grams > MEAL_TEMPLATE_GRAMS_LIMIT) return;
-    const next = ingredients.map((item, i) => i === index ? { ...item, grams: Math.round(grams * 10) / 10 } : item);
+    writeIngredients(ingredients.map((item, i) => i === index ? { ...item, grams: Math.round(grams * 10) / 10 } : item));
+  }
+
+  /** An option turned on or off: the meal's figures follow from what is on. */
+  function toggleIngredient(index: number, on: boolean) {
+    writeIngredients(ingredients.map((item, i) => (i === index ? switchItem(item, on) : item)));
+  }
+
+  /**
+   * A food estimated on its own and added to the meal. It is in this meal
+   * until it is unticked, and kept with the template once that is updated.
+   */
+  async function addIngredient(item: MealTemplateItem) {
+    if (addingIngredient || estimating) return false;
+    const epoch = dishEpoch.current;
+    setAddingIngredient(true);
+    setIngredientError("");
+    try {
+      const { estimate } = await api<{ estimate: Estimate }>("/api/estimate", {
+        method: "POST",
+        body: JSON.stringify({ description: templateDescription([item]) }),
+      });
+      // The form was cleared while it was out.
+      if (epoch !== dishEpoch.current) return false;
+      writeIngredients([...ingredients, itemWithEstimate(item, estimate)]);
+      return true;
+    } catch (problem) {
+      if (epoch === dishEpoch.current) setIngredientError(message(problem));
+      return false;
+    } finally {
+      setAddingIngredient(false);
+    }
+  }
+
+  /** The meal's figures, description and working, from its saved ingredients. */
+  function writeIngredients(next: MealTemplateItem[]) {
     const totals = ingredientTotals(next);
     if (!totals) return;
     const nextDescription = templateDescription(next);
@@ -1376,9 +1422,11 @@ export function MealForm({
     const listed = read?.ok ? read.items : null;
     // Saved items stay with the meal, weighed or counted, as long as every
     // one of them still has its figures.
+    // Options left off were not eaten, so they are not part of the record.
+    const served = servedItems(ingredients);
     const savedItems = listed ?? (
-      hasIngredientNutrition(ingredients) || (ingredients.length > 0 && ingredients.every((item) => item.nutrition))
-        ? ingredients
+      hasIngredientNutrition(served) || (served.length > 0 && served.every((item) => item.nutrition))
+        ? served
         : null
     );
 
@@ -1402,7 +1450,7 @@ export function MealForm({
     }
   }
 
-  const busy = estimating || saving || templateSaving;
+  const busy = estimating || saving || templateSaving || addingIngredient;
   useKeyboardShortcuts(active && !busy && shortcutsEnabled, MEAL_SHORTCUTS, setSlot);
   useKeyboardShortcuts(active && !busy && shortcutsEnabled, { y: () => setDay(addDays(today, -1)) }, (action) => action());
   const canEstimate = grokReady && !busy && description.trim().length >= 3;
@@ -1569,35 +1617,15 @@ export function MealForm({
             }}
           />
           {!splitting && !expanded && hasIngredientNutrition(ingredients) ? (
-            <fieldset className="space-y-2 rounded-xl border p-3">
-              <legend className="px-1 text-xs font-medium">Ingredient weights</legend>
-              {ingredients.map((item, index) => item.nutrition.grams > 0 && (
-                <div key={index} className="grid grid-cols-[1fr_5rem] items-center gap-x-3">
-                  <p className="col-span-2 text-xs">{item.name}</p>
-                  <input
-                    type="range"
-                    className="w-full accent-primary"
-                    aria-label={`${item.name} weight`}
-                    aria-valuetext={`${item.grams} g`}
-                    min={0}
-                    max={ingredientSliderMax(item.grams, item.nutrition.grams)}
-                    step={0.1}
-                    value={item.grams}
-                    onChange={(event) => changeIngredient(index, event.target.valueAsNumber)}
-                  />
-                  <Input
-                    type="number"
-                    inputMode="decimal"
-                    aria-label={`${item.name} grams`}
-                    min={0}
-                    max={MEAL_TEMPLATE_GRAMS_LIMIT}
-                    step={0.1}
-                    value={item.grams}
-                    onChange={(event) => changeIngredient(index, event.target.value === "" ? 0 : event.target.valueAsNumber)}
-                  />
-                </div>
-              ))}
-            </fieldset>
+            <IngredientWeights
+              items={ingredients}
+              canAdd={grokReady}
+              adding={addingIngredient}
+              error={ingredientError}
+              onGrams={changeIngredient}
+              onToggle={toggleIngredient}
+              onAdd={addIngredient}
+            />
           ) : kept && !splitting && !expanded ? (
             <p className="text-xs text-muted-foreground">
               Estimate this template once to save nutrition for each weighed ingredient.
