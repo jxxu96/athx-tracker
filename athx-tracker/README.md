@@ -189,8 +189,9 @@ single SQLite file on a volume.
   (`listedCount`). Otherwise, and between lists as near, the estimator that
   counts most gives the list. A blend averages the estimators that listed
   the same foods, by their weights: matched by name, or by place when each
-  lists exactly the dishes written, since a dish in pinyin, English or
-  Chinese shares no words with itself. The list is shared out so the items
+  lists exactly the dishes written and no name that matches sits elsewhere,
+  since a dish in pinyin, English or Chinese shares no words with itself. An
+  estimator weighed at 0 gives the list only when no other gave one. The list is shared out so the items
   add up to the figures already on the meal (`breakdown` in
   `lib/meal-items.ts`). Items saved with the meal open as they were saved, and
   a meal with no figures yet opens into blank items where it was written as

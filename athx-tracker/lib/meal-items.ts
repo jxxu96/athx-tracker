@@ -154,17 +154,22 @@ export function listedCount(description: string) {
  * Several estimators' items as one list. With two or more foods written, the
  * list nearest to that many leads, since it followed what was written rather
  * than cutting a dish into its oil, starch and broth; otherwise, and between
- * lists as near, the one that counts most. Another that lists the same foods,
- * one for one, is averaged into it by weight: matched by name, or, when both
- * list exactly the foods written, by place, since a dish's name in pinyin,
- * English or Chinese shares no words with its others. One that listed the
+ * lists as near, the one that counts most; an answer weighed at nothing leads
+ * only when no other gave a list. Another that lists the same foods, one for
+ * one, is averaged into it by weight: matched by name, or, when both list
+ * exactly the foods written and no name that matches sits in another place,
+ * by place, since a dish's name in pinyin, English or Chinese shares no words
+ * with its others. One that listed the
  * meal another way is left out, since its items cannot be told apart, and one
  * that gave it as a single item has no list to give. The grams are the
  * leading list's.
  */
 function blendRows(sources: readonly { rows: Row[]; weight: number }[], written = 0): Row[] {
-  const listed = sources.filter((source) => source.rows.length >= 2);
-  if (!listed.length) return [];
+  const lists = sources.filter((source) => source.rows.length >= 2);
+  if (!lists.length) return [];
+  // An answer weighed at nothing counts for nothing beside one that counts,
+  // so it cannot lead and leave out the ones that do.
+  const listed = lists.some((source) => source.weight > 0) ? lists.filter((source) => source.weight > 0) : lists;
   const off = (source: { rows: Row[] }) => (written >= 2 ? Math.abs(source.rows.length - written) : 0);
   const lead = listed.reduce((best, source) =>
     off(source) < off(best) || (off(source) === off(best) && source.weight > best.weight) ? source : best);
@@ -175,7 +180,9 @@ function blendRows(sources: readonly { rows: Row[]; weight: number }[], written 
     const rows = found.map(([match]) => match);
     if (found.every((matches) => matches.length === 1) && new Set(rows).size === rows.length)
       return [{ rows, weight: source.weight }];
-    return asWritten ? [{ rows: source.rows, weight: source.weight }] : [];
+    // By place only when no name it does match says the places differ.
+    const inPlace = found.every((matches, index) => matches.length !== 1 || matches[0] === source.rows[index]);
+    return asWritten && inPlace ? [{ rows: source.rows, weight: source.weight }] : [];
   });
   const group = [lead, ...partners];
   const mass = group.reduce((sum, source) => sum + Math.max(source.weight, 0), 0);

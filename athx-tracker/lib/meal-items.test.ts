@@ -192,6 +192,27 @@ test("several dishes written open into one item a dish, from the lists that kept
     { assumptions: "Chinese broccoli, 150 g [300 kcal, 4P, 8C, 6F]\n\nSteamed rice, 200 g [60 kcal, 5P, 56C, 1F]", weight: 40 },
   ], totals(360, 9, 64, 7), "gai lan, rice, oyster sauce");
   assert.deepEqual(apart.map((seed) => seed.macros!.calories), [100, 260]);
+
+  // A name that does match, in another place, says the order differs, so the
+  // rest are not paired by place: rice is 500 in both, never gai lan's.
+  const reordered = breakdown([
+    { assumptions: "Gai lan, 150 g [50 kcal, 4P, 8C, 1F]\n\nRice, 200 g [500 kcal, 5P, 56C, 1F]", weight: 60 },
+    { assumptions: "Rice, 200 g [500 kcal, 5P, 56C, 1F]\n\nChinese broccoli, 150 g [50 kcal, 4P, 8C, 1F]", weight: 40 },
+  ], totals(550, 9, 64, 2), "gai lan, rice");
+  assert.deepEqual(reordered.map((seed) => [seed.name, seed.macros!.calories]), [["Gai lan", 50], ["Rice", 500]]);
+});
+
+test("an answer weighed at nothing cannot lead the list over one that counts", () => {
+  const sources = [
+    { assumptions: "Chicken, 150 g [100 kcal, 30P, 0C, 2F]\n\nRice with broccoli, 250 g [500 kcal, 8P, 90C, 3F]", weight: 0 },
+    { assumptions: "Chicken, 150 g [500 kcal, 40P, 0C, 4F]\n\nRice, 200 g [80 kcal, 5P, 56C, 1F]\n\nBroccoli, 80 g [20 kcal, 2P, 5C, 0F]", weight: 100 },
+  ];
+  // Two foods were written, and the list of two is nearer, but it counts for nothing.
+  assert.deepEqual(breakdown(sources, totals(600, 47, 61, 5), "chicken, rice with broccoli")
+    .map((seed) => [seed.name, seed.macros!.calories]), [["Chicken", 500], ["Rice", 80], ["Broccoli", 20]]);
+  // With nothing else listed, it is still the only list there is.
+  assert.equal(breakdown([sources[0], { assumptions: "Bowl [600 kcal, 47P, 61C, 5F]", weight: 100 }],
+    totals(600, 47, 61, 5), "chicken, rice with broccoli").length, 2);
 });
 
 test("a description's foods are counted by the dish cut, with a heading counting for none", () => {
