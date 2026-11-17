@@ -1,5 +1,6 @@
-# Only server.mjs is copied into the image. Everything else here is either a
-# secret, a backup, or documentation, and none of it needs to reach the builder.
+# Only the .mjs modules are copied into the image. Everything else here is
+# either a secret, a backup, a test or documentation, and none of it needs to
+# reach the builder.
 .env
 .env.*
 backups
