@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
-import { Check, ChevronsDownUp, ChevronsUpDown, Clock, Copy, MessageCircle, Sparkles, Split, Square } from "lucide-react";
+import { BookmarkCheck, Check, ChevronsDownUp, ChevronsUpDown, Clock, Copy, MessageCircle, Sparkles, Split, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -50,6 +50,7 @@ import { EstimatorWeights, type Answer, type AnswerFigure } from "@/components/e
 import { mealKey } from "@/lib/common-meals";
 import {
   captureIngredientNutrition,
+  countOf,
   hasIngredientNutrition,
   ingredientTotals,
   itemWithEstimate,
@@ -62,6 +63,7 @@ import {
 import {
   buildTemplate,
   itemsFromText,
+  templateAdditions,
   templateDescription,
   upsertTemplate,
   type MealOffer,
@@ -1471,6 +1473,13 @@ export function MealForm({
   // throw away the figures already on the form.
   const canQueue = queueReady && conversation.length === 0 && !rejected && !splitting && !expanded;
   const seeds = itemSeeds();
+  // Filled from a template and given foods it does not have: offer to keep
+  // them in it, at the bottom, where the meal is about to be saved. Only for
+  // the one template "Update this template" would write.
+  const keptTemplate = kept && who === kept.athlete && !splitting && !expanded
+    ? templates?.[kept.athlete]?.find((template) => template.id === kept.id)
+    : undefined;
+  const additions = keptTemplate ? templateAdditions(keptTemplate.items, ingredients) : [];
 
   function closeRefine() {
     setRefineOpen(false);
@@ -1956,6 +1965,30 @@ export function MealForm({
         ) : null}
         </>
         )}
+
+        {keptTemplate && additions.length > 0 ? (
+          <section
+            {...athleteOutline(who)}
+            aria-label="Template suggestion"
+            className="space-y-2 rounded-2xl border bg-card p-4"
+          >
+            <p className="text-xs text-muted-foreground">
+              Added {additions.map((item) => countOf(item.name).base).join(", ")}, not in{" "}
+              <span className="font-medium text-foreground">{keptTemplate.name}</span> yet. Updating
+              keeps every amount here as its default.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              disabled={templateSaving}
+              onClick={() => void saveAsTemplate()}
+            >
+              <BookmarkCheck />
+              {templateSaving ? "Updating…" : "Update template defaults"}
+            </Button>
+          </section>
+        ) : null}
 
         {error ? (
           <p role="alert" className="text-sm text-destructive">

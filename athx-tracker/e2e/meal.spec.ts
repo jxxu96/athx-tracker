@@ -868,3 +868,77 @@ test("every template item slides, zero keeps it as an option, and an item can be
     await clear();
   }
 });
+
+test("adding a food to a template meal offers to update the template's defaults", async ({ page }) => {
+  const settings = async () => await page.request.get("/api/settings").then((response) => response.json()) as {
+    settings: { mealTemplates?: { hippos: { name: string; items: { name: string; grams: number }[] }[] } } & Record<string, unknown>;
+    revision: number;
+  };
+  const clear = async () => {
+    const current = await settings();
+    await page.request.put("/api/settings", {
+      data: { revision: current.revision, settings: { ...current.settings, mealTemplates: { hippos: [], gators: [] } } },
+    });
+  };
+  const name = "Vanilla whey shake";
+  await page.route("**/api/estimate", (route) => {
+    const { description } = route.request().postDataJSON() as { description: string };
+    return route.fulfill({ json: {
+      estimate: description === "250 g 2% milk"
+        ? { name: description, calories: 125, protein: 8, carbs: 12, fat: 5, fiber: 0, alcohol: 0, confidence: "medium", assumptions: description }
+        : {
+            name, calories: 145, protein: 27, carbs: 7, fat: 3, fiber: 2, confidence: "high",
+            assumptions: [
+              "Whey concentrate, 34 g [130 kcal, 26P, 3C, 2F]",
+              "Dutch process cocoa, 7 g [15 kcal, 1P, 4C, 1F, 2 fiber]",
+            ].join("\n\n"),
+          },
+      provider: "codex",
+    } });
+  });
+  const suggestion = page.getByRole("region", { name: "Template suggestion" });
+  const update = page.getByRole("button", { name: "Update template defaults" });
+  const addMilk = async () => {
+    await page.getByLabel("New ingredient", { exact: true }).fill("250 g 2% milk");
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(page.getByRole("slider", { name: "2% milk weight" })).toBeVisible();
+  };
+  try {
+    await loggingFor(page, "Hippos").click();
+    await page.getByLabel("Meal description").fill("34 g whey concentrate, 7 g dutch process cocoa");
+    await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
+    await expect(page.getByLabel("Calories (kcal)")).toHaveValue("145");
+    await page.getByRole("button", { name: "Save this meal as a template" }).click();
+    await expect(page.getByText("Template saved", { exact: true })).toBeVisible();
+
+    // A changed amount is not something new.
+    await page.getByRole("spinbutton", { name: "whey concentrate grams" }).fill("40");
+    await expect(suggestion).toHaveCount(0);
+    await addMilk();
+    await expect(suggestion).toContainText(`Added 2% milk, not in ${name} yet.`);
+    // Taken off again, there is nothing to keep.
+    await page.getByRole("button", { name: "Remove 2% milk" }).click();
+    await expect(suggestion).toHaveCount(0);
+    await addMilk();
+    await update.click();
+    await expect(page.getByText("Template updated", { exact: true })).toBeVisible();
+    await expect(suggestion).toHaveCount(0);
+
+    const templates = (await settings()).settings.mealTemplates?.hippos ?? [];
+    expect(templates.map((template) => template.name)).toEqual([name]);
+    expect(templates[0].items.map(({ name, grams }) => ({ name, grams }))).toEqual([
+      { name: "whey concentrate", grams: 40 },
+      { name: "dutch process cocoa", grams: 7 },
+      { name: "2% milk", grams: 250 },
+    ]);
+
+    await page.reload();
+    await page.getByRole("button", { name: "Meal", exact: true }).click();
+    await loggingFor(page, "Hippos").click();
+    await page.getByRole("button", { name: `Hippos: ${name}` }).click();
+    await expect(page.getByRole("slider", { name: "2% milk weight" })).toBeVisible();
+    await expect(suggestion).toHaveCount(0);
+  } finally {
+    await clear();
+  }
+});
