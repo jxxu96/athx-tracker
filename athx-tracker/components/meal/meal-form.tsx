@@ -14,8 +14,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { CollapsibleCard } from "@/components/collapsible-card";
-import { DayButtons, Field } from "@/components/workout-form";
-import { athleteOutline, type AthleteOutline } from "@/lib/athlete-outline";
+import { Choice, DayButtons, Field } from "@/components/form-controls";
+import { athleteOutline } from "@/lib/athlete-outline";
 import {
   ATHLETES,
   ESTIMATORS,
@@ -30,7 +30,6 @@ import {
 import { addDays, api, message, newId } from "@/lib/client";
 import { NDJSON, readEstimate, type MissedEstimate, type PartialEstimate } from "@/lib/estimate-stream";
 import {
-  ANSWER_ORDER,
   DEFAULT_WEIGHTS,
   blendEstimates,
   defaultIncluded,
@@ -42,11 +41,11 @@ import {
 import { bothOf, isText, oneOf, textOf, type Draft } from "@/lib/drafts";
 import { useFormDraft } from "@/hooks/use-form-draft";
 import { useCommandShortcut, useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
-import { MealTemplateList } from "@/components/meal-templates";
-import { DishShares, MealDishes } from "@/components/meal-dishes";
-import { MealItems } from "@/components/meal-items";
-import { IngredientWeights } from "@/components/meal-ingredients";
-import { EstimatorWeights, type Answer, type AnswerFigure } from "@/components/estimator-weights";
+import { MealTemplateList } from "@/components/meal/meal-templates";
+import { DishShares, MealDishes } from "@/components/meal/meal-dishes";
+import { MealItems } from "@/components/meal/meal-items";
+import { IngredientWeights } from "@/components/meal/meal-ingredients";
+import { EstimatorWeights, type Answer, type AnswerFigure } from "@/components/meal/estimator-weights";
 import { mealKey } from "@/lib/common-meals";
 import {
   captureIngredientNutrition,
@@ -114,250 +113,24 @@ import {
   type ItemDraft,
   type ItemSeed,
 } from "@/lib/meal-items";
-
-const MACRO_FIELDS = [
-  { key: "calories", label: "Calories", unit: "kcal" },
-  { key: "protein", label: "Protein", unit: "g" },
-  { key: "carbs", label: "Carbs", unit: "g" },
-  { key: "fat", label: "Fat", unit: "g" },
-] as const satisfies readonly { key: keyof Macros; label: string; unit: string }[];
-
-const MEAL_SHORTCUTS = {
-  b: "Breakfast",
-  l: "Lunch",
-  d: "Dinner",
-  s: "Snack",
-  a: "Alcohol",
-} as const satisfies Record<string, Meal["meal"]>;
-
-const MEALS = Object.values(MEAL_SHORTCUTS);
-
-type MacroDraft = Record<keyof Macros, string>;
-const emptyMacros: MacroDraft = { calories: "", protein: "", carbs: "", fat: "" };
-
-type EstimateTurn = { reply?: string; estimate: Estimate };
-type Kept = { id: string; athlete: "hippos" | "gators"; sourceKey: string };
-
-function macroDraftOf(value: unknown): MacroDraft | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const held = value as Record<string, unknown>;
-  return MACRO_FIELDS.every(({ key }) => typeof held[key] === "string") ? (held as MacroDraft) : undefined;
-}
-
-function keptOf(value: unknown): Kept | null {
-  if (!value || typeof value !== "object") return null;
-  const held = value as Record<string, unknown>;
-  return typeof held.id === "string" && typeof held.sourceKey === "string" &&
-    (held.athlete === "hippos" || held.athlete === "gators")
-    ? (held as Kept)
-    : null;
-}
-
-
-/** Today at a time of day, for the sitting it falls in; now when there is none. */
-function atTime(time: string) {
-  const date = new Date();
-  if (isClockTime(time)) date.setHours(Number(time.slice(0, 2)), Number(time.slice(3)), 0, 0);
-  return date;
-}
-
-/** An estimate's figures on one line, as the conversation shows them. */
-function figuresOf(estimate: Estimate) {
-  return [
-    `${Math.round(estimate.calories)} kcal`,
-    `${Math.round(estimate.protein)} g protein`,
-    `${Math.round(estimate.carbs)} g carbs`,
-    ...(estimate.fiber ? [`${Math.round(estimate.fiber)} g fiber`] : []),
-    `${Math.round(estimate.fat)} g fat`,
-    ...(estimate.alcohol ? [`${Math.round(estimate.alcohol)} g ethanol`] : []),
-  ].join(" · ");
-}
-
-/** Answers saved with a draft, with any figures typed over them. Anything that is not one is left out. */
-function partialsOf(value: unknown): Answer[] {
-  if (!Array.isArray(value)) return [];
-  const out: Answer[] = [];
-  for (const item of value) {
-    if (!item || typeof item !== "object") continue;
-    const held = item as Answer;
-    const estimate = held.estimate;
-    if (!estimate || typeof estimate !== "object") continue;
-    if (held.provider !== "codex" && held.provider !== "claude" && held.provider !== "grok") continue;
-    if (![estimate.calories, estimate.protein, estimate.carbs, estimate.fat].every((n) => typeof n === "number"))
-      continue;
-    out.push({
-      type: "partial",
-      provider: held.provider,
-      estimate: {
-        ...estimate,
-        name: String(estimate.name ?? ""),
-        assumptions: String(estimate.assumptions ?? ""),
-        confidence: estimate.confidence === "high" || estimate.confidence === "medium" ? estimate.confidence : "low",
-        fiber: typeof estimate.fiber === "number" ? estimate.fiber : 0,
-        alcohol: typeof estimate.alcohol === "number" ? estimate.alcohol : 0,
-      },
-      ...(held.edited === true ? { edited: true } : {}),
-    });
-  }
-  return out;
-}
-
-/** Which answers the draft had switched on. Missing or damaged means not chosen yet. */
-function includedOf(value: unknown): AnswerProvider[] | null {
-  if (!Array.isArray(value) || !value.length) return null;
-  const names = value.filter(
-    (item): item is AnswerProvider => item === "codex" || item === "claude" || item === "grok",
-  );
-  return names.length === value.length ? names : null;
-}
-
-function browserStorage() {
-  try {
-    return typeof localStorage === "undefined" ? null : localStorage;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Each estimator that was asked and gave nothing, and the reason it gave: not
- * signed in, timed out, out of time. The others may have answered, so this is
- * the only place a provider that keeps failing says so.
- */
-function Missed({ missed }: { missed: MissedEstimate[] }) {
-  if (!missed.length) return null;
-  const shown = [...missed].sort(
-    (a, b) => ANSWER_ORDER.indexOf(a.provider) - ANSWER_ORDER.indexOf(b.provider),
-  );
-  return (
-    <ul aria-label="No answer from" className="space-y-1 rounded-xl border border-dashed p-3 text-xs text-muted-foreground">
-      {shown.map(({ provider, detail }) => (
-        <li key={provider} className="break-words">
-          <span className="font-bold text-foreground">{ESTIMATORS[provider]}</span> did not answer
-          {detail ? `: ${detail}` : "."}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/**
- * Each estimator that has answered. The settled figures may still average
- * them, or keep only the ones that found a label. Every model's own description
- * stays here, bold name first and a rule under the section. Once the estimate
- * has finished, an answer left out of the meal is dimmed; which ones count,
- * how much, and their figures are set under Estimator weights at the top of
- * the form. This is each one's working, which is not repeated anywhere else.
- */
-function SoFar({
-  partials,
-  included,
-}: {
-  partials: Answer[];
-  /** Which answers the meal uses, once it has settled. */
-  included?: readonly AnswerProvider[];
-}) {
-  if (!partials.length) return null;
-  const shown = [...partials].sort(
-    (a, b) => ANSWER_ORDER.indexOf(a.provider) - ANSWER_ORDER.indexOf(b.provider),
-  );
-  return (
-    <div role="status" aria-label="Answers so far" className="space-y-3 rounded-xl border bg-muted/40 p-3 text-xs">
-      <p className="font-medium">Answers so far</p>
-      <ul className="space-y-3">
-        {shown.map(({ provider, estimate, edited }) => {
-          const on = !included || included.includes(provider);
-          const name = ESTIMATORS[provider];
-          return (
-            <li key={provider} className={`space-y-1 ${on ? "" : "opacity-60"}`}>
-              <div className="flex items-center gap-2">
-                <p className="font-bold">{name}</p>
-                {edited ? <p className="text-muted-foreground">figures edited by you</p> : null}
-              </div>
-              <p className="font-medium">
-                {figuresOf(estimate)}
-                <span className="font-normal text-muted-foreground"> · {estimate.confidence} confidence</span>
-              </p>
-              <p className="whitespace-pre-wrap break-words">{estimate.assumptions}</p>
-              <p aria-hidden="true" className="font-mono text-muted-foreground">________</p>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
-
-/** A saved or usual meal, as the estimate a reply can start from. */
-function savedEstimate(meal: Pick<Meal, "name" | "macros" | "assumptions">): Estimate {
-  return { ...meal.macros, name: meal.name, assumptions: meal.assumptions, confidence: "low" };
-}
-
-export function Choice<T extends string>({
-  label,
-  value,
-  options,
-  onChange,
-  fit = false,
-}: {
-  label: string;
-  /** Null shows none of them chosen. */
-  value: T | null;
-  /**
-   * detail is drawn after the label, for the eye only; name, when given, is
-   * what the button is read as instead of its label, and should begin with it.
-   */
-  options: readonly { value: T; label: string; outline?: AthleteOutline; detail?: React.ReactNode; name?: string }[];
-  onChange: (next: T) => void;
-  /**
-   * Columns as wide as their labels, then stretched to fill the row. Five
-   * equal columns on a phone cut "Breakfast" to "Breakfa".
-   */
-  fit?: boolean;
-}) {
-  return (
-    <div>
-      <Label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-        {label}
-      </Label>
-      <div
-        role="group"
-        aria-label={label}
-        className="grid gap-1.5"
-        style={{
-          gridTemplateColumns: `repeat(${options.length}, ${fit ? "minmax(0, auto)" : "minmax(0, 1fr)"})`,
-        }}
-      >
-        {options.map((option) => {
-          const selected = value === option.value;
-          return (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => onChange(option.value)}
-              aria-pressed={selected}
-              aria-label={option.name}
-              {...(selected && option.outline ? athleteOutline(option.outline, "accent") : {})}
-              // An athlete is told apart by its coloured ring. A plain option has
-              // only its fill, and accent on a card was too faint to see which
-              // one was chosen, so it takes the primary fill instead. It stays
-              // the same weight: a bolder label would widen a fitted column and
-              // shift the row on every tap.
-              className={`rounded-lg py-2.5 text-xs font-medium transition-colors ${fit ? "px-1.5" : "px-2"} ${
-                option.outline
-                  ? "border-2 aria-pressed:bg-accent aria-pressed:font-semibold"
-                  : "border aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
-              }`}
-            >
-              {option.label}
-              {option.detail ? <span aria-hidden="true">{option.detail}</span> : null}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+import { Missed, SoFar } from "./answers";
+import {
+  MACRO_FIELDS,
+  MEALS,
+  MEAL_SHORTCUTS,
+  atTime,
+  browserStorage,
+  emptyMacros,
+  figuresOf,
+  includedOf,
+  keptOf,
+  macroDraftOf,
+  partialsOf,
+  savedEstimate,
+  type EstimateTurn,
+  type Kept,
+  type MacroDraft,
+} from "./form-model";
 
 export function MealForm({
   loggingFor,

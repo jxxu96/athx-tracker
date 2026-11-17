@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Flame } from "lucide-react";
-import { CalorieBar, FUEL_OVER_HATCH, type CalorieSlice } from "@/components/calorie-bar";
+import { CalorieBar, FUEL_OVER_HATCH, type CalorieSlice } from "@/components/today/calorie-bar";
 import { CollapsibleCard } from "@/components/collapsible-card";
 import { Input } from "@/components/ui/input";
 import { ATHLETES, type Macros, type RecordItem, type Settings } from "@/lib/domain";

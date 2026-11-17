@@ -6,7 +6,7 @@ import type {
   BodyweightChart as BodyweightChartType,
   LiftChart as LiftChartType,
   ProteinChart as ProteinChartType,
-} from "@/components/trend-charts";
+} from "@/components/progress/trend-charts";
 
 /*
  * The charts come in a file of their own, fetched the first time Progress
@@ -15,7 +15,7 @@ import type {
  * Once fetched online, the service worker keeps the file like any other
  * built file, so the charts open offline after that.
  */
-const charts = () => import("@/components/trend-charts");
+const charts = () => import("@/components/progress/trend-charts");
 
 const Bodyweight = dynamic(() => charts().then((module) => module.BodyweightChart), {
   ssr: false,

@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Benchmarks } from "@/components/benchmarks";
-import { Creature, RUNNER_BOX, RUNNER_GAP } from "@/components/creatures";
-import { WeeklyReview } from "@/components/weekly-review";
-import { BodyweightChart, LiftChart, ProteinChart } from "@/components/lazy-charts";
+import { Benchmarks } from "@/components/progress/benchmarks";
+import { Creature, RUNNER_BOX, RUNNER_GAP } from "@/components/progress/creatures";
+import { WeeklyReview } from "@/components/progress/weekly-review";
+import { BodyweightChart, LiftChart, ProteinChart } from "@/components/progress/lazy-charts";
 import { Button } from "@/components/ui/button";
 import {
   ATHLETES,

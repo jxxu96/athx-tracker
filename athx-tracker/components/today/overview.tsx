@@ -3,12 +3,12 @@
 import { useMemo } from "react";
 import { Dumbbell, ListOrdered } from "lucide-react";
 import { CollapsibleCard } from "@/components/collapsible-card";
-import { Energy } from "@/components/energy";
-import { Fuel } from "@/components/fuel";
-import { RaceEstimate, RaceProgress, raceLine } from "@/components/race-estimate";
-import { RequestLog } from "@/components/request-log";
-import { RunningOrder, runningOrderLine } from "@/components/running-order";
-import { SessionCalendar } from "@/components/session-calendar";
+import { Energy } from "@/components/today/energy";
+import { Fuel } from "@/components/today/fuel";
+import { RaceEstimate, RaceProgress, raceLine } from "@/components/today/race-estimate";
+import { RequestLog } from "@/components/today/request-log";
+import { RunningOrder, runningOrderLine } from "@/components/today/running-order";
+import { SessionCalendar } from "@/components/today/session-calendar";
 import { daysTrained } from "@/lib/session-calendar";
 import { zoneGoals } from "@/lib/race";
 import { lastDone, seenTable, weekDays, weekTable } from "@/lib/running-order";

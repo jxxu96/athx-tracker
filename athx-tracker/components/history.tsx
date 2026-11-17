@@ -4,9 +4,8 @@ import { useState } from "react";
 import { BatteryMedium, CloudOff, Pencil, Scale, Soup, Trash2, Weight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { DayButtons, Field } from "@/components/workout-form";
-import { EnergyLevels } from "@/components/energy";
-import { Choice } from "@/components/meal-form";
+import { Choice, DayButtons, Field } from "@/components/form-controls";
+import { EnergyLevels } from "@/components/today/energy";
 import {
   NativeSelect,
   NativeSelectOption,

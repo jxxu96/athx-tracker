@@ -3,8 +3,7 @@
 import { useState, useSyncExternalStore } from "react";
 import { BatteryMedium, Plus } from "lucide-react";
 import { CollapsibleCard } from "@/components/collapsible-card";
-import { Choice } from "@/components/meal-form";
-import { DayButtons } from "@/components/workout-form";
+import { Choice, DayButtons } from "@/components/form-controls";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { athleteOutline } from "@/lib/athlete-outline";
 import { addDays, dayToDate, formatDay, newId } from "@/lib/client";

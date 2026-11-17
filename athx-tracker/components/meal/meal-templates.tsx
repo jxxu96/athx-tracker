@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Field } from "@/components/workout-form";
+import { Field } from "@/components/form-controls";
 import { athleteOutline, type AthleteOutline } from "@/lib/athlete-outline";
 import { ATHLETES, MEAL_TEMPLATE_GRAMS_LIMIT, MEAL_TEMPLATE_ITEMS } from "@/lib/domain";
 import type { Meal, MealTemplateItem } from "@/lib/domain";

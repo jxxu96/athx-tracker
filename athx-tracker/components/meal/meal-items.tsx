@@ -3,7 +3,7 @@
 import { Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Field } from "@/components/workout-form";
+import { Field } from "@/components/form-controls";
 import { MEAL_TEMPLATE_ITEM_LIMIT, MEAL_TEMPLATE_ITEMS } from "@/lib/domain";
 import { ingredientSliderMax } from "@/lib/meal-ingredients";
 import { scaleItem, setItemFigure, setItemGrams, type ItemBox, type ItemDraft } from "@/lib/meal-items";

@@ -5,7 +5,7 @@ import { Download, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Field } from "@/components/workout-form";
+import { Field } from "@/components/form-controls";
 import { Keybinds } from "@/components/keybinds";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { toast } from "sonner";

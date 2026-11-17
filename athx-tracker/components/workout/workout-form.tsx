@@ -1,35 +1,21 @@
 "use client";
 
-import {
-  cloneElement,
-  isValidElement,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type ReactElement,
-} from "react";
-import { CalendarDays, Plus, Sparkles, X } from "lucide-react";
-import { WorkoutDictation } from "@/components/workout-dictation";
-import { DEFAULT_SETS, EXERCISES, STATIONS, defaultReps, stationUnit } from "@/lib/exercises";
+import { useEffect, useRef, useState } from "react";
+import { Plus, Sparkles, X } from "lucide-react";
+import { DayButtons, Field } from "@/components/form-controls";
+import { WorkoutDictation } from "@/components/workout/workout-dictation";
+import { DEFAULT_SETS, defaultReps, stationUnit } from "@/lib/exercises";
 import { lastLift, type LastLift } from "@/lib/last-lift";
 import { alignWorkoutDraft } from "@/lib/movement-match";
 import { workoutDraftSchema, type WorkoutDraft } from "@/lib/workout-draft";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  NativeSelect,
-  NativeSelectOptGroup,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { athleteOutline, type AthleteOutline } from "@/lib/athlete-outline";
 import { useCommandShortcut, useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
-import { addDays, api, dayToDate, formatDay, message, newId } from "@/lib/client";
+import { addDays, api, formatDay, message, newId } from "@/lib/client";
 import { bothOf, isText, oneOf, textOf, type Draft } from "@/lib/drafts";
 import { useFormDraft } from "@/hooks/use-form-draft";
 import {
@@ -40,18 +26,13 @@ import {
   clockTime,
   defaultContext,
   isClockTime,
-  localDay,
   presetElapsed,
   presetTitle,
   sessionSeconds,
   formatTime,
   parseTime,
   typedClock,
-  displayDistance,
   displayLoad,
-  formatLiftSets,
-  formatWeight,
-  fromMetres,
   liftTop,
   isDistanceUnit,
   metconLoadText,
@@ -59,723 +40,48 @@ import {
   reunitLoad,
   segmentBlock,
   standardLoad,
-  toMetres,
   type Block,
   type DistanceUnit,
   type Segment,
   type WeightUnit,
   type Workout,
 } from "@/lib/domain";
-
-type Side = "hippos" | "gators";
-type Format = "hippos" | "gators" | "pairs";
-
-/** What the session is made of, shared by both athletes. */
-type Station = {
-  name: string;
-  custom: string;
-  unit: Segment["unit"];
-  /**
-   * The circuit's target, for one of its stations. Any other station has none:
-   * what was done at it is the whole of it. An entry saved short of a target,
-   * from before the box went, keeps that target through an edit.
-   */
-  target: string;
-  /** MetCon or endurance work, which matters once a session mixes them. */
-  block: Block;
-  /** One of the ATHX circuit's stations, shown as prescribed rather than edited. */
-  fixed?: boolean;
-};
-
-/**
- * What one athlete actually did at one station. load is in the unit on
- * screen; savedKg is the load the entry was opened with, kept exact.
- */
-type Entry = {
-  completed: string;
-  time: string;
-  load: string;
-  savedKg?: number;
-  /** The load box still holds the standard weight the form put there. */
-  prefilled?: boolean;
-};
-
-type SetDraft = { kg: string; reps: string; savedKg?: number; failed?: boolean };
-type LiftSide = {
-  kg: string;
-  sets: string;
-  reps: string;
-  savedKg?: number;
-  /** Each set has its own weight and reps. Off is one weight for every set. */
-  advanced: boolean;
-  detail: SetDraft[];
-  /**
-   * Sets and reps still hold the defaults the form put there when the lift
-   * was chosen. Choosing another lift moves them to its defaults, and they
-   * alone do not make a column count as used.
-   */
-  prefilled?: boolean;
-};
-type LiftRow = {
-  name: string;
-  custom: string;
-  hippos: LiftSide;
-  gators: LiftSide;
-};
-
-const CATEGORIES = [
-  "MetCon", "Strength", "Endurance", "Mixed", "Solidcore", "Tennis", "Other",
-] as const;
-
-/** A session saved when YTW was its own type still has to show that type. */
-const SAVED_CATEGORIES = [
-  "MetCon", "Strength", "Endurance", "Mixed", "Solidcore", "Tennis", "YTW", "Other",
-] as const;
-
-/** The circuit's own entry for a station, when it is one of the seven. */
-const circuitStation = (station: Pick<Station, "name" | "fixed">) =>
-  station.fixed ? METCON.find((s) => s.name === station.name) : undefined;
-
-/**
- * Whether a station takes a load. A circuit station does when the circuit
- * prescribes one; any other MetCon station may, unless it is counted in
- * calories, which is a machine. Endurance work is never loaded.
- */
-const loadable = (category: Workout["category"], station: Station) => {
-  // Solidcore and tennis stations are not lifted, and neither is a session saved
-  // when YTW was its own type. MetCon, Mixed and Other may be.
-  if (category === "Solidcore" || category === "Tennis" || category === "YTW") return false;
-  if (station.block !== "metcon") return false;
-  if (station.fixed) return Boolean(circuitStation(station)?.kg);
-  return station.unit !== "cal";
-};
-
-const UNITS = ["reps", "m", "cal", "rounds"] as const;
-
-const DISTANCE_CHOICES: readonly { value: DistanceUnit; name: string }[] = [
-  { value: "m", name: "meters" },
-  { value: "km", name: "kilometers" },
-  { value: "mi", name: "miles" },
-];
-
-/** Metres, kilometres, or miles. The number in the box converts with the choice. */
-function DistanceUnits({
-  unit,
-  onChange,
-}: {
-  unit: Segment["unit"];
-  onChange: (next: DistanceUnit) => void;
-}) {
-  return (
-    <div role="group" aria-label="Distance unit" className="flex w-fit rounded-full bg-muted p-0.5">
-      {DISTANCE_CHOICES.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          aria-label={option.name}
-          aria-pressed={unit === option.value}
-          onClick={() => onChange(option.value)}
-          className="rounded-full px-2.5 py-1 text-xs font-medium transition-colors aria-pressed:bg-background aria-pressed:shadow-sm"
-        >
-          {option.value}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function convertedDistance(text: string, from: DistanceUnit, to: DistanceUnit) {
-  if (text.trim() === "" || from === to) return text;
-  const value = Number(text);
-  if (!Number.isFinite(value)) return text;
-  return displayDistance(fromMetres(toMetres(value, from), to), to);
-}
-
-const OTHER = "Other";
-
-/** The typed name only counts when Other is the choice. */
-const exerciseName = (choice: string, custom: string) =>
-  (choice === OTHER ? custom : choice).trim();
-
-type Groups = readonly { group: string; items: readonly string[] }[];
-
-const LISTED = new Set(EXERCISES.flatMap((group) => group.items));
-const STATION_LISTED = new Set(STATIONS.flatMap((group) => group.items));
-
-/** A MetCon station is one of the ATHX stations; endurance work picks from everything. */
-const stationGroups = (block: Block): Groups => (block === "metcon" ? STATIONS : EXERCISES);
-const listedFor = (block: Block) => (block === "metcon" ? STATION_LISTED : LISTED);
-
-/** Reverse of exerciseName: put a saved name back into the picker. */
-const toChoice = (name: string, listed: ReadonlySet<string> = LISTED) =>
-  listed.has(name) ? { name, custom: "" } : { name: OTHER, custom: name };
-
-/**
- * A station's name as its part's list can show it. One that list lacks, such
- * as a run moved to MetCon or a lift picked before stations were ATHX only,
- * is typed under Other, so the picker never shows a choice it does not hold.
- */
-const fitPicker = (station: Station): Station => {
-  if (station.fixed) return station;
-  const name = exerciseName(station.name, station.custom);
-  return name === "" ? station : { ...station, ...toChoice(name, listedFor(station.block)) };
-};
-
-/** Legacy records can be on the team athlete, which has no column of its own. */
-const sideOf = (athlete: Workout["athlete"]): Side =>
-  athlete === "gators" ? "gators" : "hippos";
-
-function ExercisePicker({
-  label,
-  choice,
-  custom,
-  groups = EXERCISES,
-  onChoice,
-  onCustom,
-}: {
-  label: string;
-  choice: string;
-  custom: string;
-  /** What the list offers. Other follows it, for anything it lacks. */
-  groups?: Groups;
-  onChoice: (value: string) => void;
-  onCustom: (value: string) => void;
-}) {
-  return (
-    <div className="space-y-2">
-      <Field label={label}>
-        <NativeSelect
-          size="sm"
-          value={choice}
-          onChange={(event) => onChoice(event.target.value)}
-        >
-          <NativeSelectOption value="">Choose…</NativeSelectOption>
-          {groups.map((group) => (
-            <NativeSelectOptGroup key={group.group} label={group.group}>
-              {group.items.map((item) => (
-                <NativeSelectOption key={item} value={item}>
-                  {item}
-                </NativeSelectOption>
-              ))}
-            </NativeSelectOptGroup>
-          ))}
-          <NativeSelectOption value={OTHER}>Other…</NativeSelectOption>
-        </NativeSelect>
-      </Field>
-      {choice === OTHER ? (
-        <Field label="Name it">
-          <Input
-            value={custom}
-            maxLength={80}
-            placeholder="Exercise name"
-            className="h-8"
-            onChange={(event) => onCustom(event.target.value)}
-          />
-        </Field>
-      ) : null}
-    </div>
-  );
-}
-
-const blankEntry = (): Entry => ({ completed: "", time: "", load: "" });
-const blankSet = (): SetDraft => ({ kg: "", reps: "" });
-const blankLiftSide = (): LiftSide => ({
-  kg: "", sets: "", reps: "", advanced: false, detail: [],
-});
-const blankLift = (): LiftRow => ({
-  name: "",
-  custom: "",
-  hippos: blankLiftSide(),
-  gators: blankLiftSide(),
-});
-
-const metconStations = (): Station[] =>
-  METCON.map((s) => ({
-    name: s.name,
-    custom: "",
-    unit: s.unit,
-    target: String(s.target),
-    block: "metcon",
-    fixed: true,
-  }));
-
-const runStation = (): Station[] => [
-  { name: "Run", custom: "", unit: "m", target: "", block: "endurance" },
-];
-
-const stationsFor = (category: Workout["category"]): Station[] =>
-  category === "MetCon"
-    ? metconStations()
-    : category === "Endurance"
-      ? runStation()
-      : [];
-
-/**
- * Fresh entries for new stations. A circuit station that prescribes a load
- * starts with that athlete's standard weight, rounded to the rack, so saving it
- * untouched records it. Only ever for new stations: an entry opened for editing
- * keeps exactly what was saved, blank included.
- */
-const entriesFor = (stations: Station[], side: Side, unit: WeightUnit): Entry[] =>
-  stations.map((station) => {
-    const kg = circuitStation(station)?.kg?.[side];
-    return kg
-      ? { ...blankEntry(), load: standardLoad(kg, unit), prefilled: true }
-      : blankEntry();
-  });
-
-const entriesForBoth = (stations: Station[], unit: WeightUnit) => ({
-  hippos: entriesFor(stations, "hippos", unit),
-  gators: entriesFor(stations, "gators", unit),
-});
-
-const num = (value: string) => (value.trim() === "" ? 0 : Number(value));
-/** How many set rows Advanced opens from the simple sets box. One, and never past the cap. */
-const seedCount = (sets: string) => {
-  const count = Math.round(num(sets));
-  return Math.min(50, count >= 1 ? count : 1);
-};
-const seconds = (value: string) => (value.trim() === "" ? 0 : parseTime(value));
-
-/** An untitled session is named after its date, which never goes stale. */
-const dateTitle = (day: string) =>
-  new Intl.DateTimeFormat("en-GB", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(dayToDate(day));
-
-/** The calendar button names a day that is neither today nor yesterday. */
-const shortDay = (day: string) =>
-  new Intl.DateTimeFormat("en-GB", {
-    day: "numeric",
-    month: "short",
-    timeZone: "UTC",
-  }).format(dayToDate(day));
-
-/** Local midnight, so the calendar's day is the day in the string. */
-const parseDay = (day: string) => {
-  const [year, month, date] = day.split("-").map(Number);
-  return new Date(year, (month ?? 1) - 1, date ?? 1);
-};
-
-/**
- * A date button. The chosen one takes the primary fill, as a chosen sitting
- * does: accent on a card was too faint to see which day was picked.
- */
-const CHOICE =
-  "inline-flex min-w-0 items-center justify-center gap-1.5 rounded-lg border px-2 py-2.5 text-xs font-medium whitespace-nowrap transition-colors aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground";
-
-const FORMAT_OPTIONS: readonly {
-  value: Format;
-  label: string;
-  dots: readonly string[];
-}[] = [
-  { value: "hippos", label: "Hippos", dots: [ATHLETES.hippos.color] },
-  { value: "gators", label: "Gators", dots: [ATHLETES.gators.color] },
-  {
-    value: "pairs",
-    label: "Pairs",
-    dots: [ATHLETES.hippos.color, ATHLETES.gators.color],
-  },
-];
-
-function FormatButtons({
-  value,
-  onChange,
-}: {
-  value: Format;
-  onChange: (next: Format) => void;
-}) {
-  return (
-    <div>
-      <Label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-        Format
-      </Label>
-      <div role="group" aria-label="Format" className="grid grid-cols-3 gap-1.5">
-        {FORMAT_OPTIONS.map((option) => {
-          const selected = value === option.value;
-          return (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => onChange(option.value)}
-              aria-pressed={selected}
-              {...(selected
-                ? athleteOutline(option.value === "pairs" ? "both" : option.value, "accent")
-                : {})}
-              className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-lg border-2 px-2 py-2.5 text-xs font-medium whitespace-nowrap transition-colors aria-pressed:bg-accent aria-pressed:font-semibold"
-            >
-              <span className="flex shrink-0 gap-0.5" aria-hidden="true">
-                {option.dots.map((color) => (
-                  <span
-                    key={color}
-                    className="size-2 rounded-full"
-                    style={{ background: color }}
-                  />
-                ))}
-              </span>
-              {option.label}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-export function DayButtons({
-  today,
-  day,
-  onChange,
-  time,
-  onTimeChange,
-  subject,
-}: {
-  today: string;
-  day: string;
-  onChange: (next: string) => void;
-  /** When given, the time of day sits under the date. Blank is not recorded. */
-  time?: string;
-  onTimeChange?: (next: string) => void;
-  /**
-   * What the date is for, when the screen has another Today button: the
-   * buttons are then named "Energy today" rather than a second "Today" beside
-   * the tab of that name.
-   */
-  subject?: string;
-}) {
-  const named = (what: string) => (subject ? `${subject} ${what[0].toLowerCase()}${what.slice(1)}` : undefined);
-  const yesterday = addDays(today, -1);
-  const custom = day !== today && day !== yesterday;
-  const [open, setOpen] = useState(false);
-  const choose = (next: string) => {
-    onChange(next);
-    setOpen(false);
-  };
-
-  return (
-    <div>
-      <Label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-        Date
-      </Label>
-      <div role="group" aria-label={subject ? `${subject} date` : "Date"} className="grid grid-cols-3 gap-1.5">
-        <button
-          type="button"
-          onClick={() => choose(today)}
-          aria-pressed={day === today}
-          aria-label={named("Today")}
-          className={CHOICE}
-        >
-          Today
-        </button>
-        <button
-          type="button"
-          onClick={() => choose(yesterday)}
-          aria-pressed={day === yesterday}
-          aria-label={named("Yesterday")}
-          className={CHOICE}
-        >
-          Yesterday
-        </button>
-        <div className="min-w-0">
-          <Popover open={open} onOpenChange={setOpen}>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                aria-pressed={custom}
-                aria-label={named(custom ? `Calendar, ${shortDay(day)}` : "Calendar") ?? (custom ? `Calendar, ${shortDay(day)}` : "Calendar")}
-                className={`${CHOICE} w-full`}
-              >
-                <CalendarDays className="size-3.5 shrink-0" aria-hidden="true" />
-                <span className="truncate">{custom ? shortDay(day) : "Calendar"}</span>
-              </button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-auto p-0">
-              <Calendar
-                mode="single"
-                selected={parseDay(day)}
-                defaultMonth={parseDay(day)}
-                disabled={{ after: parseDay(today) }}
-                onSelect={(selected) => {
-                  if (!selected) return;
-                  const next = localDay(selected);
-                  if (next > today) return;
-                  choose(next);
-                }}
-              />
-            </PopoverContent>
-          </Popover>
-        </div>
-      </div>
-      {onTimeChange ? (
-        <Field label="Time of day" className="mt-3">
-          <Input
-            type="time"
-            value={time ?? ""}
-            className="w-36"
-            onChange={(event) => onTimeChange(event.target.value)}
-          />
-        </Field>
-      ) : null}
-    </div>
-  );
-}
-
-export function Field({
-  label,
-  hint,
-  children,
-  className,
-}: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  // The label sat beside the control rather than attached to it, so nothing
-  // announced what any field was, and nothing could find one by its name.
-  const generated = useId();
-  const control = isValidElement(children)
-    ? cloneElement(children as ReactElement<{ id?: string }>, {
-        id: (children as ReactElement<{ id?: string }>).props.id ?? generated,
-      })
-    : children;
-  const htmlFor = isValidElement(children)
-    ? ((children as ReactElement<{ id?: string }>).props.id ?? generated)
-    : undefined;
-
-  return (
-    <div className={className}>
-      <Label
-        htmlFor={htmlFor}
-        className="mb-1.5 block text-xs font-medium text-muted-foreground"
-      >
-        {label}
-      </Label>
-      <div className="[&>div]:w-full">{control}</div>
-      {hint ? <p className="mt-1 text-[11px] text-muted-foreground">{hint}</p> : null}
-    </div>
-  );
-}
-
-/** A tinted column so it is always obvious whose numbers these are. */
-function Column({ side, children }: { side: Side; children: React.ReactNode }) {
-  return (
-    <div
-      className="min-w-0 space-y-2 rounded-lg border p-2.5"
-      style={{ borderColor: `${ATHLETES[side].color}44` }}
-    >
-      <p
-        className="flex items-center gap-1.5 text-[11px] font-semibold"
-        style={{ color: ATHLETES[side].ink }}
-      >
-        <span
-          className="size-2 rounded-full"
-          style={{ background: ATHLETES[side].color }}
-        />
-        {ATHLETES[side].name}
-      </p>
-      {children}
-    </div>
-  );
-}
-
-/** One athlete's sets: one weight for all of them, or a row for each. */
-function LiftSets({
-  side,
-  entry,
-  unit,
-  liftName,
-  last,
-  lastDay,
-  onUseLast,
-  onToggle,
-  onSimple,
-  onSet,
-  onAdd,
-  onRemove,
-}: {
-  side: Side;
-  entry: LiftSide;
-  unit: WeightUnit;
-  liftName: string;
-  /** This athlete's last time at the lift, offered to copy. */
-  last: LastLift | null;
-  lastDay: string;
-  onUseLast: () => void;
-  onToggle: () => void;
-  onSimple: (patch: Partial<Pick<LiftSide, "kg" | "sets" | "reps">>) => void;
-  onSet: (index: number, patch: Partial<SetDraft>) => void;
-  onAdd: () => void;
-  onRemove: (index: number) => void;
-}) {
-  const who = ATHLETES[side].name;
-  const parsed = entry.detail.flatMap((set, index) => {
-    const kg = parseLoad(set.kg, unit, set.savedKg);
-    const reps = Math.round(num(set.reps) || 0);
-    return kg !== null && reps >= 1 ? [{ kg, reps, failed: Boolean(set.failed), index }] : [];
-  });
-  const missed = parsed.flatMap((set) => (set.failed ? [set.index + 1] : []));
-  const same = parsed.length > 0 && parsed.every((set) => set.kg === parsed[0].kg && set.reps === parsed[0].reps);
-  const top = parsed.length > 0 ? liftTop(parsed.map(({ kg, reps }) => ({ kg, reps }))) : null;
-  const lastSets = last ? formatLiftSets(last.lift, unit) : "";
-  return (
-    <Column side={side}>
-      {last ? (
-        <button
-          type="button"
-          onClick={onUseLast}
-          aria-label={`Use ${who}' last ${liftName}: ${lastSets}, ${lastDay}`}
-          className="flex w-full items-baseline justify-between gap-2 rounded-md border border-dashed px-2 py-1.5 text-left text-[11px] text-muted-foreground transition-colors hover:bg-muted"
-        >
-          <span className="min-w-0">
-            Last <span className="font-medium tabular-nums text-foreground">{lastSets}</span> · {lastDay}
-          </span>
-          <span className="shrink-0 font-medium text-foreground">Use</span>
-        </button>
-      ) : null}
-      <div>
-        <Button
-          type="button"
-          variant={entry.advanced ? "secondary" : "outline"}
-          size="xs"
-          aria-pressed={entry.advanced}
-          aria-label={`${who} advanced sets`}
-          onClick={onToggle}
-        >
-          Advanced
-        </Button>
-      </div>
-      {entry.advanced ? (
-        <>
-          <ul className="space-y-2">
-            {entry.detail.map((set, index) => (
-              <li key={index} className="flex items-end gap-2">
-                <Field label={unit} className="min-w-0 flex-1">
-                  <Input
-                    value={set.kg}
-                    inputMode="decimal"
-                    className="h-8"
-                    aria-label={`${who} set ${index + 1} weight`}
-                    onChange={(event) => onSet(index, { kg: event.target.value })}
-                  />
-                </Field>
-                <Field label="Reps" className="min-w-0 flex-1">
-                  <Input
-                    value={set.reps}
-                    inputMode="numeric"
-                    className="h-8"
-                    aria-label={`${who} set ${index + 1} reps`}
-                    onChange={(event) => onSet(index, { reps: event.target.value })}
-                  />
-                </Field>
-                <Field label="Fail" className="w-9 shrink-0">
-                  <div className="flex h-8 items-center justify-center">
-                    <Checkbox
-                      checked={Boolean(set.failed)}
-                      aria-label={`${who} set ${index + 1} failed the final rep`}
-                      title="Failed the final rep"
-                      onCheckedChange={(value) => onSet(index, { failed: value === true })}
-                    />
-                  </div>
-                </Field>
-                {entry.detail.length > 1 ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={`${who} remove set ${index + 1}`}
-                    onClick={() => onRemove(index)}
-                  >
-                    <X />
-                  </Button>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-          {entry.detail.length < 50 ? (
-            <Button type="button" variant="outline" size="xs" aria-label={`${who} add set`} onClick={onAdd}>
-              <Plus /> Set
-            </Button>
-          ) : null}
-          {top ? (
-            <p className="text-[11px] text-muted-foreground">
-              {same
-                ? `${parsed.length}×${parsed[0].reps} at ${formatWeight(parsed[0].kg, unit)}`
-                : `Heaviest ${formatWeight(top.kg, unit)} ${top.sets}×${top.reps}`}
-              {missed.length > 0
-                ? ` · last rep failed on set ${missed.join(", ")}`
-                : ""}
-            </p>
-          ) : null}
-        </>
-      ) : (
-        <>
-          <Field label={unit}>
-            <Input
-              value={entry.kg}
-              inputMode="decimal"
-              className="h-8"
-              onChange={(event) => onSimple({ kg: event.target.value })}
-            />
-          </Field>
-          <div className="grid grid-cols-2 gap-2">
-            {/* No placeholder: a grey 3 and 5 read as values and saved as one
-                set of one. Choosing the lift fills real defaults instead. */}
-            <Field label="Sets">
-              <Input
-                value={entry.sets}
-                inputMode="numeric"
-                className="h-8"
-                onChange={(event) => onSimple({ sets: event.target.value })}
-              />
-            </Field>
-            <Field label="Reps">
-              <Input
-                value={entry.reps}
-                inputMode="numeric"
-                className="h-8"
-                onChange={(event) => onSimple({ reps: event.target.value })}
-              />
-            </Field>
-          </div>
-        </>
-      )}
-    </Column>
-  );
-}
-
-function Panel({
-  title,
-  note,
-  action,
-  outline,
-  children,
-}: {
-  title: string;
-  note?: string;
-  action?: React.ReactNode;
-  outline: AthleteOutline;
-  children: React.ReactNode;
-}) {
-  return (
-    <section {...athleteOutline(outline)} className="space-y-3 rounded-2xl border bg-card p-4 sm:p-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h3 className="text-sm font-semibold">{title}</h3>
-          {note ? (
-            <p className="text-[11px] text-muted-foreground">{note}</p>
-          ) : null}
-        </div>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-}
+import {
+  CATEGORIES,
+  SAVED_CATEGORIES,
+  UNITS,
+  blankEntry,
+  blankLift,
+  blankLiftSide,
+  blankSet,
+  circuitStation,
+  convertedDistance,
+  dateTitle,
+  entriesFor,
+  entriesForBoth,
+  exerciseName,
+  fitPicker,
+  listedFor,
+  loadable,
+  metconStations,
+  num,
+  seconds,
+  seedCount,
+  sideOf,
+  stationGroups,
+  stationsFor,
+  toChoice,
+  type Entry,
+  type Format,
+  type LiftRow,
+  type LiftSide,
+  type SetDraft,
+  type Side,
+  type Station,
+} from "./form-model";
+import { LiftSets } from "./lift-sets";
+import { Column, Panel } from "./panel";
+import { DistanceUnits, ExercisePicker, FormatButtons } from "./pickers";
 
 export function WorkoutForm({
   today,

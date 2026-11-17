@@ -15,11 +15,11 @@ import {
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
-import { Overview } from "@/components/overview";
-import { WorkoutForm } from "@/components/workout-form";
-import { MealForm } from "@/components/meal-form";
+import { Overview } from "@/components/today/overview";
+import { WorkoutForm } from "@/components/workout/workout-form";
+import { MealForm } from "@/components/meal/meal-form";
 import { History } from "@/components/history";
-import { Progress } from "@/components/progress";
+import { Progress } from "@/components/progress/progress";
 import { SettingsForm } from "@/components/settings-form";
 import {
   chordLabel,
