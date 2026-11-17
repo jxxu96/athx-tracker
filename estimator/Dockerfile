@@ -28,7 +28,9 @@ RUN set -eux; \
   codex --version
 
 WORKDIR /app
-COPY server.mjs workout.mjs nutrition.mjs source-page.mjs ./
+# Every module, so a new one cannot be left out of the image and fail at start.
+# .dockerignore keeps the tests out.
+COPY *.mjs ./
 
 # Credentials and backups live here so they survive a redeploy.
 ENV HOME=/config \
