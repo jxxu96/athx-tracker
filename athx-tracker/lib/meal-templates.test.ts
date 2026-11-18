@@ -21,6 +21,8 @@ import {
   itemWithEstimate,
   leftOut,
   servedItems,
+  toTenths,
+  weighedInstead,
   withAmount,
   withCount,
 } from "./meal-ingredients.ts";
@@ -370,4 +372,23 @@ test("only a food the template does not have counts as added to it", () => {
   ]).map((item) => item.name), ["0% milk", "1 banana"]);
   // Written another way, it is the same food.
   assert.deepEqual(templateAdditions(saved, [{ name: "Whey Concentrate", grams: 34 }]), []);
+});
+
+test("a counted item weighed instead keeps its food and drops its count and figures", () => {
+  // "0% milk" was one cup; 270 typed for millilitres made it 270 cups.
+  const milk: MealTemplateItem = {
+    name: "270 × 0% milk", grams: 0,
+    nutrition: { grams: 0, count: 1, macros: { calories: 83, protein: 8, carbs: 12, fat: 0, fiber: 0, alcohol: 0 } },
+  };
+  assert.deepEqual(weighedInstead(milk, 270), { name: "0% milk", grams: 270 });
+  assert.deepEqual(weighedInstead({ name: "2 eggs", grams: 0 }, 100.04), { name: "eggs", grams: 100 });
+});
+
+test("the meal's figures go into its boxes to a tenth, fiber still inside the carbs", () => {
+  assert.deepEqual(
+    toTenths({ calories: 22689.289, protein: 2275.063, carbs: 3313.051, fat: 61.757, fiber: 1.643, alcohol: 0 }),
+    { calories: 22689.3, protein: 2275.1, carbs: 3313.1, fat: 61.8, fiber: 1.6, alcohol: 0 },
+  );
+  const close = toTenths({ calories: 1, protein: 0, carbs: 1.04, fat: 0, fiber: 1.04, alcohol: 0 });
+  assert.ok(close.fiber! <= close.carbs);
 });

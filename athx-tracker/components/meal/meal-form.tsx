@@ -57,6 +57,8 @@ import {
   loggedIngredients,
   normalizeItems,
   servedItems,
+  toTenths,
+  weighedInstead,
   withAmount,
 } from "@/lib/meal-ingredients";
 import {
@@ -961,6 +963,26 @@ export function MealForm({
    * until it is slid to zero, and kept with the template once that is updated.
    */
   async function addIngredient(item: MealTemplateItem) {
+    return estimateIngredient(item, (estimated) => [...ingredients, estimated]);
+  }
+
+  /**
+   * A counted item weighed instead. Its figures were for however much one of
+   * it was, so a weight cannot scale them: it is estimated once at that weight,
+   * in its place.
+   */
+  async function weighIngredient(index: number, grams: number) {
+    const current = ingredients[index];
+    if (!current) return false;
+    return estimateIngredient(weighedInstead(current, grams), (estimated) =>
+      ingredients.map((each, i) => (i === index ? estimated : each)));
+  }
+
+  /** One food estimated on its own, then put on the meal where place says. */
+  async function estimateIngredient(
+    item: MealTemplateItem,
+    place: (estimated: MealTemplateItem) => MealTemplateItem[],
+  ) {
     if (addingIngredient || estimating) return false;
     const epoch = dishEpoch.current;
     setAddingIngredient(true);
@@ -972,7 +994,7 @@ export function MealForm({
       });
       // The form was cleared while it was out.
       if (epoch !== dishEpoch.current) return false;
-      writeIngredients([...ingredients, itemWithEstimate(item, estimate)]);
+      writeIngredients(place(itemWithEstimate(item, estimate)));
       return true;
     } catch (problem) {
       if (epoch === dishEpoch.current) setIngredientError(message(problem));
@@ -984,8 +1006,9 @@ export function MealForm({
 
   /** The meal's figures, description and working, from its saved ingredients. */
   function writeIngredients(next: MealTemplateItem[]) {
-    const totals = ingredientTotals(next);
-    if (!totals) return;
+    const summed = ingredientTotals(next);
+    if (!summed) return;
+    const totals = toTenths(summed);
     const nextDescription = templateDescription(next);
     const nextAssumptions = assumptions.startsWith("Portions adjusted using saved ingredient nutrition.")
       ? assumptions
@@ -1410,6 +1433,7 @@ export function MealForm({
               onAmount={changeIngredient}
               onRemove={removeIngredient}
               onAdd={addIngredient}
+              onWeigh={weighIngredient}
             />
           ) : kept && !splitting && !expanded ? (
             <p className="text-xs text-muted-foreground">

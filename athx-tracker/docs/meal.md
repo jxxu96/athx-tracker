@@ -25,8 +25,14 @@
   ("3 eggs", "1.5 × 250ml 2% milk"). Slid to zero, an item is an option, like a
   second milk: kept with the meal, but out of the description, the macros and
   the logged meal until it is slid up again. Any item can be removed, but not
-  the last. An ingredient added there is estimated on its own, once, so the
-  others keep their figures. **Update this template** keeps what was added,
+  the last. Each says what it adds at the amount it is at, "92 kcal", and a
+  box at zero is blank, so a number typed into it never reads "0270". A
+  counted item's number is how many of whatever its figures were estimated
+  for, one cup of milk for "0% milk": 270 typed there is 270 cups, which its
+  calories show at once. **weigh in g** beside it takes grams instead, and
+  estimates that item once at that weight, in its place. An ingredient added
+  there is estimated on its own, once, so the others keep their figures. The
+  meal's figures follow to a tenth. **Update this template** keeps what was added,
   removed or slid. A meal filled from a template that gains a food the template
   does not have shows **Update template defaults** above **Save meal**, which
   does the same (`templateAdditions` in `lib/meal-templates.ts`). A fresh **Estimate macros** prices only what is above zero

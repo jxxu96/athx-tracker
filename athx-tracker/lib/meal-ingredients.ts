@@ -248,6 +248,22 @@ export function ingredientScale(item: SavedItem) {
 }
 
 /**
+ * A counted item weighed instead: its name without the count, at that weight.
+ * Its figures were for however much one of it was, so a weight cannot scale
+ * them; it has none until it is estimated again.
+ */
+export function weighedInstead(item: MealTemplateItem, grams: number): MealTemplateItem {
+  return { name: countOf(item.name).base, grams: Math.round(grams * 10) / 10 };
+}
+
+/** The meal's figures as its boxes take them, to a tenth: "22689.289" read as more precise than it was. */
+export function toTenths(totals: Meal["macros"]): Meal["macros"] {
+  return Object.fromEntries(
+    Object.entries(totals).map(([key, value]) => [key, Math.round((value ?? 0) * 10) / 10]),
+  ) as Meal["macros"];
+}
+
+/**
  * Every item needs its own figures, options included, so sliding one up
  * never leaves the meal without totals. One at zero adds nothing.
  */

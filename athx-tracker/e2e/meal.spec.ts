@@ -714,6 +714,59 @@ test("saved ingredient weights rescale locally and the template keeps its defaul
   expect(estimates).toBe(1);
 });
 
+test("a counted item says what it adds, and can be weighed instead of multiplied", async ({ page }) => {
+  const asked: string[] = [];
+  await page.route("**/api/estimate", (route) => {
+    const { description } = route.request().postDataJSON() as { description: string };
+    asked.push(description);
+    return route.fulfill({ json: {
+      estimate: description === "270 g 0% milk"
+        ? { name: description, calories: 92, protein: 9, carbs: 13, fat: 0, fiber: 0, alcohol: 0, confidence: "medium", assumptions: description }
+        : {
+            name: "Chocolate whey shake", calories: 213, protein: 34, carbs: 15, fat: 2, fiber: 0, confidence: "medium",
+            assumptions: [
+              "Whey concentrate, 34 g [130 kcal, 26P, 3C, 2F]",
+              // No amount was written, so the milk is one serving: a cup.
+              "0% milk, 1 cup [83 kcal, 8P, 12C, 0F]",
+            ].join("\n\n"),
+          },
+      provider: "codex",
+    } });
+  });
+  const calories = page.getByLabel("Calories (kcal)");
+  const weights = page.getByRole("group", { name: "Ingredient weights" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await loggingFor(page, "Gators").click();
+  await page.getByLabel("Meal description").fill("34 g whey concentrate, 0% milk");
+  await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
+  await expect(calories).toHaveValue("213");
+  await expect(weights).toContainText("83 kcal");
+
+  // 270 typed for millilitres is 270 servings, and the row says so at once.
+  await page.getByRole("spinbutton", { name: "How many 0% milk" }).fill("270");
+  await expect(calories).toHaveValue("22540");
+  await expect(weights).toContainText("22,410 kcal");
+  await weights.screenshot({ path: "test-results/meal-ingredient-counted-mobile.png" });
+
+  // Weighed instead: estimated once at that weight, in its place.
+  await page.getByRole("button", { name: "Weigh 0% milk in grams instead" }).click();
+  await page.getByRole("spinbutton", { name: "0% milk grams" }).fill("270");
+  await page.getByRole("spinbutton", { name: "0% milk grams" }).press("Enter");
+  await expect(page.getByRole("slider", { name: "0% milk weight" })).toHaveValue("270");
+  await expect(calories).toHaveValue("222");
+  await expect(weights).toContainText("92 kcal");
+  await expect(page.getByLabel("Meal description")).toHaveValue("34 g whey concentrate, 270 g 0% milk");
+
+  // Slid to zero and typed again, there is no leading 0, and the meal is to a tenth.
+  await page.getByRole("slider", { name: "whey concentrate weight" }).press("Home");
+  await expect(page.getByRole("spinbutton", { name: "whey concentrate grams" })).toHaveValue("");
+  await page.getByRole("spinbutton", { name: "whey concentrate grams" }).pressSequentially("5");
+  await expect(page.getByRole("spinbutton", { name: "whey concentrate grams" })).toHaveValue("5");
+  await expect(calories).toHaveValue("111.1");
+  await weights.screenshot({ path: "test-results/meal-ingredient-weighed-mobile.png" });
+  expect(asked).toEqual(["34 g whey concentrate, 0% milk", "270 g 0% milk"]);
+});
+
 test("every template item slides, zero keeps it as an option, and an item can be added or removed", async ({ page }) => {
   const clear = async () => {
     const current = await page.request.get("/api/settings").then((response) => response.json()) as {
@@ -771,7 +824,8 @@ test("every template item slides, zero keeps it as an option, and an item can be
     await add("250 g 0% milk", "0% milk weight");
     await expect(calories).toHaveValue("355");
     await page.getByRole("slider", { name: "0% milk weight" }).press("Home");
-    await expect(grams("0% milk")).toHaveValue("0");
+    // Blank at zero, so a weight typed into it never reads "0125".
+    await expect(grams("0% milk")).toHaveValue("");
     await expect(calories).toHaveValue("270");
     await expect(description).toHaveValue("34 g whey concentrate, 7 g dutch process cocoa, 250 g 2% milk");
 
@@ -794,7 +848,7 @@ test("every template item slides, zero keeps it as an option, and an item can be
     const template = page.getByRole("button", { name: `Hippos: ${name}` });
     await template.click();
     await expect(calories).toHaveValue("270");
-    await expect(grams("0% milk")).toHaveValue("0");
+    await expect(grams("0% milk")).toHaveValue("");
     await expect(page.getByRole("slider", { name: "banana count" })).toHaveCount(0);
 
     // Swap the milk, and halve it.
