@@ -94,6 +94,26 @@ test("a share in pieces is a part of the dish's count", () => {
     assert.deepEqual(readDishShare(text), { name: text, share: null, taken: [] }, text);
 });
 
+test("a part of its own that is only a share is read like one in brackets", () => {
+  const cases: [string, object][] = [
+    ["1 custard cream donut, 90% g", { name: "1 custard cream donut", share: { gators: 90 }, taken: ["90% g"] }],
+    ["sandwich, 60% gators, 40% hippos", { name: "sandwich", share: { gators: 60, hippos: 40 }, taken: ["60% gators", "40% hippos"] }],
+    ["ramen; h 30%", { name: "ramen", share: { hippos: 30 }, taken: ["h 30%"] }],
+    ["ramen, and 60% g and 40% h", { name: "ramen", share: { gators: 60, hippos: 40 }, taken: ["60% g and 40% h"] }],
+    ["pizza, 60% g, 12 inch", { name: "pizza, 12 inch", share: { gators: 60 }, taken: ["60% g"] }],
+    ["甜甜圈，90% g", { name: "甜甜圈", share: { gators: 90 }, taken: ["90% g"] }],
+    ["5 shengjianbao, 3 pc g", { name: "5 shengjianbao", share: { gators: 60 }, quantity: "5 pc", taken: ["3 pc g"] }],
+    // Only the part on its own is the share, not the same words inside another.
+    ["90% gluten free bread, 90% g", { name: "90% gluten free bread", share: { gators: 90 }, taken: ["90% g"] }],
+    // In brackets and on its own, the later says the last word.
+    ["pizza (70% g), 60% g", { name: "pizza", share: { gators: 60 }, taken: ["(70% g)", "60% g"] }],
+  ];
+  for (const [text, read] of cases) assert.deepEqual(readDishShare(text), read, text);
+  // Glued to the dish, or not worked out, it stays part of the name.
+  for (const text of ["pasta 60% g", "dumplings, 3 pc g", "200ml 2% milk", "coffee, 2% milk"])
+    assert.deepEqual(readDishShare(text), { name: text, share: null, taken: [] }, text);
+});
+
 test("brackets that say anything else keep every word, and give no share", () => {
   for (const text of [
     "pizza (ham and pineapple)",
@@ -145,6 +165,21 @@ test("a description is cut into dishes with their shares, and an estimate reads 
   );
   // The same words kept in one dish and taken from a later one: only the later goes.
   assert.equal(withoutShares("dumplings (3 pc g), 8 buns (3 pc g)"), "dumplings (3 pc g), 8 buns");
+  // A share after a comma, or on a line of its own, belongs to the dish before it.
+  const written = "th donut:\n1 custard cream donut, 90% g\n1 egg cream donut, 80% g\n\n200ml 2% milk";
+  assert.deepEqual(writtenDishes(written), [
+    { name: "th donut", share: null },
+    { name: "1 custard cream donut", share: { gators: 90 } },
+    { name: "1 egg cream donut", share: { gators: 80 } },
+    { name: "200ml 2% milk", share: null },
+  ]);
+  assert.equal(withoutShares(written), "th donut:\n1 custard cream donut\n1 egg cream donut\n\n200ml 2% milk");
+  assert.deepEqual(writtenDishes("pizza\n- 70% g\nsalad"), [
+    { name: "pizza", share: { gators: 70 } },
+    { name: "salad", share: null },
+  ]);
+  assert.equal(withoutShares("pizza\n- 70% g\nsalad"), "pizza\n\nsalad");
+  assert.deepEqual(writtenDishes("70% g"), []);
   // Brackets that are not a share are left alone.
   assert.equal(withoutShares("pizza (ham and pineapple)"), "pizza (ham and pineapple)");
 });
