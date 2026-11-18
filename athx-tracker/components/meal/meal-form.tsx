@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
-import { BookmarkCheck, Check, ChevronsDownUp, ChevronsUpDown, Clock, Copy, MessageCircle, Sparkles, Split, Square } from "lucide-react";
+import { Check, ChevronsDownUp, ChevronsUpDown, Clock, Copy, MessageCircle, Sparkles, Split, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -45,11 +45,11 @@ import { MealTemplateList } from "@/components/meal/meal-templates";
 import { DishShares, MealDishes } from "@/components/meal/meal-dishes";
 import { MealItems } from "@/components/meal/meal-items";
 import { IngredientWeights } from "@/components/meal/meal-ingredients";
+import { TemplateSuggestion } from "@/components/meal/template-suggestion";
 import { EstimatorWeights, type Answer, type AnswerFigure } from "@/components/meal/estimator-weights";
 import { mealKey } from "@/lib/common-meals";
 import {
   captureIngredientNutrition,
-  countOf,
   hasIngredientNutrition,
   ingredientTotals,
   itemWithEstimate,
@@ -1739,28 +1739,14 @@ export function MealForm({
         </>
         )}
 
-        {keptTemplate && additions.length > 0 ? (
-          <section
-            {...athleteOutline(who)}
-            aria-label="Template suggestion"
-            className="space-y-2 rounded-2xl border bg-card p-4"
-          >
-            <p className="text-xs text-muted-foreground">
-              Added {additions.map((item) => countOf(item.name).base).join(", ")}, not in{" "}
-              <span className="font-medium text-foreground">{keptTemplate.name}</span> yet. Updating
-              keeps every amount here as its default.
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              disabled={templateSaving}
-              onClick={() => void saveAsTemplate()}
-            >
-              <BookmarkCheck />
-              {templateSaving ? "Updating…" : "Update template defaults"}
-            </Button>
-          </section>
+        {kept && keptTemplate && additions.length > 0 ? (
+          <TemplateSuggestion
+            athlete={kept.athlete}
+            templateName={keptTemplate.name}
+            additions={additions}
+            saving={templateSaving}
+            onUpdate={() => void saveAsTemplate()}
+          />
         ) : null}
 
         {error ? (
