@@ -45,6 +45,7 @@ import { MealTemplateList } from "@/components/meal/meal-templates";
 import { DishShares, MealDishes } from "@/components/meal/meal-dishes";
 import { MealItems } from "@/components/meal/meal-items";
 import { IngredientWeights } from "@/components/meal/meal-ingredients";
+import { useIngredientEstimates } from "@/components/meal/ingredient-estimates";
 import { TemplateSuggestion } from "@/components/meal/template-suggestion";
 import { EstimatorWeights, type Answer, type AnswerFigure } from "@/components/meal/estimator-weights";
 import { mealKey } from "@/lib/common-meals";
@@ -52,11 +53,11 @@ import {
   captureIngredientNutrition,
   hasIngredientNutrition,
   ingredientTotals,
-  itemWithEstimate,
   leftOut,
   loggedIngredients,
   normalizeItems,
   servedItems,
+  toTenths,
   withAmount,
 } from "@/lib/meal-ingredients";
 import {
@@ -282,8 +283,6 @@ export function MealForm({
   const [kept, setKept] = useState<Kept | null>(keptOf(from?.kept));
   const [templateSaving, setTemplateSaving] = useState(false);
   // An ingredient being estimated on its own, to add to the meal.
-  const [addingIngredient, setAddingIngredient] = useState(false);
-  const [ingredientError, setIngredientError] = useState("");
   // A shared meal written down dish by dish. Any dishes at all make this a
   // split meal; removing the last goes back to one meal. An edit is one
   // person's record, so it never splits.
@@ -295,6 +294,12 @@ export function MealForm({
   // Bumped when the form is cleared, so an answer that comes back afterwards
   // is dropped instead of written onto the next meal.
   const dishEpoch = useRef(0);
+  const ingredientEstimates = useIngredientEstimates({
+    ingredients,
+    blocked: estimating,
+    epoch: dishEpoch,
+    write: writeIngredients,
+  });
   const [dishErrors, setDishErrors] = useState<Record<string, string>>({});
   // A meal for both is split by dish unless you say it was the same meal for
   // each of you. Dishes already written stay split whoever it is for.
@@ -425,7 +430,7 @@ export function MealForm({
     setDescription("");
     setPrompt("");
     setIngredients([]);
-    setIngredientError("");
+    ingredientEstimates.setError("");
     setName("");
     setMacros(emptyMacros);
     setEthanol("");
@@ -858,7 +863,7 @@ export function MealForm({
     if (loggingFor !== athlete) onLoggingFor(athlete);
     setDescription(templateDescription(offer.items) || offer.name);
     setIngredients(offer.items);
-    setIngredientError("");
+    ingredientEstimates.setError("");
     setConversation([{ estimate: savedEstimate(offer) }]);
     setReply("");
     setReplyError("");
@@ -956,36 +961,11 @@ export function MealForm({
     writeIngredients(ingredients.filter((_, i) => i !== index));
   }
 
-  /**
-   * A food estimated on its own and added to the meal. It is in this meal
-   * until it is slid to zero, and kept with the template once that is updated.
-   */
-  async function addIngredient(item: MealTemplateItem) {
-    if (addingIngredient || estimating) return false;
-    const epoch = dishEpoch.current;
-    setAddingIngredient(true);
-    setIngredientError("");
-    try {
-      const { estimate } = await api<{ estimate: Estimate }>("/api/estimate", {
-        method: "POST",
-        body: JSON.stringify({ description: templateDescription([item]) }),
-      });
-      // The form was cleared while it was out.
-      if (epoch !== dishEpoch.current) return false;
-      writeIngredients([...ingredients, itemWithEstimate(item, estimate)]);
-      return true;
-    } catch (problem) {
-      if (epoch === dishEpoch.current) setIngredientError(message(problem));
-      return false;
-    } finally {
-      setAddingIngredient(false);
-    }
-  }
-
   /** The meal's figures, description and working, from its saved ingredients. */
   function writeIngredients(next: MealTemplateItem[]) {
-    const totals = ingredientTotals(next);
-    if (!totals) return;
+    const summed = ingredientTotals(next);
+    if (!summed) return;
+    const totals = toTenths(summed);
     const nextDescription = templateDescription(next);
     const nextAssumptions = assumptions.startsWith("Portions adjusted using saved ingredient nutrition.")
       ? assumptions
@@ -1228,7 +1208,7 @@ export function MealForm({
     }
   }
 
-  const busy = estimating || saving || templateSaving || addingIngredient;
+  const busy = estimating || saving || templateSaving || ingredientEstimates.busy;
   useKeyboardShortcuts(active && !busy && shortcutsEnabled, MEAL_SHORTCUTS, setSlot);
   useKeyboardShortcuts(active && !busy && shortcutsEnabled, { y: () => setDay(addDays(today, -1)) }, (action) => action());
   const canEstimate = grokReady && !busy && description.trim().length >= 3;
@@ -1405,11 +1385,12 @@ export function MealForm({
             <IngredientWeights
               items={ingredients}
               canAdd={grokReady}
-              adding={addingIngredient}
-              error={ingredientError}
+              adding={ingredientEstimates.busy}
+              error={ingredientEstimates.error}
               onAmount={changeIngredient}
               onRemove={removeIngredient}
-              onAdd={addIngredient}
+              onAdd={ingredientEstimates.add}
+              onWeigh={ingredientEstimates.weigh}
             />
           ) : kept && !splitting && !expanded ? (
             <p className="text-xs text-muted-foreground">
