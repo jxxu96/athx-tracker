@@ -55,26 +55,37 @@ test("typed workout fills both columns, keeps sets x reps and exact pounds, and 
   expect(records.find(w => w.athlete === "gators")?.lifts[0].reps).toBe(7);
 });
 
-test("an unknown weight stays empty and can be filled with zero", async ({ page }) => {
-  await selection(page, "Hippos").click();
+test("a weight, sets or reps never said stay empty and save as unweighted or none", async ({ page }) => {
+  await selection(page, "Gators").click();
   await page.route("**/api/workout-draft", route => route.fulfill({ json: { draft: {
-    ...draft, elapsed: { hippos: null, gators: 100 }, assumptions: "Add the deadlift weight.",
-    lifts: [{ name: "Deadlift", hippos: { kg: null, sets: 1, reps: 2 }, gators: blank }],
+    ...draft, elapsed: { hippos: null, gators: null }, assumptions: "Pull-up load was not stated.",
+    lifts: [
+      { name: "Bench press", hippos: blank, gators: { kg: 175 * 0.45359237, sets: 5, reps: 5 } },
+      { name: "Pull-up", hippos: blank, gators: { kg: null, sets: 3, reps: 8 } },
+      { name: "Dumbbell row", hippos: blank, gators: { kg: 60 * 0.45359237, sets: 3, reps: null } },
+    ],
   } } }));
-  await page.getByLabel("Workout description").fill("Deadlift 1 x 2");
+  await page.getByLabel("Workout description").fill("Bench 5x5 at 175, pull-ups 3x8, rows at 60");
   await fill(page).click();
-  await expect(lifts(page).getByLabel("lb", { exact: true })).toHaveValue("");
-  await page.getByRole("button", { name: "Save session", exact: true }).click();
-  await expect(page.locator("form").getByRole("alert")).toContainText("missing weight, sets and reps");
-  expect(await saved(page)).toEqual([]);
-  await lifts(page).getByLabel("lb", { exact: true }).fill("0");
+  await expect(lifts(page).getByLabel("lb", { exact: true }).nth(1)).toHaveValue("");
+  await expect(lifts(page).getByLabel("Reps", { exact: true }).nth(2)).toHaveValue("");
   await page.getByRole("button", { name: "Save session", exact: true }).click();
   await expect.poll(async () => (await saved(page)).length).toBe(1);
-  expect((await saved(page))[0].athlete).toBe("hippos");
-  expect((await saved(page))[0].lifts).toEqual([{ name: "Deadlift", kg: 0, sets: 1, reps: 2 }]);
+  expect((await saved(page))[0].lifts).toEqual([
+    { name: "Bench press", kg: 175 * 0.45359237, sets: 5, reps: 5 },
+    { name: "Pull-up", kg: 0, sets: 3, reps: 8 },
+    { name: "Dumbbell row", kg: 60 * 0.45359237, sets: 3, reps: 0 },
+  ]);
+  // The log says what was recorded, never "0 lb" or "×0".
+  await page.getByRole("button", { name: "Log", exact: true }).click();
+  await expect(page.getByText("Bench press 175 lb 5×5 · Pull-up 3×8 · Dumbbell row 60 lb 3 sets")).toBeVisible();
+  // Opened again, what was left blank is blank.
+  await page.getByRole("listitem").filter({ hasText: "Pull-up 3×8" }).getByLabel("Edit entry").click();
+  await expect(lifts(page).getByLabel("lb", { exact: true }).nth(1)).toHaveValue("");
+  await expect(lifts(page).getByLabel("Reps", { exact: true }).nth(2)).toHaveValue("");
 });
 
-test("sets that differ fill a row each, and reps never said are asked for", async ({ page }) => {
+test("sets that differ fill a row each, and reps never said save as none", async ({ page }) => {
   const lb = 0.45359237;
   await page.route("**/api/workout-draft", route => route.fulfill({ json: { draft: {
     ...draft, elapsed: { hippos: null, gators: null },
@@ -99,14 +110,10 @@ test("sets that differ fill a row each, and reps never said are asked for", asyn
   await expect(lifts(page).getByRole("textbox", { name: "Sets", exact: true })).toHaveValue("3");
   await expect(lifts(page).getByRole("textbox", { name: "Reps", exact: true })).toHaveValue("8");
   await page.getByRole("button", { name: "Save session", exact: true }).click();
-  await expect(page.locator("form").getByRole("alert")).toContainText("Back squat, set 3: fill in the missing reps");
-  expect(await saved(page)).toEqual([]);
-  await reps(3).fill("1");
-  await page.getByRole("button", { name: "Save session", exact: true }).click();
   await expect.poll(async () => (await saved(page)).length).toBe(2);
   const records = await saved(page);
-  expect(records.find(w => w.athlete === "hippos")?.lifts).toEqual([{ name: "Back squat", kg: 225 * lb, sets: 1, reps: 1,
-    detail: [{ kg: 135 * lb, reps: 5 }, { kg: 185 * lb, reps: 3 }, { kg: 225 * lb, reps: 1 }] }]);
+  expect(records.find(w => w.athlete === "hippos")?.lifts).toEqual([{ name: "Back squat", kg: 225 * lb, sets: 1, reps: 0,
+    detail: [{ kg: 135 * lb, reps: 5 }, { kg: 185 * lb, reps: 3 }, { kg: 225 * lb, reps: 0 }] }]);
   expect(records.find(w => w.athlete === "gators")?.lifts).toEqual([{ name: "Back squat", kg: 95 * lb, sets: 3, reps: 8 }]);
 });
 

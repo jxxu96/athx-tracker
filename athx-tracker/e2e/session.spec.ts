@@ -678,20 +678,21 @@ test("advanced sets keep their own weight and reps", async ({ page }) => {
 
   await openLog(page);
   const entry = page.getByRole("listitem").filter({ hasText: "Back squat" });
-  await expect(entry.getByText("Back squat 0 lb×6, 185 lb×3, 225 lb×1 (last rep failed)")).toBeVisible();
+  // An unweighted set is its reps on the log, and opens blank: a 0 is a box left empty.
+  await expect(entry.getByText("Back squat 6 reps, 185 lb×3, 225 lb×1 (last rep failed)")).toBeVisible();
 
   await entry.getByLabel("Edit entry").click();
-  await expect(weight(1)).toHaveValue("0");
+  await expect(weight(1)).toHaveValue("");
   await expect(weight(2)).toHaveValue("185");
   await expect(reps(3)).toHaveValue("1");
   await expect(page.getByRole("checkbox", { name: "Gators set 3 failed the final rep" })).toBeChecked();
   await expect(page.getByRole("checkbox", { name: "Gators set 1 failed the final rep" })).not.toBeChecked();
   const unitSwitch = page.getByRole("group", { name: "Weight unit" });
   await unitSwitch.getByRole("button", { name: "kg" }).click();
-  await expect(weight(1)).toHaveValue("0");
+  await expect(weight(1)).toHaveValue("");
   await expect(weight(3)).toHaveValue("102.1");
   await unitSwitch.getByRole("button", { name: "lb" }).click();
-  await expect(weight(1)).toHaveValue("0");
+  await expect(weight(1)).toHaveValue("");
   await expect(weight(3)).toHaveValue("225");
   await page.getByRole("button", { name: "Update session" }).click();
   await expect.poll(async () => (await read())[0].lifts[0].kg).toBe(saved.lifts[0].kg);
@@ -724,21 +725,22 @@ test("advanced opens one set over the form's defaults, not three copies of them"
   await expect(page.getByRole("textbox", { name: "Sets", exact: true })).toHaveValue("3");
   await expect(page.getByRole("textbox", { name: "Reps", exact: true })).toHaveValue("5");
 
-  // An empty rep box is asked for, not saved as one rep.
+  // An empty rep box saves as none recorded, not as one rep, and a set left
+  // wholly blank is not one you did.
   await toggle.click();
-  await page.getByRole("button", { name: "Save session" }).click();
-  await expect(page.locator("form").getByRole("alert")).toContainText("Back squat, set 1: add the reps.");
-  await reps(1).fill("5");
   await page.getByRole("button", { name: "Gators add set" }).click();
   await weight(2).fill("155");
   await reps(2).fill("3");
+  await page.getByRole("button", { name: "Gators add set" }).click();
+  await weight(3).fill("");
+  await reps(3).fill("");
   await page.getByRole("button", { name: "Save session" }).click();
 
   const read = () =>
     page.evaluate(async () => (await fetch("/api/records").then((r) => r.json())).records);
   await expect.poll(async () => (await read()).length).toBe(1);
   const [saved] = await read();
-  expect(saved.lifts[0].detail.map((set: { reps: number }) => set.reps)).toEqual([5, 3]);
+  expect(saved.lifts[0].detail.map((set: { reps: number }) => set.reps)).toEqual([0, 3]);
 });
 
 test("one session holds lifts, a part-finished MetCon with loads, and a run", async ({ page }) => {

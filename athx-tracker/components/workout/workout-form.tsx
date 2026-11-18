@@ -54,6 +54,7 @@ import {
   blankLift,
   blankLiftSide,
   blankSet,
+  boxOf,
   circuitStation,
   convertedDistance,
   dateTitle,
@@ -63,6 +64,7 @@ import {
   fitPicker,
   listedFor,
   loadable,
+  loadBoxOf,
   metconStations,
   num,
   seconds,
@@ -238,14 +240,14 @@ export function WorkoutForm({
       ...blankLift(),
       ...toChoice(lift.name),
       [editSide]: {
-        kg: displayLoad(lift.kg, weightUnit),
-        sets: String(lift.sets ?? 1),
-        reps: String(lift.reps),
+        kg: loadBoxOf(lift.kg, weightUnit),
+        sets: boxOf(lift.sets ?? 1),
+        reps: boxOf(lift.reps),
         savedKg: lift.kg,
         advanced: Boolean(lift.detail?.length),
         detail: (lift.detail ?? []).map((set) => ({
-          kg: displayLoad(set.kg, weightUnit),
-          reps: String(set.reps),
+          kg: loadBoxOf(set.kg, weightUnit),
+          reps: boxOf(set.reps),
           savedKg: set.kg,
           ...(set.failed ? { failed: true } : {}),
         })),
@@ -590,10 +592,10 @@ export function WorkoutForm({
     const entry: LiftSide = detail.length > 0 && !alike
       ? {
           kg: "", sets: "", reps: "", advanced: true,
-          detail: detail.map((set) => ({ kg: displayLoad(set.kg, unit), reps: String(set.reps), savedKg: set.kg })),
+          detail: detail.map((set) => ({ kg: loadBoxOf(set.kg, unit), reps: boxOf(set.reps), savedKg: set.kg })),
         }
       : {
-          kg: displayLoad(lift.kg, unit), sets: String(lift.sets), reps: String(lift.reps),
+          kg: loadBoxOf(lift.kg, unit), sets: boxOf(lift.sets), reps: boxOf(lift.reps),
           savedKg: lift.kg, advanced: false, detail: [],
         };
     setLifts((current) => current.map((row, i) => (i === index ? { ...row, [side]: entry } : row)));
@@ -726,15 +728,23 @@ export function WorkoutForm({
       )
     )
       return true;
-    return lifts.some((lift) => {
-      if (exerciseName(lift.name, lift.custom) === "") return false;
-      const entry = lift[side];
-      if (entry.advanced)
-        return entry.detail.some((set) => set.kg.trim() !== "" || set.reps.trim() !== "");
-      // Defaults the form filled in are not something you did.
-      return entry.kg.trim() !== "" ||
-        (!entry.prefilled && (entry.sets.trim() !== "" || entry.reps.trim() !== ""));
-    });
+    return lifts.some((lift) => liftLogged(lift, side));
+  }
+
+  /**
+   * Whether a lift is on this athlete's session: anything typed into it, a
+   * blank box reading as 0, so a lift with no weight is unweighted. Defaults
+   * the form filled in are not something you did when logging both of you,
+   * since the other one may not have done the lift; logging one, a lift
+   * chosen and left as its boxes show is saved as they show.
+   */
+  function liftLogged(lift: LiftRow, side: Side) {
+    if (exerciseName(lift.name, lift.custom) === "") return false;
+    const entry = lift[side];
+    if (entry.advanced)
+      return entry.detail.some((set) => set.kg.trim() !== "" || set.reps.trim() !== "");
+    const counts = entry.sets.trim() !== "" || entry.reps.trim() !== "";
+    return entry.kg.trim() !== "" || (counts && (!entry.prefilled || columns.length === 1));
   }
 
   function segmentsFor(side: Side): Segment[] {
@@ -778,16 +788,17 @@ export function WorkoutForm({
 
   function liftsFor(side: Side) {
     return lifts.flatMap((lift) => {
+      if (!liftLogged(lift, side)) return [];
       const name = exerciseName(lift.name, lift.custom);
-      if (name === "") return [];
       const entry = lift[side];
       if (entry.advanced) {
-        if (!entry.detail.some((set) => set.kg.trim() !== "")) return [];
         // Entered in your unit, stored in kilograms. Validated before this runs.
-        const detail = entry.detail.map((set) => {
+        // A blank weight is unweighted and blank reps are none recorded; a set
+        // with both blank is not one you did.
+        const detail = entry.detail.filter((set) => set.kg.trim() !== "" || set.reps.trim() !== "").map((set) => {
           const row: { kg: number; reps: number; failed?: true } = {
             kg: parseLoad(set.kg, unit, set.savedKg) ?? 0,
-            reps: Math.round(num(set.reps) || 1),
+            reps: Math.round(num(set.reps) || 0),
           };
           if (set.failed) row.failed = true;
           return row;
@@ -797,12 +808,12 @@ export function WorkoutForm({
         if (same) return [{ name, kg: detail[0].kg, sets: detail.length, reps: detail[0].reps }];
         return [{ name, ...liftTop(detail), detail }];
       }
-      if (entry.kg.trim() === "") return [];
+      // A blank weight is unweighted, and blank sets or reps are none recorded.
       return [{
         name,
         kg: parseLoad(entry.kg, unit, entry.savedKg) ?? 0,
-        sets: Math.round(num(entry.sets) || 1),
-        reps: Math.round(num(entry.reps) || 1),
+        sets: Math.round(num(entry.sets) || 0),
+        reps: Math.round(num(entry.reps) || 0),
       }];
     });
   }
@@ -854,6 +865,8 @@ export function WorkoutForm({
     if (segments.reduce((n, s) => n + s.seconds, 0) > total + 1)
       return `${who}: the station times add up to more than the elapsed time.`;
 
+    // A blank box reads as 0: no weight is unweighted, and no sets or reps
+    // are none recorded. Only what is typed and does not read is refused.
     for (const lift of lifts) {
       const entry = lift[side];
       const liftName = exerciseName(lift.name, lift.custom);
@@ -863,36 +876,22 @@ export function WorkoutForm({
         if (liftName === "") return `${who}: choose or name the exercise.`;
         for (const [index, set] of entry.detail.entries()) {
           const where = `${who} · ${liftName}, set ${index + 1}`;
-          if (set.kg.trim() === "" && set.reps.trim() === "")
-            return `${where}: add the load in ${unit}, or remove this set.`;
-          if (parseLoad(set.kg, unit, set.savedKg) === null)
-            return `${where}: add the load in ${unit}.`;
-          if (set.reps.trim() !== "" && !(num(set.reps) >= 1))
-            return `${where}: reps must be at least 1.`;
-          // An empty rep box is asked for rather than saved as one rep, the
-          // same as the one-line boxes.
-          if (set.reps.trim() === "")
-            return draftNotice
-              ? `${where}: fill in the missing reps, or remove this set before saving.`
-              : `${where}: add the reps.`;
+          if (set.kg.trim() !== "" && parseLoad(set.kg, unit, set.savedKg) === null)
+            return `${where}: write the load in ${unit}, or leave it empty.`;
+          if (!(num(set.reps) >= 0))
+            return `${where}: write the reps as a number, or leave them empty.`;
         }
         continue;
       }
-      if (draftNotice && liftName !== "" &&
-        [entry.kg, entry.sets, entry.reps].some(value => value.trim() !== "") &&
-        [entry.kg, entry.sets, entry.reps].some(value => value.trim() === ""))
-        return `${who} · ${liftName}: fill in the missing weight, sets and reps, or remove this lift before saving.`;
-      if (entry.kg.trim() === "") continue;
+      const typed = [entry.kg, entry.sets, entry.reps].some((value) => value.trim() !== "");
+      if (!typed || (liftName !== "" && !liftLogged(lift, side))) continue;
       if (liftName === "") return `${who}: choose or name the exercise.`;
-      if (parseLoad(entry.kg, unit, entry.savedKg) === null)
-        return `${who} · ${liftName}: add the load in ${unit}.`;
-      // An empty box used to save as one set of one, behind a grey 3 and 5.
-      if (entry.sets.trim() === "" || entry.reps.trim() === "")
-        return `${who} · ${liftName}: add the sets and reps.`;
-      if (entry.sets.trim() !== "" && !(num(entry.sets) >= 1))
-        return `${who} · ${liftName}: sets must be at least 1.`;
-      if (entry.reps.trim() !== "" && !(num(entry.reps) >= 1))
-        return `${who} · ${liftName}: reps must be at least 1.`;
+      if (entry.kg.trim() !== "" && parseLoad(entry.kg, unit, entry.savedKg) === null)
+        return `${who} · ${liftName}: write the load in ${unit}, or leave it empty.`;
+      if (!(num(entry.sets) >= 0))
+        return `${who} · ${liftName}: write the sets as a number, or leave them empty.`;
+      if (!(num(entry.reps) >= 0))
+        return `${who} · ${liftName}: write the reps as a number, or leave them empty.`;
     }
     return "";
   }

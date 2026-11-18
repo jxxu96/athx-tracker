@@ -781,10 +781,34 @@ export function formatWeight(kg: number, unit: WeightUnit) {
   return `${displayLoad(kg, unit)} ${unit}`;
 }
 
-/** One set on the log line. A failed final rep stays on that set. */
+/**
+ * One set on the log line. A failed final rep stays on that set. A box left
+ * blank saved as 0, so an unweighted set is its reps, "10 reps", and one with
+ * no reps recorded is its weight.
+ */
 function formatSet(set: LiftSet, unit: WeightUnit) {
-  const text = `${formatWeight(set.kg, unit)}×${set.reps}`;
+  const text = set.kg > 0 && set.reps > 0
+    ? `${formatWeight(set.kg, unit)}×${set.reps}`
+    : set.kg > 0
+      ? formatWeight(set.kg, unit)
+      : `${set.reps} ${set.reps === 1 ? "rep" : "reps"}`;
   return set.failed ? `${text} (last rep failed)` : text;
+}
+
+/**
+ * Sets and reps as the one line says them: "3×5", or what was recorded of
+ * them, since a box left blank saved as 0: "3 sets", "12 reps", or nothing.
+ */
+function formatCount(sets: number, reps: number) {
+  if (sets > 0 && reps > 0) return `${sets}×${reps}`;
+  if (sets > 0) return `${sets} ${sets === 1 ? "set" : "sets"}`;
+  if (reps > 0) return `${reps} ${reps === 1 ? "rep" : "reps"}`;
+  return "";
+}
+
+/** A load and a count on one line, leaving out a weight of 0, which is unweighted. */
+function joinLoad(kg: number, count: string, unit: WeightUnit) {
+  return [kg > 0 ? formatWeight(kg, unit) : "", count].filter(Boolean).join(" ");
 }
 
 type LiftLine = { name: string; kg: number; sets?: number; reps: number; detail?: readonly LiftSet[] };
@@ -802,15 +826,15 @@ export function formatLiftSets(lift: Omit<LiftLine, "name">, unit: WeightUnit) {
       set.kg === first.kg && set.reps === first.reps && Boolean(set.failed) === Boolean(first.failed));
     if (!alike) return detail.map((set) => formatSet(set, unit)).join(", ");
     if (first.failed) {
-      return `${formatWeight(lift.kg, unit)} ${lift.sets ?? detail.length}×${lift.reps} (last rep failed)`;
+      return `${joinLoad(lift.kg, formatCount(lift.sets ?? detail.length, lift.reps), unit)} (last rep failed)`.trim();
     }
   }
-  return `${formatWeight(lift.kg, unit)} ${lift.sets ?? 1}×${lift.reps}`;
+  return joinLoad(lift.kg, formatCount(lift.sets ?? 1, lift.reps), unit);
 }
 
 /** The log's one line for a lift: its name, then its sets. */
 export function formatLift(lift: LiftLine, unit: WeightUnit) {
-  return `${lift.name} ${formatLiftSets(lift, unit)}`;
+  return [lift.name, formatLiftSets(lift, unit)].filter(Boolean).join(" ");
 }
 
 /** A stored load as the number a weight box shows, to a tenth. */

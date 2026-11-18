@@ -27,6 +27,17 @@ test("the same weight for more reps beats it, and less weight for more reps does
   assert.deepEqual(newBests(workout({ id: "c", lifts: [lift("Back squat", 95, 1, 8)] }), before), []);
 });
 
+test("a set with no reps recorded is no best, however heavy", () => {
+  const before = [workout({ id: "a", lifts: [lift("Deadlift", 140, 1, 3)] })];
+  assert.deepEqual(newBests(workout({ id: "b", lifts: [lift("Deadlift", 180, 3, 0)] }), before), []);
+  // A lift with only those holds no best, so the next is a first log, not a best.
+  const blank = [workout({ id: "z", lifts: [lift("Deadlift", 120, 3, 0)] })];
+  assert.deepEqual(newBests(workout({ id: "y", lifts: [lift("Deadlift", 100, 1, 5)] }), blank), []);
+  // An unweighted lift is still a best by its reps.
+  const pulls = [workout({ id: "p", lifts: [lift("Pull-up", 0, 3, 8)] })];
+  assert.equal(newBests(workout({ id: "q", lifts: [lift("Pull-up", 0, 3, 10)] }), pulls).length, 1);
+});
+
 test("a first log, a tie, another athlete's lift and the session itself beat nothing", () => {
   assert.deepEqual(newBests(workout({ lifts: [lift("Deadlift", 140, 1, 3)] }), []), []);
   const before = [workout({ id: "a", lifts: [lift("Deadlift", 140, 1, 3)] })];

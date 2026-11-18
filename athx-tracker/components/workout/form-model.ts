@@ -7,6 +7,7 @@ import { dayToDate } from "@/lib/client";
 import {
   METCON,
   displayDistance,
+  displayLoad,
   fromMetres,
   parseTime,
   standardLoad,
@@ -197,6 +198,9 @@ export const entriesForBoth = (stations: Station[], unit: WeightUnit) => ({
 });
 
 export const num = (value: string) => (value.trim() === "" ? 0 : Number(value));
+/** A saved lift's number as its box shows it: a 0 was a box left blank, so it opens blank. */
+export const boxOf = (value: number) => (value > 0 ? String(value) : "");
+export const loadBoxOf = (kg: number, unit: WeightUnit) => (kg > 0 ? displayLoad(kg, unit) : "");
 /** How many set rows Advanced opens from the simple sets box. One, and never past the cap. */
 export const seedCount = (sets: string) => {
   const count = Math.round(num(sets));

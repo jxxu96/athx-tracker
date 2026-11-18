@@ -64,15 +64,17 @@ export const workoutSchema = z.object({
     .refine(s => s.completed > 0 || s.seconds === 0, "A station time needs completed work with it")).max(30),
   fatigue: finite.max(50), transition: finite.max(3600), goal: finite.positive().max(86400).nullable(),
   context: z.enum(["solo", "pairs"]),
+  // A box left blank saves as 0: no weight is unweighted, and no sets or reps
+  // are none recorded.
   lifts: z.array(z.object({
     name: z.string().min(1).max(80),
     kg: finite.max(1000),
-    sets: z.number().int().min(1).max(50),
-    reps: z.number().int().min(1).max(100),
+    sets: z.number().int().min(0).max(50),
+    reps: z.number().int().min(0).max(100),
     // Omitted when every set was the same, so older sessions still parse.
     detail: z.array(z.object({
       kg: finite.max(1000),
-      reps: z.number().int().min(1).max(100),
+      reps: z.number().int().min(0).max(100),
       /** The final rep of this set was failed. Omitted when it was completed. */
       failed: z.literal(true).optional(),
     }).strict()).min(1).max(50).optional(),
