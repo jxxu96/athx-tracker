@@ -12,6 +12,7 @@ import {
 import {
   liftProgress,
   liftTotal,
+  liftVolume,
   progressLift,
   strengthProgress,
   leaderLanes,
@@ -422,4 +423,12 @@ test("weekly volume is load times reps for every set, by Monday week, the curren
   assert.equal(rows.find((item) => item.key === "backSquat")!.weeks[7], 400);
   // Without a day to count from there are no weeks to show.
   assert.deepEqual(liftProgress(records, "gators", none)[0].weeks, []);
+});
+
+test("a lift's volume is load times reps across its sets, and sets left blank moved nothing on record", () => {
+  assert.equal(liftVolume({ kg: 100, sets: 3, reps: 5 }), 1500);
+  assert.equal(liftVolume({ kg: 100, sets: 0, reps: 5 }), 0);
+  assert.equal(liftVolume({ kg: 100, sets: 3, reps: 0 }), 0);
+  assert.equal(liftVolume({ kg: 0, sets: 3, reps: 8 }), 0);
+  assert.equal(liftVolume({ kg: 100, sets: 1, reps: 5, detail: [{ kg: 60, reps: 5 }, { kg: 100, reps: 5 }] }), 800);
 });

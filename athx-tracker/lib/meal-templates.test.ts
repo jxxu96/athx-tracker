@@ -8,6 +8,7 @@ import {
   itemsFromText,
   mealOffers,
   parseMealItems,
+  templateAdditions,
   templateDescription,
   upsertTemplate,
 } from "./meal-templates.ts";
@@ -347,4 +348,26 @@ test("a food estimated on its own keeps the estimate as its figures at that port
   });
   // A counted food keeps a fixed portion.
   assert.equal(itemWithEstimate({ name: "1 banana", grams: 0 }, macros).nutrition?.grams, 0);
+});
+
+test("only a food the template does not have counts as added to it", () => {
+  const nutrition = { grams: 0, macros, count: 2 };
+  const saved: MealTemplateItem[] = [
+    { name: "whey concentrate", grams: 34 },
+    { name: "2% milk", grams: 250 },
+    { name: "2 eggs", grams: 0, nutrition },
+  ];
+  // Slid, counted up or removed: nothing new.
+  assert.deepEqual(templateAdditions(saved, [
+    { name: "whey concentrate", grams: 20 },
+    { name: "3 eggs", grams: 0, nutrition },
+  ]), []);
+  // Another milk is another food, even with the same words around it.
+  assert.deepEqual(templateAdditions(saved, [
+    ...saved,
+    { name: "0% milk", grams: 0 },
+    { name: "1 banana", grams: 0 },
+  ]).map((item) => item.name), ["0% milk", "1 banana"]);
+  // Written another way, it is the same food.
+  assert.deepEqual(templateAdditions(saved, [{ name: "Whey Concentrate", grams: 34 }]), []);
 });

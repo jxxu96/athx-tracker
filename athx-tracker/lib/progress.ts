@@ -111,8 +111,13 @@ function setsOf(lift: Pick<Lift, "kg" | "sets" | "reps" | "detail">) {
     : Array.from({ length: Math.max(1, Math.floor(lift.sets ?? 1)) }, () => ({ kg: lift.kg, reps: lift.reps }));
 }
 
-/** Load times reps across every set: what the lift moved. */
+/**
+ * Load times reps across every set: what the lift moved. Sets left blank
+ * saved as 0, none recorded, so they moved nothing on record, as the weekly
+ * review and the effort count have it.
+ */
 export function liftVolume(lift: Pick<Lift, "kg" | "sets" | "reps" | "detail">) {
+  if (!lift.detail?.length && lift.sets === 0) return 0;
   return setsOf(lift).reduce((sum, set) => sum + set.kg * Math.max(0, Math.floor(set.reps)), 0);
 }
 
