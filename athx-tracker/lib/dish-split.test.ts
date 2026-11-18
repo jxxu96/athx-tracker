@@ -32,6 +32,8 @@ const cases: [string, string[]][] = [
   ["burger with lettuce and tomato, fries and a coke", ["burger with lettuce and tomato", "fries and a coke"]],
   ["sushi platter: 2 rolls and 6 nigiri", ["sushi platter: 2 rolls and 6 nigiri"]],
   ["1/2 pizza, salad", ["1/2 pizza", "salad"]],
+  ["steak, .5 lb", ["steak, .5 lb"]],
+  ["rice\n.5 cup", ["rice, .5 cup"]],
   ["steak w/ fries", ["steak w/ fries"]],
   // A size, a weight or a change belongs to the dish before it.
   ["Margherita pizza, 12 inch", ["Margherita pizza, 12 inch"]],
@@ -105,6 +107,9 @@ test("a part of its own that is only a share is read like one in brackets", () =
     ["5 shengjianbao, 3 pc g", { name: "5 shengjianbao", share: { gators: 60 }, quantity: "5 pc", taken: ["3 pc g"] }],
     // Only the part on its own is the share, not the same words inside another.
     ["90% gluten free bread, 90% g", { name: "90% gluten free bread", share: { gators: 90 }, taken: ["90% g"] }],
+    // A point before a digit is a decimal, not a stray mark: half a bun of ten is 5%.
+    ["10 buns, .5 pc g", { name: "10 buns", share: { gators: 5 }, quantity: "10 pc", taken: [".5 pc g"] }],
+    ["pizza, .5% g", { name: "pizza", share: { gators: 0.5 }, taken: [".5% g"] }],
     // In brackets and on its own, the later says the last word.
     ["pizza (70% g), 60% g", { name: "pizza", share: { gators: 60 }, taken: ["(70% g)", "60% g"] }],
   ];

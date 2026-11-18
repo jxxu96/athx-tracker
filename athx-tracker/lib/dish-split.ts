@@ -24,7 +24,7 @@ import type { Eater } from "./meal-dishes.ts";
 /** A part that only says more about the dish before it: its size, its weight, or how it came. */
 const DETAIL = new RegExp(
   [
-    "^\\d+(?:\\.\\d+)?\\s*(?:-?\\s*inch(?:es)?|in|\"|cm|mm|g|gr|grams?|kg|oz|ounces?|ml|cl|l|liters?|litres?|lbs?|pounds?|cups?|tbsp|tsp|pints?|fl ?oz|servings?|portions?|orders?|helpings?|pcs?|pieces?)(?=\\s|$)(?:\\s+(?:cooked|raw|dry|uncooked|each|total|wide|across|pie))?$",
+    "^(?:\\d+(?:\\.\\d+)?|\\.\\d+)\\s*(?:-?\\s*inch(?:es)?|in|\"|cm|mm|g|gr|grams?|kg|oz|ounces?|ml|cl|l|liters?|litres?|lbs?|pounds?|cups?|tbsp|tsp|pints?|fl ?oz|servings?|portions?|orders?|helpings?|pcs?|pieces?)(?=\\s|$)(?:\\s+(?:cooked|raw|dry|uncooked|each|total|wide|across|pie))?$",
     "^(?:small|medium|large|regular|x?xl|extra large|grande|venti|tall|short|kids?|personal|single|double|triple)(?:\\s+(?:size|order|portion|serving|one))?$",
     "^(?:grilled|fried|deep fried|baked|steamed|raw|cooked|roasted|toasted|iced|hot|cold|warm|spicy|mild|well done|medium rare|rare|scrambled|poached|sunny side up|over easy|plain|unsweetened|sweetened)$",
     "^(?:no|without|extra|light|easy on|add(?:ed)?|with|w/|hold the|sub(?:stitute)?)(?=\\s|$)",
@@ -192,7 +192,7 @@ function blanked(text: string) {
  */
 const PART_BETWEEN = /\r?\n|\s*[;；|｜,，、]\s*|\s*(?<!\d)[.。．](?!\d)\s*/gu;
 /** What a part can start with that is not part of it: a list mark, an "and", a stray mark. */
-const PART_LEAD = /^\s*(?:(?:[-*•·▪◦‣]|\d+[.)])\s+)?(?:(?:and|plus|&)\s+)*[\s.,;:+&/-]*/i;
+const PART_LEAD = /^\s*(?:(?:[-*•·▪◦‣]|\d+[.)])\s+)?(?:(?:and|plus|&)\s+)*(?:[\s,;:+&/-]|\.(?!\d))*/i;
 
 /**
  * Somewhere a share could be written: a pair of brackets, or a part that is
@@ -216,6 +216,9 @@ function spotsOf(text: string): Spot[] {
   }
   return spots.sort((a, b) => a.at - b.at);
 }
+
+/** Marks left at either end of a dish or its name. A point before a digit starts a number, ".5 lb", and stays. */
+const STRAY_MARKS = /^(?:[\s,;:+&/-]|\.(?!\d))+|[\s.,;:+&/-]+$/g;
 
 /** Taken out where a share was, until the line it was on is tidied. */
 const GAP = "\u0001";
@@ -316,7 +319,7 @@ export function readDishShare(text: string, counted?: number): DishShare {
   }
   if (!taken.length) return { name: text, share: null, taken: [] };
   return {
-    name: cutOut(text, stepsOf(text, (whole) => taken.includes(whole))).replace(/^[\s.,;:+&/-]+|[\s.,;:+&/-]+$/g, ""),
+    name: cutOut(text, stepsOf(text, (whole) => taken.includes(whole))).replace(STRAY_MARKS, ""),
     share,
     ...(quantity ? { quantity } : {}),
     taken,
@@ -344,7 +347,7 @@ export function splitDishText(text: string, limit = 20, splitWords = false): str
     const dish = show(raw, kept)
       .trim()
       .replace(/^(?:(?:and|plus|&)\s+)+/i, "")
-      .replace(/^[\s.,;:+&/-]+|[\s.,;:+&/-]+$/g, "");
+      .replace(STRAY_MARKS, "");
     if (!dish) return;
     // "pizza, 12 inch" is one dish, said in two goes, and so is "pizza, (60% g)".
     const bare = unshared(dish);
