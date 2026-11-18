@@ -83,7 +83,10 @@
   asked for, including when one comes back as two or one of them fails. A
   dish can say how it was shared in brackets after it: "sandwich
   (60% gators 40% hippos)", "fries (80% h 20% g)", "coke (75% g)", "sprouts
-  (50% each)", or in pieces, "8pc hongshaorou (5.5pc gators)". Either name,
+  (50% each)", or in pieces, "8pc hongshaorou (5.5pc gators)". A share can
+  also be a part of its own after a comma, or a line of its own under the
+  dish, without brackets: "1 custard cream donut, 90% g". Glued to the dish,
+  "pasta 60% g", it stays part of the name. Either name,
   singular or plural, or its first letter, before or after the number; the %
   or the "pc" is needed, since "60 g" is grams. Pieces are a part of the
   dish's count, the number it starts with ("8pc", "5 shengjianbao", but not

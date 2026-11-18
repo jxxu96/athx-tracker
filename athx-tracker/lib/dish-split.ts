@@ -14,14 +14,17 @@ import type { Eater } from "./meal-dishes.ts";
  *
  * A dish can say in brackets how it was shared: "sandwich (60% gators 40%
  * hippos)", "fries (80% h 20% g)", "coke (75% g)", "sprouts (50% each)", or
- * in pieces, "8pc hongshaorou (5.5pc gators)". That is not food, so it is
- * taken off the dish before anything estimates it, and becomes its share.
+ * in pieces, "8pc hongshaorou (5.5pc gators)". So can a part of its own
+ * after a comma, or on its own line, that is only a share: "donut, 90% g".
+ * Glued to the dish, "pasta 60% g", it stays part of the name. A share is
+ * not food, so it is taken off the dish before anything estimates it, and
+ * becomes its share.
  */
 
 /** A part that only says more about the dish before it: its size, its weight, or how it came. */
 const DETAIL = new RegExp(
   [
-    "^\\d+(?:\\.\\d+)?\\s*(?:-?\\s*inch(?:es)?|in|\"|cm|mm|g|gr|grams?|kg|oz|ounces?|ml|cl|l|liters?|litres?|lbs?|pounds?|cups?|tbsp|tsp|pints?|fl ?oz|servings?|portions?|orders?|helpings?|pcs?|pieces?)(?=\\s|$)(?:\\s+(?:cooked|raw|dry|uncooked|each|total|wide|across|pie))?$",
+    "^(?:\\d+(?:\\.\\d+)?|\\.\\d+)\\s*(?:-?\\s*inch(?:es)?|in|\"|cm|mm|g|gr|grams?|kg|oz|ounces?|ml|cl|l|liters?|litres?|lbs?|pounds?|cups?|tbsp|tsp|pints?|fl ?oz|servings?|portions?|orders?|helpings?|pcs?|pieces?)(?=\\s|$)(?:\\s+(?:cooked|raw|dry|uncooked|each|total|wide|across|pie))?$",
     "^(?:small|medium|large|regular|x?xl|extra large|grande|venti|tall|short|kids?|personal|single|double|triple)(?:\\s+(?:size|order|portion|serving|one))?$",
     "^(?:grilled|fried|deep fried|baked|steamed|raw|cooked|roasted|toasted|iced|hot|cold|warm|spicy|mild|well done|medium rare|rare|scrambled|poached|sunny side up|over easy|plain|unsweetened|sweetened)$",
     "^(?:no|without|extra|light|easy on|add(?:ed)?|with|w/|hold the|sub(?:stitute)?)(?=\\s|$)",
@@ -169,43 +172,97 @@ function shapeOf(inside: string): Shape | null {
 
 const insideOf = (match: RegExpMatchArray) => match[1] ?? match[2] ?? match[3] ?? "";
 
+/** The text with what is in brackets blanked out, at the same length, so nothing in them cuts it. */
+function blanked(text: string) {
+  let depth = 0;
+  let out = "";
+  for (let at = 0; at < text.length; at += 1) {
+    const char = text[at];
+    if ("([{".includes(char)) depth += 1;
+    out += depth > 0 ? "\u0002" : char;
+    if (")]}".includes(char) && depth > 0) depth -= 1;
+  }
+  return out;
+}
+
+/**
+ * Where one part of a text ends and the next begins: a line break, or a mark
+ * that cuts a line into dishes. An "and" after the mark is left on the part,
+ * so taking the part takes it too.
+ */
+const PART_BETWEEN = /\r?\n|\s*[;；|｜,，、]\s*|\s*(?<!\d)[.。．](?!\d)\s*/gu;
+/** What a part can start with that is not part of it: a list mark, an "and", a stray mark. */
+const PART_LEAD = /^\s*(?:(?:[-*•·▪◦‣]|\d+[.)])\s+)?(?:(?:and|plus|&)\s+)*(?:[\s,;:+&/-]|\.(?!\d))*/i;
+
+/**
+ * Somewhere a share could be written: a pair of brackets, or a part that is
+ * only a share. Taking it out starts at `from`: for a part, where the part
+ * starts, with its list mark or "and".
+ */
+type Spot = { whole: string; inside: string; bare: boolean; at: number; from: number };
+
+/** Every pair of brackets in a text, and every part of it that is only a share, in the order written. */
+function spotsOf(text: string): Spot[] {
+  const spots: Spot[] = [...text.matchAll(BRACKETS)].map((match) => ({
+    whole: match[0], inside: insideOf(match), bare: false, at: match.index, from: match.index,
+  }));
+  let start = 0;
+  for (const cut of [...blanked(text).matchAll(PART_BETWEEN), undefined]) {
+    const part = text.slice(start, cut?.index ?? text.length);
+    const lead = PART_LEAD.exec(part)?.[0].length ?? 0;
+    const whole = part.slice(lead).replace(/[\s.,;:+&/-]+$/, "");
+    if (whole && shapeOf(whole)) spots.push({ whole, inside: whole, bare: true, at: start + lead, from: start });
+    if (cut) start = cut.index + cut[0].length;
+  }
+  return spots.sort((a, b) => a.at - b.at);
+}
+
+/** Marks left at either end of a dish or its name. A point before a digit starts a number, ".5 lb", and stays. */
+const STRAY_MARKS = /^(?:[\s,;:+&/-]|\.(?!\d))+|[\s.,;:+&/-]+$/g;
+
 /** Taken out where a share was, until the line it was on is tidied. */
 const GAP = "\u0001";
 
-/** Every pair of brackets in a text, in order, and whether to take each out. */
-type Step = { whole: string; take: boolean };
+/** Every place a share could be written in a text, in order, and whether to take each out. */
+type Step = Spot & { take: boolean };
 const stepsOf = (text: string, take: (whole: string) => boolean): Step[] =>
-  [...text.matchAll(BRACKETS)].map(([whole]) => ({ whole, take: take(whole) }));
+  spotsOf(text).map((spot) => ({ ...spot, take: take(spot.whole) }));
 
 /**
- * The text with some of its brackets taken out, and the lines they were on
- * tidied: no double spaces, and no comma left dangling or doubled. Every pair
- * is passed over in order, the ones kept as well, so a share taken out of one
- * dish is never mistaken for the same words kept in another.
+ * The text with some of its shares taken out, and the lines they were on
+ * tidied: no double spaces, and no comma left dangling or doubled. Every
+ * place is passed over in order, the ones kept as well, so a share taken out
+ * of one dish is never mistaken for the same words kept in another. A share
+ * without brackets is only ever found as a part of its own, never inside
+ * other words: "90% gluten free bread, 90% g" loses the second.
  */
 function cutOut(text: string, steps: readonly Step[]) {
   if (!steps.some((step) => step.take)) return text;
+  const parts = spotsOf(text).filter((spot) => spot.bare);
   let out = "";
-  let rest = text;
-  for (const { whole, take } of steps) {
-    const at = rest.indexOf(whole);
-    if (at < 0) continue;
-    out += rest.slice(0, at) + (take ? GAP : whole);
-    rest = rest.slice(at + whole.length);
+  let done = 0;
+  for (const { whole, bare, take } of steps) {
+    const index = text.indexOf(whole, done);
+    const spot = bare
+      ? parts.find((part) => part.from >= done && part.whole === whole)
+      : index < 0 ? undefined : { at: index, from: index };
+    if (!spot) continue;
+    out += take ? text.slice(done, spot.from) + GAP : text.slice(done, spot.at) + whole;
+    done = spot.at + whole.length;
   }
-  return (out + rest).replace(/[^\r\n]*\u0001[^\r\n]*/g, (line) =>
+  return (out + text.slice(done)).replace(/[^\r\n]*\u0001[^\r\n]*/g, (line) =>
     line
       .replaceAll(GAP, "")
       .replace(/[ \t]{2,}/g, " ")
-      .replace(/[ \t]+([,;])/g, "$1")
-      .replace(/([,;])(?:[ \t]*[,;])+/g, "$1")
-      .replace(/[\s,;]+$/, "")
+      .replace(/[ \t]+([,;，、；])/gu, "$1")
+      .replace(/([,;，、；])(?:[ \t]*[,;，、；])+/gu, "$1")
+      .replace(/[\s,;，、；]+$/u, "")
       .replace(/^[ \t]+/, ""));
 }
 
-/** A dish without anything in brackets that is shaped like a share, worked out or not. */
+/** A dish without anything shaped like a share, worked out or not: a part that is only a share, or one in brackets. */
 const unshared = (dish: string) =>
-  dish.replace(BRACKETS, (whole, ...inside: (string | undefined)[]) =>
+  shapeOf(dish) ? "" : dish.replace(BRACKETS, (whole, ...inside: (string | undefined)[]) =>
     shapeOf(inside[0] ?? inside[1] ?? inside[2] ?? "") ? "" : whole).trim();
 
 /** Words after a number that make it a measure, not a count: "250g", "12 inch", "2 l". */
@@ -226,7 +283,7 @@ export type DishShare = {
   share: WrittenShare | null;
   /** "8 pc", when a share was written in pieces and the dish had no count of its own. */
   quantity?: string;
-  /** The brackets the share came from, as written. */
+  /** Where the share came from, as written: its brackets, or its part. */
   taken: string[];
 };
 
@@ -235,16 +292,16 @@ export type DishShare = {
  * pieces is a part of the dish's count, "8pc hongshaorou (5.5pc gators)" or
  * "5 shengjianbao (3 pc g)", or of the count in its quantity box when it has
  * one; with neither, of the pieces both of you were written down for. Two
- * pairs of brackets with shares in them make one share, the later saying the
- * last word. A dish with no share, or none that can be worked out, keeps
- * every word.
+ * shares written with one dish, in brackets or as parts of their own, make
+ * one share, the later saying the last word. A dish with no share, or none
+ * that can be worked out, keeps every word.
  */
 export function readDishShare(text: string, counted?: number): DishShare {
-  const found = [...text.matchAll(BRACKETS)]
-    .map((match) => ({ whole: match[0], shape: shapeOf(insideOf(match)) }))
-    .filter((bracket): bracket is { whole: string; shape: Shape } => bracket.shape !== null);
+  const found = spotsOf(text)
+    .map(({ whole, inside }) => ({ whole, shape: shapeOf(inside) }))
+    .filter((spot): spot is { whole: string; shape: Shape } => spot.shape !== null);
   if (!found.length) return { name: text, share: null, taken: [] };
-  const own = countOf(cutOut(text, stepsOf(text, (whole) => found.some((bracket) => bracket.whole === whole))));
+  const own = countOf(cutOut(text, stepsOf(text, (whole) => found.some((spot) => spot.whole === whole))));
   let share: WrittenShare = {};
   let quantity: string | undefined;
   const taken: string[] = [];
@@ -262,7 +319,7 @@ export function readDishShare(text: string, counted?: number): DishShare {
   }
   if (!taken.length) return { name: text, share: null, taken: [] };
   return {
-    name: cutOut(text, stepsOf(text, (whole) => taken.includes(whole))).replace(/^[\s.,;:+&/-]+|[\s.,;:+&/-]+$/g, ""),
+    name: cutOut(text, stepsOf(text, (whole) => taken.includes(whole))).replace(STRAY_MARKS, ""),
     share,
     ...(quantity ? { quantity } : {}),
     taken,
@@ -272,7 +329,7 @@ export function readDishShare(text: string, counted?: number): DishShare {
 /** The description with every share written in it taken out: what an estimate is given to read. */
 export function withoutShares(text: string) {
   return cutOut(text, splitDishText(text, Number.MAX_SAFE_INTEGER).flatMap((dish) => {
-    // The same words in brackets read the same way within one dish, so what was taken is known by its words.
+    // The same share reads the same way within one dish, so what was taken is known by its words.
     const { taken } = readDishShare(dish);
     return stepsOf(dish, (whole) => taken.includes(whole));
   }));
@@ -290,7 +347,7 @@ export function splitDishText(text: string, limit = 20, splitWords = false): str
     const dish = show(raw, kept)
       .trim()
       .replace(/^(?:(?:and|plus|&)\s+)+/i, "")
-      .replace(/^[\s.,;:+&/-]+|[\s.,;:+&/-]+$/g, "");
+      .replace(STRAY_MARKS, "");
     if (!dish) return;
     // "pizza, 12 inch" is one dish, said in two goes, and so is "pizza, (60% g)".
     const bare = unshared(dish);
