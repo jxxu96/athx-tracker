@@ -7,7 +7,7 @@ import {
   MEAL_TEMPLATE_NAME_LIMIT,
 } from "./domain.ts";
 import { commonMeals, mealKey, type CommonMeal } from "./common-meals.ts";
-import { captureIngredientNutrition, loggedIngredients, normalizeItems, servedItems } from "./meal-ingredients.ts";
+import { captureIngredientNutrition, countOf, loggedIngredients, normalizeItems, servedItems } from "./meal-ingredients.ts";
 
 const LEADING_GRAMS = /^(\d+(?:\.\d+)?)\s*(?:g|grams)\b\s*(?:of\s+)?(.+)$/i;
 const TRAILING_GRAMS = /^(.+?)\s+(\d+(?:\.\d+)?)\s*(?:g|grams)\b\.?$/i;
@@ -169,6 +169,26 @@ export function upsertTemplate(list: MealTemplate[], template: MealTemplate): Te
   const id = list[index].id;
   next[index] = { ...template, id };
   return { ok: true, templates: next, id };
+}
+
+/** The food an item is, whatever its count: "2 eggs" and "3 eggs" are both eggs. */
+function foodKey(item: MealTemplateItem) {
+  return mealKey(countOf(item.name).base);
+}
+
+/**
+ * Items on the meal that its template does not have yet, so updating the
+ * template would keep them. A changed amount or a removed item is not one.
+ */
+export function templateAdditions(
+  saved: readonly MealTemplateItem[],
+  current: readonly MealTemplateItem[],
+): MealTemplateItem[] {
+  const known = new Set(saved.map(foodKey));
+  return current.filter((item) => {
+    const key = foodKey(item);
+    return key !== "" && !known.has(key);
+  });
 }
 
 export function removeTemplate(list: MealTemplate[], id: string) {

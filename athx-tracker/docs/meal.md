@@ -27,7 +27,9 @@
   the logged meal until it is slid up again. Any item can be removed, but not
   the last. An ingredient added there is estimated on its own, once, so the
   others keep their figures. **Update this template** keeps what was added,
-  removed or slid. A fresh **Estimate macros** prices only what is above zero
+  removed or slid. A meal filled from a template that gains a food the template
+  does not have shows **Update template defaults** above **Save meal**, which
+  does the same (`templateAdditions` in `lib/meal-templates.ts`). A fresh **Estimate macros** prices only what is above zero
   and leaves the options as they were. In **Manage templates**, every item
   slides the same way, and **Estimate the new item** prices just the items
   that have no figures yet (`servedItems`, `withAmount` and `itemWithEstimate`

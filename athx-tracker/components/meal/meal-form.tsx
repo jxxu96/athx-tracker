@@ -45,6 +45,7 @@ import { MealTemplateList } from "@/components/meal/meal-templates";
 import { DishShares, MealDishes } from "@/components/meal/meal-dishes";
 import { MealItems } from "@/components/meal/meal-items";
 import { IngredientWeights } from "@/components/meal/meal-ingredients";
+import { TemplateSuggestion } from "@/components/meal/template-suggestion";
 import { EstimatorWeights, type Answer, type AnswerFigure } from "@/components/meal/estimator-weights";
 import { mealKey } from "@/lib/common-meals";
 import {
@@ -61,6 +62,7 @@ import {
 import {
   buildTemplate,
   itemsFromText,
+  templateAdditions,
   templateDescription,
   upsertTemplate,
   type MealOffer,
@@ -1244,6 +1246,13 @@ export function MealForm({
   // throw away the figures already on the form.
   const canQueue = queueReady && conversation.length === 0 && !rejected && !splitting && !expanded;
   const seeds = itemSeeds();
+  // Filled from a template and given foods it does not have: offer to keep
+  // them in it, at the bottom, where the meal is about to be saved. Only for
+  // the one template "Update this template" would write.
+  const keptTemplate = kept && who === kept.athlete && !splitting && !expanded
+    ? templates?.[kept.athlete]?.find((template) => template.id === kept.id)
+    : undefined;
+  const additions = keptTemplate ? templateAdditions(keptTemplate.items, ingredients) : [];
 
   function closeRefine() {
     setRefineOpen(false);
@@ -1729,6 +1738,16 @@ export function MealForm({
         ) : null}
         </>
         )}
+
+        {kept && keptTemplate && additions.length > 0 ? (
+          <TemplateSuggestion
+            athlete={kept.athlete}
+            templateName={keptTemplate.name}
+            additions={additions}
+            saving={templateSaving}
+            onUpdate={() => void saveAsTemplate()}
+          />
+        ) : null}
 
         {error ? (
           <p role="alert" className="text-sm text-destructive">
