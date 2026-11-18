@@ -1,4 +1,4 @@
-// Draws the app icons from the runners in components/creatures.tsx, the hippo
+// Draws the app icons from the runners in components/progress/creatures.tsx, the hippo
 // and the gator from hippo-city's game/sprites.py, each in its first stride
 // frame, on the app's dark background.
 // Run from athx-tracker/: node scripts/make-icons.mjs

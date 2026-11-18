@@ -35,8 +35,7 @@ With **GitOps updates** on and Polling set, every push then deploys itself.
 Set `APP_PASSPHRASE` in the stack environment before deploying — without it nobody can
 sign in, and the login page will say so.
 
-The image builds on the server from `athx-tracker/`, and the journal lives in a named
-volume at `/data`.
+The journal lives in a named volume at `/data`.
 
 ### Reaching it
 
