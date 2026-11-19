@@ -258,6 +258,10 @@ per call.
 - A provider that runs out of time says what it last printed, such as
   `timed out after 130 s, last said: ...`, so a run still searching reads
   differently from one held up by a rate limit or a sign-in.
+- A provider that exits with an error says why. For Claude that is read from
+  its JSON envelope (`result`, else `errors`, plus `api_error_status`), such as
+  `exit 1 OAuth token revoked · Please run /login (HTTP 401)`, because the reason
+  comes after about 2 KB of timings and token counts.
 - When the answer is not in a `structuredOutput` or `structured_output` field,
   it is read from the envelope's final text, `result` or `text`, after
   whatever was said on the way to it.
