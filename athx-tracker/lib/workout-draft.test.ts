@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { workoutDraftSchema, type WorkoutDraft } from "./workout-draft.ts";
+import { bodyweightHistory } from "./bodyweight.ts";
+import type { Bodyweight } from "./domain.ts";
+import { draftBodyweights, workoutDraftSchema, type WorkoutDraft } from "./workout-draft.ts";
 // The app image's build context excludes its sibling estimator directory.
 // Resolve this test-only module at runtime, as the meal schema parity test does.
-const { cleanWorkout } = await import(new URL("../../estimator/workout.mjs", import.meta.url).href);
+const { cleanWorkout, WORKOUT_BURN_SCHEMA } = await import(new URL("../../estimator/workout.mjs", import.meta.url).href);
 
 const emptyLift = { kg: null, sets: null, reps: null, detail: [] };
 const emptyStation = { completed: null, seconds: null, kg: null };
@@ -83,4 +85,26 @@ test("app and CLI reject impossible or hidden workout fields consistently", () =
     assert.equal(workoutDraftSchema.safeParse(draft).success, false, JSON.stringify(draft));
     assert.equal(cleanWorkout(draft), null, JSON.stringify(draft));
   }
+});
+
+test("a burn is whole kcal or null for each athlete, and a draft from before burns still reads", () => {
+  const burned = { ...base, burn: { hippos: 420, gators: null } };
+  assert.deepEqual(workoutDraftSchema.parse(burned), burned);
+  assert.deepEqual(cleanWorkout(burned, WORKOUT_BURN_SCHEMA), burned);
+  assert.deepEqual(workoutDraftSchema.parse(base), base);
+  for (const hippos of [0, 420.5, 20001])
+    assert.equal(workoutDraftSchema.safeParse({ ...burned, burn: { hippos, gators: null } }).success, false, String(hippos));
+});
+
+test("the estimator gets each athlete's weight on the session's day, and none it does not know", () => {
+  const weighIn = (athlete: "hippos" | "gators", day: string, kg: number): Bodyweight =>
+    ({ id: `${athlete}-${day}`, kind: "bodyweight", athlete, day, kg });
+  const history = bodyweightHistory(
+    [weighIn("hippos", "2026-11-01", 82.04), weighIn("hippos", "2026-11-10", 81.26)],
+    { hippos: 0, gators: 0 },
+  );
+  assert.deepEqual(draftBodyweights(history, ["hippos", "gators"], "2026-11-05"), { hippos: 82 });
+  assert.deepEqual(draftBodyweights(history, ["hippos"], "2026-11-12"), { hippos: 81.3 });
+  assert.deepEqual(draftBodyweights(history, ["gators"], "2026-11-12"), {});
+  assert.deepEqual(draftBodyweights(undefined, ["hippos"], "2026-11-12"), {});
 });

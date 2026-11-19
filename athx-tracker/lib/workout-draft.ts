@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { bodyweightOn, type BodyweightHistory } from "./bodyweight.ts";
 import { VOLUME_UNITS } from "./domain.ts";
 
 const amount = z.number().finite().nonnegative();
@@ -11,6 +12,8 @@ const liftSide = z.object({
   detail: z.array(z.object({ kg, reps }).strict()).max(50).optional(),
 }).strict();
 const stationSide = z.object({ completed: amount.nullable(), seconds, kg: amount.positive().max(1000).nullable() }).strict();
+// The bounds of a burn saved on a session.
+const kcal = z.number().int().min(1).max(20000).nullable();
 
 /** Null means unreported, so the form keeps that box empty. Weights are always kg. */
 export const workoutDraftSchema = z.object({
@@ -29,6 +32,9 @@ export const workoutDraftSchema = z.object({
     target: amount.positive(), block: z.enum(["metcon", "endurance"]),
     hippos: stationSide, gators: stationSide,
   }).strict()).max(30),
+  // Each athlete's calories burned. Only asked for with bodyweights, and an
+  // estimator from before burns never sends it.
+  burn: z.object({ hippos: kcal, gators: kcal }).strict().optional(),
 }).strict().superRefine((draft, ctx) => {
   const issue = (message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, message });
   // Mixed keeps every panel visible when the description includes different kinds of work.
@@ -54,3 +60,22 @@ export const workoutDraftSchema = z.object({
 });
 
 export type WorkoutDraft = z.infer<typeof workoutDraftSchema>;
+
+/**
+ * Each athlete's weight on the session's day, for the estimator to work a burn
+ * out from. One with no weight known is left out, and the estimator then
+ * takes only a burn the description states for them.
+ */
+export function draftBodyweights(
+  history: BodyweightHistory | undefined,
+  sides: readonly ("hippos" | "gators")[],
+  day: string,
+): Partial<Record<"hippos" | "gators", number>> {
+  const weights: Partial<Record<"hippos" | "gators", number>> = {};
+  if (!history) return weights;
+  for (const side of sides) {
+    const kg = bodyweightOn(history, side, day);
+    if (kg > 0) weights[side] = Math.round(kg * 10) / 10;
+  }
+  return weights;
+}

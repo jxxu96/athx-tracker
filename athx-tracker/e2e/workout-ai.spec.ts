@@ -36,6 +36,8 @@ test("typed workout fills both columns, keeps sets x reps and exact pounds, and 
   await page.route("**/api/workout-draft", async route => {
     expect(route.request().postDataJSON()).toEqual({
       description: "Hippos deadlift 1 x 2 at 185 lb; Gators 3 x 8 at 95 lb", athletes: ["hippos", "gators"], weightUnit: "lb",
+      // No weight is known, which still asks for a burn: a watch's figure needs none.
+      bodyweightKg: {},
     });
     await route.fulfill({ json: { draft, provider: "codex" } });
   });
@@ -115,6 +117,48 @@ test("sets that differ fill a row each, and reps never said save as none", async
   expect(records.find(w => w.athlete === "hippos")?.lifts).toEqual([{ name: "Back squat", kg: 225 * lb, sets: 1, reps: 0,
     detail: [{ kg: 135 * lb, reps: 5 }, { kg: 185 * lb, reps: 3 }, { kg: 225 * lb, reps: 0 }] }]);
   expect(records.find(w => w.athlete === "gators")?.lifts).toEqual([{ name: "Back squat", kg: 95 * lb, sets: 3, reps: 8 }]);
+});
+
+test("AI estimates each athlete's burn from the weight on the session's day, and it saves as typed", async ({ page }) => {
+  await page.evaluate(async () => {
+    const { settings, revision } = await fetch("/api/settings").then(r => r.json());
+    await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: { ...settings, bodyweight: { hippos: 82.04, gators: 0 } }, revision }) });
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "Session", exact: true }).click();
+  await page.route("**/api/workout-draft", async route => {
+    expect(route.request().postDataJSON().bodyweightKg).toEqual({ hippos: 82 });
+    await route.fulfill({ json: { draft: {
+      ...draft, category: "Tennis", title: "Tennis", lifts: [], elapsed: { hippos: 3600, gators: 3600 },
+      assumptions: "Hippos 420 kcal: singles tennis, MET 8, 60 min, 82 kg.\nGators 515 kcal: from the watch.",
+      burn: { hippos: 420, gators: 515 },
+    }, provider: "claude" } });
+  });
+  await page.getByLabel("Workout description").fill("Singles tennis for an hour, Gators' watch said 515");
+  await fill(page).click();
+  await expect(page.getByLabel("Hippos calories burned")).toHaveValue("420");
+  await expect(page.getByLabel("Gators calories burned")).toHaveValue("515");
+  // Still yours to change before it saves.
+  await page.getByLabel("Hippos calories burned").fill("400");
+  await page.getByRole("button", { name: "Save session", exact: true }).click();
+  await expect.poll(async () => (await saved(page)).length).toBe(2);
+  const records = await saved(page);
+  expect(records.find(w => w.athlete === "hippos")?.kcal).toBe(400);
+  expect(records.find(w => w.athlete === "gators")?.kcal).toBe(515);
+  await page.getByRole("button", { name: "Log", exact: true }).click();
+  await expect(page.getByText(/~400 kcal/)).toBeVisible();
+  await expect(page.getByText(/~515 kcal/)).toBeVisible();
+});
+
+test("an estimator from before burns leaves the box empty, and the session's burn is estimated", async ({ page }) => {
+  await selection(page, "Hippos").click();
+  await page.getByLabel("Hippos calories burned").fill("999");
+  await page.route("**/api/workout-draft", route => route.fulfill({ json: { draft } }));
+  await page.getByLabel("Workout description").fill("Hippos deadlift 1 x 2 at 185 lb");
+  await fill(page).click();
+  await expect(page.getByLabel("Session", { exact: true })).toHaveValue(draft.title);
+  await expect(page.getByLabel("Hippos calories burned")).toHaveValue("");
 });
 
 test("AI failure preserves the description and existing workout fields", async ({ page }) => {

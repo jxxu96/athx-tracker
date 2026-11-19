@@ -32,9 +32,11 @@ burn used until then, so none of those burns moves; with no such weight, the fir
 weigh-in, the nearest one known. Weigh-ins are journal entries, so the phone always
 holds all of them, however small the slice of everything else.
 
-An Other session can be anything, so its one MET is a guess, and calories typed on it
-are its burn instead: as typed, not rounded, and without needing a bodyweight. Fuel
-still counts no training burn, typed or estimated, until a bodyweight is known.
+Calories in a session's Calories burned box are its burn instead, on any category:
+typed from a watch or a machine, or filled by AI from the description (see
+[Session](session.md)). They are kept as given, not rounded, and need no bodyweight
+to show. Fuel still counts no training burn, typed or estimated, until a bodyweight
+is known.
 
 A Mixed session has no single MET, so `sessionMet` weights it by where the time
 went: timed MetCon stations at 8, timed endurance at 9, and the untimed rest at

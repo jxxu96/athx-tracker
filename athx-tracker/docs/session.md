@@ -8,8 +8,9 @@
   nothing timed is still a session, and reads as a dash rather than as a time of
   zero. Pairs or solo follows the switch at the top unless you set it yourself,
   and Other takes a name of its own, which is what the log then calls it.
-  Other also takes the calories each athlete burned, from a watch or a machine;
-  typed, that figure is the session's burn, and left empty it is estimated.
+  Every session takes the calories each athlete burned, typed from a watch or a
+  machine or filled by AI (below); a figure there is the session's burn, and
+  left empty it is estimated.
   Choosing a lift fills its sets and reps with real numbers: three sets, at
   one rep for the split jerk, three for the deadlift, and five for the back
   squat, the bench press and anything else (`DEFAULT_SETS` and `defaultReps`
@@ -68,7 +69,16 @@
   if left: a weight never said is unweighted. Lifts, workouts
   and MetCons are matched to the names already in the list, including typos and
   loose phrasing. A name that is not one of those is kept as typed and called
-  out in the notes. AI replaces the workout fields but saves only when you
+  out in the notes. AI also fills **Calories burned** for each athlete: a
+  burn the description states, from a watch or a machine, as stated (a 40 cal
+  row is that station's work, not the session's burn); otherwise worked out
+  from the activities, their effort and minutes, and that athlete's weight on
+  the session's day (`draftBodyweights` in `lib/workout-draft.ts`), with
+  Compendium METs, rounded to ten and taking the lower of two plausible
+  figures. With no weight known it works none out. A time it had to estimate
+  for the burn stays out of the time boxes, and its working goes in the notes.
+  An estimator from before burns leaves the box empty, and the burn is the MET
+  estimate. AI replaces the workout fields but saves only when you
   choose Save session. Unsupported browsers can use keyboard dictation.
   A session takes a time of day, which starts at the clock and can be cleared.
   Saving a lift heavier than any of that athlete's earlier sessions, or the
