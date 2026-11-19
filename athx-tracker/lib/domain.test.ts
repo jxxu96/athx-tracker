@@ -88,6 +88,8 @@ test("a typed burn is the burn, with or without a weight or a clock", () => {
   assert.equal(estimateBurn(hike, 0), 412);
   assert.equal(estimateBurn({ ...hike, seconds: 0 }, 0), 412);
   assert.equal(estimateBurn({ ...hike, kcal: undefined }, 80), estimateBurn(workout({ category: "Other", seconds: 5400 }), 80));
+  // Any session takes one, the AI's included, not only Other.
+  assert.equal(estimateBurn(workout({ category: "Tennis", seconds: 3600, kcal: 530 }), 80), 530);
 });
 
 test("lifts without a clock still burn, and a clock is not counted twice", () => {
@@ -321,11 +323,6 @@ test("every category offers some way to record what you did", () => {
       `${category} offers nothing to fill in`,
     );
   }
-});
-
-test("only Other takes a typed burn", () => {
-  for (const category of CATEGORIES)
-    assert.equal(categoryShape(category).takesKcal, category === "Other", category);
 });
 
 test("every category but MetCon takes a goal time", () => {

@@ -8,6 +8,11 @@ const requestSchema = z.object({
   athletes: z.array(z.enum(["hippos", "gators"])).min(1).max(2)
     .refine(sides => new Set(sides).size === sides.length),
   weightUnit: z.enum(["kg", "lb"]),
+  // Each athlete's weight on the session's day, which asks for a burn as well.
+  bodyweightKg: z.object({
+    hippos: z.number().finite().positive().max(500).optional(),
+    gators: z.number().finite().positive().max(500).optional(),
+  }).strict().optional(),
 }).strict();
 const BUDGET_MS = 61_600;
 

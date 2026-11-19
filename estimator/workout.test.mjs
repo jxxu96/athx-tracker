@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { WORKOUT_TASK } from "./workout.mjs";
+import { WORKOUT_BURN_INSTRUCTIONS, WORKOUT_BURN_TASK, WORKOUT_INSTRUCTIONS, WORKOUT_TASK, bodyweightLine } from "./workout.mjs";
 
 process.env.ESTIMATOR_TOKEN = "test-token-at-least-16-chars";
 process.env.ESTIMATOR_ORDER = "codex,claude";
@@ -25,4 +25,32 @@ test("workout requests reject a meal-shaped answer and fall back to a usable wor
     Object.assign(PROVIDERS.codex, original.codex);
     Object.assign(PROVIDERS.claude, original.claude);
   }
+});
+
+test("a burn is asked for only with bodyweights, under its own schema file", () => {
+  assert.notEqual(WORKOUT_BURN_TASK.name, WORKOUT_TASK.name);
+  assert.equal("burn" in WORKOUT_TASK.schema.properties, false);
+  assert.deepEqual(WORKOUT_BURN_TASK.schema.required, [...WORKOUT_TASK.schema.required, "burn"]);
+  assert.ok(WORKOUT_INSTRUCTIONS.endsWith("Output only the required JSON."));
+  assert.ok(WORKOUT_BURN_INSTRUCTIONS.endsWith("Output only the required JSON."));
+  assert.ok(WORKOUT_BURN_INSTRUCTIONS.includes("MET x 3.5 x bodyweight in kg / 200 per minute"));
+  assert.equal(WORKOUT_INSTRUCTIONS.includes("burn"), false);
+});
+
+test("each athlete's burn is whole kcal or null, and a draft without one is not a burn answer", () => {
+  const burned = { ...whole, burn: { hippos: 180, gators: null } };
+  assert.deepEqual(WORKOUT_BURN_TASK.clean(burned), burned);
+  assert.equal(WORKOUT_BURN_TASK.clean(whole), null);
+  assert.equal(WORKOUT_TASK.clean(burned), null);
+  for (const hippos of [0, 182.5, 20001, -10, "180"])
+    assert.equal(WORKOUT_BURN_TASK.clean({ ...whole, burn: { hippos, gators: null } }), null, String(hippos));
+});
+
+test("the estimator is told each selected athlete's weight, or that there is none", () => {
+  assert.equal(bodyweightLine(["hippos", "gators"], { hippos: 82.345, gators: 64 }),
+    "Bodyweight on the session's day: hippos 82.3 kg, gators 64 kg.");
+  assert.equal(bodyweightLine(["gators"], {}), "Bodyweight on the session's day: gators not given.");
+  assert.equal(bodyweightLine(["hippos", "gators"], { hippos: 0, gators: "heavy" }),
+    "Bodyweight on the session's day: hippos not given, gators not given.");
+  assert.equal(bodyweightLine(["hippos"], { hippos: 900 }), "Bodyweight on the session's day: hippos not given.");
 });

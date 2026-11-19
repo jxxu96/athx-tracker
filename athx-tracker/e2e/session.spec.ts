@@ -422,7 +422,7 @@ test("the name field belongs to Other alone", async ({ page }) => {
     .toContain("Tennis:");
 });
 
-test("an Other session's burn is the one typed, with or without a bodyweight", async ({ page }) => {
+test("a typed burn is the session's, with or without a bodyweight, on any category", async ({ page }) => {
   await athlete(page, "Gators").click();
   await openSession(page);
   await typeSelect(page).selectOption("Other");
@@ -438,9 +438,9 @@ test("an Other session's burn is the one typed, with or without a bodyweight", a
   await page.getByLabel("Edit entry").click();
   await expect(page.getByLabel("Gators calories burned")).toHaveValue("412");
 
-  // Another category estimates its own burn, so the typed one does not ride along.
+  // A measured burn is what the session burned, whatever it is called.
   await typeSelect(page).selectOption("Tennis");
-  await expect(page.getByLabel("Gators calories burned")).toHaveCount(0);
+  await expect(page.getByLabel("Gators calories burned")).toHaveValue("412");
   await page.getByRole("button", { name: "Update session" }).click();
   await expect
     .poll(async () =>
@@ -449,7 +449,7 @@ test("an Other session's burn is the one typed, with or without a bodyweight", a
         return data.records.map((r: { category: string; kcal?: number }) => `${r.category}:${r.kcal ?? ""}`);
       }),
     )
-    .toEqual(["Tennis:"]);
+    .toEqual(["Tennis:412"]);
 });
 
 test("a time box opens the number pad and puts the colon in", async ({ page }) => {

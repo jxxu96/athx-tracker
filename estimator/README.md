@@ -62,7 +62,14 @@ They return editable workout fields instead of meal macros. Sets precede reps in
 `sets x reps` shorthand, unless one side is plainly a load: `135x5` is 135 for 5
 reps, and `5x165` is 5 reps at 165, as if written `5 @ 165`. All returned
 weights are kg, and unreported numbers are null. Each athlete's side of a lift has a `detail` list: every set in order when
-the sets differed, empty when they were all the same. No metered API fallback is
+the sets differed, empty when they were all the same. A request may add
+`bodyweightKg`, each selected athlete's weight in kg on the session's day (`{}`
+when none is known), which goes to the CLIs with the description. The draft then
+carries `burn`, each athlete's whole kcal or null: a burn the description states,
+from a watch or a machine, otherwise MET x 3.5 x kg / 200 per minute over the work
+described, and null for an athlete with neither. An app from before burns never
+sends `bodyweightKg` and gets no `burn`; an estimator from before ignores it, and
+the app keeps its own estimate. No metered API fallback is
 used for workouts. Deploy the app and estimator images together; the estimator
 image includes `workout.mjs`. An app from before `detail` turns away every
 workout this estimator drafts, while the current app still reads an older

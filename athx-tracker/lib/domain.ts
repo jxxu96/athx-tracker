@@ -54,9 +54,9 @@ export type Workout = {
   /** The MetCon stopped at its time cap. Older sessions omit it, which reads as no. */
   capHit?: boolean;
   /**
-   * Calories burned as typed, from a watch or a machine, which is the
-   * session's burn instead of the estimate. Only an Other session takes one;
-   * see categoryShape. Omitted when not given.
+   * Calories burned, typed from a watch or a machine or filled by the AI
+   * from the description, which is the session's burn instead of the MET
+   * estimate. Omitted when not given.
    */
   kcal?: number;
 };
@@ -649,11 +649,6 @@ export function categoryShape(category: Workout["category"]) {
     isRun: category === "Endurance",
     /** Each station says whether it is MetCon or endurance work. */
     isMixed,
-    /**
-     * Calories burned are typed in. Other is anything at all, so its one MET
-     * is a guess that a watch or a machine can do better than.
-     */
-    takesKcal: category === "Other",
     /**
      * A goal time for the whole session. MetCon has its circuit and its cap,
      * so a goal on top of them is one more box nobody fills.

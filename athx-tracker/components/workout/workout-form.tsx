@@ -7,7 +7,8 @@ import { WorkoutDictation } from "@/components/workout/workout-dictation";
 import { DEFAULT_SETS, defaultReps, stationUnit } from "@/lib/exercises";
 import { lastLift, type LastLift } from "@/lib/last-lift";
 import { alignWorkoutDraft } from "@/lib/movement-match";
-import { workoutDraftSchema, type WorkoutDraft } from "@/lib/workout-draft";
+import { draftBodyweights, workoutDraftSchema, type WorkoutDraft } from "@/lib/workout-draft";
+import type { BodyweightHistory } from "@/lib/bodyweight";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -93,6 +94,7 @@ export function WorkoutForm({
   active = true,
   shortcutsEnabled = false,
   workouts = [],
+  bodyweights,
   onLoggingFor,
   draftId,
   editing,
@@ -106,6 +108,8 @@ export function WorkoutForm({
   sides: readonly Side[];
   /** The sessions the phone holds, newest first: where a lift's last time comes from. */
   workouts?: readonly Workout[];
+  /** Every weigh-in, for the weight the AI works a burn out from. */
+  bodyweights?: BodyweightHistory;
   /** The header's switch. The boxes follow it, whatever they were typed in. */
   weightUnit: WeightUnit;
   grokReady: boolean;
@@ -320,7 +324,10 @@ export function WorkoutForm({
     try {
       const result = await api<{ draft: WorkoutDraft; provider?: string }>("/api/workout-draft", {
         method: "POST", signal: controller.signal,
-        body: JSON.stringify({ description: description.trim(), athletes: columns, weightUnit: unit }),
+        body: JSON.stringify({
+          description: description.trim(), athletes: columns, weightUnit: unit,
+          bodyweightKg: draftBodyweights(bodyweights, columns, day),
+        }),
       });
       if (controller.signal.aborted) return;
       const draft = alignWorkoutDraft(workoutDraftSchema.parse(result.draft));
@@ -386,7 +393,9 @@ export function WorkoutForm({
         gators: columns.includes("gators") ? time(draft.elapsed.gators) : "",
       });
       setNotes([draft.notes, draft.assumptions].filter(Boolean).join("\n\n").slice(0, 2000));
-      setKcal({ hippos: "", gators: "" });
+      // An estimator from before burns sends none, and the MET estimate stands.
+      const burned = (side: Side) => columns.includes(side) ? string(draft.burn?.[side] ?? null) : "";
+      setKcal({ hippos: burned("hippos"), gators: burned("gators") });
       setGoal("");
       setCapHit({ hippos: false, gators: false });
       setInvalidSide(null);
@@ -409,7 +418,7 @@ export function WorkoutForm({
     gators: null,
   });
 
-  const { usesStations, usesLifts, usesCustomStations, isRun, isMixed, takesKcal, takesGoal } =
+  const { usesStations, usesLifts, usesCustomStations, isRun, isMixed, takesGoal } =
     categoryShape(category);
   // Whether the session has MetCon work to have been capped on.
   const hasMetcon = usesStations && stations.some((s) => s.block === "metcon") &&
@@ -717,7 +726,7 @@ export function WorkoutForm({
   /** A column counts as used once anything at all is typed into it. */
   function used(side: Side) {
     if (elapsed[side].trim() !== "") return true;
-    if (takesKcal && kcal[side].trim() !== "") return true;
+    if (kcal[side].trim() !== "") return true;
     if (
       entries[side].some(
         // A standard weight the form filled in is not something you did.
@@ -835,7 +844,7 @@ export function WorkoutForm({
     if (total > 86400) return `${who}: that elapsed time is too long.`;
 
     const burned = kcal[side].trim();
-    if (takesKcal && burned !== "" && !(Number(burned) >= 1 && Number(burned) <= 20000))
+    if (burned !== "" && !(Number(burned) >= 1 && Number(burned) <= 20000))
       return `${who}: write the calories burned as a number, or leave it empty.`;
 
     for (const [index, station] of stations.entries()) {
@@ -966,7 +975,7 @@ export function WorkoutForm({
 
     const records: Workout[] = active.map((side) => ({
       ...(hasMetcon && capHit[side] ? { capHit: true } : {}),
-      ...(takesKcal && kcal[side].trim() !== "" ? { kcal: Math.round(num(kcal[side])) } : {}),
+      ...(kcal[side].trim() !== "" ? { kcal: Math.round(num(kcal[side])) } : {}),
       id: editing ? editing.id : draftIds[side],
       kind: "workout",
       athlete: editing ? athleteForEdit : side,
@@ -1183,25 +1192,24 @@ export function WorkoutForm({
         </div>
       </Panel>
 
-      {takesKcal ? (
-        <Panel outline={outline} title="Calories burned">
-          <div className={`grid gap-2.5 ${columns.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
-            {columns.map((side) => (
-              <Column key={side} side={side}>
-                <Input
-                  value={kcal[side]}
-                  inputMode="numeric"
-                  placeholder="kcal"
-                  aria-label={`${ATHLETES[side].name} calories burned`}
-                  onChange={(event) =>
-                    setKcal((current) => ({ ...current, [side]: event.target.value }))
-                  }
-                />
-              </Column>
-            ))}
-          </div>
-        </Panel>
-      ) : null}
+      {/* Typed from a watch or a machine, or filled by AI. Left empty, the burn is estimated. */}
+      <Panel outline={outline} title="Calories burned">
+        <div className={`grid gap-2.5 ${columns.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+          {columns.map((side) => (
+            <Column key={side} side={side}>
+              <Input
+                value={kcal[side]}
+                inputMode="numeric"
+                placeholder="kcal"
+                aria-label={`${ATHLETES[side].name} calories burned`}
+                onChange={(event) =>
+                  setKcal((current) => ({ ...current, [side]: event.target.value }))
+                }
+              />
+            </Column>
+          ))}
+        </div>
+      </Panel>
 
       {usesStations ? (
         <Panel

@@ -1240,6 +1240,7 @@ export function Tracker({
             today={today}
             grokReady={grokReady}
             workouts={workouts}
+            bodyweights={history}
             sides={sides}
             onLoggingFor={setWho}
             weightUnit={unit}

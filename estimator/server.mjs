@@ -43,7 +43,7 @@ import {
 import { DISH_INSTRUCTIONS, DISH_SCHEMA, INSTRUCTIONS, SCHEMA } from "./prompts.mjs";
 import { DISH_TASK, MEAL_TASK, PROVIDERS, configured } from "./providers.mjs";
 import { clean, cleanDishes, complex, settle, settleDishes } from "./settle.mjs";
-import { WORKOUT_TASK } from "./workout.mjs";
+import { WORKOUT_BURN_TASK, WORKOUT_TASK, bodyweightLine } from "./workout.mjs";
 
 function send(response, status, body, headers = {}) {
   const payload = JSON.stringify(body);
@@ -119,7 +119,19 @@ const server = createServer((request, response) => {
           || !["kg", "lb"].includes(parsed.weightUnit))
           return send(response, 400, { error: "Choose athletes and a weight unit." });
         task = WORKOUT_TASK;
-        context = `Selected athletes: ${parsed.athletes.join(", ")}. Default weight unit: ${parsed.weightUnit}.\n\n`;
+        context = `Selected athletes: ${parsed.athletes.join(", ")}. Default weight unit: ${parsed.weightUnit}.`;
+        // Bodyweights ask for each athlete's burn as well, even an empty set of
+        // them, since a burn read off a watch needs no weight. An older app
+        // never sends them and gets the draft alone, which is all it accepts;
+        // an older estimator ignores them, and the app keeps its own estimate.
+        const weights = parsed.bodyweightKg;
+        if (weights !== undefined) {
+          if (!weights || typeof weights !== "object" || Array.isArray(weights))
+            return send(response, 400, { error: "Bodyweights must be an object of kilograms." });
+          task = WORKOUT_BURN_TASK;
+          context += ` ${bodyweightLine(parsed.athletes, weights)}`;
+        }
+        context += "\n\n";
       }
       // A meal for both of them, dish by dish. An older app never asks, and an
       // older estimator ignores the ask and answers for the whole meal, which

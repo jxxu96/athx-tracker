@@ -31,10 +31,10 @@ test("the estimator accepts conversation-sized context but still bounds descript
       if (String(chunk).includes("listening on")) { clearTimeout(timer); resolve(); }
     });
   });
-  const post = (description) => fetch(`http://127.0.0.1:${port}`, {
+  const post = (description, extra = {}) => fetch(`http://127.0.0.1:${port}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ description }),
+    body: JSON.stringify({ description, ...extra }),
   });
   const response = await post(JSON.stringify({
     mealDescription: "米飯 and chicken",
@@ -44,4 +44,9 @@ test("the estimator accepts conversation-sized context but still bounds descript
   assert.equal(response.status, 502, "context reached provider selection rather than being rejected as too long");
   assert.equal((await response.json()).detail, "no providers configured");
   assert.equal((await post("x".repeat(40001))).status, 400);
+  // Bodyweights ask for a burn; anything but an object of them is refused.
+  const workout = { task: "workout", athletes: ["hippos"], weightUnit: "kg" };
+  assert.equal((await post("Tennis for an hour", { ...workout, bodyweightKg: [80] })).status, 400);
+  assert.equal((await post("Tennis for an hour", { ...workout, bodyweightKg: null })).status, 400);
+  assert.equal((await post("Tennis for an hour", { ...workout, bodyweightKg: { hippos: 80 } })).status, 502);
 });
