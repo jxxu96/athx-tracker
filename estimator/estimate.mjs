@@ -41,12 +41,36 @@ function either(...signals) {
 }
 
 /**
+ * The reason inside a Claude error envelope. With --output-format json, Claude
+ * prints one object whose reason comes last, after about 2 KB of timings and
+ * token counts: result is an API error's message, such as a sign-in or a usage
+ * limit, errors the reasons a run stopped, such as running out of turns, and
+ * api_error_status the HTTP status. The first 160 characters showed none of
+ * it. Anything that is not an error envelope gives an empty string.
+ */
+export function envelopeError(out) {
+  let value;
+  try {
+    value = JSON.parse(out);
+  } catch {
+    return "";
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value) || value.is_error !== true) return "";
+  const text = (item) => (typeof item === "string" ? item.trim() : "");
+  const errors = Array.isArray(value.errors) ? value.errors.map(text).filter(Boolean) : [];
+  const subtype = text(value.subtype).startsWith("error") ? text(value.subtype) : "";
+  const said = text(value.result) || errors.join("; ") || subtype;
+  const status = Number.isInteger(value.api_error_status) ? `HTTP ${value.api_error_status}` : "";
+  return [said, status && (said ? `(${status})` : status)].filter(Boolean).join(" ");
+}
+
+/**
  * Why a run gave nothing. A timeout adds the last line the CLI printed, when it
  * printed one, since "timed out" alone cannot tell a run still searching from
  * one stuck behind a rate limit or a sign-in. That reaches the form too.
  */
 export function failure({ code, out, err, timedOut }, sliceMs) {
-  if (!timedOut) return `exit ${code} ${(err || out).slice(0, 160).trim()}`;
+  if (!timedOut) return `exit ${code} ${(envelopeError(out) || err || out).slice(0, 160).trim()}`;
   const last = (text) =>
     String(text ?? "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean).at(-1) ?? "";
   const said = (last(err) || last(out)).slice(0, 160);

@@ -229,6 +229,45 @@ test("a timeout says what the CLI last printed", () => {
   assert.equal(failure({ timedOut: false, code: 1, out: "", err: "Not signed in.\n" }, 130_000), "exit 1 Not signed in.");
 });
 
+test("a Claude error envelope reports its reason, not its timings", () => {
+  // The shape Claude 2.1 prints: timings and usage first, the reason last.
+  const envelope = (fields) => JSON.stringify({
+    duration_api_ms: 0,
+    stop_reason: "stop_sequence",
+    session_id: "f192f893-aff9-4edc-b809-7692a738245a",
+    total_cost_usd: 0,
+    usage: { input_tokens: 0, output_tokens: 0, output_tokens_details: { thinking_tokens: 0 } },
+    modelUsage: {},
+    permission_denials: [],
+    num_turns: 1,
+    type: "result",
+    ...fields,
+  });
+  const exit = (out, err = "") => failure({ timedOut: false, code: 1, out, err }, 130_000);
+  assert.equal(
+    exit(envelope({ is_error: true, subtype: "success", api_error_status: 401, result: "OAuth token revoked · Please run /login" })),
+    "exit 1 OAuth token revoked · Please run /login (HTTP 401)",
+  );
+  // It wins over whatever else reached stderr.
+  assert.equal(
+    exit(envelope({ is_error: true, subtype: "success", api_error_status: null, result: "Prompt is too long" }), "warning: slow\n"),
+    "exit 1 Prompt is too long",
+  );
+  // A run that stopped gives its errors, then its subtype, then the status alone.
+  assert.equal(
+    exit(envelope({ is_error: true, subtype: "error_max_turns", errors: ["Reached maximum number of turns (10)"] })),
+    "exit 1 Reached maximum number of turns (10)",
+  );
+  assert.equal(exit(envelope({ is_error: true, subtype: "error_during_execution", errors: [] })), "exit 1 error_during_execution");
+  assert.equal(exit(envelope({ is_error: true, subtype: "success", api_error_status: 529, result: "" })), "exit 1 HTTP 529");
+  // Not an error envelope, or not JSON: the output as before.
+  const ok = envelope({ is_error: false, subtype: "success", result: "{}" });
+  assert.equal(exit(ok), `exit 1 ${ok.slice(0, 160)}`);
+  assert.equal(exit("[1, 2]", ""), "exit 1 [1, 2]");
+  // A long reason is cut like any other.
+  assert.equal(exit(envelope({ is_error: true, result: "x".repeat(500) })), `exit 1 ${"x".repeat(160)}`);
+});
+
 test("output that is not JSON is not an estimate", () => {
   for (const junk of ["", "not json", "{", "<html>", "undefined"]) {
     assert.equal(structured(junk), null, junk);
