@@ -63,6 +63,7 @@ export function Overview({
   heldFrom,
   onLoadSessions,
   onCheckIn,
+  onClearCheckIn,
   onSaveRequest,
   onDeleteRequest,
   shortcutsEnabled = false,
@@ -80,6 +81,8 @@ export function Overview({
   onLoadSessions: (from: string, to: string) => Promise<void>;
   /** Today's energy for one athlete, tapped on its card. */
   onCheckIn: (record: EnergyCheckIn) => Promise<void>;
+  /** A check-in cleared by a second tap on its level. */
+  onClearCheckIn: (id: string) => Promise<void>;
   /** An idea added or marked done on the request log. */
   onSaveRequest: (record: FeatureRequest) => Promise<void>;
   onDeleteRequest: (id: string) => Promise<void>;
@@ -122,7 +125,13 @@ export function Overview({
         refresh={fuelRefresh}
       />
 
-      <Energy records={records} today={today} onCheckIn={onCheckIn} shortcutsEnabled={shortcutsEnabled} />
+      <Energy
+        records={records}
+        today={today}
+        onCheckIn={onCheckIn}
+        onClear={onClearCheckIn}
+        shortcutsEnabled={shortcutsEnabled}
+      />
 
       <CollapsibleCard
         name="Progress and race-day estimate"
