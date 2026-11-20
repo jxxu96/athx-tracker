@@ -22,7 +22,13 @@
   than the phone's recent slice are fetched for the strip or month being shown
   (`/api/records?from=…&to=…&kind=workout`), not shown as empty. Fuel switches between today, yesterday, the last 7 days, and
   the whole journal. **Pick day**, beside Overall, shows any past date, including
-  entries older than the phone's recent slice. A single day is that day's macros against
+  entries older than the phone's recent slice. **Custom window** turns the
+  day into a start and an end, both included, and offers presets to fill them
+  in: **MTD**, **1M**, **1Q**, **6M**, **YTD** and **1Y**. Each ends yesterday,
+  like the last 7 days; the rolling ones start the same date that many months
+  back, or that month's last day when it is shorter. MTD and YTD are greyed out
+  on the 1st and on 1 January, which have no complete day yet. A preset shows
+  as selected while the dates still match it. A single day is that day's macros against
   the daily targets. A longer range is the daily average of days that have a meal,
   so a day you forgot to log is not treated as a day you ate nothing, with the
   totals written under the bars. The last 7 days and the whole journal count

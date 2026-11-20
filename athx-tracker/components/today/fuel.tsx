@@ -25,6 +25,7 @@ import {
   type FuelSpan,
   type MacroShares,
 } from "@/lib/fuel";
+import { FUEL_PRESETS, fuelPresetWindow } from "@/lib/fuel-presets";
 import { needsFetch } from "@/lib/session-calendar";
 import type { JournalSummary } from "@/lib/summary";
 
@@ -487,6 +488,30 @@ export function Fuel({
             />
             Custom window
           </label>
+          {custom ? (
+            <div role="group" aria-label="Custom window presets" className="grid w-fit grid-cols-6 rounded-full bg-muted p-0.5">
+              {FUEL_PRESETS.map((preset) => {
+                const range = fuelPresetWindow(preset.id, today);
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    title={preset.name}
+                    aria-pressed={range !== null && day === range.start && endDay === range.end}
+                    disabled={range === null}
+                    onClick={() => {
+                      if (!range) return;
+                      setDay(range.start);
+                      setEndDay(range.end);
+                    }}
+                    className="rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors aria-pressed:bg-background aria-pressed:shadow-sm disabled:opacity-40 sm:text-xs"
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
           <div className="flex flex-wrap gap-3">
             <div className="flex flex-col gap-1">
               <label htmlFor="fuel-day" className="text-xs font-medium">{custom ? "Start" : "Day"}</label>
