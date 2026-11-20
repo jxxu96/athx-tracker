@@ -36,7 +36,7 @@
   logged (`macroCalories`), with grey for calories the macros do not account
   for, such as alcohol. Each macro's row gives that share beside its name with
   the matching swatch, as "~28% of kcal", apart from its "% of target" on the
-  right. Under each athlete's food is their
+  right, and its bar is drawn in the same tint. Under each athlete's food is their
   expenditure, resting energy and training together, and the balance of eating
   against it: for a day, that day's; for a longer range, a day's average. See
   [Resting energy and the balance](figures.md#resting-energy-and-the-balance). The race-day estimate, Progress and

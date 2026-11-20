@@ -273,6 +273,12 @@ test("the week's average leaves today out, and a bar past its target shows by ho
     await expect(hippos.getByText(/^3,000 \/ 2,000 kcal · 150% of target$/)).toBeVisible();
     await expect(hippos.locator("[data-fuel-over]")).toHaveCount(1);
     await expect(hippos.locator("[data-fuel-target]")).toHaveCount(1);
+    // Each macro's bar is the shade of its slice of the calorie bar.
+    const fills = await hippos.locator("[data-fuel-fill]").evaluateAll((els) => els.map((el) => getComputedStyle(el).backgroundColor));
+    const swatches = await hippos.locator("[data-fuel-swatch]").evaluateAll((els) => els.map((el) => getComputedStyle(el).backgroundColor));
+    expect(fills).toHaveLength(3);
+    expect(fills).toEqual(swatches);
+    expect(new Set(fills).size).toBe(3);
     await page.getByRole("group", { name: "Fuel range" }).getByRole("button", { name: "Fuel for the last 7 days" }).click();
     await expect(page.getByText(/, complete days$/)).toBeVisible();
     await expect(hippos.getByText(/^avg 1,800 \/ 2,000 kcal · 90% of target$/)).toBeVisible();

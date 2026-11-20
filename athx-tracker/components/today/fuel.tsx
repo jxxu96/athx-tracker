@@ -84,7 +84,8 @@ function foldedFuel(name: string, fuel: AthleteFuel, average: boolean) {
 
 /**
  * Each macro's slice of the calorie bar is a tint of the athlete's colour,
- * strongest first in the order the rows run, so the rows below read as its key.
+ * strongest first in the order the rows run, and each macro's own bar below
+ * takes the same tint, so the rows read as its key.
  * Tinted toward white in both themes: toward a dark card the faintest slice
  * sank into the empty track.
  */
@@ -149,6 +150,7 @@ function MacroRow({
             <span title="Estimated share of logged calories" className="inline-flex items-center gap-1 tabular-nums">
               <span
                 aria-hidden="true"
+                data-fuel-swatch=""
                 className="size-2 shrink-0 self-center rounded-[2px]"
                 style={{ background: calorieShare.color }}
               />
@@ -172,6 +174,7 @@ function MacroRow({
         <div className="relative h-1.5">
           <div className="absolute inset-0 overflow-hidden rounded-full bg-muted">
             <div
+              data-fuel-fill=""
               className="h-full rounded-full transition-[width]"
               style={{ width: `${fill}%`, background: color }}
             />
@@ -295,7 +298,7 @@ function AthleteFuelCard({
                 unit={unit}
                 value={fuel.shown[key]}
                 target={fuel.dailyTarget[key]}
-                color={color}
+                color={key === "calories" ? color : sliceColor(color, key)}
                 average={multi}
                 mark={mark}
                 slices={key === "calories" && calorieShares ? calorieBar(calorieShares, color) : null}
