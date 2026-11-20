@@ -68,6 +68,28 @@ figures away. Background estimates do not count toward the 60 a day. They
 need the estimator: with only `XAI_API_KEY` set, the button is not offered,
 since the worker asks the gateway and nothing else.
 
+## When Claude's sign-in runs out
+
+A Claude login on the estimator has a time limit, and past it the CLI cannot
+renew it: every Claude estimate fails until someone signs in again where the
+estimator runs (`docker exec -it athx-estimator claude auth login` in the
+stack). The app warns ahead of it with a popup 7 days, 3 days, 2 days, 1 day
+and 12 hours before the end the estimator reports. It names when the login
+ends, gives the command, and goes with one click: **Got it**, the close
+button, Escape or a tap outside. Each warning is sent away on that phone
+only, and the next one comes back on its own. A phone not opened for a while
+gets only the warning due now, and past the end the last one is shown once.
+Signing in again gives a new end, which starts its warnings afresh.
+
+The end is the `loginExpiresAt` that `claude auth status` reports, which the
+CLI treats as the latest the sign-in lasts: it says it can end up to three
+days sooner, so the popup gives both dates. The app asks when it opens, every
+hour while open, and on coming back to it, at most once in ten minutes
+(`components/login-expiry-alert.tsx`, `lib/login-expiry.ts`). There is no
+popup without an estimator of your own, when the estimator is not reachable
+or is older than this, or for a login with no end on record, such as a
+`CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`.
+
 ## Drafts
 
 What is typed into the Meal or Session form is kept on the phone as it is

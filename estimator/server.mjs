@@ -33,6 +33,7 @@ import {
 import { startBackups } from "./backup.mjs";
 import { API_KEY_VARS, parseCliOutput, structured } from "./cli.mjs";
 import { startDeployWatch } from "./deploy-watch.mjs";
+import { claudeLoginExpiresAt } from "./login.mjs";
 import {
   budgetSlice,
   describedFor,
@@ -73,13 +74,21 @@ const server = createServer((request, response) => {
 
   if (!authorised(request)) return send(response, 401, { error: "Unauthorized" });
 
-  if (request.method === "GET" && path === "/health")
-    return send(response, 200, {
-      ok: true,
-      order: configured(),
-      model: CLAUDE_MODEL,
-      budgetMs: BUDGET_MS,
-    });
+  if (request.method === "GET" && path === "/health") {
+    const order = configured();
+    // When Claude's sign-in runs out, so the app can warn ahead of it. Null
+    // when Claude is not asked or the CLI reports no end.
+    const claudeLogin = order.includes("claude") ? claudeLoginExpiresAt() : Promise.resolve(null);
+    return void claudeLogin.then((expiresAt) =>
+      send(response, 200, {
+        ok: true,
+        order,
+        model: CLAUDE_MODEL,
+        budgetMs: BUDGET_MS,
+        claudeLoginExpiresAt: expiresAt,
+      }),
+    );
+  }
 
   if (request.method !== "POST") return send(response, 405, { error: "POST only" });
 

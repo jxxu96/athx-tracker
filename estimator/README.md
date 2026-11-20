@@ -124,7 +124,12 @@ Everything can go in `estimator/.env`; a real environment variable overrides it.
 | `ESTIMATOR_TIMEOUT_MS` | `49000` | Cap for any one provider. |
 | `ESTIMATOR_RESERVE_MS` | `12600` | Time held back so the fallback still gets a turn. |
 
-`GET /health` (bearer token required) reports the order without running anything.
+`GET /health` (bearer token required) reports the order without running an
+estimate. When Claude is in it, it also reports `claudeLoginExpiresAt`: the
+`loginExpiresAt` that `claude auth status` gives for the stored sign-in, or
+null when there is none on record (a `CLAUDE_CODE_OAUTH_TOKEN` login, or none
+at all). That check asks no model, and its answer is kept for 15 minutes. The
+app warns ahead of that time: see [Meal estimates](../athx-tracker/docs/meal-estimates.md#when-claudes-sign-in-runs-out).
 
 ## Provider order
 

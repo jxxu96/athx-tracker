@@ -34,6 +34,7 @@ import { ThemeSync } from "@/components/theme-toggle";
 import { DraftBoundary } from "@/components/draft-boundary";
 import { Drafts } from "@/components/drafts";
 import { HeldDraft } from "@/components/held-draft";
+import { LoginExpiryAlert } from "@/components/login-expiry-alert";
 import {
   ATHLETES,
   localDay,
@@ -1030,6 +1031,8 @@ export function Tracker({
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col">
       <Toaster position="top-center" expand />
+      {/* Only an estimator of your own has a Claude sign-in to run out. */}
+      {queueReady && <LoginExpiryAlert />}
       {/* The theme buttons are in Setup; the page follows the choice everywhere. */}
       <ThemeSync />
 
