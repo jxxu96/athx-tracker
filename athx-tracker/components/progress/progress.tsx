@@ -23,6 +23,7 @@ import { wearsProteinBagel } from "@/lib/protein-week";
 import { STRENGTH_2027, STRENGTH_LIFTS } from "@/lib/race";
 import type { JournalSummary } from "@/lib/summary";
 import {
+  carriedDown,
   liftTotal,
   progressMarks,
   shownGap,
@@ -42,6 +43,8 @@ const PEOPLE = ["hippos", "gators"] as const;
 /**
  * Start stays a light grey dot. Latest is an empty ring in the athlete's
  * colour, best is that ring with diagonal stripes, and the target is solid.
+ * A best carried down from fewer reps, worked out rather than lifted, is the
+ * ring with a dot in the middle instead of the stripes.
  * These stay at full strength: a faded athlete colour vanished on dark.
  */
 const START_FILL = { background: "var(--muted-foreground)", opacity: 0.5 };
@@ -58,15 +61,23 @@ function hatch(color: string) {
   return `repeating-linear-gradient(-45deg, ${color} 0 1.75px, transparent 1.75px 4.5px)`;
 }
 
+/** A dot in the middle of a clear circle, for a best that was worked out. */
+function centreDot(color: string) {
+  return `radial-gradient(circle, ${color} 0 2.5px, transparent 3px)`;
+}
+
 function MarkFace({
   kind,
   color,
   onBar = false,
+  estimated = false,
 }: {
   kind: ProgressMark;
   color?: string;
   /** The scale's mark. The legend uses the same face without this. */
   onBar?: boolean;
+  /** A best carried down from fewer reps than the rep max. */
+  estimated?: boolean;
 }) {
   const box = `block shrink-0 rounded-full ${MARK_BOX[kind]}`;
   if (kind === "start") {
@@ -85,12 +96,14 @@ function MarkFace({
     );
   }
   if (kind === "best") {
+    const fill = estimated ? centreDot : hatch;
     return (
       <span
         aria-hidden="true"
         data-progress-mark={onBar ? kind : undefined}
+        data-estimated={onBar && estimated ? "true" : undefined}
         className={`${box} border-2 bg-card bg-clip-padding`}
-        style={{ borderColor: color, backgroundImage: hatch(color ?? "transparent") }}
+        style={{ borderColor: color, backgroundImage: fill(color ?? "transparent") }}
       />
     );
   }
@@ -104,8 +117,20 @@ function MarkFace({
   );
 }
 
-function Swatch({ kind, color }: { kind: ProgressMark; color?: string }) {
-  return <MarkFace kind={kind} color={color} />;
+function Swatch({ kind, color, estimated }: { kind: ProgressMark; color?: string; estimated?: boolean }) {
+  return <MarkFace kind={kind} color={color} estimated={estimated} />;
+}
+
+/** The best column's heading, which says when the best was worked out rather than lifted. */
+function bestLabel(estimated: boolean) {
+  return estimated ? (
+    <>
+      <span aria-hidden="true">Est. best</span>
+      <span className="sr-only">Estimated best</span>
+    </>
+  ) : (
+    "Best"
+  );
 }
 
 function Stat({
@@ -114,7 +139,7 @@ function Stat({
   notes,
   swatch,
 }: {
-  label: string;
+  label: React.ReactNode;
   value: string;
   notes: string[];
   swatch?: React.ReactNode;
@@ -137,13 +162,23 @@ function Stat({
 
 const MARK_LAYER: Record<ProgressMark, number> = { target: 1, start: 2, latest: 3, best: 4 };
 
-function Mark({ kind, at, color }: { kind: ProgressMark; at: number; color: string }) {
+function Mark({
+  kind,
+  at,
+  color,
+  estimated,
+}: {
+  kind: ProgressMark;
+  at: number;
+  color: string;
+  estimated?: boolean;
+}) {
   return (
     <span
       className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
       style={{ left: `${at}%`, zIndex: MARK_LAYER[kind] }}
     >
-      <MarkFace kind={kind} color={color} onBar />
+      <MarkFace kind={kind} color={color} onBar estimated={estimated} />
     </span>
   );
 }
@@ -211,11 +246,14 @@ function Bar({
   leaders = false,
   runner,
   bagel = false,
+  bestEstimated = false,
 }: {
   bar: ProgressBar;
   color: string;
   unit: WeightUnit;
   leaders?: boolean;
+  /** The best was carried down from fewer reps, so its mark is the dotted ring. */
+  bestEstimated?: boolean;
   /** Whose creature runs this line. Omitted, the line is only the marks. */
   runner?: ProgressAthlete;
   /** Bagel on the head. Only set after a missed protein week, and only Mon–Wed. */
@@ -278,7 +316,13 @@ function Bar({
           : null}
         <div className="absolute inset-x-2 h-0" style={{ top: origin }}>
           {bar.marks.map((mark) => (
-            <Mark key={mark.key} kind={mark.key} at={mark.at} color={color} />
+            <Mark
+              key={mark.key}
+              kind={mark.key}
+              at={mark.at}
+              color={color}
+              estimated={mark.key === "best" && bestEstimated}
+            />
           ))}
         </div>
       </div>
@@ -348,7 +392,17 @@ function Total({
         </p>
       </div>
       <div>
-        {marks ? <Bar bar={marks} color={color} unit={unit} leaders runner={athlete} bagel={bagel} /> : null}
+        {marks ? (
+          <Bar
+            bar={marks}
+            color={color}
+            unit={unit}
+            leaders
+            runner={athlete}
+            bagel={bagel}
+            bestEstimated={total.bestCarried}
+          />
+        ) : null}
         <dl className="grid grid-cols-4">
           <Stat label="Start" value={figure(total.start)} notes={[]} swatch={total.start ? <Swatch kind="start" /> : null} />
           <Stat
@@ -358,10 +412,10 @@ function Total({
             swatch={total.latest ? <Swatch kind="latest" color={color} /> : null}
           />
           <Stat
-            label="Best"
+            label={bestLabel(total.bestCarried)}
             value={figure(total.best)}
             notes={[]}
-            swatch={total.best ? <Swatch kind="best" color={color} /> : null}
+            swatch={total.best ? <Swatch kind="best" color={color} estimated={total.bestCarried} /> : null}
           />
           <Stat
             label="Target"
@@ -419,6 +473,7 @@ function Lift({
       </div>
     );
 
+  const estimated = carriedDown(best, lift.reps);
   const share = targetPercent(best.kg, lift.target);
   const gained = shownGap(start.kg, best.kg, unit);
   // The set each figure comes from, so a carried-down single shows what it rests on.
@@ -435,7 +490,17 @@ function Lift({
     <div role="group" aria-label={label} className="space-y-2.5 py-4 first:pt-0 last:pb-0">
       {heading}
       <div>
-        {marks ? <Bar bar={marks} color={color} unit={unit} leaders runner={athlete} bagel={bagel} /> : null}
+        {marks ? (
+          <Bar
+            bar={marks}
+            color={color}
+            unit={unit}
+            leaders
+            runner={athlete}
+            bagel={bagel}
+            bestEstimated={estimated}
+          />
+        ) : null}
         <dl className="grid grid-cols-4">
           <Stat
             label="Start"
@@ -450,10 +515,10 @@ function Lift({
             swatch={marks ? <Swatch kind="latest" color={color} /> : null}
           />
           <Stat
-            label="Best"
+            label={bestLabel(estimated)}
             value={formatWeight(best.kg, unit)}
             notes={notes(best)}
-            swatch={marks ? <Swatch kind="best" color={color} /> : null}
+            swatch={marks ? <Swatch kind="best" color={color} estimated={estimated} /> : null}
           />
           <Stat
             label="Target"

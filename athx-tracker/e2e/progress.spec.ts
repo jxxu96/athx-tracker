@@ -163,6 +163,36 @@ test("each main lift shows its start, latest, best and target, at the race's rep
     .toContainText("Shoulder to overhead 1RM, back squat 2RM and deadlift 3RM");
 });
 
+test("a best carried down from fewer reps is marked apart from one lifted", async ({ page }) => {
+  await logLifts(page, [
+    { athlete: "hippos", day: "2026-03-02", lifts: [{ name: "Back squat", kg: kg(185), sets: 3, reps: 2 }] },
+    // A single read as a 2RM: about 199 lb, worked out rather than lifted.
+    { athlete: "hippos", day: "2026-04-06", lifts: [{ name: "Back squat", kg: kg(205), sets: 1, reps: 1 }] },
+  ]);
+  await page.reload();
+  await openProgress(page);
+
+  const squat = page.getByRole("group", { name: "Hippos back squat" });
+  const best = squat.locator('[data-progress-mark="best"]');
+  await expect(squat.getByRole("term").nth(2)).toContainText("Est. best");
+  await expect(squat.getByText("Estimated best")).toHaveClass(/sr-only/);
+  await expect(squat.getByRole("definition")).toContainText(["199.3 lb", "205 lb × 1"]);
+  await expect(best).toHaveAttribute("data-estimated", "true");
+  // A ring with a dot in the middle, not the hatched ring.
+  expect(await best.evaluate((node) => getComputedStyle(node).backgroundImage)).toContain("radial-gradient");
+
+  // A heavier double is the best now, and it was lifted.
+  await logLifts(page, [
+    { athlete: "hippos", day: "2026-05-04", lifts: [{ name: "Back squat", kg: kg(200), sets: 2, reps: 2 }] },
+  ]);
+  await page.reload();
+  await openProgress(page);
+  await expect(squat.getByRole("term").nth(2)).toHaveText("Best");
+  await expect(squat.getByRole("definition")).toContainText(["200 lb", "200 lb × 2"]);
+  await expect(best).not.toHaveAttribute("data-estimated");
+  expect(await best.evaluate((node) => getComputedStyle(node).backgroundImage)).toContain("linear-gradient");
+});
+
 test("a filled-in Progress tab is usable without sight, in both themes", async ({ page }) => {
   // The accessibility spec sees this tab empty, which draws none of the
   // figures, keys or meters.

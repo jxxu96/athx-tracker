@@ -10,6 +10,7 @@ import {
   type Workout,
 } from "./domain.ts";
 import {
+  carriedDown,
   liftProgress,
   liftTotal,
   liftVolume,
@@ -331,6 +332,44 @@ test("the total's best is the race estimate's Strength for the athlete", () => {
   assert.equal(windows.overhead.latest!.setKg, 80);
   const total = liftTotal(windows, none, "gators");
   assert.equal(total.best, race.overhead!.kg + race.squat!.kg + race.deadlift!.kg);
+});
+
+test("a best carried down from fewer reps is told apart from one lifted", () => {
+  const squat = (records: Workout[]) =>
+    liftProgress(records, "gators", none).find((row) => row.key === "backSquat")!;
+  // A single read as a 2RM is worked out, not lifted.
+  const single = squat([workout({ id: "a", day: "2026-09-01", lifts: [lift("Back squat", 140, 1, 1)] })]);
+  assert.equal(single.best!.reps, 1);
+  assert.equal(carriedDown(single.best, single.reps), true);
+  // A heavier double done since is the best, and it was lifted.
+  const double = squat([
+    workout({ id: "a", day: "2026-09-01", lifts: [lift("Back squat", 140, 1, 1)] }),
+    workout({ id: "b", day: "2026-09-08", lifts: [lift("Back squat", 137, 1, 2)] }),
+  ]);
+  assert.equal(double.best!.day, "2026-09-08");
+  assert.equal(carriedDown(double.best, double.reps), false);
+  // Five reps are never carried up, so they stand as done.
+  assert.equal(carriedDown(squat([workout({ lifts: [lift("Back squat", 120, 1, 5)] })]).best, 2), false);
+  assert.equal(carriedDown(null, 2), false);
+  // A single is the 1RM overhead asks for.
+  assert.equal(carriedDown(jerkOf([workout({ lifts: [lift("Split jerk", 80)] })]).best, 1), false);
+});
+
+test("the total's best is marked carried down when any of its three is", () => {
+  const done = [lift("Overhead press", 40), lift("Back squat", 100, 1, 2), lift("Deadlift", 120, 1, 3)];
+  assert.equal(liftTotal(strengthProgress([workout({ lifts: done })], "gators"), none, "gators").bestCarried, false);
+  const deadliftDouble = [lift("Overhead press", 40), lift("Back squat", 100, 1, 2), lift("Deadlift", 130, 1, 2)];
+  const carried = liftTotal(strengthProgress([workout({ lifts: deadliftDouble })], "gators"), none, "gators");
+  assert.ok(carried.best! > 0);
+  assert.equal(carried.bestCarried, true);
+  // With no total there is nothing to mark.
+  const partial = liftTotal(
+    strengthProgress([workout({ lifts: [lift("Back squat", 100, 1, 1)] })], "gators"),
+    none,
+    "gators",
+  );
+  assert.equal(partial.best, null);
+  assert.equal(partial.bestCarried, false);
 });
 
 test("Gators' targets read back as given, in pounds", () => {
