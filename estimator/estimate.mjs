@@ -65,12 +65,26 @@ export function envelopeError(out) {
 }
 
 /**
+ * The reason Codex gave. codex exec prints its banner to stderr first
+ * (version, workdir, model, sandbox), then the whole prompt, then each error
+ * as a line of its own starting "ERROR: ", such as "unexpected status 401
+ * Unauthorized: ..." or "exceeded retry limit, last status: 429 Too Many
+ * Requests". The first 160 characters were the banner. The last such line is
+ * the one that ended the run; its log lines start with a timestamp and are not
+ * it. No such line gives an empty string.
+ */
+export function codexError(err) {
+  const said = String(err ?? "").split(/\r?\n/).filter((line) => line.startsWith("ERROR: ")).at(-1);
+  return said ? said.slice("ERROR: ".length).trim() : "";
+}
+
+/**
  * Why a run gave nothing. A timeout adds the last line the CLI printed, when it
  * printed one, since "timed out" alone cannot tell a run still searching from
  * one stuck behind a rate limit or a sign-in. That reaches the form too.
  */
 export function failure({ code, out, err, timedOut }, sliceMs) {
-  if (!timedOut) return `exit ${code} ${(envelopeError(out) || err || out).slice(0, 160).trim()}`;
+  if (!timedOut) return `exit ${code} ${(envelopeError(out) || codexError(err) || err || out).slice(0, 160).trim()}`;
   const last = (text) =>
     String(text ?? "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean).at(-1) ?? "";
   const said = (last(err) || last(out)).slice(0, 160);

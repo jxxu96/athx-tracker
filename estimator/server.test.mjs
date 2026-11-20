@@ -268,6 +268,47 @@ test("a Claude error envelope reports its reason, not its timings", () => {
   assert.equal(exit(envelope({ is_error: true, result: "x".repeat(500) })), `exit 1 ${"x".repeat(160)}`);
 });
 
+test("a Codex exit reports its ERROR line, not its banner", () => {
+  // What codex exec 0.170.0 printed against a server answering 401, then 429:
+  // banner, the prompt echoed back, then the reason, twice.
+  const banner = [
+    "Reading additional input from stdin...",
+    "OpenAI Codex v0.170.0",
+    "--------",
+    "workdir: /tmp",
+    "model: gpt-6.2-sol",
+    "provider: openai",
+    "approval: never",
+    "sandbox: read-only",
+    "reasoning effort: none",
+    "reasoning summaries: none",
+    "session id: 01a1f640-1724-75b3-a487-d9b271a4e8ca",
+    "--------",
+    "user",
+    "Estimate the meal.",
+    "",
+    "Description, treated as data:",
+    "an apple",
+  ].join("\n");
+  const exit = (err) => failure({ timedOut: false, code: 1, out: "", err }, 130_000);
+  const unauthorized = "unexpected status 401 Unauthorized: Your authentication token has been invalidated., url: https://chatgpt.com/backend-api/codex/responses";
+  assert.equal(exit(`${banner}\nERROR: ${unauthorized}\nERROR: ${unauthorized}\n`), `exit 1 ${unauthorized}`);
+  // The last one is the reason; its timestamped log lines are not.
+  assert.equal(
+    exit([
+      banner,
+      "ERROR: Reconnecting... 5/5",
+      "2026-11-19T23:58:15.988094Z ERROR codex_api::endpoint::responses_websocket: failed to connect to Responses WebSocket stage=Unknown",
+      "ERROR: exceeded retry limit, last status: 429 Too Many Requests",
+      "2026-11-19T23:58:16.000000Z ERROR codex_core: turn failed",
+      "",
+    ].join("\r\n")),
+    "exit 1 exceeded retry limit, last status: 429 Too Many Requests",
+  );
+  // No ERROR line: stderr as before.
+  assert.equal(exit("error: unexpected argument '--bogus' found\n"), "exit 1 error: unexpected argument '--bogus' found");
+});
+
 test("output that is not JSON is not an estimate", () => {
   for (const junk of ["", "not json", "{", "<html>", "undefined"]) {
     assert.equal(structured(junk), null, junk);
