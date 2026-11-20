@@ -11,7 +11,11 @@
   never carried up, so five at 155 lb is a 155 lb 2RM squat, and carried down
   from fewer reps, so a 100 kg single is a 97.2 kg 2RM. A warm-up is never the
   figure, and at the same figure the set of more reps stands. Under each figure
-  is the set it comes from. Start is the first day the lift was logged, and a
+  is the set it comes from. A best carried down from fewer reps was worked
+  out, not lifted: on the bar it is a ring with a dot in the middle in place
+  of the hatched ring, and its column reads Est. best (`carriedDown` in
+  `lib/progress.ts`). The total's best is marked the same way when any of its
+  three is. Start is the first day the lift was logged, and a
   best belongs to the first day it was reached. Names are
   matched the way a described workout's are, so "OHP" typed under Other counts,
   while push press, front squat and Romanian deadlift stay lifts of their own.

@@ -35,6 +35,14 @@ export type EstimatedMax = { kg: number; day: string; setKg: number; reps: numbe
  */
 export const liftReps = (key: ProgressLift) => STRENGTH_2027.reps[WINDOW_OF[key]];
 
+/**
+ * A figure carried down from a set of fewer reps than the rep max: worked out,
+ * not lifted, so a single read as a 2RM. Progress marks its best apart from
+ * one that was done.
+ */
+export const carriedDown = (figure: EstimatedMax | null, reps: number) =>
+  figure !== null && figure.reps < reps;
+
 /** Weeks of volume Progress shows, the current one last. */
 export const VOLUME_WEEKS = 8;
 
@@ -238,6 +246,8 @@ export type LiftTotal = {
   start: number | null;
   latest: number | null;
   best: number | null;
+  /** The best rests on at least one window's figure carried down from fewer reps. */
+  bestCarried: boolean;
   /** Kilograms. Null until all three windows have a target. */
   target: number | null;
 };
@@ -262,10 +272,13 @@ export function liftTotal(
     }
     return total;
   };
+  const best = sum((key) => windows[key].best?.kg);
   return {
     start: sum((key) => windows[key].start?.kg),
     latest: sum((key) => windows[key].latest?.kg),
-    best: sum((key) => windows[key].best?.kg),
+    best,
+    bestCarried: best !== null
+      && STRENGTH_LIFTS.some(({ key }) => carriedDown(windows[key].best, STRENGTH_2027.reps[key])),
     target: sum((key) => goals[key]),
   };
 }
