@@ -1167,6 +1167,7 @@ export function Tracker({
             heldFrom={heldFrom}
             onLoadSessions={loadSessions}
             onCheckIn={checkIn}
+            onClearCheckIn={remove}
             onSaveRequest={saveRequest}
             onDeleteRequest={remove}
             shortcutsEnabled={shortcutsEnabled}

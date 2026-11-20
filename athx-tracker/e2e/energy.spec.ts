@@ -2,8 +2,9 @@ import { expect, test, type Page } from "@playwright/test";
 import { PASSPHRASE } from "../playwright.config.ts";
 
 // How each athlete feels, out of 10, at breakfast, lunch or dinner: a tap on
-// Today logs a check-in, a tap on another level changes it, Log another adds a
-// second, and the Log corrects any of them like a weigh-in.
+// Today logs a check-in, a tap on another level changes it, a tap on the same
+// one clears it, Log another adds a second, and the Log corrects any of them
+// like a weigh-in.
 
 async function signIn(page: Page) {
   await page.goto("/login");
@@ -159,6 +160,35 @@ test("a tap logs a check-in at the clock's timing, a tap on another level change
   // Folded, the box keeps the timing's mean.
   await card(page).getByRole("button", { name: "Collapse Energy" }).click();
   await expect(card(page).getByText("Today at breakfast: Hippos 6 · Gators —")).toBeVisible();
+});
+
+test("a tap on the ringed level clears that check-in, and leaves the rest", async ({ page }) => {
+  await checkIn(page, "gators", 6, 0);
+  await clockAt(page, 8, 15);
+  const energy = card(page);
+  const hippos = energy.getByRole("group", { name: "Hippos energy at breakfast today" });
+  await hippos.getByRole("button", { name: "Log 3 out of 10" }).click();
+  await expect(hippos.getByRole("button", { name: "3 out of 10", exact: true })).toHaveAttribute("aria-pressed", "true");
+
+  // The slip is deleted, not kept as a 0: the timing is empty again and logs afresh.
+  await hippos.getByRole("button", { name: "3 out of 10", exact: true }).click();
+  await expect(energy.getByText("Not logged at breakfast today")).toHaveCount(1);
+  await expect(hippos.getByRole("button", { name: "Log 3 out of 10" })).toBeVisible();
+  await expect(timings(page).getByRole("button", { name: "Breakfast, logged for Gators" })).toBeVisible();
+  await expect.poll(() => levels(page, "hippos")).toEqual([]);
+  await expect.poll(() => levels(page, "gators")).toEqual(["6 08:00"]);
+  // Today's cell is empty, not a 0.
+  await expect(energy.getByRole("row", { name: /^Hippos/ }).getByRole("cell").nth(6)).toHaveText(/none/);
+
+  // With two, it clears the one shown, and the row goes back to the other.
+  await hippos.getByRole("button", { name: "Log 7 out of 10" }).click();
+  await energy.getByRole("button", { name: "Log another for Hippos at breakfast today" }).click();
+  await hippos.getByRole("button", { name: "Log 2 out of 10" }).click();
+  await expect(energy.getByText("Today 7, 2 · avg 4.5/10", { exact: true })).toBeVisible();
+  await hippos.getByRole("button", { name: "2 out of 10", exact: true }).click();
+  await expect(energy.getByText("Today 7/10 · 08:15", { exact: true })).toBeVisible();
+  await expect(hippos.getByRole("button", { name: "7 out of 10", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => levels(page, "hippos")).toEqual(["7 08:15"]);
 });
 
 test("each timing's button says who has logged it, and an earlier timing is changed where it stands", async ({ page }) => {

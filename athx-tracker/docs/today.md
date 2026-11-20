@@ -55,8 +55,11 @@
   (full of energy), at breakfast, lunch and dinner. A tap on an athlete's
   row logs a check-in, and its level then keeps the athlete's ring: a tap on
   another level changes it and keeps its time, and **Log another** beside it
-  adds a second on purpose. A second tap used to add one every time, so a
-  slip could only be averaged in, not corrected, without going to the Log. A
+  adds a second on purpose. A tap on the ringed level clears that check-in,
+  for a timing tapped by mistake; it is deleted rather than saved as 0,
+  which is not a level and would count as exhausted. A second tap used to
+  add one every time, so a slip could only be averaged in, not corrected,
+  without going to the Log. A
   timing takes as many as are logged; its row shows and changes the latest,
   and the Log moves or deletes any of them. The timing
   starts where a meal's sitting would at that hour (5–10 breakfast, 11–14

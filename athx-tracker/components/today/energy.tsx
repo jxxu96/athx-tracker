@@ -96,9 +96,9 @@ const timingName = (timing: EnergyTiming, logged: readonly Person[]) =>
  * The ten levels in one row, low to high, with what the ends mean under them,
  * so a 7 means the same thing in March as it did in November. The chosen one
  * takes the athlete's ring: on Today, the level a timing's check-in holds,
- * which a tap on another changes. With logs, a tap adds a check-in rather
- * than choosing one, so the buttons are actions, not toggles, and the ring
- * only marks the one being saved.
+ * which a tap on another changes and a tap on the same one clears. With logs,
+ * a tap adds a check-in rather than choosing one, so the buttons are actions,
+ * not toggles, and the ring only marks the one being saved.
  */
 export function EnergyLevels({
   athlete,
@@ -148,7 +148,9 @@ export function EnergyLevels({
  * timing has one, its level keeps the athlete's ring and a tap on another
  * changes it, since a second tap that quietly logged a second check-in
  * averaged a slip away instead of correcting it; Log another adds one on
- * purpose. A timing takes as many as are logged, the row changes the latest,
+ * purpose. A tap on the ringed level clears that check-in, for a slip on a
+ * timing that should have none: a 0 is not a level, and would count as
+ * exhausted. A timing takes as many as are logged, the row changes the latest,
  * and the Log moves or deletes any of them. Today at the clock's timing is
  * where it starts, the way a meal picks its sitting; the date and timing
  * buttons, or B, L and D, reach another, and each timing's button marks who
@@ -159,16 +161,21 @@ export function Energy({
   records,
   today,
   onCheckIn,
+  onClear,
   shortcutsEnabled = false,
 }: {
   records: RecordItem[];
   today: string;
   onCheckIn: (record: EnergyCheckIn) => Promise<void>;
+  /** Deletes a check-in by its id. */
+  onClear: (id: string) => Promise<void>;
   shortcutsEnabled?: boolean;
 }) {
-  // The level tapped while it is being saved, and where. The athlete's row
-  // waits for it, so a double tap logs once, not twice.
-  const [pending, setPending] = useState<Record<Person, { level: number; day: string; timing: EnergyTiming } | null>>({
+  // The level tapped while it is being saved, and where; null while a clear
+  // is. The athlete's row waits for it, so a double tap logs once, not twice.
+  const [pending, setPending] = useState<
+    Record<Person, { level: number | null; day: string; timing: EnergyTiming } | null>
+  >({
     hippos: null,
     gators: null,
   });
@@ -211,12 +218,15 @@ export function Energy({
   /**
    * A tap on a row: a new check-in where the row shows none, or else the one
    * it shows at the level tapped. That keeps its day, timing and time, being
-   * a correction rather than a second reading.
+   * a correction rather than a second reading. A tap on the level it already
+   * holds deletes it.
    */
   async function check(athlete: Person, level: number, shown: EnergyCheckIn | null) {
     if (!timing) return;
-    // Already at that level, so there is nothing to change.
-    if (shown?.level === level) return;
+    if (shown?.level === level) {
+      await clear(athlete, shown);
+      return;
+    }
     const record: EnergyCheckIn = shown
       ? { ...shown, level }
       : {
@@ -238,6 +248,20 @@ export function Energy({
     } catch {
       // The tracker has already said why; the row shows what is saved, and
       // Log another stays open for a second try.
+    } finally {
+      setPending((now) => ({ ...now, [athlete]: null }));
+    }
+  }
+
+  /** The check-in a row shows, deleted. The row then shows the timing's latest, if any is left. */
+  async function clear(athlete: Person, shown: EnergyCheckIn) {
+    if (!timing) return;
+    setPending((now) => ({ ...now, [athlete]: { level: null, day, timing } }));
+    try {
+      await onClear(shown.id);
+      setLatest((now) => ({ ...now, [athlete]: null }));
+    } catch {
+      // The tracker has already said why; the row shows what is saved.
     } finally {
       setPending((now) => ({ ...now, [athlete]: null }));
     }
@@ -284,8 +308,8 @@ export function Energy({
       }
     >
       <p className="-mt-1 mb-3 text-xs text-muted-foreground">
-        How each of you feels, out of {ENERGY_MAX}, at breakfast, lunch and dinner. Tap a level to log it, and
-        another to change it.
+        How each of you feels, out of {ENERGY_MAX}, at breakfast, lunch and dinner. Tap a level to log it,
+        another to change it, and the same one again to clear it.
       </p>
       <div className="mb-4 space-y-3">
         <DayButtons today={today} day={day} subject="Energy" onChange={(next) => choose({ day: next })} />
