@@ -38,6 +38,22 @@ test("a set with no reps recorded is no best, however heavy", () => {
   assert.equal(newBests(workout({ id: "q", lifts: [lift("Pull-up", 0, 3, 10)] }), pulls).length, 1);
 });
 
+test("a failed final rep is not made, so a failed single is no best", () => {
+  const before = [workout({ id: "a", lifts: [lift("Deadlift", 93, 1, 1)] })];
+  const missed = workout({
+    id: "b",
+    lifts: [{ name: "Deadlift", kg: 97.5, sets: 1, reps: 1, detail: [{ kg: 88.5, reps: 3 }, { kg: 97.5, reps: 1, failed: true }] }],
+  });
+  assert.deepEqual(newBests(missed, before), []);
+  // Five at 100 with the fifth failed made four, so it beats 100 x 3 as four.
+  const three = [workout({ id: "c", lifts: [lift("Back squat", 100, 1, 3)] })];
+  const ground = workout({ id: "d", lifts: [{ name: "Back squat", kg: 100, sets: 1, reps: 5, detail: [{ kg: 100, reps: 5, failed: true }] }] });
+  assert.equal(bestLine(newBests(ground, three)[0], "kg"), "Back squat 100 kg × 4, up from 100 kg × 3");
+  // A failed single held no best, so the next session's lift is a first log.
+  const only = [workout({ id: "e", lifts: [{ name: "Deadlift", kg: 120, sets: 1, reps: 1, detail: [{ kg: 120, reps: 1, failed: true }] }] })];
+  assert.deepEqual(newBests(workout({ id: "f", lifts: [lift("Deadlift", 100, 1, 3)] }), only), []);
+});
+
 test("a first log, a tie, another athlete's lift and the session itself beat nothing", () => {
   assert.deepEqual(newBests(workout({ lifts: [lift("Deadlift", 140, 1, 3)] }), []), []);
   const before = [workout({ id: "a", lifts: [lift("Deadlift", 140, 1, 3)] })];

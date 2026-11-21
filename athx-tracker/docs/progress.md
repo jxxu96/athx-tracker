@@ -9,7 +9,9 @@
   since. A day's figure is the most any of its sets shows for that rep max,
   read the way the race estimate reads it (see [The race-day estimate](race.md#the-race-day-estimate)):
   never carried up, so five at 155 lb is a 155 lb 2RM squat, and carried down
-  from fewer reps, so a 100 kg single is a 97.2 kg 2RM. A warm-up is never the
+  from fewer reps, so a 100 kg single is a 97.2 kg 2RM. A set counts the reps
+  it made: a failed final rep was not made, so a failed single shows nothing
+  and three with the third failed is a double. A warm-up is never the
   figure, and at the same figure the set of more reps stands. Under each figure
   is the set it comes from. A best carried down from fewer reps was worked
   out, not lifted: on the bar it is a ring with a dot in the middle in place

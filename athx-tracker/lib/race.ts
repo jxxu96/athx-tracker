@@ -9,6 +9,7 @@ import {
   fromKilograms,
   standardLoad,
   toKilograms,
+  madeReps,
   toMetres,
   type RecordItem,
   type WeightUnit,
@@ -168,7 +169,10 @@ export type AthleteStrength = {
   total: number | null;
 };
 
-/** Each lift at the most any logged set shows for the window's reps. */
+/**
+ * Each lift at the most any logged set shows for the window's reps, counting
+ * the reps it made: a failed final rep shows nothing.
+ */
 export function athleteStrength(
   records: RecordItem[],
   athlete: RaceAthlete,
@@ -183,7 +187,7 @@ export function athleteStrength(
       // A varied lift has every set; one that was the same throughout is its one line.
       const sets = lift.detail?.length ? lift.detail : [{ kg: lift.kg, reps: lift.reps }];
       for (const set of sets) {
-        const reps = Math.floor(set.reps);
+        const reps = madeReps(set);
         if (!(set.kg > 0) || !(reps >= 1)) continue;
         const kg = repMax(set.kg, reps, target);
         const held = lifts[key];

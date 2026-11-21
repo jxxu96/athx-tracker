@@ -112,6 +112,36 @@ test("each lift is the most any set shows for the window, never carried up", () 
   assert.equal(strength.total, 80 + 117 + 140);
 });
 
+test("a failed final rep shows nothing: a failed single is no figure, and a failed triple is a double", () => {
+  const strength = athleteStrength([
+    workout({
+      day: "2026-11-20",
+      lifts: [
+        // The 215 lb singles were missed, so the made triple at 195 lb is the 3RM.
+        lift("Deadlift", 97.5, 1, 1, [
+          { kg: 88.5, reps: 3 },
+          { kg: 97.5, reps: 1, failed: true },
+          { kg: 88.5, reps: 1 },
+          { kg: 97.5, reps: 1, failed: true },
+        ]),
+        // Three at 100 with the third failed made two, carried down for three.
+        lift("Back squat", 100, 1, 3, [{ kg: 90, reps: 3 }, { kg: 100, reps: 3, failed: true }]),
+      ],
+    }),
+  ], "gators");
+  assert.deepEqual(
+    { kg: strength.lifts.deadlift?.kg, setKg: strength.lifts.deadlift?.setKg, reps: strength.lifts.deadlift?.reps },
+    { kg: 88.5, setKg: 88.5, reps: 3 },
+  );
+  assert.equal(strength.lifts.squat?.kg, 100, "two made at 100 is its own 2RM");
+  assert.equal(strength.lifts.squat?.reps, 2);
+  assert.deepEqual(
+    athleteStrength([workout({ lifts: [lift("Split jerk", 80, 1, 1, [{ kg: 80, reps: 1, failed: true }])] })], "gators")
+      .lifts.overhead,
+    null,
+  );
+});
+
 test("the combined weight waits for all six lifts, and adds the whole kilograms shown", () => {
   const records = [
     workout({ lifts: [lift("Split jerk", 80, 1, 1), lift("Back squat", 120, 1, 1), lift("Deadlift", 140, 3, 5)] }),

@@ -13,6 +13,7 @@ import {
   FOLLOWED_LIFTS,
   PROGRESS_LIFTS,
   displayLoad,
+  madeReps,
   type Lift,
   type LiftTargets,
   type ProgressLift,
@@ -129,7 +130,10 @@ export function liftVolume(lift: Pick<Lift, "kg" | "sets" | "reps" | "detail">) 
   return setsOf(lift).reduce((sum, set) => sum + set.kg * Math.max(0, Math.floor(set.reps)), 0);
 }
 
-/** The most any of a lift's sets shows for a rep max, on the race estimate's rule. */
+/**
+ * The most any of a lift's sets shows for a rep max, on the race estimate's
+ * rule, from the reps each one made.
+ */
 export function estimatedMax(
   lift: Pick<Lift, "kg" | "sets" | "reps" | "detail">,
   day: string,
@@ -137,7 +141,7 @@ export function estimatedMax(
 ): EstimatedMax | null {
   let best: EstimatedMax | null = null;
   for (const set of setsOf(lift)) {
-    const reps = Math.floor(set.reps);
+    const reps = madeReps(set);
     if (!(set.kg > 0) || !(reps >= 1)) continue;
     const kg = repMax(set.kg, reps, target);
     if (!best || kg > best.kg || (kg === best.kg && reps > best.reps)) best = { kg, day, setKg: set.kg, reps };

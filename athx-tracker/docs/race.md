@@ -17,7 +17,8 @@ the log cannot support shows a dash and says what to log, rather than a guess.
   not the 170 lb a formula would make of it. A set of fewer reps is carried
   down on Brzycki's line, where the most you can lift *r* times is
   (37 − *r*)/36 of a 1RM, so a 100 kg single is a 97.2 kg 2RM. Either way the
-  figure can only err low.
+  figure can only err low. A failed final rep was not made, so a set counts one
+  rep fewer than logged and a failed single counts for nothing.
   Shoulder to overhead counts the overhead press, push press, split jerk, a typed
   push jerk, and the clean and jerk. Figures are whole units of the screen's weight, each lift converted from its
   exact figure so a 155 lb set reads 155 lb, and the totals add

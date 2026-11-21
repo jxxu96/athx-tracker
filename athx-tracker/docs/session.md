@@ -20,7 +20,8 @@
   now reads as 0: no weight is an unweighted lift, such as pull-ups, and no
   sets or reps are none recorded, never one. The log leaves out what was
   blank: "Pull-up 3×8", "Dumbbell row 60 lb 3 sets", and opening the session
-  again shows those boxes blank. A set with no reps is never a best. A lift
+  again shows those boxes blank. A set with no reps is never a best, and a
+  failed final rep is not counted, so a failed single is never one. A lift
   counts once anything is typed into it; logging one athlete, a lift chosen
   and left at its defaults with no weight saves as it shows, but logging
   both, defaults alone do not, since the other one may not have done it
@@ -83,7 +84,8 @@
   A session takes a time of day, which starts at the clock and can be cleared.
   Saving a lift heavier than any of that athlete's earlier sessions, or the
   same weight for more reps, says so: "New best: Back squat 195 lb × 5, up from
-  185 lb × 5". Less weight for more reps is not a best, since nothing is
+  185 lb × 5". Reps are the ones made, so a set whose final rep failed counts
+  one fewer. Less weight for more reps is not a best, since nothing is
   carried up to a max. The server checks every earlier session, the session's own
   earlier version included, so saving an edit announces nothing it already held.
   What is typed and not saved yet is kept as a draft; see [Drafts](meal-estimates.md#drafts).
