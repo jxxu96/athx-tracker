@@ -46,6 +46,7 @@ import { DishShares, MealDishes } from "@/components/meal/meal-dishes";
 import { MealItems } from "@/components/meal/meal-items";
 import { IngredientWeights } from "@/components/meal/meal-ingredients";
 import { useIngredientEstimates } from "@/components/meal/ingredient-estimates";
+import { MealPhotos, useMealPhotos } from "@/components/meal/meal-photos";
 import { TemplateSuggestion } from "@/components/meal/template-suggestion";
 import { EstimatorWeights, type Answer, type AnswerFigure } from "@/components/meal/estimator-weights";
 import { mealKey } from "@/lib/common-meals";
@@ -216,6 +217,8 @@ export function MealForm({
   // The words the dishes were estimated from. The box they were typed in goes
   // away once they are dishes, and this keeps them at the top, folded.
   const [prompt, setPrompt] = useState(textOf(from?.prompt, ""));
+  // Photos of the meal, sent with each estimate. Not part of the draft.
+  const photos = useMealPhotos();
   const [name, setName] = useState(textOf(from?.name, editing?.name ?? ""));
   const [macros, setMacros] = useState<MacroDraft>(() =>
     macroDraftOf(from?.macros) ?? (editing
@@ -429,6 +432,7 @@ export function MealForm({
     setEstimatingDishIds(new Set());
     setDescription("");
     setPrompt("");
+    photos.clear();
     setIngredients([]);
     ingredientEstimates.setError("");
     setName("");
@@ -730,7 +734,16 @@ export function MealForm({
     // written with a dish is not food, so the estimate never reads it.
     const asDishes = describing && !refining;
     const described = asDishes ? withoutShares(description).trim() : description.trim();
-    const hint = asDishes ? dishHint(description) : [];
+    // With photos the dishes are what they show, and the words are notes on
+    // them: "large portions, cooked in olive oil" cut at its comma was sent as
+    // two dishes for the estimate to keep. Without photos, a meal with too few
+    // words goes by its name.
+    const images = photos.sent;
+    const hint = asDishes && !images.length ? dishHint(description) : [];
+    const named = `Meal: ${name.trim()}`;
+    const words = described.length >= 3 ? described
+      : images.length ? described || (name.trim() ? named : "")
+      : named;
     setError("");
     setReplyError("");
     setRejected(false);
@@ -758,8 +771,9 @@ export function MealForm({
         headers: { "Content-Type": "application/json", Accept: `${NDJSON}, application/json` },
         signal: stop.signal,
         body: JSON.stringify({
-          description: described.length >= 3 ? described : `Meal: ${name.trim()}`,
-          ...(hint.length ? { dishes: hint } : {}),
+          description: words,
+          ...(hint.length || (asDishes && images.length) ? { dishes: hint } : {}),
+          ...(images.length ? { images } : {}),
           // The figures on the form, not the last answer, when they have been
           // edited and still make sense, so a reply starts from what you see.
           ...(refining && previous ? {
@@ -791,7 +805,7 @@ export function MealForm({
           setDescription("");
           setDishErrors({});
           if ((estimate.alcohol ?? 0) > 0) setSlot("Alcohol");
-          onEstimateComplete?.(undefined, called(described));
+          onEstimateComplete?.(undefined, called(described || estimate.name));
           return;
         }
         // Two or more answers are blended here, each by its confidence, and a
@@ -1211,7 +1225,8 @@ export function MealForm({
   const busy = estimating || saving || templateSaving || ingredientEstimates.busy;
   useKeyboardShortcuts(active && !busy && shortcutsEnabled, MEAL_SHORTCUTS, setSlot);
   useKeyboardShortcuts(active && !busy && shortcutsEnabled, { y: () => setDay(addDays(today, -1)) }, (action) => action());
-  const canEstimate = grokReady && !busy && description.trim().length >= 3;
+  const canEstimate = grokReady && !busy && !photos.reading &&
+    (description.trim().length >= 3 || photos.photos.length > 0);
   // Works from the description itself: type the meal, then ⌘E or Alt+E.
   useCommandShortcut(active && canEstimate && shortcutsEnabled, "e", () => void estimate());
   // ⌘S or Alt+S is Save meal, through the form like the button, so the same
@@ -1223,8 +1238,10 @@ export function MealForm({
     if (canSave) form.current?.requestSubmit();
   });
   // Not once there is an estimate: a queued meal saves zero macros, and would
-  // throw away the figures already on the form.
-  const canQueue = queueReady && conversation.length === 0 && !rejected && !splitting && !expanded;
+  // throw away the figures already on the form. Nor with photos, which the
+  // meal is saved without, so the worker would never see them.
+  const canQueue = queueReady && conversation.length === 0 && !rejected && !splitting && !expanded &&
+    photos.photos.length === 0;
   const seeds = itemSeeds();
   // Filled from a template and given foods it does not have: offer to keep
   // them in it, at the bottom, where the meal is about to be saved. Only for
@@ -1374,13 +1391,16 @@ export function MealForm({
             value={description}
             maxLength={4000}
             rows={3}
-            placeholder="Two eggs, 80 g oats with milk, banana, flat white"
+            placeholder={photos.photos.length
+              ? "Anything the photo does not show: portions, oil, what is inside"
+              : "Two eggs, 80 g oats with milk, banana, flat white"}
             onChange={(event) => {
               setDescription(event.target.value);
               setIngredients([]);
               setRejected(false);
             }}
           />
+          {grokReady ? <MealPhotos state={photos} /> : null}
           {!splitting && !expanded && hasIngredientNutrition(ingredients) ? (
             <IngredientWeights
               items={ingredients}

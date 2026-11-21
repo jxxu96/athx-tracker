@@ -21,7 +21,11 @@ function childEnv(extra = {}) {
   return env;
 }
 
-export function run(bin, args, timeoutMs, signal, extraEnv) {
+/**
+ * input, when given, is written to the CLI's stdin, which then closes. Claude
+ * takes a meal's photos that way.
+ */
+export function run(bin, args, timeoutMs, signal, extraEnv, input) {
   return new Promise((resolve) => {
     // Grok's own folder when it has one; otherwise a folder just for this
     // run. Either way the CLI is not standing in a folder another estimate
@@ -31,16 +35,23 @@ export function run(bin, args, timeoutMs, signal, extraEnv) {
       ? args[asked + 1]
       : join(tmpdir(), `athx-estimator-run-${randomBytes(6).toString("hex")}`);
     if (asked < 0) mkdirSync(folder, { recursive: true });
-    // stdin ignored: the CLIs otherwise wait three seconds for piped input.
+    // stdin ignored unless there is input: the CLIs otherwise wait three
+    // seconds for piped input.
     const child = spawn(bin, args, {
       cwd: folder,
       env: childEnv(extraEnv),
       windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
       // A Windows npm shim is a .cmd file, which spawn will not start directly.
       shell: process.platform === "win32" && /\.(cmd|bat)$/i.test(bin),
       signal,
     });
+    if (input !== undefined) {
+      // A CLI that exits before reading it all breaks the pipe. Its exit says
+      // why, so the broken pipe is not reported as the reason.
+      child.stdin.on("error", () => {});
+      child.stdin.end(input);
+    }
     let out = "";
     let err = "";
     let timedOut = false;
@@ -94,6 +105,27 @@ function unwrap(value, nested) {
   return value;
 }
 
+/**
+ * The result envelope that ends Claude's stream-json output: one event a line,
+ * the last of them the same object its json output prints alone. Earlier
+ * lines are the run's own events, which hold no answer. Anything without such
+ * a line gives null.
+ */
+export function resultEnvelope(raw) {
+  const lines = String(raw ?? "").split(/\r?\n/);
+  for (let index = lines.length - 1; index >= 0; index--) {
+    const line = lines[index].trim();
+    if (!line.startsWith("{") || !line.includes('"result"')) continue;
+    try {
+      const value = JSON.parse(line);
+      if (value && typeof value === "object" && !Array.isArray(value) && value.type === "result") return value;
+    } catch {
+      // Not a whole object on this line.
+    }
+  }
+  return null;
+}
+
 export function structured(raw) {
   try {
     return unwrap(JSON.parse(raw));
@@ -120,6 +152,9 @@ export function parseCliOutput(raw, nested = false) {
     // Text around it; looked for below.
   }
   if (whole(direct)) return unwrap(direct, nested);
+  // One event a line, from Claude given a photo: the answer is in the last.
+  const envelope = nested || !raw.includes("\n") ? null : resultEnvelope(raw);
+  if (envelope) return unwrap(envelope, nested);
   const end = raw.lastIndexOf("}");
   for (let start = raw.lastIndexOf("{", end); start >= 0; start = raw.lastIndexOf("{", start - 1)) {
     try {

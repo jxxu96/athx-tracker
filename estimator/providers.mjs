@@ -66,10 +66,36 @@ export const DISH_TASK = {
   meal: true,
   settle: (answers) => settleDishes(answers),
 };
+/**
+ * The one user message Claude reads on stdin when a meal comes with photos:
+ * each photo as an image block, then the words. The CLI has no flag for an
+ * image; its stream-json input takes the same content blocks as the API.
+ */
+export function claudeMessage(text, images) {
+  return `${JSON.stringify({
+    type: "user",
+    message: {
+      role: "user",
+      content: [
+        ...images.map(({ type, data }) => ({ type: "image", source: { type: "base64", media_type: type, data } })),
+        { type: "text", text },
+      ],
+    },
+  })}\n`;
+}
+
+/**
+ * photos, where a provider is given any, is a meal's photos written out for
+ * this estimate: files for a CLI that takes a path, and images, the same
+ * photos as base64, for one handed them in its input. A provider without
+ * photos: true is not asked about a meal that has them. Grok is one: no way to
+ * hand its CLI an image was found, in its flags or its documentation.
+ */
 export const PROVIDERS = {
   codex: {
     bin: () => CODEX_BIN,
-    args: (description, task = MEAL_TASK) => [
+    photos: true,
+    args: (description, task = MEAL_TASK, photos) => [
       // -a is a flag of `codex`, not of `exec`. never: a meal estimate must not
       // stop to ask permission. read-only: it must not edit anything.
       // --search is live web search, and only for a meal. It is a flag of
@@ -85,6 +111,10 @@ export const PROVIDERS = {
       "--ignore-user-config",
       "--color",
       "never",
+      // Each photo by its path. --image takes every value that follows it, so
+      // a photo never comes last before the prompt: the prompt would be read
+      // as one more photo, and codex would wait for a prompt on stdin.
+      ...(photos?.files ?? []).flatMap((file) => ["--image", file]),
       "--output-schema",
       schemaFile(task),
       "-C",
@@ -129,12 +159,18 @@ export const PROVIDERS = {
   },
   claude: {
     bin: () => CLAUDE_BIN,
-    args: (description, task = MEAL_TASK) => {
+    photos: true,
+    args: (description, task = MEAL_TASK, photos) => {
       const meal = task.meal === true;
+      // Photos go in on stdin, in claudeMessage. That input needs stream-json
+      // output, which in turn needs --verbose: the CLI refuses either alone.
+      // The answer is then the last line, the same envelope json prints.
+      const seeing = Boolean(photos?.images?.length);
       return [
       "--print",
-      "--output-format",
-      "json",
+      ...(seeing
+        ? ["--input-format", "stream-json", "--output-format", "stream-json", "--verbose"]
+        : ["--output-format", "json"]),
       "--model",
       CLAUDE_MODEL,
       // Trims tens of thousands of scaffolding tokens off every call.
@@ -150,9 +186,12 @@ export const PROVIDERS = {
         ? ["--tools", "WebSearch,WebFetch", "--allowedTools", "WebSearch,WebFetch", "--permission-mode", "dontAsk"]
         : ["--tools", ""]),
       "--strict-mcp-config",
-      description,
+      // With photos, the words are the text of the message on stdin.
+      ...(seeing ? [] : [description]),
     ];
     },
+    input: (description, task, photos) =>
+      photos?.images?.length ? claudeMessage(description, photos.images) : undefined,
   },
 };
 

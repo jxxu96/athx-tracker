@@ -68,6 +68,28 @@ figures away. Background estimates do not count toward the 60 a day. They
 need the estimator: with only `XAI_API_KEY` set, the button is not offered,
 since the worker asks the gateway and nothing else.
 
+## Photos
+
+A meal's photos go with its estimate as JPEGs, three at most and 1 MB each.
+The app and the estimator both check each one by its first bytes as well as
+its label. The estimator writes each to a folder of its own for the
+estimate and removes it once every estimator asked has exited. Codex is
+given each photo by its path, and Claude reads them in its first message,
+ahead of the words. Grok's CLI is not asked about a meal with photos, since
+no way to hand it an image was found, and the list of estimators that did
+not answer says so: "not asked: it cannot read photos". With only
+`XAI_API_KEY` set, the x.ai API is sent the photos itself.
+
+A meal with photos asks everyone who can see them at once, as a complex
+meal does, so a portion judged from a photo is the average of each view of
+it rather than the first one in. It shares no looked-up labels between them
+and is never kept in the label cache, since the words alone do not say what
+a photo showed. An estimator older than the app does not say it took the
+photos, and the app does not use what it answers, which would be for the
+words alone: it says the estimator needs updating, and the estimate is not
+counted. One that hangs up on a request that size reads as one that did not
+answer, and the notice says it may be older than the app.
+
 ## When Claude's sign-in runs out
 
 A Claude login on the estimator has a time limit, and past it the CLI cannot
@@ -97,7 +119,9 @@ typed (`lib/drafts.ts`, `hooks/use-form-draft.ts`), so the app being closed, the
 phone dropping it from memory, or a reload loses none of it: opening the form
 again opens it as it was left, an unsaved edit of an entry included, which says
 "unsaved changes restored". A form that is opened and not typed in keeps no
-draft, and neither does one typed in and emptied again.
+draft, and neither does one typed in and emptied again. A meal's photos are
+not part of its draft: they stay with the form while it is open, and a
+reload or a draft opened again has none.
 
 **New meal** or **New session** above a form with a draft sets it aside and
 starts a fresh one; **Discard draft** throws it away. Drafts set aside are

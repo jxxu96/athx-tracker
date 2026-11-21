@@ -25,6 +25,8 @@ import {
   MEAL_RESERVE_MS,
   ORDER,
   PER_PROVIDER_MS,
+  PHOTO_BYTES,
+  PHOTO_LIMIT,
   PORT,
   RESERVE_MS,
   TOKEN,
@@ -41,6 +43,7 @@ import {
   failure,
   providerSlice,
 } from "./estimate.mjs";
+import { readPhotos } from "./photos.mjs";
 import { DISH_INSTRUCTIONS, DISH_SCHEMA, INSTRUCTIONS, SCHEMA } from "./prompts.mjs";
 import { DISH_TASK, MEAL_TASK, PROVIDERS, configured } from "./providers.mjs";
 import { clean, cleanDishes, complex, settle, settleDishes } from "./settle.mjs";
@@ -116,6 +119,7 @@ const server = createServer((request, response) => {
     let context = "";
     let streaming = false;
     let previousEstimates;
+    let photos = [];
     try {
       const parsed = JSON.parse(body);
       description = String(parsed.description ?? "").trim();
@@ -146,6 +150,13 @@ const server = createServer((request, response) => {
       // older estimator ignores the ask and answers for the whole meal, which
       // the app takes as one dish.
       if (task === MEAL_TASK && parsed.dishes === true) task = DISH_TASK;
+      // A meal's photos, every one of them usable or none. A workout takes none.
+      if (parsed.images !== undefined) {
+        if (!task.meal) return send(response, 400, { error: "Only a meal takes photos." });
+        const read = readPhotos(parsed.images);
+        if (read.error) return send(response, 400, { error: read.error });
+        photos = read.photos;
+      }
       // A reply's own last answer for each provider, by name. Only a meal
       // continues one, and only an object of objects is taken.
       const own = parsed.previousEstimates;
@@ -164,6 +175,11 @@ const server = createServer((request, response) => {
     if (description.length < 3 || description.length > 40000)
       return send(response, 400, { error: "Describe the meal or workout in a little more detail." });
 
+    // How many photos the estimate was given. An estimator from before photos
+    // never says, and the app does not use what it answers for a meal that
+    // came with them, which it estimated from the words alone.
+    const seen = photos.length ? { "X-Athx-Photos": String(photos.length) } : {};
+
     // A streamed meal sends one JSON line per estimator as each answers, then
     // the settled answer or the failure. The status is sent before anyone has
     // answered, so a failure travels in the last line, not the status. Only a
@@ -172,6 +188,7 @@ const server = createServer((request, response) => {
       response.writeHead(200, {
         "Content-Type": "application/x-ndjson",
         "Cache-Control": "no-store",
+        ...seen,
       });
       response.flushHeaders();
       const line = (value) => {
@@ -181,6 +198,7 @@ const server = createServer((request, response) => {
         signal: gone.signal,
         shareSources: true,
         previousEstimates,
+        photos,
         onAnswer: ({ estimate: answer, provider }) =>
           line({ type: "partial", provider, estimate: answer }),
         // One that was asked and gave nothing says why, even when the others
@@ -196,7 +214,9 @@ const server = createServer((request, response) => {
       return response.end();
     }
 
-    const result = await estimate(context + description, budget, task, { signal: gone.signal, previousEstimates, shareSources: true });
+    const result = await estimate(context + description, budget, task, {
+      signal: gone.signal, previousEstimates, shareSources: true, photos,
+    });
     if (gone.signal.aborted) return response.end();
     if (result.error) {
       console.error(`[estimator] all providers failed: ${result.error}`);
@@ -206,11 +226,11 @@ const server = createServer((request, response) => {
       return send(response, 502, {
         error: "No estimate available.",
         detail: String(result.error).slice(0, 300),
-      });
+      }, seen);
     }
     // Header, not a body field: the body is the estimate, and an extra key
     // there would be rejected by the app. An older app ignores the header.
-    send(response, 200, result.estimate, { "X-Athx-Provider": result.provider });
+    send(response, 200, result.estimate, { "X-Athx-Provider": result.provider, ...seen });
   });
 });
 
@@ -230,6 +250,8 @@ export {
   INSTRUCTIONS,
   MEAL_PROVIDER_MS,
   MEAL_RESERVE_MS,
+  PHOTO_BYTES,
+  PHOTO_LIMIT,
   SCHEMA,
   PROVIDERS,
   budgetSlice,

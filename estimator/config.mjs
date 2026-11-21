@@ -96,11 +96,19 @@ export const COMPLEX_ITEMS = 3;
 // opened showed no nutrition: search, open another, search again, and no turn
 // was left to answer in. The time cap above still bounds a long lookup.
 export const MEAL_MAX_TURNS = "10";
+// Photos of a meal, as the phone sends them: JPEG only, at most this many, and
+// each at most this many bytes. The phone shrinks each to 1536 px on its long
+// edge first, which leaves a photo well under the cap.
+export const PHOTO_LIMIT = 3;
+export const PHOTO_BYTES = 1_000_000;
+// As base64, four characters for every three bytes.
+export const PHOTO_CHARS = Math.ceil(PHOTO_BYTES / 3) * 4;
 // The most a request may carry, in characters. A reply's description holds
 // the meal, the previous estimate, every correction and the food notes, and
-// a reply also sends each provider's own last answer. The app's test of its
-// largest valid reply holds it to this.
-export const BODY_LIMIT = 128_000;
+// a reply also sends each provider's own last answer. Photos ride beside it,
+// so they have room of their own. The app's test of its largest valid reply
+// holds it to this.
+export const BODY_LIMIT = 128_000 + PHOTO_LIMIT * (PHOTO_CHARS + 100);
 
 // Codex, then Claude, then Grok. A missing binary or a login that is not there
 // fails quickly and the next provider answers. Whoever is not last still leaves

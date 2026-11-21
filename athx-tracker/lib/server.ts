@@ -84,7 +84,7 @@ export async function guard(request: Request, write = false) {
  * A full session can list every set, and each of those sets can record that
  * its final rep failed. 64 KB was enough before that mark existed.
  */
-const MAX_BODY_BYTES = 96_000;
+export const MAX_BODY_BYTES = 96_000;
 
 /**
  * Distinct from a body that parsed and was wrong. Both used to come back as

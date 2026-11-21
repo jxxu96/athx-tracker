@@ -198,7 +198,9 @@ test("an oversized request is refused before it is read", async ({ page }) => {
     return {
       records: await send("/api/records", { id: "x", notes: huge }),
       settings: await send("/api/settings", { settings: { huge: "x".repeat(1_100_000) }, revision: 0 }),
-      estimate: await send("/api/estimate", { description: huge }),
+      // An estimate can carry three photos of up to 1 MB, so it reads about
+      // 4.1 MB before it refuses one.
+      estimate: await send("/api/estimate", { description: "x".repeat(4_200_000) }),
     };
   });
   expect(statuses.records).toBe(413);

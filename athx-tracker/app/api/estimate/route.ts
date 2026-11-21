@@ -1,13 +1,16 @@
 import {
-  BodyTooLarge, database, guard, json, readBody, runtime, storedFoodNotes, tooLarge,
+  BodyTooLarge, MAX_BODY_BYTES, database, guard, json, readBody, runtime, storedFoodNotes, tooLarge,
 } from "@/lib/server";
 import { grokRequest, extractEstimate } from "@/lib/grok";
 import { gatewayAllowed } from "@/lib/gateway";
 import { estimateRequestSchema, estimateSchema } from "@/lib/validation";
 import { estimatePrompt } from "@/lib/estimate-conversation";
 import { NDJSON, namedEstimator, ndjsonLines, relayEstimate } from "@/lib/estimate-stream";
+import { PHOTO_BODY_BYTES, PHOTO_ONLY_DESCRIPTION } from "@/lib/meal-photos";
 
 const DAILY_LIMIT = 60;
+/** An estimate may carry a meal's photos, so it reads further than a record. */
+const ESTIMATE_BODY_BYTES = MAX_BODY_BYTES + PHOTO_BODY_BYTES;
 
 /**
  * Long enough for the first model to look a named product up, plus the reserve
@@ -176,9 +179,14 @@ export async function POST(request: Request) {
       503,
     );
   try {
-    const input = estimateRequestSchema.parse(await readBody(request));
-    const description = estimatePrompt(input.description, input.refinement, storedFoodNotes(), input.dishes);
-    const dishes = Boolean(input.dishes?.length);
+    const input = estimateRequestSchema.parse(await readBody(request, ESTIMATE_BODY_BYTES));
+    const images = input.images ?? [];
+    // Photos can be all there is: the schema lets the words go only then. The
+    // estimator still wants words, and these say where the meal is.
+    const typed = input.description || PHOTO_ONLY_DESCRIPTION;
+    const description = estimatePrompt(typed, input.refinement, storedFoodNotes(), input.dishes);
+    // An empty cut, sent only with photos, still asks for the meal dish by dish.
+    const dishes = input.dishes !== undefined;
 
     const bucket = new Date().toISOString().slice(0, 10);
     if (!claimEstimate(bucket))
@@ -233,8 +241,10 @@ export async function POST(request: Request) {
                   ...(input.refinement?.byEstimator
                     ? { previousEstimates: input.refinement.byEstimator }
                     : {}),
+                  // The meal's photos, for the estimators that can see them.
+                  ...(images.length ? { images } : {}),
                 }
-              : grokRequest(description, config.XAI_MODEL || "grok-4.7", { dishes }),
+              : grokRequest(description, config.XAI_MODEL || "grok-4.7", { dishes, images }),
           ),
           signal: AbortSignal.any(signals),
         },
@@ -244,8 +254,11 @@ export async function POST(request: Request) {
       releaseEstimate(bucket);
       return json(
         {
-          error:
-            "The estimator did not answer. Check it is running, or enter the macros by hand.",
+          // An estimator from before photos hangs up on a request that big,
+          // which looks the same from here as one that is not running.
+          error: images.length
+            ? "The estimator did not take the photos. If it is running, it may be older than this app: update it, or describe the meal instead."
+            : "The estimator did not answer. Check it is running, or enter the macros by hand.",
         },
         503,
       );
@@ -274,6 +287,17 @@ export async function POST(request: Request) {
             ? `No estimator could answer — ${detail}`
             : "No estimator could answer. Try again, or enter the macros by hand.",
         },
+        502,
+      );
+    }
+    // An estimator from before photos ignores them and estimates the words
+    // alone, which for a photo with no words is a guess at nothing. One that
+    // took them says how many, before anyone has answered.
+    if (gateway && images.length && response.headers.get("x-athx-photos") !== String(images.length)) {
+      upstream.abort();
+      releaseEstimate(bucket);
+      return json(
+        { error: "The estimator is older than this app and cannot read photos. Update it, or describe the meal instead." },
         502,
       );
     }

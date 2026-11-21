@@ -1,7 +1,7 @@
 /** One estimate: which providers are asked, in what order, for how long, and what comes back. */
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { parseCliOutput, run } from "./cli.mjs";
+import { parseCliOutput, resultEnvelope, run } from "./cli.mjs";
 import {
   BUDGET_MS,
   MEAL_PROVIDER_MS,
@@ -11,6 +11,7 @@ import {
   RESERVE_MS,
 } from "./config.mjs";
 import { NutritionCache, nutritionSignature, nutritionTask } from "./nutrition.mjs";
+import { writePhotos } from "./photos.mjs";
 import { MEAL_TASK, PROVIDERS, configured } from "./providers.mjs";
 import { complex } from "./settle.mjs";
 import { verifyNutritionEvidence } from "./source-page.mjs";
@@ -46,14 +47,16 @@ function either(...signals) {
  * token counts: result is an API error's message, such as a sign-in or a usage
  * limit, errors the reasons a run stopped, such as running out of turns, and
  * api_error_status the HTTP status. The first 160 characters showed none of
- * it. Anything that is not an error envelope gives an empty string.
+ * it. Given a photo, Claude prints stream-json instead, one event a line, and
+ * the envelope is the last of them. Anything that is not an error envelope
+ * gives an empty string.
  */
 export function envelopeError(out) {
   let value;
   try {
     value = JSON.parse(out);
   } catch {
-    return "";
+    value = resultEnvelope(out);
   }
   if (!value || typeof value !== "object" || Array.isArray(value) || value.is_error !== true) return "";
   const text = (item) => (typeof item === "string" ? item.trim() : "");
@@ -138,18 +141,36 @@ export function describedFor(description, previousEstimates, name) {
  * and why. Otherwise that reason only ever reached the log whenever somebody
  * else answered, so a provider could fail on every meal without the screen
  * ever saying so. previousEstimates is each provider's own last answer, for a
- * reply; see describedFor.
+ * reply; see describedFor. photos is a meal's photos, as readPhotos gives
+ * them: they are written out once for every provider asked, and removed once
+ * each of them has exited.
  */
-export async function estimate(
+export async function estimate(description, budgetMs = BUDGET_MS, task = MEAL_TASK, options = {}) {
+  const photos = task.meal === true && options.photos?.length ? writePhotos(options.photos) : null;
+  try {
+    return await estimateWith(description, budgetMs, task, { ...options, photos });
+  } finally {
+    photos?.remove();
+  }
+}
+
+/**
+ * A meal with photos is asked of everyone who can see them, at once, as a
+ * complex meal is, so a portion judged from a photo is the average of each
+ * view of it rather than the first one in. It shares no source records and is
+ * never cached, since the words alone do not say what the photo showed, and
+ * two photos with the same words are two meals.
+ */
+async function estimateWith(
   description,
-  budgetMs = BUDGET_MS,
-  task = MEAL_TASK,
-  { signal, onAnswer, onMiss, previousEstimates, shareSources = false } = {},
+  budgetMs,
+  task,
+  { signal, onAnswer, onMiss, previousEstimates, shareSources = false, photos = null } = {},
 ) {
   const deadline = Date.now() + budgetMs;
   const tried = [];
   const meal = task.meal === true;
-  const cache = meal && shareSources ? sourceCache() : null;
+  const cache = meal && shareSources && !photos ? sourceCache() : null;
   const cacheKey = cache?.key(description, task.name);
   // Follow-ups must recheck corrections rather than resurrect an earlier plan.
   let refinement = false;
@@ -178,6 +199,12 @@ export async function estimate(
     if (signal?.aborted) return null;
     const provider = PROVIDERS[name];
     if (!provider) return null;
+    // Its answer would be for the words alone, averaged in with answers that
+    // saw the meal. Said, so the form shows why it gave nothing.
+    if (photos && !provider.photos) {
+      miss(name, "not asked: it cannot read photos");
+      return null;
+    }
     const bin = provider.bin();
     if (!bin) {
       miss(name, "no binary found");
@@ -202,10 +229,11 @@ export async function estimate(
       : ownDescription;
     const { code, out, err, timedOut } = await run(
       bin,
-      provider.args(prompted, askedTask),
+      provider.args(prompted, askedTask, photos ?? undefined),
       slice,
       either(stop, signal),
       provider.env?.(askedTask),
+      provider.input?.(prompted, askedTask, photos ?? undefined),
     );
     const value = askedTask.clean(parseCliOutput(out));
     if (value) {
@@ -248,7 +276,7 @@ export async function estimate(
     return answers.filter(Boolean);
   }
 
-  if (meal && complex(description)) {
+  if (meal && (photos || complex(description))) {
     // Retrieve once, then let the other providers independently check identity
     // and portions against the shared records. A cache hit skips the lookup stage.
     let first;
