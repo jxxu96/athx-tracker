@@ -93,12 +93,19 @@ import {
   holdsEthanol,
   readDishes,
   replaceDishEstimate,
+  rescaleFigure,
+  scaleFigures,
+  scaleOf,
   shareAsWritten,
   shareText,
   splitMeal,
   takeWrittenShare,
   type DishDraft,
+  type DishScale,
+  type FigureTexts,
 } from "@/lib/meal-dishes";
+import { isSize, scaleAt, sizeIngredients, sizeItems, sizeTable, sizedAssumptions, tableSize } from "@/lib/meal-size";
+import { SizeSlider } from "@/components/size-slider";
 import { withoutShares, writtenDishes } from "@/lib/dish-split";
 import {
   anchorItem,
@@ -235,6 +242,8 @@ export function MealForm({
     editing && (editing.meal === "Alcohol" || editing.macros.alcohol) ? String(editing.macros.alcohol ?? 0) : "",
   ));
   const [fiber, setFiber] = useState(textOf(from?.fiber, editing ? String(editing.macros.fiber ?? 0) : ""));
+  // The whole meal made bigger or smaller, as a dish is. Null while it is as it came.
+  const [mealScale, setMealScale] = useState<DishScale | null>(() => scaleOf(from?.mealScale));
   const [assumptions, setAssumptions] = useState(textOf(from?.assumptions, editing?.assumptions ?? ""));
   const [confidence, setConfidence] = useState<Estimate["confidence"] | null>(
     oneOf(from?.confidence, ["low", "medium", "high"] as const) ?? null,
@@ -324,6 +333,14 @@ export function MealForm({
     : macros;
   const shownFiber = itemSums ? itemSums.fiber : fiber;
   const shownEthanol = itemSums ? itemSums.ethanol : ethanol;
+  const shownFigures: FigureTexts = { ...shownMacros, fiber: shownFiber, ethanol: shownEthanol };
+  // The meal is its weighed ingredients, each with its own slider.
+  const weighing = !splitting && !expanded && hasIngredientNutrition(ingredients);
+  const mealPercent = mealScale?.percent ?? 100;
+  // What the meal was at 100%. Opened up, it is the items, resized with it.
+  const mealFull = !mealScale
+    ? null
+    : expanded ? ((Number(shownMacros.calories) || 0) * 100) / mealPercent : mealScale.base.calories;
   // Ethanol counts on any sitting. Its box shows on an Alcohol sitting, and on
   // any other once the meal, an item or a dish holds some, as a dinner with
   // wine does. Each item is read as typed, since their sum counts a mistyped
@@ -387,7 +404,7 @@ export function MealForm({
     snapshot: JSON.stringify({
       day, time, picked, description, prompt, name, macros, ethanol, fiber, assumptions,
       confidence, answeredBy, source, adjusted, conversation, reply, kept, draftIds,
-      dishes, unsplit, partials, included, ingredients, items, itemsEdited,
+      dishes, unsplit, partials, included, ingredients, items, itemsEdited, mealScale,
     }),
     summary: (
       name.trim() ||
@@ -440,6 +457,7 @@ export function MealForm({
     setEthanol("");
     setEthanolSeen(false);
     setFiber("");
+    setMealScale(null);
     setAssumptions("");
     setConfidence(null);
     setAnsweredBy(null);
@@ -490,6 +508,8 @@ export function MealForm({
           confidence,
           adjusted,
           assumptions: listedAssumptions(),
+          // A resized meal is a resized dish, still saying what 100% was.
+          scale: mealScale && expanded ? scaleAt(shownFigures, mealScale.percent) : mealScale,
         }], written)
       : written.map((dish) => ({
           ...emptyDish(newId()),
@@ -664,6 +684,8 @@ export function MealForm({
     setAnsweredBy(provider && provider in ESTIMATORS ? provider : null);
     setSource("grok");
     setAdjusted(false);
+    // The estimate's figures are the meal at 100%, as they are for a dish.
+    setMealScale(null);
   }
 
   const chosen = included ?? defaultIncluded(partials).map((answer) => answer.provider);
@@ -892,6 +914,7 @@ export function MealForm({
     });
     setEthanol(offer.macros.alcohol ? String(offer.macros.alcohol) : "");
     setFiber(offer.macros.fiber ? String(offer.macros.fiber) : "");
+    setMealScale(null);
     setAssumptions(offer.assumptions);
     setSource("manual");
     setAdjusted(false);
@@ -950,6 +973,7 @@ export function MealForm({
     setMacros(shownMacros);
     setFiber(shownFiber);
     setEthanol(shownEthanol);
+    setMealScale((current) => current && scaleAt(shownFigures, current.percent));
     setAssumptions(listedAssumptions());
     if (itemsEdited) setIngredients([]);
     setItems([]);
@@ -995,6 +1019,15 @@ export function MealForm({
     });
     setFiber(String(totals.fiber ?? 0));
     setEthanol(String(totals.alcohol ?? 0));
+    // At a size, these are the meal at that size.
+    setMealScale((current) => current && scaleAt({
+      calories: String(totals.calories),
+      protein: String(totals.protein),
+      carbs: String(totals.carbs),
+      fat: String(totals.fat),
+      fiber: String(totals.fiber ?? 0),
+      ethanol: String(totals.alcohol ?? 0),
+    }, current.percent));
     setAssumptions(nextAssumptions);
     setPartials([]);
     setMissed([]);
@@ -1024,7 +1057,11 @@ export function MealForm({
         meal: slot,
         items: listed ?? (ingredients.length ? ingredients : itemsFromText(description.trim() || name.trim(), name.trim())),
         macros: counted,
-        assumptions: listed && itemsEdited ? withItemList(assumptions, listed) : assumptions,
+        assumptions: sizedAssumptions(
+          listed && itemsEdited ? withItemList(assumptions, listed) : assumptions,
+          mealPercent,
+          mealFull ?? 0,
+        ),
         sourceKey: reuse && athlete === reuse.athlete && reuse.sourceKey
           ? reuse.sourceKey
           : mealKey(name),
@@ -1060,6 +1097,29 @@ export function MealForm({
 
   function setMacro(key: keyof Macros, value: string) {
     setMacros((current) => ({ ...current, [key]: value }));
+    setMealScale((current) => rescaleFigure(current, key, value));
+    markManual();
+  }
+
+  /**
+   * The whole meal at a size. Weighed ingredients or opened-up items are
+   * what it is made of, so they are resized and its figures follow from
+   * them; otherwise its own figures are, from what they are at 100%.
+   */
+  function resizeMeal(percent: number) {
+    if (!isSize(percent) || percent === mealPercent) return;
+    const ratio = percent / mealPercent;
+    if (expanded || weighing) {
+      setMealScale({ percent, base: scaleAt(shownFigures, mealPercent).base });
+      if (expanded) changeItems((current) => sizeItems(current, ratio));
+      else writeIngredients(sizeIngredients(ingredients, ratio));
+      return;
+    }
+    const { figures, scale } = scaleFigures({ ...macros, fiber, ethanol }, mealScale, percent);
+    setMacros({ calories: figures.calories, protein: figures.protein, carbs: figures.carbs, fat: figures.fat });
+    setFiber(figures.fiber);
+    setEthanol(figures.ethanol);
+    setMealScale(scale);
     markManual();
   }
 
@@ -1212,7 +1272,11 @@ export function MealForm({
         meal: slot,
         macros: { ...parsedMacros, alcohol: ethanolGrams, fiber: fiberGrams },
         source,
-        assumptions: (listed && itemsEdited ? withItemList(assumptions, listed) : assumptions).trim().slice(0, 3000),
+        assumptions: sizedAssumptions(
+          listed && itemsEdited ? withItemList(assumptions, listed) : assumptions,
+          mealPercent,
+          mealFull ?? 0,
+        ).trim().slice(0, 3000),
         ...(savedItems ? { items: savedItems } : {}),
         ...(source === "grok" && answeredBy ? { estimator: answeredBy } : {}),
       });
@@ -1243,6 +1307,7 @@ export function MealForm({
   const canQueue = queueReady && conversation.length === 0 && !rejected && !splitting && !expanded &&
     photos.photos.length === 0;
   const seeds = itemSeeds();
+  const table = tableSize(dishes);
   // Filled from a template and given foods it does not have: offer to keep
   // them in it, at the bottom, where the meal is about to be saved. Only for
   // the one template "Update this template" would write.
@@ -1372,6 +1437,19 @@ export function MealForm({
                   }}
                 />
               </Field>
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">Meal size, every dish together</p>
+                <SizeSlider
+                  label="Meal size"
+                  percent={table.percent}
+                  full={table.full}
+                  disabled={busy}
+                  onPercent={(percent) => {
+                    setDishes((current) => sizeTable(current, percent));
+                    setError("");
+                  }}
+                />
+              </div>
               <DishShares dishes={dishes} eaters={eaters} />
             </section>
         </fieldset>
@@ -1608,7 +1686,9 @@ export function MealForm({
                 readOnly={expanded}
                 className={expanded ? "bg-muted/50" : undefined}
                 onChange={(event) => {
-                  setEthanol(event.target.value);
+                  const text = event.target.value;
+                  setEthanol(text);
+                  setMealScale((current) => rescaleFigure(current, "ethanol", text));
                   markManual();
                 }}
               />
@@ -1635,7 +1715,9 @@ export function MealForm({
                 readOnly={expanded}
                 className={expanded ? "bg-muted/50" : undefined}
                 onChange={(event) => {
-                  setFiber(event.target.value);
+                  const text = event.target.value;
+                  setFiber(text);
+                  setMealScale((current) => rescaleFigure(current, "fiber", text));
                   markManual();
                 }}
               />
@@ -1653,6 +1735,7 @@ export function MealForm({
               </Field>
             ))}
           </div>
+          <SizeSlider label="Meal size" percent={mealPercent} full={mealFull} disabled={busy} onPercent={resizeMeal} />
           {expanded ? (
             <p className="text-[11px] text-muted-foreground">
               The items below add up to these. Change an item to change the meal.

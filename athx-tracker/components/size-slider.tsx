@@ -8,11 +8,12 @@ import { SCALE_MAX, SCALE_MIN, SCALE_SLIDER, readScale } from "@/lib/meal-dishes
 const shownPercent = (percent: number) => String(Math.round(percent * 10) / 10);
 
 /**
- * A dish or an item made bigger or smaller, by a percentage, in one slim row
- * under its figures: a slider, and the size it is at, which can be typed
- * into. It sits at 100% and quiet until it is moved, and then says what 100%
- * was. A size the box can take applies at once, so the figures follow the
- * typing; one it cannot is said under it and dropped on leaving the box.
+ * A meal, a dish or an item made bigger or smaller, by a percentage, in one
+ * slim row under its figures: a slider from 0% to 200%, and the size it is
+ * at, which can be typed into, up to 1000%. It sits at 100% and quiet until
+ * it is moved, and then says what 100% was. A size the box can take applies
+ * at once, so the figures follow the typing; one it cannot is said under it
+ * and dropped on leaving the box.
  */
 export function SizeSlider({
   label = "Size",
@@ -45,7 +46,8 @@ export function SizeSlider({
           step={SCALE_SLIDER.step}
           value={Math.min(SCALE_SLIDER.max, Math.max(SCALE_SLIDER.min, percent))}
           disabled={disabled}
-          onChange={(event) => onPercent(event.target.valueAsNumber)}
+          // The left end is 0 on the track and the smallest size in the box.
+          onChange={(event) => onPercent(Math.max(SCALE_MIN, event.target.valueAsNumber))}
         />
         <div className="relative w-16 shrink-0">
           <Input
