@@ -70,6 +70,23 @@
   by item", so a reply to the estimate reads them. **Collapse into one meal**
   keeps the figures and writes that list in. A reply, or a change of which
   estimates count, makes the items again from the new answer.
+  **Meal size**, under the meal's figures, makes the whole meal bigger or
+  smaller by a percentage, with the same bar a dish has: there from the
+  start, at 100% and quiet. On the meal's own figures it works as a dish's
+  does: every figure follows from the meal at 100%, a figure typed meanwhile
+  is that figure at the size shown, and a resized estimate saves as your own
+  numbers. A meal of weighed ingredients resizes each ingredient's grams, or
+  how many of a counted one, and a meal opened up into its items resizes each
+  item's grams, or its own size when it has no weight, so the figures follow
+  from them as they do from their own sliders. Each resize works from the
+  ingredients, items or dishes as they were when the bar first moved them,
+  not from what the last resize rounded them to, so a meal taken to 1% and
+  back loses nothing, not even 3 g of oil; anything else that changes them
+  makes that the new start (`startOf`). An estimate, a reply, a change
+  of which estimates count, or a template closes it, since their figures are
+  the meal at 100%. Saved resized, the assumptions say "Scaled to 50% of
+  1000 kcal." first, or after the list of items, which stays first
+  (`sizedAssumptions` in `lib/meal-size.ts`).
   Logging for both splits the meal by dish. Describe it and **Estimate
   macros**, and it comes back dish by dish, each with its own figures and
   assumptions. What you wrote stays at the top, folded to one line, and opens
@@ -137,8 +154,14 @@
   not checked, and a lone item, being the dish itself, is mentioned only when
   it is out (`dishItemCheck` in `lib/meal-items.ts`). A size under each
   dish's figures makes it bigger or smaller by a percentage: one slim row, a
-  slider from 10% to 300% in steps of 5 and the size it is at, which takes
-  anything from 1% to 1000% typed. It sits at 100% and quiet, and once moved
+  slider from 0% to 200% in steps of 5 and the size it is at, which takes
+  anything from 1% to 1000% typed. Most sizes are between half and a bit
+  over whole, so 50% to 125% takes the middle 60% of the track, with ticks
+  at 50, 100 and 125: a step there is twice as wide as one below 50% and
+  three times one above 125%. Dragged, it lands on a whole 5%; the arrow
+  keys move it 5% and Page Up and Page Down 25% (`lib/size-track.ts`). The
+  slider's left end is 1%, the smallest size: at 0% every figure is 0, and
+  nothing could find its way back. It sits at 100% and quiet, and once moved
   says what 100% was, "of 800 kcal". Every figure follows the size from the
   dish's figures at 100%, so sliding back loses nothing; a figure typed
   meanwhile is that figure at the size shown. Back at 100%, the dish is as it
@@ -146,7 +169,13 @@
   as your own numbers, and since its working was written for 100%, each meal's
   assumptions say "Scaled to 120% of 800 kcal." under the whole dish, and the
   item check holds the working to the dish at 100%. Estimating the dish again
-  closes the scale (`scaleDish` in `lib/meal-dishes.ts`). Each dish has a share for each
+  closes the scale (`scaleDish` in `lib/meal-dishes.ts`). **Meal size**,
+  above the shares, resizes every dish together by the same ratio, so a dish
+  already at half stays at half of the rest, and each dish's own size moves
+  with it. It sits at the dishes' size weighed by their calories at 100%, so
+  it says 100% until something is resized, says what the whole table came
+  to, and moves when a dish is resized or estimated on its own (`tableSize`
+  and `sizeTable` in `lib/meal-size.ts`). Each dish has a share for each
   of you as a percentage of that dish, starting at half each. The two shares
   always add up to 100: typing one sets the other, and blank counts as 0. Each
   of you has a box at your end of a bar, Hippos at the left and Gators at the

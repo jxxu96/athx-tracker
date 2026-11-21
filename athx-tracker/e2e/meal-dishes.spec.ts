@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { PASSPHRASE } from "../playwright.config.ts";
+import { trackPosition } from "../lib/size-track.ts";
 import { chooseTheme } from "./theme.ts";
 
 type SavedMeal = {
@@ -827,7 +828,7 @@ test("a dish's items are checked against its calories without being enforced, an
   // The size sits under the figures at 100%, with nothing changed and nothing to tick.
   await expect(curryDish.getByRole("checkbox", { name: "Scale size" })).toHaveCount(0);
   await expect(curryDish.getByLabel("Size (%)")).toHaveValue("100");
-  await expect(curryDish.getByLabel("Size", { exact: true })).toHaveValue("100");
+  await expect(curryDish.getByLabel("Size", { exact: true })).toHaveAttribute("aria-valuetext", "100%");
   await expect(curryDish).not.toContainText("of 800 kcal");
   await expect(curryDish.getByLabel("Calories (kcal)")).toHaveValue("800");
   await expect(curryDish).not.toContainText("saved as your own numbers");
@@ -839,7 +840,7 @@ test("a dish's items are checked against its calories without being enforced, an
   await expect(curryDish.getByLabel("Carbs (g)")).toHaveValue("96");
   await expect(curryDish.getByLabel("Fiber (g)")).toHaveValue("7.2");
   await expect(curryDish.getByLabel("Fat (g)")).toHaveValue("36");
-  await expect(curryDish.getByLabel("Size", { exact: true })).toHaveValue("120");
+  await expect(curryDish.getByLabel("Size", { exact: true })).toHaveAttribute("aria-valuetext", "120%");
   await expect(curryDish).toContainText("of 800 kcal");
   await expect(curryDish).toContainText("saved as your own numbers after your edit");
   // The working was written for 100%, so that is what its items are held to.
@@ -850,7 +851,7 @@ test("a dish's items are checked against its calories without being enforced, an
   await expect(curryDish.getByText("480 kcal")).toHaveCount(2);
 
   // Slid, always from 100%, and a step at a time from the keyboard.
-  await curryDish.getByLabel("Size", { exact: true }).fill("50");
+  await curryDish.getByLabel("Size", { exact: true }).fill(String(trackPosition(50)));
   await expect(curryDish.getByLabel("Calories (kcal)")).toHaveValue("400");
   await expect(curryDish.getByLabel("Size (%)")).toHaveValue("50");
   await curryDish.getByLabel("Size", { exact: true }).press("ArrowRight");

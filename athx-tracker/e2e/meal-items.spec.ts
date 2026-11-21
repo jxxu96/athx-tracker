@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { PASSPHRASE } from "../playwright.config.ts";
+import { trackPosition } from "../lib/size-track.ts";
 
 type SavedMeal = {
   id: string; kind: "meal"; athlete: string; name: string; meal: string; source: string; assumptions: string;
@@ -62,7 +63,7 @@ test("an estimated meal expands into its items, and changing an item changes the
   await expect(item(page, 3).getByLabel("Item", { exact: true })).toHaveValue("2 large eggs");
   await expect(item(page, 3).getByLabel("Grams")).toHaveValue("");
   await expect(item(page, 3).getByRole("slider", { name: "2 large eggs weight" })).toHaveCount(0);
-  await expect(item(page, 3).getByRole("slider", { name: "2 large eggs size" })).toHaveValue("100");
+  await expect(item(page, 3).getByRole("slider", { name: "2 large eggs size" })).toHaveAttribute("aria-valuetext", "100%");
   await expect(item(page, 1).getByRole("slider", { name: "Chicken breast size" })).toHaveCount(0);
   // Opening it up changes nothing: the items add up to the meal, which is still the estimate's.
   await expect(figures(page).getByLabel("Calories (kcal)")).toHaveValue("648");
@@ -179,7 +180,7 @@ test("a dish with no weight slides to a size, and every figure follows it", asyn
   await expect(niangao).not.toContainText("of 550 kcal");
 
   // Half a serving: every figure halves, and the meal follows.
-  await niangao.getByRole("slider", { name: "Niangao with mustard greens, 1 serving size" }).fill("50");
+  await niangao.getByRole("slider", { name: "Niangao with mustard greens, 1 serving size" }).fill(String(trackPosition(50)));
   await expect(niangao.getByLabel("Calories (kcal)")).toHaveValue("275");
   await expect(niangao.getByLabel("Protein (g)")).toHaveValue("5");
   await expect(niangao.getByLabel("Carbs (g)")).toHaveValue("59");
@@ -239,7 +240,7 @@ test("a meal with no figures opens into blank items to type in, and a weight typ
   // A weight typed in ties the figures to it once the box is left, digit by digit or not.
   // Until then it has no weight to slide, only a size; with one, its grams take over.
   await expect(item(page, 2).getByRole("slider", { name: "toast weight" })).toHaveCount(0);
-  await expect(item(page, 2).getByRole("slider", { name: "toast size" })).toHaveValue("100");
+  await expect(item(page, 2).getByRole("slider", { name: "toast size" })).toHaveAttribute("aria-valuetext", "100%");
   await item(page, 2).getByLabel("Grams").pressSequentially("40");
   await expect(item(page, 2).getByLabel("Calories (kcal)")).toHaveValue("80");
   await expect(item(page, 2).getByRole("slider", { name: "toast size" })).toHaveCount(0);
