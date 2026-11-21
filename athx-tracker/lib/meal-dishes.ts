@@ -66,13 +66,12 @@ export type DishScale = {
 };
 
 /**
- * What a size can be. The slider covers the usual range; the box takes the
- * rest. The slider's left end is the smallest size, 1%: at 0% every figure
- * is 0, and nothing typed or resized there could find its way back to 100%.
+ * What a size can be. The slider covers the usual range (lib/size-track.ts);
+ * the box takes the rest. Nothing is 0%: every figure would be 0, and nothing
+ * typed or resized there could find its way back to 100%.
  */
 export const SCALE_MIN = 1;
 export const SCALE_MAX = 1000;
-export const SCALE_SLIDER = { min: 0, max: 200, step: 5 } as const;
 
 /** One dish as typed: every box as its text, so a half-typed number survives a draft. */
 export type DishDraft = {

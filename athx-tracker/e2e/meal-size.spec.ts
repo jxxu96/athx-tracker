@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { PASSPHRASE } from "../playwright.config.ts";
+import { TRACK_LENGTH, trackPosition } from "../lib/size-track.ts";
 
 type SavedMeal = {
   kind: "meal"; athlete: string; name: string; source: string; assumptions: string;
@@ -46,14 +47,21 @@ test("a whole meal resizes with the bar a dish has, and takes a size typed past 
   await page.getByLabel("Fiber (g)").fill("6");
   await page.getByLabel("Fat (g)").fill("30");
 
-  // There from the start, at 100% and quiet, sliding from 0 to 200.
+  // There from the start, at 100% and quiet.
   const card = page.getByRole("region", { name: "Meal figures" });
   await expect(mealSizeBox(page)).toHaveValue("100");
-  await expect(mealSize(page)).toHaveAttribute("min", "0");
-  await expect(mealSize(page)).toHaveAttribute("max", "200");
+  await expect(mealSize(page)).toHaveAttribute("aria-valuetext", "100%");
   await expect(card).not.toContainText("of 800 kcal");
 
-  await mealSize(page).fill("50");
+  // 50% to 125% has the middle of the track, and its ticks say so.
+  const track = await mealSize(page).boundingBox();
+  const ticks = await card.locator("span", { hasText: /^(50|100|125)$/ }).evaluateAll((spans) =>
+    spans.map((span) => span.getBoundingClientRect()).map((rect) => rect.x + rect.width / 2));
+  if (!track) throw new Error("The slider has no size.");
+  const along = ticks.map((x) => Math.round(((x - track.x - 8) / (track.width - 16)) * 100));
+  expect(along).toEqual([20, 60, 80]);
+
+  await mealSize(page).fill(String(trackPosition(50)));
   await expect(mealSizeBox(page)).toHaveValue("50");
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("400");
   await expect(page.getByLabel("Protein (g)")).toHaveValue("20");
@@ -66,14 +74,26 @@ test("a whole meal resizes with the bar a dish has, and takes a size typed past 
   await mealSize(page).fill("0");
   await expect(mealSizeBox(page)).toHaveValue("1");
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("8");
-  await mealSize(page).fill("200");
+  await mealSize(page).fill(String(TRACK_LENGTH));
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("1600");
+
+  // A key moves it 5%, in the middle as anywhere.
+  await mealSizeBox(page).fill("100");
+  await mealSize(page).press("ArrowLeft");
+  await expect(mealSizeBox(page)).toHaveValue("95");
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("760");
+  await mealSize(page).press("PageUp");
+  await expect(mealSizeBox(page)).toHaveValue("120");
+  // Dragged, it lands on a whole 5%.
+  await mealSize(page).fill(String(Math.round(trackPosition(83))));
+  await expect(mealSizeBox(page)).toHaveValue("85");
 
   // Typed past the slider's end, the figures follow and the slider stays at its end.
   await mealSizeBox(page).fill("350");
   await expect(page.getByLabel("Calories (kcal)")).toHaveValue("2800");
   await expect(page.getByLabel("Protein (g)")).toHaveValue("140");
-  await expect(mealSize(page)).toHaveValue("200");
+  await expect(mealSize(page)).toHaveValue(String(TRACK_LENGTH));
+  await expect(mealSize(page)).toHaveAttribute("aria-valuetext", "350%");
 
   // A figure typed at a size is that figure at the size shown.
   await page.getByLabel("Calories (kcal)").fill("3500");
@@ -125,7 +145,7 @@ test("a split meal resizes every dish together, each keeping its size against th
   // A dish resized on its own moves the meal's size, weighed by calories.
   await dish(page, 2).getByLabel("Size (%)").fill("100");
   await expect(mealSizeBox(page)).toHaveValue("60");
-  await mealSize(page).fill("30");
+  await mealSize(page).fill(String(trackPosition(30)));
   await expect(dish(page, 1).getByLabel("Size (%)")).toHaveValue("25");
   await expect(dish(page, 2).getByLabel("Size (%)")).toHaveValue("50");
   await expect(dish(page, 1).getByLabel("Calories (kcal)")).toHaveValue("200");

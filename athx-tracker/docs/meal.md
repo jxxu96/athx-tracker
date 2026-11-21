@@ -151,8 +151,13 @@
   it is out (`dishItemCheck` in `lib/meal-items.ts`). A size under each
   dish's figures makes it bigger or smaller by a percentage: one slim row, a
   slider from 0% to 200% in steps of 5 and the size it is at, which takes
-  anything from 1% to 1000% typed. The slider's left end is 1%, the smallest
-  size: at 0% every figure is 0, and nothing could find its way back. It sits at 100% and quiet, and once moved
+  anything from 1% to 1000% typed. Most sizes are between half and a bit
+  over whole, so 50% to 125% takes the middle 60% of the track, with ticks
+  at 50, 100 and 125: a step there is twice as wide as one below 50% and
+  three times one above 125%. Dragged, it lands on a whole 5%; the arrow
+  keys move it 5% and Page Up and Page Down 25% (`lib/size-track.ts`). The
+  slider's left end is 1%, the smallest size: at 0% every figure is 0, and
+  nothing could find its way back. It sits at 100% and quiet, and once moved
   says what 100% was, "of 800 kcal". Every figure follows the size from the
   dish's figures at 100%, so sliding back loses nothing; a figure typed
   meanwhile is that figure at the size shown. Back at 100%, the dish is as it
