@@ -5,6 +5,20 @@
 import { COMPLEX_ITEMS, WEIGHTS } from "./config.mjs";
 import { DISH_LIMIT } from "./prompts.mjs";
 
+/**
+ * A meal's name without the figures an item line carries. Told to start each
+ * item with its name, portion and macros in brackets, Claude has named a whole
+ * meal with its first item line, "Zorbly Oat Bar, 1 bar (40 g) [190 kcal, 10P,
+ * 23C, 7F, 3 fiber]", even when told to name it in plain words. Only a bracket
+ * that gives kcal goes, and only at the end, so "Pad thai [spicy]" keeps its
+ * own, and a name that is nothing but one stays as it came.
+ */
+export function plainName(raw) {
+  const name = String(raw ?? "").trim();
+  const bare = name.replace(/\s*\[[^[\]]*\bkcal\b[^[\]]*\]\s*$/i, "").trim();
+  return (bare || name).slice(0, 300);
+}
+
 /** Never hand the app something it would only reject: fall through instead. */
 export function clean(value) {
   if (!value || typeof value !== "object") return null;
@@ -14,7 +28,7 @@ export function clean(value) {
     return Math.round(parsed * 10) / 10;
   };
   const estimate = {
-    name: String(value.name ?? "").trim().slice(0, 300),
+    name: plainName(value.name),
     calories: number(value.calories, 20000),
     protein: number(value.protein, 2000),
     carbs: number(value.carbs, 3000),

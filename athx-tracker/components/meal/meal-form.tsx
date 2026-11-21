@@ -1391,9 +1391,11 @@ export function MealForm({
             value={description}
             maxLength={4000}
             rows={3}
-            placeholder={photos.photos.length
-              ? "Anything the photo does not show: portions, oil, what is inside"
-              : "Two eggs, 80 g oats with milk, banana, flat white"}
+            placeholder={photos.photos.length > 1
+              ? "Anything the photos do not show: portions, oil, what is inside"
+              : photos.photos.length
+                ? "Anything the photo does not show: portions, oil, what is inside"
+                : "Two eggs, 80 g oats with milk, banana, flat white"}
             onChange={(event) => {
               setDescription(event.target.value);
               setIngredients([]);

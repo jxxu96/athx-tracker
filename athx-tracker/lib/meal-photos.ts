@@ -3,7 +3,7 @@
  * holds the same limits, PHOTO_LIMIT and PHOTO_BYTES in estimator/config.mjs,
  * and a test holds the two together.
  */
-export const PHOTO_LIMIT = 3;
+export const PHOTO_LIMIT = 6;
 /** The most one photo may weigh, encoded. */
 export const PHOTO_BYTES = 1_000_000;
 /** The same, as base64: four characters for every three bytes. */

@@ -72,14 +72,15 @@ async function shrink(file: File): Promise<MealPhoto> {
  */
 export function useMealPhotos() {
   const [photos, setPhotos] = useState<HeldPhoto[]>([]);
-  const [reading, setReading] = useState(false);
+  // How many photos are being read, so the form can say so.
+  const [readingCount, setReadingCount] = useState(0);
   const [error, setError] = useState("");
 
   async function add(files: readonly File[]) {
     const taken = files.slice(0, Math.max(0, PHOTO_LIMIT - photos.length));
     setError("");
     if (!taken.length) return;
-    setReading(true);
+    setReadingCount(taken.length);
     const made: HeldPhoto[] = [];
     for (const file of taken) {
       try {
@@ -89,7 +90,7 @@ export function useMealPhotos() {
       }
     }
     setPhotos((current) => [...current, ...made].slice(0, PHOTO_LIMIT));
-    setReading(false);
+    setReadingCount(0);
     if (made.length < taken.length)
       setError(taken.length === 1
         ? "That photo could not be opened here. Try another, or a JPEG or PNG."
@@ -110,7 +111,7 @@ export function useMealPhotos() {
 
   /** What an estimate sends: the photos alone, without their keys. */
   const sent: MealPhoto[] = photos.map(({ type, data }) => ({ type, data }));
-  return { photos, sent, reading, error, add, remove, clear };
+  return { photos, sent, reading: readingCount > 0, readingCount, error, add, remove, clear };
 }
 
 export type MealPhotoState = ReturnType<typeof useMealPhotos>;
@@ -123,7 +124,7 @@ export type MealPhotoState = ReturnType<typeof useMealPhotos>;
  * included, without a script clicking a hidden input.
  */
 export function MealPhotos({ state, disabled = false }: { state: MealPhotoState; disabled?: boolean }) {
-  const { photos, reading, error, add, remove } = state;
+  const { photos, reading, readingCount, error, add, remove } = state;
   const off = disabled || reading || photos.length >= PHOTO_LIMIT;
   const pick = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
@@ -183,11 +184,16 @@ export function MealPhotos({ state, disabled = false }: { state: MealPhotoState;
           ))}
         </ul>
       ) : null}
-      {reading ? <p role="status" className="text-xs text-muted-foreground">Reading the photo…</p> : null}
+      {reading ? (
+        <p role="status" className="text-xs text-muted-foreground">
+          {readingCount === 1 ? "Reading the photo…" : `Reading ${readingCount} photos…`}
+        </p>
+      ) : null}
       {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
       {photos.length ? (
         <p className="text-[11px] text-muted-foreground">
-          Sent with each estimate and not kept: the meal saves its figures and what the estimate saw.
+          Up to {PHOTO_LIMIT} photos: another angle, a label or the menu helps, and food seen twice counts
+          once. Sent with each estimate and not kept: the meal saves its figures and what the estimate saw.
         </p>
       ) : null}
     </div>

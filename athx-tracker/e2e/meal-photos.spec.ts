@@ -157,25 +157,37 @@ test("a photo this browser cannot open says so and adds nothing", async ({ page 
   await expect(page.getByRole("button", { name: "Estimate macros", exact: true })).toBeDisabled();
 });
 
-test("an estimate takes three photos at most, and each can be taken off", async ({ page }) => {
+test("an estimate takes six photos at most, each can be taken off, and all go with it", async ({ page }) => {
+  const sent: Sent[] = [];
+  await page.route("**/api/estimate", async (route) => {
+    sent.push(route.request().postDataJSON());
+    await route.fulfill({ json: { estimate: plate } });
+  });
   await openMeal(page);
   await loggingFor(page, "Hippos").click();
   const picture = await jpeg(page, 640, 480);
   await page.getByLabel("Upload photo").setInputFiles(
-    ["a", "b", "c", "d"].map((name) => ({ name: `${name}.jpg`, mimeType: "image/jpeg", buffer: picture })),
+    ["a", "b", "c", "d", "e", "f", "g"].map((name) => ({ name: `${name}.jpg`, mimeType: "image/jpeg", buffer: picture })),
   );
-  await expect(photos(page)).toHaveCount(3);
+  await expect(photos(page)).toHaveCount(6);
   await expect(page.locator("form").getByRole("alert")).toHaveText(
-    "An estimate takes 3 photos at most, so the rest were left out.",
+    "An estimate takes 6 photos at most, so the rest were left out.",
   );
   await expect(page.getByLabel("Upload photo")).toBeDisabled();
   await expect(page.getByLabel("Take photo")).toBeDisabled();
+  await expect(page.getByLabel("Meal description")).toHaveAttribute(
+    "placeholder", "Anything the photos do not show: portions, oil, what is inside",
+  );
 
   await page.getByRole("button", { name: "Remove photo 2" }).click();
-  await expect(photos(page)).toHaveCount(2);
-  await expect(page.getByRole("img", { name: "Meal photo 2" })).toBeVisible();
+  await expect(photos(page)).toHaveCount(5);
+  await expect(page.getByRole("img", { name: "Meal photo 5" })).toBeVisible();
   await expect(page.getByLabel("Upload photo")).toBeEnabled();
   await expect(page.locator("form").getByRole("alert")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("640");
+  expect(sent[0].images).toHaveLength(5);
 
   const { violations } = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();

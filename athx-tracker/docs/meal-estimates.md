@@ -70,7 +70,8 @@ since the worker asks the gateway and nothing else.
 
 ## Photos
 
-A meal's photos go with its estimate as JPEGs, three at most and 1 MB each.
+A meal's photos go with its estimate as JPEGs, six at most and 1 MB each,
+so a request with photos can reach about 8.1 MB.
 The app and the estimator both check each one by its first bytes as well as
 its label. The estimator writes each to a folder of its own for the
 estimate and removes it once every estimator asked has exited. Codex is
