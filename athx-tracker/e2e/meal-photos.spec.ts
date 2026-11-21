@@ -182,7 +182,7 @@ test("an estimate takes three photos at most, and each can be taken off", async 
   expect(violations).toEqual([]);
 });
 
-test("a photo of a meal for both comes back dish by dish", async ({ page }) => {
+test("a photo of a meal for both comes back dish by dish, its words read as notes", async ({ page }) => {
   const sent: Sent[] = [];
   await page.route("**/api/estimate", async (route) => {
     sent.push(route.request().postDataJSON());
@@ -205,10 +205,12 @@ test("a photo of a meal for both comes back dish by dish", async ({ page }) => {
   await page.getByLabel("Upload photo").setInputFiles({
     name: "table.jpg", mimeType: "image/jpeg", buffer: await jpeg(page, 1200, 900),
   });
+  await page.getByLabel("Meal description").fill("Large portions, cooked in olive oil");
   await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
   await expect(dish(page, 2).getByLabel("Dish", { exact: true })).toHaveValue("Fries");
   await expect(dish(page, 1).getByLabel("Calories (kcal)")).toHaveValue("650");
-  // No words to cut, so the dishes are the estimator's to find in the photo.
-  expect(sent[0]).toMatchObject({ description: "", dishes: [] });
+  // The words are notes on the photo, not two dishes cut at the comma: the
+  // dishes are the estimator's to find in the photo.
+  expect(sent[0]).toMatchObject({ description: "Large portions, cooked in olive oil", dishes: [] });
   expect(sent[0].images).toHaveLength(1);
 });

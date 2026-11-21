@@ -181,8 +181,10 @@
   it, is turned away with a notice and adds nothing. With a photo the words
   are optional: **Estimate macros** goes on the photo alone, and words
   written beside it add to it and correct it, "large portion, cooked in olive
-  oil". With no words, the estimate names the meal after what it sees, and a
-  meal for both comes back dish by dish from the photo. Every estimate from
+  oil". With no words, the estimate names the meal after what it sees. A meal
+  for both comes back dish by dish from the photo, and its words are notes on
+  those dishes rather than a list of them, unless they name them: they are not
+  cut into dishes at their commas. Every estimate from
   the form sends its photos, a reply included, so a correction is read
   against the picture. Photos are not kept: not in the draft, so a reload or
   a draft opened again has none, and not with the saved meal, whose

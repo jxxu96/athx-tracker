@@ -123,5 +123,8 @@ test("the x.ai API is sent each photo as a data URL ahead of the words", () => {
   }]);
   assert.match(body.instructions, /When photos are attached, they show the meal/);
   assert.equal(grokRequest("one banana", "grok-4.7").input, "one banana", "without photos, the words as before");
-  assert.equal(grokRequest("pizza", "grok-4.7", { dishes: true, images: [photo] }).text.format.name, "shared_meal_estimate");
+  const shared = grokRequest("Large portions, cooked in olive oil", "grok-4.7", { dishes: true, images: [photo] });
+  assert.equal(shared.text.format.name, "shared_meal_estimate");
+  // Words beside a photo are notes on its dishes, not a list of them.
+  assert.match(shared.instructions, /When photos are attached, the dishes are the ones the photos show, and the description is notes on them/);
 });

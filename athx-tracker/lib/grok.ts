@@ -31,6 +31,7 @@ const DISH_LINES = [
   "'with' is not a separator. 'and', '&', '+' and a slash are not separators on their own, so 'beef with broccoli', 'steak with fries', 'tomato and egg' and 'bean sprouts + chives' are one dish each.",
   "Split on a space only when it is obvious that two dishes were written next to each other, such as 'burger fries', which is two dishes. A name of several words is still one dish, and a Chinese dish stays one dish. When unsure, keep it together.",
   "When the description contains dishes, the household has already split it that way: keep those dishes, in that order and with those names, unless one of them is clearly two dishes or two of them are clearly one.",
+  "When photos are attached, the dishes are the ones the photos show, and the description is notes on them, such as portions or how they were cooked, not a list of dishes, unless it names them.",
   "Name each dish in the household's own words from the description.",
   "Give each dish its own figures, its own assumptions, written item by item as the meal's would be, and its own confidence, set the same way.",
   "The dishes add up to the totals, and the meal's own assumptions hold only what covers the whole meal.",

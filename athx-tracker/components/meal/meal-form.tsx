@@ -734,10 +734,12 @@ export function MealForm({
     // written with a dish is not food, so the estimate never reads it.
     const asDishes = describing && !refining;
     const described = asDishes ? withoutShares(description).trim() : description.trim();
-    const hint = asDishes ? dishHint(description) : [];
-    // Photos can be all there is, and then the estimate takes the dishes from
-    // them. Without photos, a meal with too few words goes by its name.
+    // With photos the dishes are what they show, and the words are notes on
+    // them: "large portions, cooked in olive oil" cut at its comma was sent as
+    // two dishes for the estimate to keep. Without photos, a meal with too few
+    // words goes by its name.
     const images = photos.sent;
+    const hint = asDishes && !images.length ? dishHint(description) : [];
     const named = `Meal: ${name.trim()}`;
     const words = described.length >= 3 ? described
       : images.length ? described || (name.trim() ? named : "")
