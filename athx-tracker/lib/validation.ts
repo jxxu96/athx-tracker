@@ -16,6 +16,7 @@ import {
   liftTop,
 } from "./domain.ts";
 import { TARGET_HISTORY_LIMIT } from "./targets.ts";
+import { PHOTO_CHARS, PHOTO_LIMIT, PHOTO_TYPE, isJpegData } from "./meal-photos.ts";
 const finite = z.number().finite().nonnegative();
 export const macroSchema = z.object({
   calories: finite.max(20000), protein: finite.max(2000), carbs: finite.max(3000), fat: finite.max(2000),
@@ -140,16 +141,26 @@ export const estimateSchema = answerSchema.extend({
 const ownAnswerSchema = answerSchema.superRefine((answer, context) => {
   rejectFiberAboveCarbs(answer, context, ["fiber"]);
 });
+/** One photo of a meal: a JPEG, as base64, of at most 1 MB. */
+const photoSchema = z.object({
+  type: z.literal(PHOTO_TYPE),
+  data: z.string().max(PHOTO_CHARS).refine(isJpegData, "Each photo must be a JPEG of at most 1 MB."),
+}).strict();
 /** Keep the latest estimate and every user correction within a bounded request. */
 export const estimateRequestSchema = z.object({
-  description: z.string().trim().min(3).max(4000),
+  /** Three characters at least, unless there are photos, which can be all there is. */
+  description: z.string().trim().max(4000),
   /**
    * Asks for the meal dish by dish, and is how the phone cut it: the
    * estimator keeps these dishes unless one is plainly two, or two one.
    * They come from the description, so together they are no longer than it.
+   * Empty only beside photos with no words to cut, when the estimator takes
+   * the dishes from the photos.
    */
-  dishes: z.array(z.string().trim().min(1).max(4000)).min(1).max(ESTIMATE_DISH_LIMIT)
+  dishes: z.array(z.string().trim().min(1).max(4000)).max(ESTIMATE_DISH_LIMIT)
     .refine((dishes) => dishes.join("").length <= 4000, "Too many dishes.").optional(),
+  /** Photos of the meal, which the estimate looks at along with the words. */
+  images: z.array(photoSchema).min(1).max(PHOTO_LIMIT).optional(),
   refinement: z.object({
     previous: estimateSchema,
     replies: z.array(z.string().trim().min(1).max(REPLY_LIMIT)).min(1).max(MAX_REPLIES)
@@ -161,7 +172,13 @@ export const estimateRequestSchema = z.object({
       grok: ownAnswerSchema.optional(),
     }).strict().optional(),
   }).strict().optional(),
-}).strict();
+}).strict().superRefine((input, context) => {
+  if (input.images) return;
+  if (input.description.length < 3)
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["description"], message: "Describe the meal in a little more detail." });
+  if (input.dishes && !input.dishes.length)
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["dishes"], message: "Name the dishes, or add a photo of them." });
+});
 /** A weigh-in. The same bounds as the weight Setup held before weigh-ins were dated. */
 export const bodyweightSchema = z.object({
   ...base, kind: z.literal("bodyweight"), athlete: z.enum(["hippos", "gators"]),

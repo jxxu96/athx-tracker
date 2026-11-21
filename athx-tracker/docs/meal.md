@@ -169,3 +169,25 @@
   at a time, and a dish cannot wait in the queue for later. Templates and
   replies to an estimate are for a single meal, so a split meal does not offer
   them. The two saved meals are separate entries, edited one at a time.
+- **Photos** — **Take photo** and **Upload photo** sit under the description.
+  Take photo asks the phone for a new picture from the rear camera: the
+  phone's own camera takes it, through the file picker's `capture`, so the
+  page never reaches the camera itself, and a computer opens a file picker
+  instead. Upload photo picks from the library or files, several at once. An
+  estimate takes three photos at most, and each can be taken off. Every photo
+  is drawn again on the phone at 1536 px on its long side, as a JPEG of at
+  most 1 MB, which also leaves its metadata, the location included, behind.
+  One the browser cannot open, such as a HEIC on a computer that cannot read
+  it, is turned away with a notice and adds nothing. With a photo the words
+  are optional: **Estimate macros** goes on the photo alone, and words
+  written beside it add to it and correct it, "large portion, cooked in olive
+  oil". With no words, the estimate names the meal after what it sees, and a
+  meal for both comes back dish by dish from the photo. Every estimate from
+  the form sends its photos, a reply included, so a correction is read
+  against the picture. Photos are not kept: not in the draft, so a reload or
+  a draft opened again has none, and not with the saved meal, whose
+  assumptions say what was seen and how each portion was judged. **Save and
+  estimate in background** is not offered while a photo is on the form,
+  since the worker would never see it. Which estimators look at photos is in
+  [Meal estimates](meal-estimates.md#photos) (`components/meal/meal-photos.tsx`,
+  `lib/meal-photos.ts`).

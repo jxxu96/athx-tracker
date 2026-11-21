@@ -55,7 +55,28 @@ the average. Given the same average, all three applied the same correction to
 it and came back with the same figures, so a reply's average was one answer
 three times. Once a figure or the assumptions are edited by hand, the app
 sends none, and every estimator starts from the edited average. An estimator
-from before this ignores the field. A request may be up to 128,000 characters.
+from before this ignores the field. A request may be up to 128,000 characters,
+and 4,000,308 more when it carries photos.
+A meal may carry photos: `"images":[{"type":"image/jpeg","data":"<base64>"}]`,
+from one to three, each a JPEG of at most 1 MB (`PHOTO_LIMIT` and
+`PHOTO_BYTES` in `config.mjs`), checked by its first bytes as well as its
+label. Anything else is refused with a 400 before a CLI starts, and so is a
+workout with photos. Each photo is written to a folder of its own for that
+estimate, which is removed once every CLI asked has exited. Codex is given
+each by its path with `--image`, placed among its other flags: `--image`
+takes every value after it, and one right before the prompt read the prompt
+as one more photo. Claude is given them on stdin, as one stream-json user
+message holding an image block for each photo and then the words. The CLI
+has no flag for an image, and stream-json input needs stream-json output
+and `--verbose`, so the answer is read from the result line that ends it.
+Grok's CLI is not asked, since no way to hand it an image was found, and
+it is reported as `{"type":"missed","provider":"grok","detail":"not asked: it cannot read photos"}`.
+A meal with photos asks everyone who can see them at once, as a complex
+meal does, shares no source records, and is never cached. The answer says
+how many photos were taken in an `X-Athx-Photos` header, on the stream or
+on the one body. An app that sent photos does not use an answer without
+it, since an estimator from before photos ignores them and estimates the
+words alone.
 Workout drafts use the same authenticated service and provider fallback with
 `{"task":"workout","description":"Deadlift 1 x 2 at 185 lb","athletes":["hippos"],"weightUnit":"lb"}`.
 They return editable workout fields instead of meal macros. Sets precede reps in
