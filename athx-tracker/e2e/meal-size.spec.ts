@@ -55,11 +55,20 @@ test("a whole meal resizes with the bar a dish has, and takes a size typed past 
 
   // 50% to 125% has the middle of the track, and its ticks say so.
   const track = await mealSize(page).boundingBox();
-  const ticks = await card.locator("span", { hasText: /^(50|100|125)$/ }).evaluateAll((spans) =>
-    spans.map((span) => span.getBoundingClientRect()).map((rect) => rect.x + rect.width / 2));
+  const ticks = await card.getByRole("button", { name: /^Meal size \d+%$/ }).evaluateAll((buttons) =>
+    buttons.map((button) => button.getBoundingClientRect()).map((rect) => rect.x + rect.width / 2));
   if (!track) throw new Error("The slider has no size.");
   const along = ticks.map((x) => Math.round(((x - track.x - 8) / (track.width - 16)) * 100));
-  expect(along).toEqual([20, 60, 80]);
+  expect(along).toEqual([20, 40, 60, 80]);
+  await expect(card.getByRole("button", { name: /^Meal size \d+%$/ })).toHaveText(["50", "75", "100", "125"]);
+
+  // A tick is a tap to that size.
+  await card.getByRole("button", { name: "Meal size 75%" }).click();
+  await expect(mealSizeBox(page)).toHaveValue("75");
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("600");
+  await expect(page.getByLabel("Protein (g)")).toHaveValue("30");
+  await card.getByRole("button", { name: "Meal size 100%" }).click();
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("800");
 
   await mealSize(page).fill(String(trackPosition(50)));
   await expect(mealSizeBox(page)).toHaveValue("50");
@@ -135,7 +144,8 @@ test("a split meal resizes every dish together, each keeping its size against th
   await dish(page, 2).getByLabel("Protein (g)").fill("6");
 
   await expect(mealSizeBox(page)).toHaveValue("100");
-  await mealSizeBox(page).fill("50");
+  await page.getByRole("button", { name: "Meal size 50%" }).click();
+  await expect(mealSizeBox(page)).toHaveValue("50");
   await expect(dish(page, 1).getByLabel("Calories (kcal)")).toHaveValue("400");
   await expect(dish(page, 2).getByLabel("Calories (kcal)")).toHaveValue("100");
   await expect(dish(page, 1).getByLabel("Size (%)")).toHaveValue("50");
@@ -143,7 +153,7 @@ test("a split meal resizes every dish together, each keeping its size against th
   await expect(page.getByRole("status", { name: "Shares" })).toContainText("Hippos · 250 kcal");
 
   // A dish resized on its own moves the meal's size, weighed by calories.
-  await dish(page, 2).getByLabel("Size (%)").fill("100");
+  await dish(page, 2).getByRole("button", { name: "Size 100%", exact: true }).click();
   await expect(mealSizeBox(page)).toHaveValue("60");
   await mealSize(page).fill(String(trackPosition(30)));
   await expect(dish(page, 1).getByLabel("Size (%)")).toHaveValue("25");
