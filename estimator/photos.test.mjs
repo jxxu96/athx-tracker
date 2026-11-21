@@ -13,6 +13,7 @@ const { PHOTO_BYTES, PHOTO_CHARS, PHOTO_LIMIT } = await import("./config.mjs");
 const { readPhotos, writePhotos } = await import("./photos.mjs");
 const { MEAL_TASK, PROVIDERS, claudeMessage } = await import("./providers.mjs");
 const { parseCliOutput, resultEnvelope } = await import("./cli.mjs");
+const { clean, cleanDishes } = await import("./settle.mjs");
 const { envelopeError } = await import("./estimate.mjs");
 const { WORKOUT_TASK } = await import("./workout.mjs");
 
@@ -20,7 +21,7 @@ const { WORKOUT_TASK } = await import("./workout.mjs");
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0xff, 0xd9]);
 const photo = { type: "image/jpeg", data: JPEG.toString("base64") };
 
-test("a meal takes from 1 to 3 JPEGs of at most 1 MB, checked by their bytes", () => {
+test("a meal takes from 1 to 6 JPEGs of at most 1 MB, checked by their bytes", () => {
   assert.deepEqual(readPhotos(undefined), { photos: [] });
   assert.deepEqual(readPhotos([photo]), { photos: [photo] });
   assert.equal(readPhotos(Array(PHOTO_LIMIT).fill(photo)).photos.length, PHOTO_LIMIT);
@@ -114,6 +115,21 @@ test("Grok is not one that can be given photos", () => {
 });
 
 const answer = { name: "Plate", calories: 700, protein: 30, carbs: 80, fat: 25, fiber: 6, alcohol: 0, assumptions: "Saw a plate.", confidence: "medium" };
+
+test("a name given as an item line loses its figures, and nothing else does", () => {
+  // What Claude named a photo of a label, told to name the meal in plain words.
+  const named = (name) => clean({ ...answer, name })?.name;
+  assert.equal(named("Zorbly Oat Bar, 1 bar (40 g) [190 kcal, 10P, 23C, 7F, 3 fiber]"), "Zorbly Oat Bar, 1 bar (40 g)");
+  assert.equal(named("Oat Bowl, 1 bowl [450 KCAL, 10P, 96C, 5F]  "), "Oat Bowl, 1 bowl");
+  assert.equal(named("Pad thai [spicy]"), "Pad thai [spicy]", "a bracket without kcal is part of the name");
+  assert.equal(named("Bowl [500 kcal] with rice"), "Bowl [500 kcal] with rice", "only at the end");
+  assert.equal(named("[190 kcal, 10P]"), "[190 kcal, 10P]", "never emptied into an unusable answer");
+  // A shared meal's dishes are named the same way.
+  const dishes = cleanDishes({
+    ...answer, dishes: [{ ...answer, name: "Fries, 1 side [380 kcal, 4P, 48C, 19F, 4 fiber]" }],
+  });
+  assert.equal(dishes.dishes[0].name, "Fries, 1 side");
+});
 
 test("the answer that ends Claude's stream-json is read, and so is its failure", () => {
   const events = [

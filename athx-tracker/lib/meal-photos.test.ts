@@ -56,7 +56,7 @@ test("the phone and the estimator hold a meal's photos to the same limits", asyn
   assert.equal(estimator.PHOTO_BYTES, PHOTO_BYTES);
 });
 
-test("photos can be all there is, up to three JPEGs", () => {
+test("photos can be all there is, up to six JPEGs", () => {
   const parse = (body: object) => estimateRequestSchema.safeParse(body);
   assert.ok(parse({ description: "", images: [photo] }).success, "a photo with no words");
   assert.ok(parse({ description: "ok", images: [photo] }).success, "a photo with a word");
@@ -125,6 +125,10 @@ test("the x.ai API is sent each photo as a data URL ahead of the words", () => {
   assert.equal(grokRequest("one banana", "grok-4.7").input, "one banana", "without photos, the words as before");
   const shared = grokRequest("Large portions, cooked in olive oil", "grok-4.7", { dishes: true, images: [photo] });
   assert.equal(shared.text.format.name, "shared_meal_estimate");
-  // Words beside a photo are notes on its dishes, not a list of them.
-  assert.match(shared.instructions, /When photos are attached, the dishes are the ones the photos show, and the description is notes on them/);
+  // Words beside a photo are notes on its dishes, not a list of them, and a
+  // dish seen in several photos is one dish.
+  assert.match(shared.instructions, /the dishes are the ones the photos of the food show, each once however many photos show it, and the description is notes on them/);
+  // The same food from another angle counts once, and a menu is not food.
+  assert.match(body.instructions, /Several photos can show the same food, from another angle or closer up: count each food once/);
+  assert.match(body.instructions, /A menu or receipt is context, not food: .* count only what the description or the photos of the food show was eaten/);
 });

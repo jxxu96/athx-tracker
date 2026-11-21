@@ -56,9 +56,9 @@ it and came back with the same figures, so a reply's average was one answer
 three times. Once a figure or the assumptions are edited by hand, the app
 sends none, and every estimator starts from the edited average. An estimator
 from before this ignores the field. A request may be up to 128,000 characters,
-and 4,000,308 more when it carries photos.
+and 8,000,616 more when it carries photos.
 A meal may carry photos: `"images":[{"type":"image/jpeg","data":"<base64>"}]`,
-from one to three, each a JPEG of at most 1 MB (`PHOTO_LIMIT` and
+from one to six, each a JPEG of at most 1 MB (`PHOTO_LIMIT` and
 `PHOTO_BYTES` in `config.mjs`), checked by its first bytes as well as its
 label. Anything else is refused with a 400 before a CLI starts, and so is a
 workout with photos. Each photo is written to a folder of its own for that
@@ -76,7 +76,9 @@ meal does, shares no source records, and is never cached. The answer says
 how many photos were taken in an `X-Athx-Photos` header, on the stream or
 on the one body. An app that sent photos does not use an answer without
 it, since an estimator from before photos ignores them and estimates the
-words alone.
+words alone. The instructions count a food seen in several photos once, as
+many of it as any one photo or the words show, and read a menu or receipt
+for what each dish is and any calories it prints, never as food eaten.
 Workout drafts use the same authenticated service and provider fallback with
 `{"task":"workout","description":"Deadlift 1 x 2 at 185 lb","athletes":["hippos"],"weightUnit":"lb"}`.
 They return editable workout fields instead of meal macros. Sets precede reps in
@@ -296,6 +298,11 @@ per call.
   whatever was said on the way to it.
 - A reply that would not validate counts as a failure and moves to the next
   provider, rather than reaching the app as a bad estimate.
+- A name that ends in an item's figures in brackets, such as `Zorbly Oat Bar,
+  1 bar (40 g) [190 kcal, 10P, 23C, 7F, 3 fiber]`, loses the brackets. Claude
+  has named a whole meal with its first item line that way, more often with
+  only a photo to name it from. A bracket without kcal stays (`plainName` in
+  `settle.mjs`).
 
 ## Running it on the server instead
 

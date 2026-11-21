@@ -174,7 +174,13 @@
   phone's own camera takes it, through the file picker's `capture`, so the
   page never reaches the camera itself, and a computer opens a file picker
   instead. Upload photo picks from the library or files, several at once. An
-  estimate takes three photos at most, and each can be taken off. Every photo
+  estimate takes six photos at most, and each can be taken off. Several can
+  show the same food, from another angle or closer up, and it still counts
+  once, as many of it as any one photo or the words show. A menu, receipt or
+  label is read for what each dish is, its size, how it is made and any
+  calories it prints, and is never counted as food: what was eaten comes from
+  the photos of the food or the words beside them, and with only a menu and
+  no word of what was eaten, the estimate says so at low confidence. Every photo
   is drawn again on the phone at 1536 px on its long side, as a JPEG of at
   most 1 MB, which also leaves its metadata, the location included, behind.
   One the browser cannot open, such as a HEIC on a computer that cannot read
