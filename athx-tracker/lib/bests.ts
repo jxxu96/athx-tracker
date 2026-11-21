@@ -1,12 +1,13 @@
-import { formatWeight, type Athlete, type Lift, type WeightUnit, type Workout } from "./domain.ts";
+import { formatWeight, madeReps, type Athlete, type Lift, type WeightUnit, type Workout } from "./domain.ts";
 import { matchMovement, normalize } from "./movement-match.ts";
 
 /**
  * What a saved session beat. Each lift is set against the same lift in every
  * session of that athlete's already in the journal, whatever its date: the
- * heaviest set, more weight and then more reps. Nothing is carried up to a
- * max, so fewer kilograms for more reps is not news. A lift logged for the
- * first time has nothing to beat, and is not a best.
+ * heaviest set, more weight and then more reps made, so a failed final rep
+ * does not count. Nothing is carried up to a max, so fewer kilograms for more
+ * reps is not news. A lift logged for the first time has nothing to beat, and
+ * is not a best.
  */
 export type NewBest = {
   athlete: Exclude<Athlete, "team">;
@@ -55,10 +56,13 @@ function bestsOf(workouts: readonly Workout[]) {
     for (const lift of workout.lifts) {
       const key = liftKey(lift.name);
       let held = bests.get(key);
-      // A set with no reps recorded shows nothing lifted, however heavy, so a
-      // lift with only those holds no best, and the next one is a first log.
-      for (const set of setsOf(lift))
-        if (set.reps >= 1 && (!held || heavier(set, held))) held = { kg: set.kg, reps: set.reps };
+      // A set counts the reps it made. One with none recorded, or a failed
+      // single, shows nothing lifted, however heavy, so a lift with only
+      // those holds no best, and the next one is a first log.
+      for (const set of setsOf(lift)) {
+        const made = { kg: set.kg, reps: madeReps(set) };
+        if (made.reps >= 1 && (!held || heavier(made, held))) held = made;
+      }
       if (held) bests.set(key, held);
     }
   }

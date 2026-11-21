@@ -488,6 +488,14 @@ const LIFT_SECONDS_PER_REP = 4;
 const LIFT_REST_SECONDS = 150;
 
 /**
+ * The reps a set made. A failed final rep was tried, not made, so it is one
+ * fewer than were logged, and a failed single made none.
+ */
+export function madeReps(set: { reps: number; failed?: true }) {
+  return Math.max(0, Math.floor(set.reps) - (set.failed ? 1 : 0));
+}
+
+/**
  * The heaviest sets in a varied lift. More weight, then more reps. sets is
  * how many of the list were done at that weight and those reps.
  */

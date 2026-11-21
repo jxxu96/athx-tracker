@@ -153,6 +153,23 @@ test("a varied lift counts as the set that shows most, warm-ups included", () =>
   assert.deepEqual(row.best, { day: "2026-09-01", kg: 70, setKg: 70, reps: 2 });
 });
 
+test("a failed final rep was not made, so a failed single is never the figure", () => {
+  const row = jerkOf([
+    workout({
+      lifts: [{
+        name: "Split jerk",
+        kg: 80,
+        sets: 1,
+        reps: 2,
+        detail: [{ kg: 70, reps: 1 }, { kg: 80, reps: 2, failed: true }, { kg: 85, reps: 1, failed: true }],
+      }],
+    }),
+  ]);
+  // The double at 80 made one; the single at 85 made none.
+  assert.deepEqual(row.best, { day: "2026-09-01", kg: 80, setKg: 80, reps: 1 });
+  assert.equal(jerkOf([workout({ lifts: [{ name: "Split jerk", kg: 90, sets: 1, reps: 1, detail: [{ kg: 90, reps: 1, failed: true }] }] })]).best, null);
+});
+
 test("within a day equal weight goes to more reps, and a best belongs to the day it was first reached", () => {
   const sameDay = jerkOf([
     workout({ lifts: [lift("Split jerk", 60, 1, 1), lift("Split jerk", 60, 1, 3)] }),
