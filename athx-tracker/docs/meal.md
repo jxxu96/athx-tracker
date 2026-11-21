@@ -78,7 +78,11 @@
   numbers. A meal of weighed ingredients resizes each ingredient's grams, or
   how many of a counted one, and a meal opened up into its items resizes each
   item's grams, or its own size when it has no weight, so the figures follow
-  from them as they do from their own sliders. An estimate, a reply, a change
+  from them as they do from their own sliders. Each resize works from the
+  ingredients, items or dishes as they were when the bar first moved them,
+  not from what the last resize rounded them to, so a meal taken to 1% and
+  back loses nothing, not even 3 g of oil; anything else that changes them
+  makes that the new start (`startOf`). An estimate, a reply, a change
   of which estimates count, or a template closes it, since their figures are
   the meal at 100%. Saved resized, the assumptions say "Scaled to 50% of
   1000 kcal." first, or after the list of items, which stays first

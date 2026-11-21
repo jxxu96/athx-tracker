@@ -104,7 +104,17 @@ import {
   type DishScale,
   type FigureTexts,
 } from "@/lib/meal-dishes";
-import { isSize, scaleAt, sizeIngredients, sizeItems, sizeTable, sizedAssumptions, tableSize } from "@/lib/meal-size";
+import {
+  isSize,
+  scaleAt,
+  sizeIngredients,
+  sizeItems,
+  sizeTable,
+  sizedAssumptions,
+  startOf,
+  tableSize,
+  type SizeStart,
+} from "@/lib/meal-size";
 import { SizeSlider } from "@/components/size-slider";
 import { withoutShares, writtenDishes } from "@/lib/dish-split";
 import {
@@ -244,6 +254,8 @@ export function MealForm({
   const [fiber, setFiber] = useState(textOf(from?.fiber, editing ? String(editing.macros.fiber ?? 0) : ""));
   // The whole meal made bigger or smaller, as a dish is. Null while it is as it came.
   const [mealScale, setMealScale] = useState<DishScale | null>(() => scaleOf(from?.mealScale));
+  // What the meal's size bar resizes from, so rounding never builds up.
+  const sizedFrom = useRef<SizeStart | null>(null);
   const [assumptions, setAssumptions] = useState(textOf(from?.assumptions, editing?.assumptions ?? ""));
   const [confidence, setConfidence] = useState<Estimate["confidence"] | null>(
     oneOf(from?.confidence, ["low", "medium", "high"] as const) ?? null,
@@ -1108,11 +1120,19 @@ export function MealForm({
    */
   function resizeMeal(percent: number) {
     if (!isSize(percent) || percent === mealPercent) return;
-    const ratio = percent / mealPercent;
     if (expanded || weighing) {
       setMealScale({ percent, base: scaleAt(shownFigures, mealPercent).base });
-      if (expanded) changeItems((current) => sizeItems(current, ratio));
-      else writeIngredients(sizeIngredients(ingredients, ratio));
+      if (expanded) {
+        const start = startOf(sizedFrom.current, items, mealPercent);
+        const next = sizeItems(start.parts, percent / start.percent);
+        sizedFrom.current = { ...start, made: next };
+        changeItems(() => next);
+      } else {
+        const start = startOf(sizedFrom.current, ingredients, mealPercent);
+        const next = sizeIngredients(start.parts, percent / start.percent);
+        sizedFrom.current = { ...start, made: next };
+        writeIngredients(next);
+      }
       return;
     }
     const { figures, scale } = scaleFigures({ ...macros, fiber, ethanol }, mealScale, percent);
@@ -1121,6 +1141,15 @@ export function MealForm({
     setEthanol(figures.ethanol);
     setMealScale(scale);
     markManual();
+  }
+
+  /** Every dish at once, from where the bar first moved them. */
+  function resizeTable(percent: number) {
+    const start = startOf(sizedFrom.current, dishes, table.percent);
+    const next = sizeTable(start.parts, percent);
+    sizedFrom.current = { ...start, made: next };
+    setDishes(next);
+    setError("");
   }
 
   /** One record, or one per athlete when logging for both. An edit stays singular. */
@@ -1444,10 +1473,7 @@ export function MealForm({
                   percent={table.percent}
                   full={table.full}
                   disabled={busy}
-                  onPercent={(percent) => {
-                    setDishes((current) => sizeTable(current, percent));
-                    setError("");
-                  }}
+                  onPercent={resizeTable}
                 />
               </div>
               <DishShares dishes={dishes} eaters={eaters} />

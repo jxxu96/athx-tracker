@@ -73,12 +73,32 @@ export function tableSize(dishes: readonly DishDraft[]): { percent: number; full
  * what it was stays at half of the rest. No dish goes past what a dish's own
  * size can be. A size the bar cannot take changes nothing.
  */
-export function sizeTable(dishes: DishDraft[], percent: number): DishDraft[] {
-  if (!isSize(percent)) return dishes;
+export function sizeTable(dishes: readonly DishDraft[], percent: number): DishDraft[] {
+  if (!isSize(percent)) return dishes as DishDraft[];
   const from = tableSize(dishes).percent;
-  if (from <= 0 || percent === from) return dishes;
+  if (from <= 0 || percent === from) return dishes as DishDraft[];
   const ratio = percent / from;
   return dishes.map((dish) => scaleDish(dish, within(tidy((dish.scale?.percent ?? 100) * ratio))));
+}
+
+/**
+ * Where a resize starts from: the parts as they were when the bar first
+ * moved them, at the size it was then, and what the bar last made of them.
+ * Each resize works from that start rather than from what the last one
+ * left, so a meal taken to 1% and back is what it was: 125 g at 1% rounds
+ * to 1.3 g, and 3 g of oil to nothing, which would otherwise stay out.
+ */
+export type SizeStart = { percent: number; parts: readonly unknown[]; made: readonly unknown[] };
+
+/**
+ * The start for a resize of these parts: the one kept while the parts are
+ * still what the bar made, else the parts as they are now, at this size,
+ * since something else changed them.
+ */
+export function startOf<T>(start: SizeStart | null, parts: readonly T[], percent: number) {
+  return start && start.made === parts
+    ? { percent: start.percent, parts: start.parts as readonly T[] }
+    : { percent, parts };
 }
 
 /**

@@ -4,7 +4,7 @@ import type { MealTemplateItem } from "./domain.ts";
 import { SCALE_MAX, emptyDish, scaleDish, setFigure, type DishDraft } from "./meal-dishes.ts";
 import { itemTotals, setItemGrams, type ItemDraft } from "./meal-items.ts";
 import { ingredientTotals } from "./meal-ingredients.ts";
-import { isSize, scaleAt, sizeIngredients, sizeItems, sizeTable, sizedAssumptions, tableSize } from "./meal-size.ts";
+import { isSize, scaleAt, sizeIngredients, sizeItems, sizeTable, sizedAssumptions, startOf, tableSize, type SizeStart } from "./meal-size.ts";
 
 function dish(id: string, over: Partial<DishDraft> = {}): DishDraft {
   return { ...emptyDish(id), name: id, ...over };
@@ -135,4 +135,53 @@ test("a resized meal says so in its assumptions, after its list of items when it
     sizedAssumptions("Adjusted item by item:\nRice, 150 g [195 kcal, 4P, 42C, 1F]", 50, 390),
     "Adjusted item by item:\nRice, 150 g [195 kcal, 4P, 42C, 1F]\n\nScaled to 50% of 390 kcal.",
   );
+});
+
+/** The bar moved to each size in turn, as the meal form moves it. */
+function slide<T>(parts: readonly T[], sizes: number[], resize: (parts: readonly T[], ratio: number) => readonly T[]) {
+  let start: SizeStart | null = null;
+  let current = parts;
+  let at = 100;
+  for (const size of sizes) {
+    const from: { percent: number; parts: readonly T[] } = startOf(start, current, at);
+    current = resize(from.parts, size / from.percent);
+    start = { ...from, made: current };
+    at = size;
+  }
+  return current;
+}
+
+test("a resize starts from where the bar first moved the meal, so 1% and back loses nothing", () => {
+  const nutrition = { calories: 100, protein: 1, carbs: 1, fat: 11, fiber: 0, alcohol: 0 };
+  const rice: MealTemplateItem = { name: "Rice", grams: 125, nutrition: { grams: 125, macros: nutrition } };
+  const oil: MealTemplateItem = { name: "Olive oil", grams: 3, nutrition: { grams: 3, macros: nutrition } };
+  // From the last resize, rounding builds up, and 3 g at 1% rounds to nothing and stays out.
+  const drifted = sizeIngredients(sizeIngredients([rice, oil], 0.01), 100);
+  assert.deepEqual(drifted.map((item) => item.grams), [130, 0]);
+  // From the start, it comes back as it was.
+  assert.deepEqual(slide([rice, oil], [1, 37, 100], sizeIngredients).map((item) => item.grams), [125, 3]);
+  // An option already out stays out.
+  assert.equal(slide([rice, { ...oil, grams: 0 }], [1, 150], sizeIngredients)[1].grams, 0);
+
+  const chicken = item({
+    name: "Chicken", grams: "125", calories: "206", protein: "39", carbs: "0", fat: "4.5", fiber: "0", ethanol: "0",
+    per: { grams: 125, macros: { calories: 206, protein: 39, carbs: 0, fat: 4.5, fiber: 0, alcohol: 0 } },
+  });
+  assert.deepEqual(slide([chicken], [1, 100], sizeItems).map((one) => [one.grams, one.calories]), [["125", "206"]]);
+
+  // A dish held at the smallest size keeps its place against the rest on the way back.
+  let start: SizeStart | null = null;
+  let dishes: DishDraft[] = [scaleDish(curry, 50), naan];
+  for (const size of [1, 60]) {
+    const from: { percent: number; parts: readonly DishDraft[] } = startOf(start, dishes, tableSize(dishes).percent);
+    dishes = sizeTable(from.parts, size);
+    start = { ...from, made: dishes };
+  }
+  assert.deepEqual(dishes.map((one) => [one.calories, one.scale?.percent ?? 100]), [["400", 50], ["200", 100]]);
+
+  // Anything else that changes the parts makes them the new start.
+  const made = sizeIngredients([rice], 0.5);
+  const edited = [{ ...made[0], grams: 80 }];
+  assert.deepEqual(startOf({ percent: 100, parts: [rice], made }, edited, 50), { percent: 50, parts: edited });
+  assert.deepEqual(startOf({ percent: 100, parts: [rice], made }, made, 50), { percent: 100, parts: [rice] });
 });
