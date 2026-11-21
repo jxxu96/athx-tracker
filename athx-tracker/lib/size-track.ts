@@ -4,9 +4,9 @@ import { SCALE_MIN } from "./meal-dishes.ts";
  * Where a size sits on its slider. The track runs from 0% to 200%, but a
  * meal or a dish is mostly resized between half and a bit over whole, so
  * 50% to 125% takes the middle 60% of the track: a 5% step there is twice as
- * wide as one below 50% and three times one above 125%. Ticks at 50, 100
- * and 125 show where the stretch is, and every size the slider gives, by
- * finger or by key, is a whole 5%. The track's left end is the smallest
+ * wide as one below 50% and three times one above 125%. Ticks at 50, 75,
+ * 100 and 125 show where the stretch is, and a tap on one goes to it. Every
+ * size the slider gives, by finger or by key, is a whole 5%. The track's left end is the smallest
  * size, 1%. The box beside it takes anything else.
  */
 
@@ -15,7 +15,8 @@ export const TRACK_LENGTH = 1000;
 /** The largest size the slider reaches; past it, the box. */
 export const TRACK_MAX = 200;
 export const TRACK_STEP = 5;
-export const TRACK_TICKS = [50, 100, 125] as const;
+/** The sizes marked under the track, each a tap away. */
+export const TRACK_TICKS = [50, 75, 100, 125] as const;
 /** Where the track bends, as [position, percent]: straight between each pair. */
 const KNOTS = [[0, 0], [200, 50], [800, 125], [TRACK_LENGTH, TRACK_MAX]] as const;
 

@@ -30,8 +30,8 @@ const KEYS: Record<string, (percent: number) => number> = {
  * A meal, a dish or an item made bigger or smaller, by a percentage, in one
  * slim row under its figures: a slider from 0% to 200%, and the size it is
  * at, which can be typed into, up to 1000%. The slider gives 50% to 125% the
- * middle of its track, where most sizes are, with ticks to show it, and
- * moves in 5% steps. It sits at 100% and quiet until it is moved, and then
+ * middle of its track, where most sizes are, and moves in 5% steps; the
+ * ticks under it, 50, 75, 100 and 125, go to that size when tapped. It sits at 100% and quiet until it is moved, and then
  * says what 100% was. A size the box can take applies at once, so the
  * figures follow the typing; one it cannot is said under it and dropped on
  * leaving the box.
@@ -111,11 +111,22 @@ export function SizeSlider({
         {resized && full !== null && full > 0 ? (
           <span className="shrink-0 text-xs text-muted-foreground">of {Math.round(full * 10) / 10} kcal</span>
         ) : null}
-        <div aria-hidden className="relative col-start-1 -mt-1 h-3 text-[10px] leading-3 text-muted-foreground tabular-nums">
+        {/* Each tick is a tap to that size. They sit a fifth of the track apart, and are never wider than that. */}
+        <div className="relative col-start-1 -mt-0.5 h-5">
           {TRACK_TICKS.map((tick) => (
-            <span key={tick} className="absolute top-0 -translate-x-1/2" style={{ left: across(tick) }}>
+            <button
+              key={tick}
+              type="button"
+              aria-label={`${label} ${tick}%`}
+              disabled={disabled}
+              className={`absolute top-0 flex h-5 -translate-x-1/2 items-center justify-center rounded-sm text-[11px] leading-none tabular-nums outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 ${
+                Math.round(percent * 10) === tick * 10 ? "font-semibold text-foreground" : "text-muted-foreground"
+              }`}
+              style={{ left: across(tick), width: "min(28px, calc((100% - 16px) / 5))" }}
+              onClick={() => onPercent(tick)}
+            >
               {tick}
-            </span>
+            </button>
           ))}
         </div>
       </div>

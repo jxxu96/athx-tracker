@@ -6,6 +6,7 @@ import { TRACK_LENGTH, TRACK_MAX, TRACK_STEP, stepSize, trackPercent, trackPosit
 test("50% to 125% takes the middle 60% of the track", () => {
   assert.equal(trackPosition(0), 0);
   assert.equal(trackPosition(50), 200);
+  assert.equal(trackPosition(75), 400);
   assert.equal(trackPosition(100), 600);
   assert.equal(trackPosition(125), 800);
   assert.equal(trackPosition(TRACK_MAX), TRACK_LENGTH);
