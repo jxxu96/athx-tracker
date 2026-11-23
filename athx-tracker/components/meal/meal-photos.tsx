@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Camera, ImagePlus, X } from "lucide-react";
+import { Camera, File as FileIcon, X } from "lucide-react";
+import { ApplePhotosMark, GooglePhotosMark } from "@/components/meal/photo-icons";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { newId } from "@/lib/client";
 import {
@@ -119,7 +120,10 @@ export type MealPhotoState = ReturnType<typeof useMealPhotos>;
 /**
  * Take photo opens the camera on a phone: capture asks for a new picture, and
  * the phone's own camera takes it, so the page never reaches the camera
- * itself. Upload photo picks from the library or files. Each is a label
+ * itself. Library picks photos, and File any file. Which picker opens is the
+ * browser's choice: Android gives the photo picker for Library and its file
+ * browser for File, while iOS shows one menu of camera, library and files
+ * for both, which no page can skip. Each is a label
  * around its file input, the way a picker opens on every browser, Safari's
  * included, without a script clicking a hidden input.
  */
@@ -133,14 +137,14 @@ export function MealPhotos({ state, disabled = false }: { state: MealPhotoState;
     if (files.length) void add(files);
   };
   const choice = cn(
-    buttonVariants({ variant: "outline", size: "sm" }),
+    buttonVariants({ variant: "outline" }),
     "relative cursor-pointer has-[:disabled]:pointer-events-none has-[:disabled]:opacity-50",
     "has-[:focus-visible]:border-ring has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-ring/50",
   );
   return (
     <div className="space-y-2">
-      <div className="grid grid-cols-2 gap-2">
-        <label className={choice}>
+      <div className="flex items-center gap-2">
+        <label className={cn(choice, "flex-1")}>
           <Camera />
           Take photo
           <input
@@ -152,10 +156,21 @@ export function MealPhotos({ state, disabled = false }: { state: MealPhotoState;
             onChange={pick}
           />
         </label>
-        <label className={choice}>
-          <ImagePlus />
-          Upload photo
+        <label className={cn(choice, "flex-1")}>
+          <span className="flex items-center -space-x-1" aria-hidden="true">
+            <GooglePhotosMark className="size-4" />
+            <ApplePhotosMark className="size-4" />
+          </span>
+          Library
           <input type="file" accept="image/*" multiple className="sr-only" disabled={off} onChange={pick} />
+        </label>
+        {/* No image filter, so a browser that has one offers its file browser
+            rather than the photo picker. Anything that is not a picture it can
+            open is turned away as unreadable. */}
+        <label className={cn(choice, "h-7 gap-1 px-2 text-xs has-[>svg]:px-2")}>
+          <FileIcon className="size-3.5" />
+          File
+          <input type="file" multiple className="sr-only" disabled={off} onChange={pick} />
         </label>
       </div>
       {photos.length ? (
