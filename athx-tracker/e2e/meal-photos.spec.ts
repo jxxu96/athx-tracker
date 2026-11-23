@@ -71,7 +71,7 @@ test("a photo alone is estimated, shrunk on the phone first, and the meal is sav
   await expect(estimate).toBeDisabled();
   await expect(page.getByRole("button", { name: "Save and estimate in background" })).toBeVisible();
 
-  await page.getByLabel("Upload photo").setInputFiles({
+  await page.getByLabel("Library").setInputFiles({
     name: "plate.jpg", mimeType: "image/jpeg", buffer: await jpeg(page, 3000, 2000),
   });
   await expect(photos(page)).toHaveCount(1);
@@ -132,7 +132,7 @@ test("words go with the photo, and Take photo asks for a new picture from the re
   await expect(camera).toHaveAttribute("type", "file");
   await expect(camera).toHaveAttribute("capture", "environment");
   await expect(camera).toHaveAttribute("accept", "image/*");
-  await expect(page.getByLabel("Upload photo")).toHaveAttribute("multiple", "");
+  await expect(page.getByLabel("Library")).toHaveAttribute("multiple", "");
 
   await camera.setInputFiles({ name: "IMG_0001.jpg", mimeType: "image/jpeg", buffer: await jpeg(page, 800, 600) });
   await expect(photos(page)).toHaveCount(1);
@@ -147,7 +147,7 @@ test("words go with the photo, and Take photo asks for a new picture from the re
 test("a photo this browser cannot open says so and adds nothing", async ({ page }) => {
   await openMeal(page);
   await loggingFor(page, "Hippos").click();
-  await page.getByLabel("Upload photo").setInputFiles({
+  await page.getByLabel("Library").setInputFiles({
     name: "IMG_0002.HEIC", mimeType: "image/heic", buffer: Buffer.from("not a picture at all"),
   });
   await expect(page.locator("form").getByRole("alert")).toHaveText(
@@ -166,14 +166,14 @@ test("an estimate takes six photos at most, each can be taken off, and all go wi
   await openMeal(page);
   await loggingFor(page, "Hippos").click();
   const picture = await jpeg(page, 640, 480);
-  await page.getByLabel("Upload photo").setInputFiles(
+  await page.getByLabel("Library").setInputFiles(
     ["a", "b", "c", "d", "e", "f", "g"].map((name) => ({ name: `${name}.jpg`, mimeType: "image/jpeg", buffer: picture })),
   );
   await expect(photos(page)).toHaveCount(6);
   await expect(page.locator("form").getByRole("alert")).toHaveText(
     "An estimate takes 6 photos at most, so the rest were left out.",
   );
-  await expect(page.getByLabel("Upload photo")).toBeDisabled();
+  await expect(page.getByLabel("Library")).toBeDisabled();
   await expect(page.getByLabel("Take photo")).toBeDisabled();
   await expect(page.getByLabel("Meal description")).toHaveAttribute(
     "placeholder", "Anything the photos do not show: portions, oil, what is inside",
@@ -182,7 +182,7 @@ test("an estimate takes six photos at most, each can be taken off, and all go wi
   await page.getByRole("button", { name: "Remove photo 2" }).click();
   await expect(photos(page)).toHaveCount(5);
   await expect(page.getByRole("img", { name: "Meal photo 5" })).toBeVisible();
-  await expect(page.getByLabel("Upload photo")).toBeEnabled();
+  await expect(page.getByLabel("Library")).toBeEnabled();
   await expect(page.locator("form").getByRole("alert")).toHaveCount(0);
 
   await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
@@ -214,7 +214,7 @@ test("a photo of a meal for both comes back dish by dish, its words read as note
   });
   await openMeal(page);
   await loggingFor(page, "Both").click();
-  await page.getByLabel("Upload photo").setInputFiles({
+  await page.getByLabel("Library").setInputFiles({
     name: "table.jpg", mimeType: "image/jpeg", buffer: await jpeg(page, 1200, 900),
   });
   await page.getByLabel("Meal description").fill("Large portions, cooked in olive oil");
@@ -225,4 +225,24 @@ test("a photo of a meal for both comes back dish by dish, its words read as note
   // dishes are the estimator's to find in the photo.
   expect(sent[0]).toMatchObject({ description: "Large portions, cooked in olive oil", dishes: [] });
   expect(sent[0].images).toHaveLength(1);
+});
+
+test("Take photo, Library and a smaller File pick photos three ways", async ({ page }) => {
+  await openMeal(page);
+  await loggingFor(page, "Hippos").click();
+  const camera = page.getByLabel("Take photo");
+  const library = page.getByLabel("Library");
+  const file = page.getByLabel("File", { exact: true });
+  await expect(library).toHaveAttribute("accept", "image/*");
+  await expect(library).not.toHaveAttribute("capture");
+  await expect(file).not.toHaveAttribute("accept");
+  await expect(file).not.toHaveAttribute("capture");
+  // Each picker once: the camera is not offered twice.
+  await expect(page.locator('input[type="file"][capture]')).toHaveCount(1);
+  const height = async (input: typeof camera) =>
+    (await input.locator("xpath=..").boundingBox())!.height;
+  expect(await height(file)).toBeLessThan(await height(library));
+  expect(await height(library)).toBe(await height(camera));
+  await file.setInputFiles({ name: "plate.jpg", mimeType: "image/jpeg", buffer: await jpeg(page, 640, 480) });
+  await expect(photos(page)).toHaveCount(1);
 });

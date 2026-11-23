@@ -199,11 +199,14 @@
   at a time, and a dish cannot wait in the queue for later. Templates and
   replies to an estimate are for a single meal, so a split meal does not offer
   them. The two saved meals are separate entries, edited one at a time.
-- **Photos** — **Take photo** and **Upload photo** sit under the description.
+- **Photos** — **Take photo**, **Library** and a smaller **File** sit under the description.
   Take photo asks the phone for a new picture from the rear camera: the
   phone's own camera takes it, through the file picker's `capture`, so the
   page never reaches the camera itself, and a computer opens a file picker
-  instead. Upload photo picks from the library or files, several at once. An
+  instead. Library picks photos and File any file, several at once; on
+  Android these open the photo picker and the file browser, and on an iPhone
+  both open iOS's own menu of camera, library and files, which a page cannot
+  skip. Anything that is not a picture the browser can open is turned away. An
   estimate takes six photos at most, and each can be taken off. Several can
   show the same food, from another angle or closer up, and it still counts
   once, as many of it as any one photo or the words show. A menu, receipt or
