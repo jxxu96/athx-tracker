@@ -48,8 +48,10 @@ const MACROS = [
   { key: "fat", label: "Fat" },
 ] as const satisfies readonly { key: keyof Macros; label: string }[];
 
-type Figure = keyof Macros | "fiber" | "ethanol";
+export type Figure = keyof Macros | "fiber" | "ethanol";
 const FIGURES = ["calories", "protein", "carbs", "fat", "fiber", "ethanol"] as const satisfies readonly Figure[];
+/** A dish's or a meal's figures as typed, one box each. */
+export type FigureTexts = Record<Figure, string>;
 
 /**
  * A dish made bigger or smaller than its figures said. The figures at 100%
@@ -63,10 +65,13 @@ export type DishScale = {
   base: Record<Figure, number>;
 };
 
-/** What a size can be. The slider covers the usual range; the box takes the rest. */
+/**
+ * What a size can be. The slider covers the usual range (lib/size-track.ts);
+ * the box takes the rest. Nothing is 0%: every figure would be 0, and nothing
+ * typed or resized there could find its way back to 100%.
+ */
 export const SCALE_MIN = 1;
 export const SCALE_MAX = 1000;
-export const SCALE_SLIDER = { min: 10, max: 300, step: 5 } as const;
 
 /** One dish as typed: every box as its text, so a half-typed number survives a draft. */
 export type DishDraft = {
@@ -276,16 +281,22 @@ export function shareAsWritten(drafts: DishDraft[], written: readonly WrittenDis
  */
 export function setFigure(dish: DishDraft, figure: Figure, text: string): DishDraft {
   const edited = dish.source === "grok";
-  const value = amount(text);
-  const rescaled = dish.scale && Number.isFinite(value) && value >= 0
-    ? { scale: { ...dish.scale, base: { ...dish.scale.base, [figure]: (value * 100) / dish.scale.percent } } }
-    : {};
   return {
     ...dish,
     [figure]: text,
-    ...rescaled,
+    scale: rescaleFigure(dish.scale, figure, text),
     ...(edited ? { source: "manual" as const, adjusted: true } : {}),
   };
+}
+
+/**
+ * A figure typed at a size: the figure at 100% follows it, so it is that
+ * figure at the size shown. One that does not read yet leaves the scale.
+ */
+export function rescaleFigure(scale: DishScale | null, figure: Figure, text: string): DishScale | null {
+  const value = amount(text);
+  if (!scale || !Number.isFinite(value) || value < 0) return scale;
+  return { ...scale, base: { ...scale.base, [figure]: (value * 100) / scale.percent } };
 }
 
 /** A size box as a percentage: above 0 and up to SCALE_MAX, with or without its %. */
@@ -296,9 +307,9 @@ export function readScale(text: string) {
   return Number.isFinite(value) && value >= SCALE_MIN && value <= SCALE_MAX ? value : null;
 }
 
-/** The dish's boxes as numbers, anything unreadable as nothing. */
-function figuresOf(dish: DishDraft) {
-  return Object.fromEntries(FIGURES.map((figure) => [figure, usable(amount(dish[figure]))])) as Record<Figure, number>;
+/** The boxes as numbers, anything unreadable as nothing. */
+function figuresOf(texts: FigureTexts) {
+  return Object.fromEntries(FIGURES.map((figure) => [figure, usable(amount(texts[figure]))])) as Record<Figure, number>;
 }
 
 /** The scale opened: the dish as it is now is 100%. Nothing changes until the size does. */
@@ -315,19 +326,33 @@ export function openScale(dish: DishDraft): DishDraft {
  */
 export function scaleDish(dish: DishDraft, percent: number): DishDraft {
   if (!Number.isFinite(percent) || percent < SCALE_MIN || percent > SCALE_MAX) return dish;
-  const scale = dish.scale ?? { percent: 100, base: figuresOf(dish) };
-  if (dish.scale && percent === scale.percent) return dish;
-  const figures = Object.fromEntries(FIGURES.map((figure) => {
-    const typed = amount(dish[figure]);
-    const unread = dish[figure].trim() === "" || !Number.isFinite(typed) || typed < 0;
-    return [figure, unread ? dish[figure] : String(round((scale.base[figure] * percent) / 100))];
-  })) as Record<Figure, string>;
+  if (dish.scale && percent === dish.scale.percent) return dish;
+  const { figures, scale } = scaleFigures(dish, dish.scale, percent);
   return {
     ...dish,
     ...figures,
-    scale: { ...scale, percent },
+    scale,
     ...(dish.source === "grok" ? { source: "manual" as const, adjusted: true } : {}),
   };
+}
+
+/**
+ * Boxes at a size, from what they hold at 100%: the scale given, or the
+ * boxes as they are when there is none yet. Each is to a tenth, and one that
+ * is blank or does not read is left as typed. The caller checks the size.
+ */
+export function scaleFigures(
+  texts: FigureTexts,
+  current: DishScale | null,
+  percent: number,
+): { figures: FigureTexts; scale: DishScale } {
+  const scale = current ?? { percent: 100, base: figuresOf(texts) };
+  const figures = Object.fromEntries(FIGURES.map((figure) => {
+    const typed = amount(texts[figure]);
+    const unread = texts[figure].trim() === "" || !Number.isFinite(typed) || typed < 0;
+    return [figure, unread ? texts[figure] : String(round((scale.base[figure] * percent) / 100))];
+  })) as FigureTexts;
+  return { figures, scale: { ...scale, percent } };
 }
 
 /** The scale closed: the dish goes back to its figures at 100%. */
@@ -694,7 +719,7 @@ export function splitMeal(input: {
 }
 
 /** A scale from a draft, or null for one from before scales or damaged in storage. */
-function scaleOf(value: unknown): DishScale | null {
+export function scaleOf(value: unknown): DishScale | null {
   if (!value || typeof value !== "object") return null;
   const held = value as { percent?: unknown; base?: unknown };
   const base = held.base as Record<string, unknown> | null | undefined;
