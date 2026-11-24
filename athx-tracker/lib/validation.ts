@@ -154,6 +154,8 @@ const photoSchema = z.object({
 export const queuedPhotosSchema = z.object({
   id: z.string().uuid(),
   images: z.array(photoSchema).min(1).max(PHOTO_LIMIT),
+  /** The meals that will point to them: one, or one for each athlete. */
+  meals: z.array(z.string().uuid()).min(1).max(2),
 }).strict();
 /** Keep the latest estimate and every user correction within a bounded request. */
 export const estimateRequestSchema = z.object({

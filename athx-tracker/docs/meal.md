@@ -238,9 +238,12 @@
   go to the server first, then the meal, which points to them, so the worker
   estimates from them as the form would. Saved unnamed, it is "Meal from
   photos" until the estimate names it; the words beside the photos stay notes
-  on them. The server holds them apart from the journal, so they reach no
-  backup and no phone, and deletes them once the meal is estimated, edited or
-  deleted; photos no meal took go after a day. Unlike the meal, they cannot
+  on them. Opened again from the Log while it waits, the meal says its photos
+  are on the server: queued again, with words added or not, it keeps them, and
+  photos added on the form replace them. The server holds them apart from the
+  journal, so they reach no backup and no phone, and deletes them once the
+  meal is estimated, edited without them or deleted; photos no meal took go
+  after a day. Unlike the meal, they cannot
   wait on the phone for a connection: without one nothing is saved, the form
   says so and keeps them. Which estimators look at photos is in
   [Meal estimates](meal-estimates.md#photos) (`components/meal/meal-photos.tsx`,

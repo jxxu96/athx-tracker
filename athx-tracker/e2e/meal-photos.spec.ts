@@ -290,7 +290,7 @@ test("Paste adds a picture copied to the clipboard, and says when there is none"
 });
 
 test("a photo saved to estimate in the background goes to the server first, and the meal points to it", async ({ page }) => {
-  const held: { id: string; images: { type: string; data: string }[] }[] = [];
+  const held: { id: string; images: { type: string; data: string }[]; meals: string[] }[] = [];
   await page.route("**/api/queued-photos", async (route) => {
     held.push(route.request().postDataJSON());
     await route.continue();
@@ -311,8 +311,10 @@ test("a photo saved to estimate in the background goes to the server first, and 
   expect(held[0].images).toHaveLength(1);
   expect(held[0].images[0].data.startsWith("/9j/")).toBe(true);
   const saved = (await meals(page)).filter((meal) => meal.photoSet === held[0].id);
-  // One set of photos for both halves, which the worker estimates once.
+  // One set of photos for both halves, which the worker estimates once, and
+  // which waits for both to arrive.
   expect(saved).toHaveLength(2);
+  expect([...held[0].meals].sort()).toEqual(saved.map((meal) => meal.id as string).sort());
   for (const meal of saved) {
     expect(meal).toMatchObject({ source: "queued", name: "Meal from photos", assumptions: "" });
     expect(JSON.stringify(meal)).not.toContain("/9j/");
@@ -329,6 +331,44 @@ test("a photo saved to estimate in the background goes to the server first, and 
   expect(heldPhotos(held[0].id), "the other half still waits on them").toBe(1);
   await remove(saved[1].id as string);
   expect(heldPhotos(held[0].id), "deleted with the last meal that waited on them").toBe(0);
+});
+
+test("a photo meal opened again from the Log and queued again keeps its photos", async ({ page }) => {
+  let sends = 0;
+  await page.route("**/api/queued-photos", async (route) => {
+    sends += 1;
+    await route.continue();
+  });
+  await openMeal(page);
+  await loggingFor(page, "Hippos").click();
+  await page.getByLabel("Library").setInputFiles({
+    name: "plate.jpg", mimeType: "image/jpeg", buffer: await jpeg(page, 640, 480),
+  });
+  await page.getByRole("button", { name: "Save and estimate in background" }).click();
+  await expect(page.getByText("Meal saved", { exact: true })).toBeVisible();
+  const [queued] = (await meals(page)).filter((meal) => meal.source === "queued" && meal.photoSet);
+  const photoSet = queued.photoSet as string;
+
+  await page.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: "Log", exact: true }).click();
+  await page.getByRole("listitem").filter({ hasText: "Meal from photos" }).getByRole("button", { name: "Edit entry" }).click();
+  await expect(page.getByText("Its photos are on the server, waiting for the background estimate.", { exact: false }))
+    .toBeVisible();
+  await expect(photos(page)).toHaveCount(0);
+  await page.getByLabel("Meal description").fill("Large portion");
+  await page.getByRole("button", { name: "Save and estimate in background" }).click();
+  await expect(page.getByText("Entry updated", { exact: true })).toBeVisible();
+
+  const [again] = (await meals(page)).filter((meal) => meal.id === queued.id);
+  expect(again).toMatchObject({ source: "queued", photoSet, assumptions: "Large portion", name: "Meal from photos" });
+  expect(sends, "the photos already there are not sent again").toBe(1);
+  expect(heldPhotos(photoSet)).toBe(1);
+
+  await page.evaluate(async (id) => {
+    await fetch("/api/records", {
+      method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }),
+    });
+  }, queued.id as string);
+  expect(heldPhotos(photoSet)).toBe(0);
 });
 
 test("photos that cannot be sent save nothing, and stay on the form", async ({ page }) => {

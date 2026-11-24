@@ -237,6 +237,9 @@ export function MealForm({
   const [prompt, setPrompt] = useState(textOf(from?.prompt, ""));
   // Photos of the meal, sent with each estimate. Not part of the draft.
   const photos = useMealPhotos();
+  // A meal waiting for its background estimate, opened again: the photos it
+  // was saved with are on the server, and saving it to the queue keeps them.
+  const heldPhotos = editing?.source === "queued" ? editing.photoSet : undefined;
   const [name, setName] = useState(textOf(from?.name, editing?.name ?? ""));
   const [macros, setMacros] = useState<MacroDraft>(() =>
     macroDraftOf(from?.macros) ?? (editing
@@ -1180,20 +1183,25 @@ export function MealForm({
    * Pressed mid-estimate, it takes over from the one on screen. Photos go to
    * the server first and the meal points to them; without a connection
    * nothing is saved, since they cannot wait on the phone as the meal can.
+   * A queued meal opened again keeps the photos it was saved with, unless
+   * photos are added in their place.
    */
   async function queueForLater() {
     const text = description.trim();
     const images = photos.sent;
-    if (text.length < 3 && !images.length) {
+    if (text.length < 3 && !images.length && !heldPhotos) {
       setError("Describe the meal or add a photo first, so it can be estimated in the background.");
       return;
     }
     setSaving(true);
     try {
-      let photoSet: string | undefined;
+      let photoSet = images.length ? undefined : heldPhotos;
       if (images.length) {
+        // The records the photos are for, by the ids they will be saved under.
+        const meals = recordsFor({ ...queuedDraft(text), name: name.trim() || QUEUED_PHOTO_NAME })
+          .map((record) => record.id);
         try {
-          photoSet = await sendForLater(images);
+          photoSet = await sendForLater(images, meals);
         } catch (failure) {
           setError((failure as { status?: number }).status
             ? `The photos were not saved: ${message(failure)}`
@@ -1204,21 +1212,29 @@ export function MealForm({
       // Only once the photos are in, so an estimate running is not lost to a failed send.
       stopper.current?.abort();
       await saveDraft({
-        kind: "meal",
-        day,
-        ...(time && isClockTime(time) ? { time } : {}),
+        ...queuedDraft(text),
         // The words beside photos are notes on them, not the meal's name.
         name: name.trim() || (photoSet ? QUEUED_PHOTO_NAME : text.slice(0, 60)),
-        meal: slot,
-        macros: { calories: 0, protein: 0, carbs: 0, fat: 0, alcohol: 0, fiber: 0 },
-        source: "queued",
-        assumptions: text.slice(0, 3000),
         ...(photoSet ? { photoSet } : {}),
       });
       reset();
     } finally {
       setSaving(false);
     }
+  }
+
+  /** A meal for the background worker to fill, with the words kept for it. */
+  function queuedDraft(text: string): MealDraft {
+    return {
+      kind: "meal",
+      day,
+      ...(time && isClockTime(time) ? { time } : {}),
+      name: text.slice(0, 60),
+      meal: slot,
+      macros: { calories: 0, protein: 0, carbs: 0, fat: 0, alcohol: 0, fiber: 0 },
+      source: "queued",
+      assumptions: text.slice(0, 3000),
+    };
   }
 
   /** The day and time, which a meal and a split meal share. */
@@ -1522,7 +1538,7 @@ export function MealForm({
               setRejected(false);
             }}
           />
-          {grokReady ? <MealPhotos state={photos} /> : null}
+          {grokReady ? <MealPhotos state={photos} held={Boolean(heldPhotos)} /> : null}
           {!splitting && !expanded && hasIngredientNutrition(ingredients) ? (
             <IngredientWeights
               items={ingredients}
@@ -1568,7 +1584,7 @@ export function MealForm({
             variant="outline"
             className="w-full"
             disabled={saving || templateSaving || photos.reading ||
-              (description.trim().length < 3 && photos.photos.length === 0)}
+              (description.trim().length < 3 && photos.photos.length === 0 && !heldPhotos)}
             onClick={queueForLater}
           >
             <Clock />

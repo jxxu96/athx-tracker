@@ -158,15 +158,17 @@ const SEND_TIMEOUT_MS = 60_000;
 
 /**
  * Sends a meal's photos ahead of it when it is saved to be estimated in the
- * background, and gives the id the meal points to them by. Unlike the meal,
- * they cannot wait on the phone for a connection: storage there would not
- * hold them, so this fails without one.
+ * background, with the ids of the records that will point to them, and gives
+ * the id they point to them by. The server keeps them until each of those
+ * records has arrived and been estimated. Unlike the meal, they cannot wait
+ * on the phone for a connection: storage there would not hold them, so this
+ * fails without one.
  */
-export async function sendForLater(photos: MealPhoto[]) {
+export async function sendForLater(photos: MealPhoto[], meals: string[]) {
   const id = newId();
   await api<{ ok: true }>("/api/queued-photos", {
     method: "POST",
-    body: JSON.stringify({ id, images: photos }),
+    body: JSON.stringify({ id, images: photos, meals }),
     signal: typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(SEND_TIMEOUT_MS) : undefined,
   });
   return id;
@@ -185,7 +187,12 @@ export type MealPhotoState = ReturnType<typeof useMealPhotos>;
  * Each picker is a label around its file input, the way a picker opens on
  * every browser, Safari's included, without a script clicking a hidden input.
  */
-export function MealPhotos({ state, disabled = false }: { state: MealPhotoState; disabled?: boolean }) {
+export function MealPhotos({ state, disabled = false, held = false }: {
+  state: MealPhotoState;
+  disabled?: boolean;
+  /** A meal waiting for its background estimate, whose photos are on the server. */
+  held?: boolean;
+}) {
   const { photos, reading, readingCount, error, add, paste, remove } = state;
   const off = disabled || reading || photos.length >= PHOTO_LIMIT;
   const pick = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -267,6 +274,12 @@ export function MealPhotos({ state, disabled = false }: { state: MealPhotoState;
         </p>
       ) : null}
       {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
+      {held && !photos.length ? (
+        <p className="text-[11px] text-muted-foreground">
+          Its photos are on the server, waiting for the background estimate. Saved to estimate in the
+          background again, it keeps them; photos added here replace them.
+        </p>
+      ) : null}
       {photos.length ? (
         <p className="text-[11px] text-muted-foreground">
           Up to {PHOTO_LIMIT} photos: another angle, a label or the menu helps, and food seen twice counts

@@ -8,12 +8,15 @@ import {
   UNCLAIMED_MS,
   heldPhotos,
   holdPhotos,
+  mealArrived,
   photoSetOf,
   releasePhotos,
   sweepPhotos,
 } from "./queued-photos.ts";
 
 const SET = "9b2f6c1e-4d3a-4e8b-9a7c-2f1e0d6b5a01";
+const A = "3f1a5f2e-9c4b-4d7a-8e21-6b0c9d5a0001";
+const B = "3f1a5f2e-9c4b-4d7a-8e21-6b0c9d5a0002";
 const photo = { type: "image/jpeg", data: "/9j/4AAQ" } as const;
 
 /** A journal of its own, built by the same migrations the app runs. */
@@ -32,28 +35,59 @@ function save(sqlite: Database.Database, id: string, meal: Record<string, unknow
     .run(id, record.athlete, record.day, JSON.stringify(record), "2026-11-24T12:00:00.000Z");
 }
 
+/** Saved as the records route saves it: the photos sent with it stop waiting for it. */
+function arrive(sqlite: Database.Database, id: string, meal: Record<string, unknown>) {
+  save(sqlite, id, meal);
+  mealArrived(sqlite, id);
+}
+
 test("photos held come back as sent, and sent again under the same id replace them", () => {
   const sqlite = journal();
   assert.equal(heldPhotos(sqlite, SET), null);
-  holdPhotos(sqlite, SET, [photo]);
+  holdPhotos(sqlite, SET, [photo], [A]);
   assert.deepEqual(heldPhotos(sqlite, SET), [photo]);
-  holdPhotos(sqlite, SET, [photo, photo]);
+  holdPhotos(sqlite, SET, [photo, photo], [A]);
   assert.deepEqual(heldPhotos(sqlite, SET), [photo, photo]);
 });
 
 test("photos stay while either half of a meal for both waits on them, and go after", () => {
   const sqlite = journal();
-  holdPhotos(sqlite, SET, [photo]);
-  save(sqlite, "a", { source: "queued", photoSet: SET });
-  save(sqlite, "b", { source: "queued", photoSet: SET });
+  holdPhotos(sqlite, SET, [photo], [A, B]);
+  arrive(sqlite, A, { source: "queued", photoSet: SET });
+  arrive(sqlite, B, { source: "queued", photoSet: SET });
   releasePhotos(sqlite, SET);
   assert.ok(heldPhotos(sqlite, SET), "both still waiting");
-  sqlite.prepare("DELETE FROM records WHERE id = 'a'").run();
+  sqlite.prepare("DELETE FROM records WHERE id = ?").run(A);
   releasePhotos(sqlite, SET);
   assert.ok(heldPhotos(sqlite, SET), "one still waiting");
-  save(sqlite, "b", { source: "grok" });
+  arrive(sqlite, B, { source: "grok" });
   releasePhotos(sqlite, SET);
   assert.equal(heldPhotos(sqlite, SET), null, "filled, so nobody waits on them");
+});
+
+test("photos stay for the half of a meal for both still on its way, after the other is filled", () => {
+  const sqlite = journal();
+  holdPhotos(sqlite, SET, [photo], [A, B]);
+  arrive(sqlite, A, { source: "queued", photoSet: SET });
+  // A is estimated and filled while B waits on the phone for a connection.
+  arrive(sqlite, A, { source: "grok" });
+  releasePhotos(sqlite, SET);
+  assert.ok(heldPhotos(sqlite, SET), "B has not arrived");
+  arrive(sqlite, B, { source: "queued", photoSet: SET });
+  arrive(sqlite, B, { source: "grok" });
+  releasePhotos(sqlite, SET);
+  assert.equal(heldPhotos(sqlite, SET), null);
+});
+
+test("a half deleted on the phone before it was sent is not waited for", () => {
+  const sqlite = journal();
+  holdPhotos(sqlite, SET, [photo], [A, B]);
+  arrive(sqlite, A, { source: "queued", photoSet: SET });
+  // The phone sends the delete in place of B's save, for an id never stored here.
+  mealArrived(sqlite, B);
+  arrive(sqlite, A, { source: "grok" });
+  releasePhotos(sqlite, SET);
+  assert.equal(heldPhotos(sqlite, SET), null);
 });
 
 test("photos no meal took are cleared after a day, and ones a meal waits on never are", () => {
@@ -61,12 +95,12 @@ test("photos no meal took are cleared after a day, and ones a meal waits on neve
   const now = Date.UTC(2026, 10, 24, 12);
   const OLD_CLAIMED = "9b2f6c1e-4d3a-4e8b-9a7c-2f1e0d6b5a02";
   const FRESH = "9b2f6c1e-4d3a-4e8b-9a7c-2f1e0d6b5a03";
-  holdPhotos(sqlite, SET, [photo], now - UNCLAIMED_MS - 1);
-  holdPhotos(sqlite, OLD_CLAIMED, [photo], now - 30 * UNCLAIMED_MS);
-  holdPhotos(sqlite, FRESH, [photo], now - UNCLAIMED_MS + 60_000);
-  save(sqlite, "a", { source: "queued", photoSet: OLD_CLAIMED });
+  holdPhotos(sqlite, SET, [photo], [B], now - UNCLAIMED_MS - 1);
+  holdPhotos(sqlite, OLD_CLAIMED, [photo], [A], now - 30 * UNCLAIMED_MS);
+  holdPhotos(sqlite, FRESH, [photo], [B], now - UNCLAIMED_MS + 60_000);
+  arrive(sqlite, A, { source: "queued", photoSet: OLD_CLAIMED });
   assert.equal(sweepPhotos(sqlite, now), 1);
-  assert.equal(heldPhotos(sqlite, SET), null);
+  assert.equal(heldPhotos(sqlite, SET), null, "its meal never came");
   assert.ok(heldPhotos(sqlite, OLD_CLAIMED), "a meal still waits on these");
   assert.ok(heldPhotos(sqlite, FRESH), "its meal may still be on its way");
 });

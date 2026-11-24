@@ -92,20 +92,24 @@ counted. One that hangs up on a request that size reads as one that did not
 answer, and the notice says it may be older than the app.
 
 A meal saved to be estimated in the background sends its photos first, to
-`/api/queued-photos`, under an id the phone makes; the meal's `photoSet` is
-that id. They wait in their own table, `queued_photos`, not in the meal's
+`/api/queued-photos`, under an id the phone makes and with the ids its
+records will be saved under; the meal's `photoSet` is that id. They wait in their own table, `queued_photos`, not in the meal's
 record, which every phone fetches and every backup copies. The worker sends
 them with the meal's words, or with "The meal in the attached photos." when
 there are none, and keeps the answer only from an estimator that says it
 took them all, as the form does; from one that does not, the meal waits.
 Meals are estimated once per description and set of photos, so a meal for
 both is asked once and two meals of photos alone are not taken for one. The
-photos are deleted once no meal waiting for its estimate points to them: when
-it is filled, when an edit drops them, or when it is deleted, the other
-athlete's half of it waiting on them still. Photos no meal took within a day,
-because the meal was never sent, are deleted at the worker's next turn, and
-a meal that arrives after them is estimated from its words alone, or waits
-when it has none (`lib/queued-photos.ts`).
+photos are deleted once every record they were sent with has reached the
+server, or been deleted before it did, and none of them still waits for its
+estimate: when the last is filled, when an edit drops them, or when it is
+deleted. A meal for both is saved one record after the other, so the second
+can wait on the phone while the first is estimated, and its photos are still
+there when it arrives. A queued meal opened again keeps its `photoSet` when
+queued again without new photos. Photos no waiting meal points to a day after
+they were sent are deleted at the worker's next turn, and a meal that arrives
+after them is estimated from its words alone, or waits when it has none
+(`lib/queued-photos.ts`).
 
 ## When Claude's sign-in runs out
 

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "dad79dcb-7d83-4586-8be1-927f2671d3e3",
+  "id": "fedcf021-04ab-4dd0-b1de-6ba943f6204e",
   "prevId": "f6c210fd-a919-4292-9247-d4414591afec",
   "tables": {
     "estimate_limits": {
@@ -82,6 +82,13 @@
         },
         "photos": {
           "name": "photos",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "waiting": {
+          "name": "waiting",
           "type": "text",
           "primaryKey": false,
           "notNull": true,

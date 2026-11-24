@@ -135,17 +135,22 @@ test("the x.ai API is sent each photo as a data URL ahead of the words", () => {
 
 test("photos sent ahead of a background estimate are the same photos, under an id", () => {
   const id = "9b2f6c1e-4d3a-4e8b-9a7c-2f1e0d6b5a01";
-  assert.ok(queuedPhotosSchema.safeParse({ id, images: [photo] }).success);
+  const meals = ["3f1a5f2e-9c4b-4d7a-8e21-6b0c9d5a0001", "3f1a5f2e-9c4b-4d7a-8e21-6b0c9d5a0002"];
+  assert.ok(queuedPhotosSchema.safeParse({ id, images: [photo], meals: [meals[0]] }).success);
+  assert.ok(queuedPhotosSchema.safeParse({ id, images: [photo], meals }).success, "a meal for both");
   for (const [why, body] of [
-    ["no photos", { id, images: [] }],
-    ["too many", { id, images: Array(PHOTO_LIMIT + 1).fill(photo) }],
-    ["a PNG", { id, images: [{ type: "image/png", data: photo.data }] }],
-    ["no id", { images: [photo] }],
-    ["an id that is not one", { id: "../../etc", images: [photo] }],
+    ["no photos", { id, images: [], meals }],
+    ["too many", { id, images: Array(PHOTO_LIMIT + 1).fill(photo), meals }],
+    ["a PNG", { id, images: [{ type: "image/png", data: photo.data }], meals }],
+    ["no id", { images: [photo], meals }],
+    ["an id that is not one", { id: "../../etc", images: [photo], meals }],
+    ["no meals", { id, images: [photo], meals: [] }],
+    ["more meals than athletes", { id, images: [photo], meals: [...meals, id] }],
+    ["no list of meals", { id, images: [photo] }],
   ] as const) assert.equal(queuedPhotosSchema.safeParse(body).success, false, why);
   // The most of them still fit what the route reads.
   const MAX_BODY_BYTES = 96_000;
-  const largest = { id, images: Array(PHOTO_LIMIT).fill(biggest) };
+  const largest = { id, images: Array(PHOTO_LIMIT).fill(biggest), meals };
   assert.ok(queuedPhotosSchema.safeParse(largest).success);
   assert.ok(Buffer.byteLength(JSON.stringify(largest)) < MAX_BODY_BYTES + PHOTO_BODY_BYTES);
 });

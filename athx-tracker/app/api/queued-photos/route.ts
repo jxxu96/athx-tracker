@@ -12,10 +12,10 @@ export async function POST(request: Request) {
   const rejected = await guard(request, true);
   if (rejected) return rejected;
   try {
-    const { id, images } = queuedPhotosSchema.parse(
+    const { id, images, meals } = queuedPhotosSchema.parse(
       await readBody(request, MAX_BODY_BYTES + PHOTO_BODY_BYTES),
     );
-    holdPhotos(database(), id, images);
+    holdPhotos(database(), id, images, meals);
     return json({ ok: true });
   } catch (error) {
     if (error instanceof BodyTooLarge) return tooLarge();

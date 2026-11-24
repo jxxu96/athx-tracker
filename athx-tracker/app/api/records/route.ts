@@ -3,7 +3,7 @@ import { newBests } from "@/lib/bests";
 import type { RecordItem, Workout } from "@/lib/domain";
 import { readRecords, readRecordsBetween, readRecordsOn } from "@/lib/journal";
 import { kickQueue } from "@/lib/queue";
-import { photoSetOf, releasePhotos } from "@/lib/queued-photos";
+import { mealArrived, photoSetOf, releasePhotos } from "@/lib/queued-photos";
 import { daySchema, recordSchema } from "@/lib/validation";
 import { ZodError } from "zod";
 
@@ -81,6 +81,7 @@ export async function POST(request: Request) {
           JSON.stringify(record),
           new Date().toISOString(),
         );
+      if (record.kind === "meal") mealArrived(sqlite, record.id);
       // An edit that no longer waits on its photos lets them go.
       const held = before ? photoSetOf(before.payload) : undefined;
       if (held && held !== (record.kind === "meal" ? record.photoSet : undefined)) releasePhotos(sqlite, held);
@@ -119,6 +120,9 @@ export async function DELETE(request: Request) {
         | { payload: string }
         | undefined;
       sqlite.prepare("DELETE FROM records WHERE id = ?").run(id);
+      // Deleted before it was ever saved here, from a phone where it waited,
+      // it will never arrive for the photos sent with it.
+      mealArrived(sqlite, id);
       // A meal deleted while it waited takes its photos with it, unless the
       // other athlete's half of it is still waiting on them.
       const held = before ? photoSetOf(before.payload) : undefined;
