@@ -3,6 +3,7 @@ import { newBests } from "@/lib/bests";
 import type { RecordItem, Workout } from "@/lib/domain";
 import { readRecords, readRecordsBetween, readRecordsOn } from "@/lib/journal";
 import { kickQueue } from "@/lib/queue";
+import { photoSetOf, releasePhotos } from "@/lib/queued-photos";
 import { daySchema, recordSchema } from "@/lib/validation";
 import { ZodError } from "zod";
 
@@ -65,6 +66,9 @@ export async function POST(request: Request) {
     const bests = record.kind === "workout" ? bestsFor(record) : [];
     const sqlite = database();
     sqlite.transaction(() => {
+      const before = sqlite.prepare("SELECT payload FROM records WHERE id = ?").get(record.id) as
+        | { payload: string }
+        | undefined;
       sqlite
         .prepare(
           "INSERT INTO records (id, kind, athlete, day, payload, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET athlete=excluded.athlete, day=excluded.day, payload=excluded.payload WHERE records.kind=excluded.kind",
@@ -77,6 +81,9 @@ export async function POST(request: Request) {
           JSON.stringify(record),
           new Date().toISOString(),
         );
+      // An edit that no longer waits on its photos lets them go.
+      const held = before ? photoSetOf(before.payload) : undefined;
+      if (held && held !== (record.kind === "meal" ? record.photoSet : undefined)) releasePhotos(sqlite, held);
     })();
     // Saved to be estimated in the background: start now, not at the timer.
     if (record.kind === "meal" && record.source === "queued") kickQueue();
@@ -106,7 +113,17 @@ export async function DELETE(request: Request) {
     const { id } = await readBody(request);
     if (typeof id !== "string" || !/^[a-f0-9-]{36}$/i.test(id))
       return json({ error: "Invalid record." }, 400);
-    database().prepare("DELETE FROM records WHERE id = ?").run(id);
+    const sqlite = database();
+    sqlite.transaction(() => {
+      const before = sqlite.prepare("SELECT payload FROM records WHERE id = ?").get(id) as
+        | { payload: string }
+        | undefined;
+      sqlite.prepare("DELETE FROM records WHERE id = ?").run(id);
+      // A meal deleted while it waited takes its photos with it, unless the
+      // other athlete's half of it is still waiting on them.
+      const held = before ? photoSetOf(before.payload) : undefined;
+      if (held) releasePhotos(sqlite, held);
+    })();
     return json({ ok: true });
   } catch (error) {
     if (error instanceof BodyTooLarge) return tooLarge();

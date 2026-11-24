@@ -3,6 +3,8 @@ import { estimatePrompt } from "./estimate-conversation";
 import { estimateSchema } from "./validation";
 import { type Estimator, type Meal } from "./domain";
 import { namedEstimator } from "./estimate-stream";
+import { PHOTO_ONLY_DESCRIPTION, type MealPhoto } from "./meal-photos";
+import { heldPhotos, releasePhotos, sweepPhotos } from "./queued-photos";
 import {
   RETRY_MAX_MS,
   RETRY_MIN_MS,
@@ -16,6 +18,7 @@ import {
  * Meals saved while the estimator could not answer are stored with source
  * "queued" and the description kept in assumptions. No separate table: the
  * queue is just those meals, so nothing can drift out of step with the journal.
+ * Only their photos, when they have any, wait apart, in `lib/queued-photos.ts`.
  *
  * This is the reliable half of estimating. Nobody is waiting on it, so it can
  * afford a budget the interactive path cannot, and it holds the description
@@ -24,7 +27,7 @@ import {
 /** No browser deadline here, so a slow CLI is merely slow, not a failure. */
 const QUEUE_BUDGET_MS = 210_000;
 
-async function estimate(description: string) {
+async function estimate(description: string, images: MealPhoto[] = []) {
   const config = runtime();
   if (!config.GROK_GATEWAY_URL || !config.GROK_GATEWAY_TOKEN) return null;
   const response = await fetch(config.GROK_GATEWAY_URL, {
@@ -34,12 +37,17 @@ async function estimate(description: string) {
       Authorization: `Bearer ${config.GROK_GATEWAY_TOKEN}`,
     },
     body: JSON.stringify({
-      description: estimatePrompt(description, undefined, storedFoodNotes()),
+      // Photos can be all there is, as on the form.
+      description: estimatePrompt(description.trim() || PHOTO_ONLY_DESCRIPTION, undefined, storedFoodNotes()),
       budgetMs: QUEUE_BUDGET_MS,
+      ...(images.length ? { images } : {}),
     }),
     signal: AbortSignal.timeout(QUEUE_BUDGET_MS + 15_000),
   });
   if (!response.ok) return null;
+  // An estimator from before photos estimates the words alone. One that took
+  // them says how many, and the meal waits for one that does.
+  if (images.length && response.headers.get("x-athx-photos") !== String(images.length)) return null;
   const estimate = estimateSchema.parse(await response.json());
   const provider = namedEstimator(response.headers.get("x-athx-provider"));
   return provider ? { ...estimate, estimator: provider satisfies Estimator } : estimate;
@@ -55,17 +63,29 @@ function queuedMeals(): Meal[] {
 }
 
 async function drainOnce() {
+  const swept = sweepPhotos(database());
+  if (swept) console.log(`[queue] deleted ${swept} set(s) of photos no meal took`);
   const pending = queuedMeals();
   if (pending.length === 0) return { filled: 0, waiting: 0 };
 
   let filled = 0;
   for (const meals of byDescription(pending)) {
-    const result = await estimate(meals[0].assumptions).catch(() => null);
+    const [first] = meals;
+    const images = first.photoSet ? heldPhotos(database(), first.photoSet) : [];
+    // Its photos are gone, which only a meal that waited on the phone for
+    // over a day can find. Its words, if it has any, are estimated alone;
+    // with none, it waits, to be typed in or deleted.
+    if (!images && first.assumptions.trim().length < 3) {
+      console.log(`[queue] a meal's photos are gone and it has no words to estimate`);
+      continue;
+    }
+    const result = await estimate(first.assumptions, images ?? []).catch(() => null);
     // Still failing: stop rather than burn through the rest and fail each.
     if (!result) break;
 
     const write = database().prepare("UPDATE records SET payload = ? WHERE id = ?");
     for (const meal of meals) write.run(JSON.stringify(fillQueuedMeal(meal, result)), meal.id);
+    if (first.photoSet) releasePhotos(database(), first.photoSet);
     filled += meals.length;
   }
 

@@ -46,7 +46,8 @@ import { DishShares, MealDishes } from "@/components/meal/meal-dishes";
 import { MealItems } from "@/components/meal/meal-items";
 import { IngredientWeights } from "@/components/meal/meal-ingredients";
 import { useIngredientEstimates } from "@/components/meal/ingredient-estimates";
-import { MealPhotos, useMealPhotos } from "@/components/meal/meal-photos";
+import { MealPhotos, sendForLater, useMealPhotos } from "@/components/meal/meal-photos";
+import { QUEUED_PHOTO_NAME } from "@/lib/meal-photos";
 import { TemplateSuggestion } from "@/components/meal/template-suggestion";
 import { EstimatorWeights, type Answer, type AnswerFigure } from "@/components/meal/estimator-weights";
 import { mealKey } from "@/lib/common-meals";
@@ -1176,26 +1177,43 @@ export function MealForm({
   /**
    * Save now with the description kept, and let the worker fill the macros:
    * the same estimators and the same settling, with nobody waiting on it.
-   * Pressed mid-estimate, it takes over from the one on screen.
+   * Pressed mid-estimate, it takes over from the one on screen. Photos go to
+   * the server first and the meal points to them; without a connection
+   * nothing is saved, since they cannot wait on the phone as the meal can.
    */
   async function queueForLater() {
     const text = description.trim();
-    if (text.length < 3) {
-      setError("Describe the meal first, so it can be estimated in the background.");
+    const images = photos.sent;
+    if (text.length < 3 && !images.length) {
+      setError("Describe the meal or add a photo first, so it can be estimated in the background.");
       return;
     }
-    stopper.current?.abort();
     setSaving(true);
     try {
+      let photoSet: string | undefined;
+      if (images.length) {
+        try {
+          photoSet = await sendForLater(images);
+        } catch (failure) {
+          setError((failure as { status?: number }).status
+            ? `The photos were not saved: ${message(failure)}`
+            : "The photos could not be sent, so nothing was saved. Try again with a connection, or estimate now.");
+          return;
+        }
+      }
+      // Only once the photos are in, so an estimate running is not lost to a failed send.
+      stopper.current?.abort();
       await saveDraft({
         kind: "meal",
         day,
         ...(time && isClockTime(time) ? { time } : {}),
-        name: name.trim() || text.slice(0, 60),
+        // The words beside photos are notes on them, not the meal's name.
+        name: name.trim() || (photoSet ? QUEUED_PHOTO_NAME : text.slice(0, 60)),
         meal: slot,
         macros: { calories: 0, protein: 0, carbs: 0, fat: 0, alcohol: 0, fiber: 0 },
         source: "queued",
         assumptions: text.slice(0, 3000),
+        ...(photoSet ? { photoSet } : {}),
       });
       reset();
     } finally {
@@ -1331,10 +1349,8 @@ export function MealForm({
     if (canSave) form.current?.requestSubmit();
   });
   // Not once there is an estimate: a queued meal saves zero macros, and would
-  // throw away the figures already on the form. Nor with photos, which the
-  // meal is saved without, so the worker would never see them.
-  const canQueue = queueReady && conversation.length === 0 && !rejected && !splitting && !expanded &&
-    photos.photos.length === 0;
+  // throw away the figures already on the form.
+  const canQueue = queueReady && conversation.length === 0 && !rejected && !splitting && !expanded;
   const seeds = itemSeeds();
   const table = tableSize(dishes);
   // Filled from a template and given foods it does not have: offer to keep
@@ -1551,7 +1567,8 @@ export function MealForm({
             type="button"
             variant="outline"
             className="w-full"
-            disabled={saving || templateSaving || description.trim().length < 3}
+            disabled={saving || templateSaving || photos.reading ||
+              (description.trim().length < 3 && photos.photos.length === 0)}
             onClick={queueForLater}
           >
             <Clock />

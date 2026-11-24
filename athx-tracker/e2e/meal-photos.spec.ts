@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import Database from "better-sqlite3";
 import { PASSPHRASE } from "../playwright.config.ts";
 
 type Sent = {
@@ -54,6 +55,16 @@ function sizeOf(page: Page, data: string) {
   }, data);
 }
 
+/** How many sets of photos the server holds under an id, read from the spec's own database. */
+function heldPhotos(id: string) {
+  const sqlite = new Database(".playwright/athx-e2e.db", { readonly: true });
+  try {
+    return (sqlite.prepare("SELECT COUNT(*) AS n FROM queued_photos WHERE id = ?").get(id) as { n: number }).n;
+  } finally {
+    sqlite.close();
+  }
+}
+
 async function meals(page: Page) {
   return page.evaluate(async () =>
     (await fetch("/api/records").then((r) => r.json())).records as Record<string, unknown>[]);
@@ -76,8 +87,8 @@ test("a photo alone is estimated, shrunk on the phone first, and the meal is sav
   });
   await expect(photos(page)).toHaveCount(1);
   await expect(page.getByRole("img", { name: "Meal photo 1" })).toBeVisible();
-  // The meal is saved without its photo, so the background worker would never see it.
-  await expect(page.getByRole("button", { name: "Save and estimate in background" })).toHaveCount(0);
+  // A photo with no words is enough to save for the background worker too.
+  await expect(page.getByRole("button", { name: "Save and estimate in background" })).toBeEnabled();
   await expect(page.getByLabel("Meal description")).toHaveAttribute(
     "placeholder", "Anything the photo does not show: portions, oil, what is inside",
   );
@@ -227,12 +238,13 @@ test("a photo of a meal for both comes back dish by dish, its words read as note
   expect(sent[0].images).toHaveLength(1);
 });
 
-test("Take photo, Library and a smaller File pick photos three ways", async ({ page }) => {
+test("Take photo, Library, File and Paste pick photos four ways, all the same height", async ({ page }) => {
   await openMeal(page);
   await loggingFor(page, "Hippos").click();
   const camera = page.getByLabel("Take photo");
   const library = page.getByLabel("Library");
   const file = page.getByLabel("File", { exact: true });
+  const paste = page.getByRole("button", { name: "Paste", exact: true });
   await expect(library).toHaveAttribute("accept", "image/*");
   await expect(library).not.toHaveAttribute("capture");
   await expect(file).not.toHaveAttribute("accept");
@@ -241,8 +253,98 @@ test("Take photo, Library and a smaller File pick photos three ways", async ({ p
   await expect(page.locator('input[type="file"][capture]')).toHaveCount(1);
   const height = async (input: typeof camera) =>
     (await input.locator("xpath=..").boundingBox())!.height;
-  expect(await height(file)).toBeLessThan(await height(library));
+  expect(await height(file)).toBe(await height(camera));
   expect(await height(library)).toBe(await height(camera));
+  expect((await paste.boundingBox())!.height).toBe(await height(camera));
   await file.setInputFiles({ name: "plate.jpg", mimeType: "image/jpeg", buffer: await jpeg(page, 640, 480) });
   await expect(photos(page)).toHaveCount(1);
+});
+
+test("Paste adds a picture copied to the clipboard, and says when there is none", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await openMeal(page);
+  await loggingFor(page, "Hippos").click();
+  const paste = page.getByRole("button", { name: "Paste", exact: true });
+
+  await page.evaluate(() => navigator.clipboard.writeText("not a picture"));
+  await paste.click();
+  await expect(page.locator("form").getByRole("alert")).toHaveText(
+    "There is no picture on the clipboard. Copy a photo first, then paste it here.",
+  );
+  await expect(page.getByRole("list", { name: "Meal photos" })).toHaveCount(0);
+
+  // Copied from a page or Photos, a picture reaches the clipboard as a PNG.
+  await page.evaluate(async () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 900;
+    canvas.height = 600;
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = "#2e7d32";
+    context.fillRect(0, 0, 900, 600);
+    const png = await new Promise<Blob>((resolve) => canvas.toBlob((blob) => resolve(blob!), "image/png"));
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+  });
+  await paste.click();
+  await expect(photos(page)).toHaveCount(1);
+  await expect(page.locator("form").getByRole("alert")).toHaveCount(0);
+});
+
+test("a photo saved to estimate in the background goes to the server first, and the meal points to it", async ({ page }) => {
+  const held: { id: string; images: { type: string; data: string }[] }[] = [];
+  await page.route("**/api/queued-photos", async (route) => {
+    held.push(route.request().postDataJSON());
+    await route.continue();
+  });
+  await openMeal(page);
+  await loggingFor(page, "Both").click();
+  // The queue fills one meal, not a meal split by dish.
+  await page.getByRole("button", { name: "Same meal for each of you" }).click();
+  await page.getByLabel("Library").setInputFiles({
+    name: "plate.jpg", mimeType: "image/jpeg", buffer: await jpeg(page, 3000, 2000),
+  });
+  await expect(photos(page)).toHaveCount(1);
+  await page.getByRole("button", { name: "Save and estimate in background" }).click();
+  await expect(page.getByText("Meals saved for Hippos and Gators", { exact: true })).toBeVisible();
+  await expect(photos(page)).toHaveCount(0);
+
+  expect(held).toHaveLength(1);
+  expect(held[0].images).toHaveLength(1);
+  expect(held[0].images[0].data.startsWith("/9j/")).toBe(true);
+  const saved = (await meals(page)).filter((meal) => meal.photoSet === held[0].id);
+  // One set of photos for both halves, which the worker estimates once.
+  expect(saved).toHaveLength(2);
+  for (const meal of saved) {
+    expect(meal).toMatchObject({ source: "queued", name: "Meal from photos", assumptions: "" });
+    expect(JSON.stringify(meal)).not.toContain("/9j/");
+  }
+  // The server holds them apart from the journal until the meal is done with.
+  expect(heldPhotos(held[0].id)).toBe(1);
+
+  const remove = (id: string) => page.evaluate(async (id) => {
+    await fetch("/api/records", {
+      method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }),
+    });
+  }, id);
+  await remove(saved[0].id as string);
+  expect(heldPhotos(held[0].id), "the other half still waits on them").toBe(1);
+  await remove(saved[1].id as string);
+  expect(heldPhotos(held[0].id), "deleted with the last meal that waited on them").toBe(0);
+});
+
+test("photos that cannot be sent save nothing, and stay on the form", async ({ page }) => {
+  await page.route("**/api/queued-photos", (route) => route.abort("internetdisconnected"));
+  await openMeal(page);
+  await loggingFor(page, "Gators").click();
+  await page.getByLabel("Library").setInputFiles({
+    name: "plate.jpg", mimeType: "image/jpeg", buffer: await jpeg(page, 640, 480),
+  });
+  await page.getByLabel("Meal description").fill("Large portion");
+  const before = (await meals(page)).length;
+  await page.getByRole("button", { name: "Save and estimate in background" }).click();
+  await expect(page.locator("form").getByRole("alert")).toHaveText(
+    "The photos could not be sent, so nothing was saved. Try again with a connection, or estimate now.",
+  );
+  await expect(photos(page)).toHaveCount(1);
+  await expect(page.getByLabel("Meal description")).toHaveValue("Large portion");
+  expect((await meals(page)).length).toBe(before);
 });

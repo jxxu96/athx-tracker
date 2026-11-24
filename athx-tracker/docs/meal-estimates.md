@@ -64,7 +64,7 @@ While one is waiting, the app looks for its figures every 15 seconds, and a
 popup says when they arrive, from whichever section is open. It is offered
 for a meal that is not split by dish, which the queue cannot fill, and
 until there is an estimate on the form, since a queued meal would throw those
-figures away. Background estimates do not count toward the 60 a day. They
+figures away. A meal with photos is queued with them; see [Photos](#photos). Background estimates do not count toward the 60 a day. They
 need the estimator: with only `XAI_API_KEY` set, the button is not offered,
 since the worker asks the gateway and nothing else.
 
@@ -90,6 +90,22 @@ photos, and the app does not use what it answers, which would be for the
 words alone: it says the estimator needs updating, and the estimate is not
 counted. One that hangs up on a request that size reads as one that did not
 answer, and the notice says it may be older than the app.
+
+A meal saved to be estimated in the background sends its photos first, to
+`/api/queued-photos`, under an id the phone makes; the meal's `photoSet` is
+that id. They wait in their own table, `queued_photos`, not in the meal's
+record, which every phone fetches and every backup copies. The worker sends
+them with the meal's words, or with "The meal in the attached photos." when
+there are none, and keeps the answer only from an estimator that says it
+took them all, as the form does; from one that does not, the meal waits.
+Meals are estimated once per description and set of photos, so a meal for
+both is asked once and two meals of photos alone are not taken for one. The
+photos are deleted once no meal waiting for its estimate points to them: when
+it is filled, when an edit drops them, or when it is deleted, the other
+athlete's half of it waiting on them still. Photos no meal took within a day,
+because the meal was never sent, are deleted at the worker's next turn, and
+a meal that arrives after them is estimated from its words alone, or waits
+when it has none (`lib/queued-photos.ts`).
 
 ## When Claude's sign-in runs out
 

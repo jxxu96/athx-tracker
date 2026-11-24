@@ -11,7 +11,7 @@ import {
   isJpegData,
 } from "./meal-photos.ts";
 import { FOOD_NOTES_LIMIT, estimatePrompt } from "./estimate-conversation.ts";
-import { estimateRequestSchema } from "./validation.ts";
+import { estimateRequestSchema, mealSchema, queuedPhotosSchema } from "./validation.ts";
 import { grokRequest } from "./grok.ts";
 
 // The start and end of a JPEG, which is all a check of its bytes reads.
@@ -131,4 +131,32 @@ test("the x.ai API is sent each photo as a data URL ahead of the words", () => {
   // The same food from another angle counts once, and a menu is not food.
   assert.match(body.instructions, /Several photos can show the same food, from another angle or closer up: count each food once/);
   assert.match(body.instructions, /A menu or receipt is context, not food: .* count only what the description or the photos of the food show was eaten/);
+});
+
+test("photos sent ahead of a background estimate are the same photos, under an id", () => {
+  const id = "9b2f6c1e-4d3a-4e8b-9a7c-2f1e0d6b5a01";
+  assert.ok(queuedPhotosSchema.safeParse({ id, images: [photo] }).success);
+  for (const [why, body] of [
+    ["no photos", { id, images: [] }],
+    ["too many", { id, images: Array(PHOTO_LIMIT + 1).fill(photo) }],
+    ["a PNG", { id, images: [{ type: "image/png", data: photo.data }] }],
+    ["no id", { images: [photo] }],
+    ["an id that is not one", { id: "../../etc", images: [photo] }],
+  ] as const) assert.equal(queuedPhotosSchema.safeParse(body).success, false, why);
+  // The most of them still fit what the route reads.
+  const MAX_BODY_BYTES = 96_000;
+  const largest = { id, images: Array(PHOTO_LIMIT).fill(biggest) };
+  assert.ok(queuedPhotosSchema.safeParse(largest).success);
+  assert.ok(Buffer.byteLength(JSON.stringify(largest)) < MAX_BODY_BYTES + PHOTO_BODY_BYTES);
+});
+
+test("only a meal waiting for its estimate points to photos", () => {
+  const meal = {
+    id: "3f1a5f2e-9c4b-4d7a-8e21-6b0c9d5a1234", kind: "meal", athlete: "gators", day: "2026-10-22",
+    name: "Meal from photos", meal: "Lunch", macros: { calories: 0, protein: 0, carbs: 0, fat: 0 },
+    source: "queued", assumptions: "", photoSet: "9b2f6c1e-4d3a-4e8b-9a7c-2f1e0d6b5a01",
+  };
+  assert.ok(mealSchema.safeParse(meal).success);
+  assert.equal(mealSchema.safeParse({ ...meal, source: "grok" }).success, false);
+  assert.equal(mealSchema.safeParse({ ...meal, photoSet: "set" }).success, false, "an id, nothing else");
 });

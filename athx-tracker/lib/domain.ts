@@ -74,6 +74,11 @@ export type Meal = {
   items?: MealTemplateItem[];
   /** Which CLI produced an estimate. Older meals, and anything typed by hand, omit it. */
   estimator?: Estimator;
+  /**
+   * A meal waiting to be estimated in the background with photos: the id the
+   * server holds them under until then (`lib/queued-photos.ts`).
+   */
+  photoSet?: string;
 };
 /** How many meals one person can keep, and how large one of those meals can be. */
 export const MEAL_TEMPLATE_LIMIT = 24;
