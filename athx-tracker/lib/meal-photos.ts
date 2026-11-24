@@ -22,6 +22,11 @@ export const PHOTO_TYPE = "image/jpeg";
 export const PHOTO_QUALITIES = [0.85, 0.7, 0.55, 0.4] as const;
 /** What the estimator is told when photos come with no words. */
 export const PHOTO_ONLY_DESCRIPTION = "The meal in the attached photos.";
+/**
+ * The name of a meal saved with photos to be estimated in the background,
+ * until the estimate names it. A name typed on the form is kept instead.
+ */
+export const QUEUED_PHOTO_NAME = "Meal from photos";
 /** Room in an estimate request for the most photos, beside its text. */
 export const PHOTO_BODY_BYTES = PHOTO_LIMIT * (PHOTO_CHARS + 100);
 

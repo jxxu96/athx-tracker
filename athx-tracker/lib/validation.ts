@@ -114,9 +114,13 @@ export const mealSchema = z.object({
   items: mealItemsSchema.optional(),
   // Optional, so meals saved before the answer named its model still parse.
   estimator: z.enum(["codex", "claude", "grok", "average"]).optional(),
+  photoSet: z.string().uuid().optional(),
 }).strict().superRefine((meal, context) => {
   // Ethanol counts on any sitting: a dinner with wine is still a dinner.
   rejectFiberAboveCarbs(meal.macros, context, ["macros", "fiber"]);
+  // Photos are held only for the background estimate, which drops them.
+  if (meal.photoSet && meal.source !== "queued")
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["photoSet"], message: "Only a meal waiting for its estimate has photos held." });
 });
 /** One answer for some food: a whole meal, or one dish of a shared one. */
 const answerSchema = mealMacroSchema.extend({
@@ -145,6 +149,13 @@ const ownAnswerSchema = answerSchema.superRefine((answer, context) => {
 const photoSchema = z.object({
   type: z.literal(PHOTO_TYPE),
   data: z.string().max(PHOTO_CHARS).refine(isJpegData, "Each photo must be a JPEG of at most 1 MB."),
+}).strict();
+/** A meal's photos, sent ahead of it when it is saved to be estimated in the background. */
+export const queuedPhotosSchema = z.object({
+  id: z.string().uuid(),
+  images: z.array(photoSchema).min(1).max(PHOTO_LIMIT),
+  /** The meals that will point to them: one, or one for each athlete. */
+  meals: z.array(z.string().uuid()).min(1).max(2),
 }).strict();
 /** Keep the latest estimate and every user correction within a bounded request. */
 export const estimateRequestSchema = z.object({

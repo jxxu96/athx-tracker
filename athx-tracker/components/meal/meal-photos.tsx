@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Camera, File as FileIcon, X } from "lucide-react";
+import { Camera, ClipboardPaste, File as FileIcon, X } from "lucide-react";
 import { ApplePhotosMark, GooglePhotosMark } from "@/components/meal/photo-icons";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { newId } from "@/lib/client";
+import { api, newId } from "@/lib/client";
 import {
   PHOTO_BYTES,
   PHOTO_LIMIT,
@@ -69,7 +69,9 @@ async function shrink(file: File): Promise<MealPhoto> {
  * The photos on a meal form. They stay with the form while it is open and go
  * with every estimate from it, a reply included. They are not kept in its
  * draft, which lives in this phone's storage and would not hold many, and the
- * meal is saved without them.
+ * meal is saved without them. A meal saved to be estimated in the background
+ * sends them ahead of it (`sendForLater`), and the server deletes them once
+ * it has been estimated.
  */
 export function useMealPhotos() {
   const [photos, setPhotos] = useState<HeldPhoto[]>([]);
@@ -100,6 +102,42 @@ export function useMealPhotos() {
       setError(`An estimate takes ${PHOTO_LIMIT} photos at most, so the rest were left out.`);
   }
 
+  /**
+   * Pictures copied to the clipboard, from Photos or a page. The browser asks
+   * first: Safari shows its own Paste button to tap, and Chrome asks once to
+   * allow it. Safari reads only from the tap itself, so nothing is awaited
+   * before the clipboard is asked.
+   */
+  async function paste() {
+    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard;
+    if (!clipboard?.read) {
+      setError("This browser does not let the page read the clipboard. Use Library or File instead.");
+      return;
+    }
+    let items: ClipboardItem[];
+    try {
+      items = await clipboard.read();
+    } catch {
+      setError("The clipboard was not read. Allow pasting when the browser asks, or use Library or File.");
+      return;
+    }
+    const files: File[] = [];
+    for (const item of items) {
+      const type = item.types.find((kind) => kind.startsWith("image/"));
+      if (!type) continue;
+      try {
+        files.push(new File([await item.getType(type)], "pasted", { type }));
+      } catch {
+        // Listed and then not given: the same as no picture.
+      }
+    }
+    if (!files.length) {
+      setError("There is no picture on the clipboard. Copy a photo first, then paste it here.");
+      return;
+    }
+    await add(files);
+  }
+
   function remove(id: string) {
     setPhotos((current) => current.filter((photo) => photo.id !== id));
     setError("");
@@ -112,7 +150,28 @@ export function useMealPhotos() {
 
   /** What an estimate sends: the photos alone, without their keys. */
   const sent: MealPhoto[] = photos.map(({ type, data }) => ({ type, data }));
-  return { photos, sent, reading: readingCount > 0, readingCount, error, add, remove, clear };
+  return { photos, sent, reading: readingCount > 0, readingCount, error, add, paste, remove, clear };
+}
+
+/** An upload of six photos on a slow phone connection, and no longer. */
+const SEND_TIMEOUT_MS = 60_000;
+
+/**
+ * Sends a meal's photos ahead of it when it is saved to be estimated in the
+ * background, with the ids of the records that will point to them, and gives
+ * the id they point to them by. The server keeps them until each of those
+ * records has arrived and been estimated. Unlike the meal, they cannot wait
+ * on the phone for a connection: storage there would not hold them, so this
+ * fails without one.
+ */
+export async function sendForLater(photos: MealPhoto[], meals: string[]) {
+  const id = newId();
+  await api<{ ok: true }>("/api/queued-photos", {
+    method: "POST",
+    body: JSON.stringify({ id, images: photos, meals }),
+    signal: typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(SEND_TIMEOUT_MS) : undefined,
+  });
+  return id;
 }
 
 export type MealPhotoState = ReturnType<typeof useMealPhotos>;
@@ -120,15 +179,21 @@ export type MealPhotoState = ReturnType<typeof useMealPhotos>;
 /**
  * Take photo opens the camera on a phone: capture asks for a new picture, and
  * the phone's own camera takes it, so the page never reaches the camera
- * itself. Library picks photos, and File any file. Which picker opens is the
- * browser's choice: Android gives the photo picker for Library and its file
- * browser for File, while iOS shows one menu of camera, library and files
- * for both, which no page can skip. Each is a label
- * around its file input, the way a picker opens on every browser, Safari's
- * included, without a script clicking a hidden input.
+ * itself. Library picks photos, File any file, and Paste a picture copied to
+ * the clipboard. Which picker opens is the browser's choice: Android gives
+ * the photo picker for Library and its file browser for File, while iOS
+ * shows one menu of library, camera and files for both, which no page can
+ * skip or trim. Paste is the way round it there: Copy in Photos, then Paste.
+ * Each picker is a label around its file input, the way a picker opens on
+ * every browser, Safari's included, without a script clicking a hidden input.
  */
-export function MealPhotos({ state, disabled = false }: { state: MealPhotoState; disabled?: boolean }) {
-  const { photos, reading, readingCount, error, add, remove } = state;
+export function MealPhotos({ state, disabled = false, held = false }: {
+  state: MealPhotoState;
+  disabled?: boolean;
+  /** A meal waiting for its background estimate, whose photos are on the server. */
+  held?: boolean;
+}) {
+  const { photos, reading, readingCount, error, add, paste, remove } = state;
   const off = disabled || reading || photos.length >= PHOTO_LIMIT;
   const pick = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
@@ -143,8 +208,8 @@ export function MealPhotos({ state, disabled = false }: { state: MealPhotoState;
   );
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <label className={cn(choice, "flex-1")}>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <label className={choice}>
           <Camera />
           Take photo
           <input
@@ -156,7 +221,7 @@ export function MealPhotos({ state, disabled = false }: { state: MealPhotoState;
             onChange={pick}
           />
         </label>
-        <label className={cn(choice, "flex-1")}>
+        <label className={choice}>
           <span className="flex items-center -space-x-1" aria-hidden="true">
             <GooglePhotosMark className="size-4" />
             <ApplePhotosMark className="size-4" />
@@ -167,11 +232,15 @@ export function MealPhotos({ state, disabled = false }: { state: MealPhotoState;
         {/* No image filter, so a browser that has one offers its file browser
             rather than the photo picker. Anything that is not a picture it can
             open is turned away as unreadable. */}
-        <label className={cn(choice, "h-7 gap-1 px-2 text-xs has-[>svg]:px-2")}>
-          <FileIcon className="size-3.5" />
+        <label className={choice}>
+          <FileIcon />
           File
           <input type="file" multiple className="sr-only" disabled={off} onChange={pick} />
         </label>
+        <Button type="button" variant="outline" disabled={off} onClick={() => void paste()}>
+          <ClipboardPaste />
+          Paste
+        </Button>
       </div>
       {photos.length ? (
         <ul aria-label="Meal photos" className="flex flex-wrap gap-2.5 pt-1">
@@ -205,10 +274,17 @@ export function MealPhotos({ state, disabled = false }: { state: MealPhotoState;
         </p>
       ) : null}
       {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
+      {held && !photos.length ? (
+        <p className="text-[11px] text-muted-foreground">
+          Its photos are on the server, waiting for the background estimate. Saved to estimate in the
+          background again, it keeps them; photos added here replace them.
+        </p>
+      ) : null}
       {photos.length ? (
         <p className="text-[11px] text-muted-foreground">
           Up to {PHOTO_LIMIT} photos: another angle, a label or the menu helps, and food seen twice counts
           once. Sent with each estimate and not kept: the meal saves its figures and what the estimate saw.
+          Saved to estimate in the background, they wait on the server until it is done.
         </p>
       ) : null}
     </div>

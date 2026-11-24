@@ -25,3 +25,23 @@ export const loginAttempts = sqliteTable("login_attempts", {
   windowStart: integer("window_start").notNull().default(0),
   lockedUntil: integer("locked_until").notNull().default(0),
 });
+
+/**
+ * The photos of a meal saved to be estimated in the background, held until
+ * the worker has estimated it and then deleted. Apart from the journal, so a
+ * meal's record stays small and its photos never reach a backup or a phone.
+ */
+export const queuedPhotos = sqliteTable("queued_photos", {
+  id: text("id").primaryKey(),
+  /** The photos as JSON, each a JPEG as base64. */
+  photos: text("photos").notNull(),
+  /**
+   * The ids of the meals sent with them that the server has not seen saved or
+   * deleted yet, as JSON. Two for a meal logged for both, which are saved one
+   * after the other, so the second can wait on the phone while the first is
+   * estimated, and the photos must still be there for it.
+   */
+  waiting: text("waiting").notNull(),
+  /** Milliseconds since the epoch, for clearing out a set no meal took. */
+  createdAt: integer("created_at").notNull(),
+});

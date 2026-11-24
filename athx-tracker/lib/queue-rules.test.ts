@@ -8,6 +8,7 @@ import {
   nextRetryDelay,
 } from "./queue-rules.ts";
 import type { Meal } from "./domain.ts";
+import { QUEUED_PHOTO_NAME } from "./meal-photos.ts";
 
 const queued = (over: Partial<Meal> = {}): Meal => ({
   id: "3f1a5f2e-9c4b-4d7a-8e21-6b0c9d5a1234", kind: "meal", athlete: "gators",
@@ -99,4 +100,28 @@ test("a meal saved for both athletes is one description, estimated once", () => 
     [["a", "b", "d"], ["c"]],
   );
   assert.deepEqual(byDescription([]), []);
+});
+
+const SET = "9b2f6c1e-4d3a-4e8b-9a7c-2f1e0d6b5a01";
+const OTHER_SET = "9b2f6c1e-4d3a-4e8b-9a7c-2f1e0d6b5a02";
+
+test("meals of photos alone are told apart by their photos, not their empty words", () => {
+  const hippos = queued({ id: "a", athlete: "hippos", assumptions: "", photoSet: SET });
+  const gators = queued({ id: "b", athlete: "gators", assumptions: "", photoSet: SET });
+  const another = queued({ id: "c", assumptions: "", photoSet: OTHER_SET });
+  const words = queued({ id: "d", photoSet: SET });
+  const plain = queued({ id: "e" });
+  assert.deepEqual(
+    byDescription([hippos, another, gators, words, plain]).map((group) => group.map((meal) => meal.id)),
+    [["a", "b"], ["c"], ["d"], ["e"]],
+  );
+});
+
+test("a meal saved with photos is named by its estimate, and no longer points to them", () => {
+  const filled = fillQueuedMeal(queued({ name: QUEUED_PHOTO_NAME, assumptions: "", photoSet: SET }), estimate);
+  assert.equal(filled.name, estimate.name);
+  assert.equal(filled.source, "grok");
+  assert.equal("photoSet" in filled, false);
+  assert.equal(fillQueuedMeal(queued({ name: "Team dinner", photoSet: SET }), estimate).name, "Team dinner",
+    "a name typed is kept");
 });

@@ -199,14 +199,20 @@
   at a time, and a dish cannot wait in the queue for later. Templates and
   replies to an estimate are for a single meal, so a split meal does not offer
   them. The two saved meals are separate entries, edited one at a time.
-- **Photos** — **Take photo**, **Library** and a smaller **File** sit under the description.
+- **Photos** — **Take photo**, **Library**, **File** and **Paste** sit under the description,
+  two by two on a phone and in one row on a wider screen.
   Take photo asks the phone for a new picture from the rear camera: the
   phone's own camera takes it, through the file picker's `capture`, so the
   page never reaches the camera itself, and a computer opens a file picker
   instead. Library picks photos and File any file, several at once; on
   Android these open the photo picker and the file browser, and on an iPhone
-  both open iOS's own menu of camera, library and files, which a page cannot
-  skip. Anything that is not a picture the browser can open is turned away. An
+  both open iOS's own menu of library, camera and files, which a page cannot
+  skip or trim: Safari builds it from the file input, and nothing a page can
+  set opens the library alone or leaves it out of File's menu. **Paste** adds
+  a picture copied to the clipboard, from Copy in Photos or from a page, which
+  is the way past that menu on an iPhone. The browser asks first: Safari shows
+  its own Paste button to tap, and Chrome asks once to allow it. A clipboard
+  with no picture on it says so. Anything that is not a picture the browser can open is turned away. An
   estimate takes six photos at most, and each can be taken off. Several can
   show the same food, from another angle or closer up, and it still counts
   once, as many of it as any one photo or the words show. A menu, receipt or
@@ -228,7 +234,17 @@
   against the picture. Photos are not kept: not in the draft, so a reload or
   a draft opened again has none, and not with the saved meal, whose
   assumptions say what was seen and how each portion was judged. **Save and
-  estimate in background** is not offered while a photo is on the form,
-  since the worker would never see it. Which estimators look at photos is in
+  estimate in background** takes them too, with or without words: the photos
+  go to the server first, then the meal, which points to them, so the worker
+  estimates from them as the form would. Saved unnamed, it is "Meal from
+  photos" until the estimate names it; the words beside the photos stay notes
+  on them. Opened again from the Log while it waits, the meal says its photos
+  are on the server: queued again, with words added or not, it keeps them, and
+  photos added on the form replace them. The server holds them apart from the
+  journal, so they reach no backup and no phone, and deletes them once the
+  meal is estimated, edited without them or deleted; photos no meal took go
+  after a day. Unlike the meal, they cannot
+  wait on the phone for a connection: without one nothing is saved, the form
+  says so and keeps them. Which estimators look at photos is in
   [Meal estimates](meal-estimates.md#photos) (`components/meal/meal-photos.tsx`,
   `lib/meal-photos.ts`).

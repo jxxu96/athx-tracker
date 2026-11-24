@@ -1,4 +1,5 @@
 import type { Estimator, Macros, Meal } from "./domain";
+import { QUEUED_PHOTO_NAME } from "./meal-photos.ts";
 
 /*
  * The two decisions the queue worker makes, kept where a test can reach them.
@@ -26,7 +27,8 @@ export function nextRetryDelay(current: number, outcome: DrainOutcome) {
 /**
  * A queued meal once its estimate arrives. The description was parked in
  * assumptions and the name may be one you typed, which the estimate does not
- * get to overwrite.
+ * get to overwrite. A meal saved with photos and no name typed is named by
+ * the estimate, and no longer points to its photos, which are deleted.
  */
 export function fillQueuedMeal(
   meal: Meal,
@@ -34,9 +36,11 @@ export function fillQueuedMeal(
     alcohol?: number; fiber?: number; name: string; assumptions: string; estimator?: Estimator;
   },
 ): Meal {
+  const { photoSet, ...rest } = meal;
+  const unnamed = !meal.name.trim() || (photoSet !== undefined && meal.name === QUEUED_PHOTO_NAME);
   return {
-    ...meal,
-    name: meal.name.trim() || estimate.name,
+    ...rest,
+    name: unnamed ? estimate.name : meal.name,
     meal: (estimate.alcohol ?? 0) > 0 ? "Alcohol" : meal.meal,
     macros: {
       calories: estimate.calories,
@@ -57,11 +61,13 @@ export function fillQueuedMeal(
  * athletes is two records with one description, and estimating each on its
  * own asked the estimators twice and could give the two of them different
  * figures for the same plate. One estimate per description fills them all.
+ * With photos, the same photos as well: two meals of photos alone share an
+ * empty description and nothing else.
  */
 export function byDescription(meals: Meal[]): Meal[][] {
   const groups = new Map<string, Meal[]>();
   for (const meal of meals) {
-    const key = meal.assumptions.trim();
+    const key = `${meal.photoSet ?? ""}\n${meal.assumptions.trim()}`;
     groups.set(key, [...(groups.get(key) ?? []), meal]);
   }
   return [...groups.values()];
