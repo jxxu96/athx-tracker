@@ -212,7 +212,18 @@
   a picture copied to the clipboard, from Copy in Photos or from a page, which
   is the way past that menu on an iPhone. The browser asks first: Safari shows
   its own Paste button to tap, and Chrome asks once to allow it. A clipboard
-  with no picture on it says so. Anything that is not a picture the browser can open is turned away. An
+  with no picture on it says so. On a computer, **Ctrl+V** (⌘V on a Mac)
+  pastes a picture too, while the Meal form is on screen, with the cursor in
+  the form or nowhere in particular: a screenshot, Copy image from a page, or
+  picture files copied in File Explorer or Finder, which the Paste button
+  cannot read, since to the clipboard it reads a copied file is not a picture.
+  It needs no permission. Pasted into a box on the form, text wins: Word,
+  Excel and OneNote put a picture of what was copied beside its text, so
+  pasting that is typing, not a photo. A paste into a dialog, such as a reply
+  to the estimate, or into a box outside the form, is left alone, and one with
+  six photos already on the form says so. When the Paste button cannot read
+  the clipboard, its notice suggests Ctrl+V on a computer
+  (`lib/pasted-photos.ts`). Anything that is not a picture the browser can open is turned away. An
   estimate takes six photos at most, and each can be taken off. Several can
   show the same food, from another angle or closer up, and it still counts
   once, as many of it as any one photo or the words show. A menu, receipt or
