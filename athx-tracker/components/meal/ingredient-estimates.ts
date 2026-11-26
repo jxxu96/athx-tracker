@@ -26,13 +26,20 @@ export function useIngredientEstimates({
   blocked: boolean;
   /** Moves on whenever the form is cleared. */
   epoch: { readonly current: number };
-  /** Puts a new list of ingredients on the meal, figures, description and all. */
-  write: (next: MealTemplateItem[]) => void;
+  /**
+   * Puts a new list of ingredients on the meal, figures, description and all,
+   * with the answer for a food added to it, whose intake joins the meal's.
+   */
+  write: (next: MealTemplateItem[], added?: MealEstimate) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  async function estimate(item: MealTemplateItem, place: (estimated: MealTemplateItem) => MealTemplateItem[]) {
+  async function estimate(
+    item: MealTemplateItem,
+    place: (estimated: MealTemplateItem) => MealTemplateItem[],
+    adding = false,
+  ) {
     if (busy || blocked) return false;
     const started = epoch.current;
     setBusy(true);
@@ -44,7 +51,7 @@ export function useIngredientEstimates({
       });
       // The form was cleared while it was out.
       if (started !== epoch.current) return false;
-      write(place(itemWithEstimate(item, answer)));
+      write(place(itemWithEstimate(item, answer)), adding ? answer : undefined);
       return true;
     } catch (problem) {
       if (started === epoch.current) setError(message(problem));
@@ -59,7 +66,7 @@ export function useIngredientEstimates({
     error,
     setError,
     /** In this meal until it is slid to zero, and kept with the template once that is updated. */
-    add: (item: MealTemplateItem) => estimate(item, (estimated) => [...ingredients, estimated]),
+    add: (item: MealTemplateItem) => estimate(item, (estimated) => [...ingredients, estimated], true),
     /** In the counted item's place, at that weight. */
     weigh: (index: number, grams: number) => {
       const current = ingredients[index];

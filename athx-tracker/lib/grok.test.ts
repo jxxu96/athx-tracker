@@ -78,6 +78,11 @@ test("the request asks for the figures rather than an average", () => {
   assert.deepEqual(body.tools, [{ type: "web_search" }]);
   assert.deepEqual(
     body.text.format.schema.required,
-    ["name", "calories", "protein", "carbs", "fat", "fiber", "alcohol", "assumptions", "confidence"],
+    ["name", "calories", "protein", "carbs", "fat", "fiber", "alcohol", "assumptions", "confidence", "intake"],
+  );
+  // Kept for trends and not shown, with every figure required, as a strict schema needs.
+  assert.deepEqual(
+    body.text.format.schema.properties.intake.required,
+    ["sodium", "sugar", "caffeine", "fruit", "vegetables"],
   );
 });

@@ -36,7 +36,7 @@ const {
 } = await import("./server.mjs");
 const { WORKOUT_TASK } = await import("./workout.mjs");
 
-const SCHEMA_REQUIRED = ["name", "calories", "protein", "carbs", "fat", "fiber", "alcohol", "assumptions", "confidence"];
+const SCHEMA_REQUIRED = ["name", "calories", "protein", "carbs", "fat", "fiber", "alcohol", "assumptions", "confidence", "intake"];
 const whole = {
   name: "Chicken thigh rice bowl",
   calories: 780, protein: 46, carbs: 72, fat: 33, fiber: 0, alcohol: 0,

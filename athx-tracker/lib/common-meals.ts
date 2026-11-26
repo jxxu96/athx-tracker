@@ -1,4 +1,5 @@
 import type { Meal } from "./domain.ts";
+import type { Intake } from "./intake.ts";
 import { daysBetween } from "./client.ts";
 
 /** What one tap fills in. Taken from meals this person has repeated. */
@@ -8,6 +9,8 @@ export type CommonMeal = {
   macros: Meal["macros"];
   assumptions: string;
   items?: Meal["items"];
+  /** The latest one's, when it had any. */
+  intake?: Intake;
   days: number;
 };
 
@@ -115,6 +118,7 @@ export function commonMeals(meals: Meal[], today: string, limit = 3): CommonMeal
         macros: copyMacros(picked.macros),
         assumptions: picked.assumptions,
         ...(picked.items ? { items: picked.items } : {}),
+        ...(picked.intake ? { intake: { ...picked.intake } } : {}),
         days: byDay.size,
       },
     });

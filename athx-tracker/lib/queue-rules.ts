@@ -1,4 +1,5 @@
 import type { Estimator, Macros, Meal } from "./domain";
+import { intakeOf, type Intake } from "./intake.ts";
 import { QUEUED_PHOTO_NAME } from "./meal-photos.ts";
 
 /*
@@ -34,9 +35,11 @@ export function fillQueuedMeal(
   meal: Meal,
   estimate: Macros & {
     alcohol?: number; fiber?: number; name: string; assumptions: string; estimator?: Estimator;
+    intake?: Intake;
   },
 ): Meal {
   const { photoSet, ...rest } = meal;
+  const intake = intakeOf(estimate.intake);
   const unnamed = !meal.name.trim() || (photoSet !== undefined && meal.name === QUEUED_PHOTO_NAME);
   return {
     ...rest,
@@ -53,6 +56,7 @@ export function fillQueuedMeal(
     assumptions: estimate.assumptions,
     source: "grok",
     ...(estimate.estimator ? { estimator: estimate.estimator } : {}),
+    ...(intake ? { intake } : {}),
   };
 }
 

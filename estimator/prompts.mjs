@@ -1,4 +1,5 @@
 /** What every provider is told, and the JSON shape its answer must take. */
+import { INTAKE_SCHEMA } from "./intake.mjs";
 
 // A named product is looked up. The meal CLIs get web search for that and
 // nothing else; a workout does not. An unbranded food stays a reference value.
@@ -46,6 +47,12 @@ const MEAL_LINES = [
   "Calories in kcal; protein, carbohydrates, fat and fiber in grams.",
   "Return alcohol as grams of ethanol, separate from carbohydrates; use 0 when there is none. For drinks, estimate ethanol from the stated volume and ABV (mL x ABV/100 x 0.789 g/mL); state any assumed serving size and ABV. Include ethanol at 7 kcal/g in total calories, alongside all food and mixers.",
   "Carbs means total carbohydrate, including dietary fiber, not net carbs. Return fiber as grams of dietary fiber already included in those carbs; use 0 when there is none, and never more fiber than carbs. Count fiber at 2 kcal/g and the remaining carbohydrate at 4 kcal/g. Preserve the source calorie total rather than forcing it to equal protein x 4 + (carbs - fiber) x 4 + fiber x 2 + fat x 9 + ethanol x 7. When estimating calories, account for sugar alcohols using source values where available; do not assume every remaining carb gram provides 4 kcal. Sugar alcohols are not ethanol and must not be included in alcohol grams or in fiber grams. Totals cover the entire described meal.",
+  // Kept for trends and never shown, so they stay out of the working the
+  // phone reads items from, and never move confidence, which decides who
+  // else is asked and how much each answer counts.
+  "Also give intake for the whole meal, from the same items and portions as the totals: sodium in mg, including salt in cooking, sauces and dressings; sugar as total sugars in g, as a nutrition label gives them, including the sugar in fruit and milk, never more than carbs; caffeine in mg, from coffee, tea, soda, energy drinks, pre-workout and chocolate, using a named drink's published figure when you find it; fruit in g; and vegetables in g.",
+  "Fruit and vegetables are the grams eaten, wherever they are: on their own or in a dish, sauce, soup or smoothie, fresh, frozen, canned, cooked or dried. Fruit juice is not fruit. Potatoes, sweet potatoes, cassava and other starchy roots are not vegetables; beans, lentils and peas are.",
+  "Use 0 in intake for none. Intake does not change confidence. Leave it out of assumptions and the item brackets unless a reply asks about it.",
   "Do not give dietary advice.",
   "Do not claim a lookup you did not do.",
   "When the description contains mealDescription, previousEstimate and replies, continue that meal conversation. Apply all user corrections in replies, with newer facts taking priority over older assumptions. Answer the latest question in assumptions and explain any changes. Keep the previous totals when the reply only asks a question without changing the food or portions.",
@@ -72,7 +79,8 @@ const DISH_LINES = [
   "When photos are attached, the dishes are the ones the photos of the food show, each once however many photos show it, and the description is notes on them, such as portions or how they were cooked, not a list of dishes, unless it names them.",
   "Name each dish in the household's own words from the description.",
   "Give each dish its own figures, its own assumptions, written item by item as the meal's would be, and its own confidence, set the same way.",
-  "The dishes add up to the totals, and the meal's own assumptions hold only what covers the whole meal.",
+  "Give each dish its own intake as well.",
+  "The dishes add up to the totals and to the intake, and the meal's own assumptions hold only what covers the whole meal.",
 ];
 export const DISH_INSTRUCTIONS = [...MEAL_LINES, ...DISH_LINES, OUTPUT_LINE].join(" ");
 /** As many dishes as the app lets a shared meal hold. */
@@ -91,8 +99,9 @@ export const SCHEMA = {
     alcohol: { type: "number", minimum: 0, maximum: 500 },
     assumptions: { type: "string" },
     confidence: { type: "string", enum: ["low", "medium", "high"] },
+    intake: INTAKE_SCHEMA,
   },
-  required: ["name", "calories", "protein", "carbs", "fat", "fiber", "alcohol", "assumptions", "confidence"],
+  required: ["name", "calories", "protein", "carbs", "fat", "fiber", "alcohol", "assumptions", "confidence", "intake"],
 };
 
 /** Each dish is an estimate of its own, and the meal's figures are theirs added up. */

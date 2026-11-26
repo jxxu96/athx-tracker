@@ -7,7 +7,7 @@ import { chooseTheme } from "./theme.ts";
 type SavedMeal = {
   id: string; kind: "meal"; athlete: string; day: string; time?: string; name: string; meal: string; source: string;
   macros: { calories: number; protein: number; carbs: number; fat: number; alcohol?: number; fiber?: number };
-  estimator?: string; assumptions: string;
+  estimator?: string; assumptions: string; intake?: Record<string, number>;
 };
 
 /** Only the meals: the suite shares one journal, and sessions and weigh-ins have no name. */
@@ -142,6 +142,7 @@ test("a dish is estimated on its own, and a split meal outlives a reload", async
         estimate: {
           name: "Pepperoni pizza, 2 slices", calories: 560, protein: 24, carbs: 64, fat: 22, fiber: 4, alcohol: 0,
           assumptions: "Two slices of a 14-inch pepperoni pie.", confidence: "medium",
+          intake: { sodium: 1200, sugar: 6, caffeine: 0, fruit: 0, vegetables: 20 },
         },
         provider: "claude",
       },
@@ -184,6 +185,10 @@ test("a dish is estimated on its own, and a split meal outlives a reload", async
     { athlete: "hippos", meal: "Lunch", source: "grok", estimator: "claude", macros: { calories: 140, protein: 6, carbs: 16, fat: 5.5, alcohol: 0, fiber: 1 } },
   ]);
   const hippos = (await meals(page)).find((meal) => meal.athlete === "hippos" && meal.name === "Pizza lunch");
+  const gators = (await meals(page)).find((meal) => meal.athlete === "gators" && meal.name === "Pizza lunch");
+  // Each saved their share of the dish's intake, through the reload.
+  expect(hippos?.intake).toEqual({ sodium: 300, sugar: 1.5, caffeine: 0, fruit: 0, vegetables: 5 });
+  expect(gators?.intake).toEqual({ sodium: 900, sugar: 4.5, caffeine: 0, fruit: 0, vegetables: 15 });
   expect(hippos?.assumptions).toBe(
     "25% of 2 slices pepperoni pizza [140 kcal, 6P, 16C, 6F, 1 fiber]\n" +
       "The whole dish [560 kcal, 24P, 64C, 22F, 4 fiber]\n" +

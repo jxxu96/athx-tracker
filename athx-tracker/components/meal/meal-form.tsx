@@ -81,6 +81,7 @@ import {
 import { macroCalories } from "@/lib/meal-calories";
 import { fanOutMeal, type LoggingFor, type MealDraft } from "@/lib/meal-fanout";
 import { mealForTime } from "@/lib/meal-time";
+import { heldOf, holdIntake, joinHeld, scaledIntake, type IntakeHeld } from "@/lib/intake";
 import {
   DISH_LIMIT,
   EATERS,
@@ -261,6 +262,14 @@ export function MealForm({
   // What the meal's size bar resizes from, so rounding never builds up.
   const sizedFrom = useRef<SizeStart | null>(null);
   const [assumptions, setAssumptions] = useState(textOf(from?.assumptions, editing?.assumptions ?? ""));
+  // The estimate's sodium, sugar, caffeine, fruit and vegetables, not shown,
+  // held with the calories they came with so they are saved in step with the
+  // meal's (lib/intake.ts). A draft from before intake takes the edit's.
+  const [intake, setIntake] = useState<IntakeHeld | null>(() =>
+    from && "intake" in from
+      ? heldOf(from.intake)
+      : editing?.intake ? { intake: editing.intake, calories: editing.macros.calories } : null,
+  );
   const [confidence, setConfidence] = useState<Estimate["confidence"] | null>(
     oneOf(from?.confidence, ["low", "medium", "high"] as const) ?? null,
   );
@@ -418,7 +427,7 @@ export function MealForm({
     who,
     shown,
     snapshot: JSON.stringify({
-      day, time, picked, description, prompt, name, macros, ethanol, fiber, assumptions,
+      day, time, picked, description, prompt, name, macros, ethanol, fiber, assumptions, intake,
       confidence, answeredBy, source, adjusted, conversation, reply, kept, draftIds,
       dishes, unsplit, partials, included, ingredients, items, itemsEdited, mealScale,
     }),
@@ -475,6 +484,7 @@ export function MealForm({
     setFiber("");
     setMealScale(null);
     setAssumptions("");
+    setIntake(null);
     setConfidence(null);
     setAnsweredBy(null);
     setPartials([]);
@@ -524,6 +534,7 @@ export function MealForm({
           confidence,
           adjusted,
           assumptions: listedAssumptions(),
+          intake,
           // A resized meal is a resized dish, still saying what 100% was.
           scale: mealScale && expanded ? scaleAt(shownFigures, mealScale.percent) : mealScale,
         }], written)
@@ -696,6 +707,7 @@ export function MealForm({
       fat: String(estimate.fat),
     });
     setAssumptions(estimate.assumptions);
+    setIntake(holdIntake(estimate));
     setConfidence(estimate.confidence);
     setAnsweredBy(provider && provider in ESTIMATORS ? provider : null);
     setSource("grok");
@@ -932,6 +944,7 @@ export function MealForm({
     setFiber(offer.macros.fiber ? String(offer.macros.fiber) : "");
     setMealScale(null);
     setAssumptions(offer.assumptions);
+    setIntake(offer.intake ? { intake: offer.intake, calories: offer.macros.calories } : null);
     setSource("manual");
     setAdjusted(false);
     setConfidence(null);
@@ -1015,10 +1028,21 @@ export function MealForm({
     writeIngredients(ingredients.filter((_, i) => i !== index));
   }
 
-  /** The meal's figures, description and working, from its saved ingredients. */
-  function writeIngredients(next: MealTemplateItem[]) {
+  /**
+   * The meal's figures, description and working, from its saved ingredients.
+   * A food estimated to add to them brings its own intake, joined to the
+   * meal's rather than the meal's being stretched to its calories.
+   */
+  function writeIngredients(next: MealTemplateItem[], added?: Estimate) {
     const summed = ingredientTotals(next);
     if (!summed) return;
+    if (added) {
+      const before = ingredientTotals(ingredients)?.calories ?? 0;
+      setIntake((current) => joinHeld([
+        { held: current, calories: before },
+        { held: holdIntake(added), calories: added.calories },
+      ]));
+    }
     const totals = toTenths(summed);
     const nextDescription = templateDescription(next);
     const nextAssumptions = assumptions.startsWith("Portions adjusted using saved ingredient nutrition.")
@@ -1081,6 +1105,7 @@ export function MealForm({
         sourceKey: reuse && athlete === reuse.athlete && reuse.sourceKey
           ? reuse.sourceKey
           : mealKey(name),
+        intake: scaledIntake(intake, counted.calories),
       });
       if (!built.ok) {
         setError(built.error);
@@ -1325,6 +1350,7 @@ export function MealForm({
         : null
     );
 
+    const savedIntake = scaledIntake(intake, parsedMacros.calories);
     setSaving(true);
     try {
       await saveDraft({
@@ -1334,6 +1360,7 @@ export function MealForm({
         name: name.trim(),
         meal: slot,
         macros: { ...parsedMacros, alcohol: ethanolGrams, fiber: fiberGrams },
+        ...(savedIntake ? { intake: savedIntake } : {}),
         source,
         assumptions: sizedAssumptions(
           listed && itemsEdited ? withItemList(assumptions, listed) : assumptions,

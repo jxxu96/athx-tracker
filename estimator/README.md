@@ -192,7 +192,12 @@ place in the other answers and each answer by its confidence for that dish,
 so only answers that split it into as many dishes as the one that counts for
 most are averaged; one split another way is left out, and the meal's
 assumptions say so. The app's answer box applies the same rule to the weights
-saved on the phone. A CLI that is not
+saved on the phone. Each answer also carries `intake`, the meal's sodium,
+sugar, caffeine, fruit and vegetables, kept for trends and not shown
+(`intake.mjs`, and the app's `docs/meal-estimates.md`). It is averaged with
+the same shares, except that a 0 counts, and a shared meal's is its dishes
+added up. It never moves confidence, and a figure that does not read is
+dropped without the answer. A CLI that is not
 installed or not signed in fails immediately and is not counted, and the
 form says which one and why. A meal click allows 130 s. In order, the first
 provider gets up to 90 s and 40 s is held back for a simple meal's fallback.

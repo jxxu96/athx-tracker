@@ -21,9 +21,9 @@
 - `athx-tracker/docs/`: what each part of the app does, one page per tab. A
   behaviour change updates its page there, not the README.
 - `estimator/`: the meal-estimate sidecar. `server.mjs` is the HTTP server;
-  `estimate.mjs`, `providers.mjs`, `settle.mjs`, `cli.mjs` and `prompts.mjs`
-  do the estimating, `config.mjs` reads settings, and `backup.mjs` and
-  `deploy-watch.mjs` are its timers.
+  `estimate.mjs`, `providers.mjs`, `settle.mjs`, `intake.mjs`, `cli.mjs` and
+  `prompts.mjs` do the estimating, `config.mjs` reads settings, and
+  `backup.mjs` and `deploy-watch.mjs` are its timers.
 - Deployment: `docker-compose.yml` and `.github/workflows/build.yml`. A merge to
   `main` publishes both images, and the server redeploys from them.
 - Checks, from `athx-tracker/`: `npm run lint`, `npx tsc --noEmit`, `npm test`

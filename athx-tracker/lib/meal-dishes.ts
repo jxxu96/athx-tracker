@@ -3,6 +3,7 @@ import type { MealEstimate } from "./estimate-conversation.ts";
 import type { MealDraftIds } from "./meal-fanout.ts";
 import { bothOf, isText, oneOf, textOf } from "./drafts.ts";
 import { withoutShares, writtenDishes, readDishShare, type WrittenDish, type WrittenShare } from "./dish-split.ts";
+import { heldOf, holdIntake, scaledIntake, sumIntake, type Intake, type IntakeHeld } from "./intake.ts";
 
 /*
  * A meal the two of you shared, written down dish by dish. Each dish has its
@@ -102,6 +103,13 @@ export type DishDraft = {
   assumptions: string;
   /** Null until the dish is scaled; closing the scale puts its figures back at 100%. */
   scale: DishScale | null;
+  /**
+   * The estimate's sodium, sugar, caffeine, fruit and vegetables, with the
+   * calories they came with, so whatever the dish's figures become they are
+   * saved in step with its calories (`lib/intake.ts`). Not shown. Absent for
+   * a dish typed by hand, and in drafts from before intake.
+   */
+  intake?: IntakeHeld | null;
 };
 
 /** A quantity read as a count: 8 of "slices", 400 of "g", 6 of nothing named. */
@@ -119,6 +127,8 @@ export type Dish = {
   assumptions: string;
   /** The size it was scaled to, as a percentage. Present only when that is not 100. */
   scale?: number;
+  /** At the dish's calories as they read now. Absent for a dish without an estimate's. */
+  intake?: Intake;
 };
 
 export function emptyDish(id: string): DishDraft {
@@ -139,6 +149,7 @@ export function emptyDish(id: string): DishDraft {
     adjusted: false,
     assumptions: "",
     scale: null,
+    intake: null,
   };
 }
 
@@ -386,6 +397,7 @@ export function fillDish(dish: DishDraft, estimate: MealEstimate, provider?: Est
     source: "grok",
     adjusted: false,
     scale: null,
+    intake: holdIntake(estimate),
   };
 }
 
@@ -485,7 +497,24 @@ export function looseDishes(drafts: readonly DishDraft[]): Dish[] {
     ...(draft.estimator ? { estimator: draft.estimator } : {}),
     assumptions: draft.assumptions.trim(),
     ...(draft.scale && draft.scale.percent !== 100 ? { scale: draft.scale.percent } : {}),
+    ...intakeAt(draft.intake, usable(amount(draft.calories))),
   }));
+}
+
+function intakeAt(held: IntakeHeld | null | undefined, calories: number): { intake?: Intake } {
+  const intake = scaledIntake(held, calories);
+  return intake ? { intake } : {};
+}
+
+/**
+ * One person's share of every dish's intake. Only dishes that have one
+ * count, so a dish typed by hand adds nothing; none at all is undefined.
+ */
+export function shareIntake(dishes: readonly Dish[], eater: Eater): Intake | undefined {
+  const mine = dishes.filter((dish) => dish.intake && dish.share[eater] > 0);
+  return sumIntake(mine.map((dish) => Object.fromEntries(
+    Object.entries(dish.intake ?? {}).map(([key, value]) => [key, value * dish.share[eater]]),
+  ) as Intake));
 }
 
 /** Every dish, held to what a meal is held to, or the first thing wrong with one. */
@@ -701,6 +730,7 @@ export function splitMeal(input: {
     const estimated = mine.every((dish) => dish.source === "grok");
     const estimators = new Set(mine.map((dish) => dish.estimator));
     const [estimator] = estimators;
+    const intake = shareIntake(input.dishes, eater);
     meals.push({
       kind: input.meal.kind,
       day: input.meal.day,
@@ -713,6 +743,7 @@ export function splitMeal(input: {
       source: estimated ? "grok" : "manual",
       ...(estimated && estimators.size === 1 && estimator ? { estimator } : {}),
       assumptions: shareAssumptions(input.dishes, eater),
+      ...(intake ? { intake } : {}),
     });
   }
   return { ok: true, meals };
@@ -763,6 +794,8 @@ export function dishesOf(value: unknown): DishDraft[] {
       assumptions: textOf(held.assumptions, ""),
       // Drafts from before scales have none.
       scale: scaleOf(held.scale),
+      // Nor do drafts from before intake.
+      intake: heldOf(held.intake),
     });
   }
   return dishes;

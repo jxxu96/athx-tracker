@@ -791,6 +791,9 @@ export function expandDish(dish: DishDraft, id: () => string): DishDraft[] {
       confidence: dish.confidence,
       adjusted: dish.adjusted,
       assumptions: seed.working,
+      // Each item holds the dish's intake with the dish's calories, so the
+      // items share it out by their calories and add up to the dish.
+      intake: dish.intake ?? null,
     };
   });
 }
