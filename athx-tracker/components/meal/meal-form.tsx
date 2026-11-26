@@ -1538,7 +1538,7 @@ export function MealForm({
               setRejected(false);
             }}
           />
-          {grokReady ? <MealPhotos state={photos} held={Boolean(heldPhotos)} active={active} /> : null}
+          {grokReady ? <MealPhotos state={photos} held={Boolean(heldPhotos)} active={active} disabled={busy} /> : null}
           {!splitting && !expanded && hasIngredientNutrition(ingredients) ? (
             <IngredientWeights
               items={ingredients}

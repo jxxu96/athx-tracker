@@ -333,6 +333,27 @@ test("Ctrl+V pastes a picture from anywhere on the form, and text into a box sta
   await expect(photos(page)).toHaveCount(2);
 });
 
+test("Ctrl+V adds nothing while an estimate runs, since it already took the photos", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  let answer = () => {};
+  const answered = new Promise<void>((resolve) => { answer = resolve; });
+  await page.route("**/api/estimate", async (route) => {
+    await answered;
+    await route.fulfill({ json: { estimate: plate } });
+  });
+  await openMeal(page);
+  await loggingFor(page, "Hippos").click();
+  await page.getByLabel("Meal description").fill("Chicken and rice");
+  await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Estimating…", exact: true })).toBeVisible();
+  await copyPicture(page);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("Control+V");
+  answer();
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("640");
+  await expect(page.getByRole("list", { name: "Meal photos" })).toHaveCount(0);
+});
+
 test("a picture file copied from a folder pastes, and a full form says so", async ({ page }) => {
   await openMeal(page);
   await loggingFor(page, "Gators").click();
