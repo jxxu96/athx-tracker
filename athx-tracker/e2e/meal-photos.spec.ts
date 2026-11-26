@@ -269,7 +269,8 @@ test("Paste adds a picture copied to the clipboard, and says when there is none"
   await page.evaluate(() => navigator.clipboard.writeText("not a picture"));
   await paste.click();
   await expect(page.locator("form").getByRole("alert")).toHaveText(
-    "There is no picture on the clipboard. Copy a photo first, then paste it here.",
+    "There is no picture on the clipboard. Copy a photo first, then paste it here. " +
+      "A picture file copied from a folder pastes with Ctrl+V.",
   );
   await expect(page.getByRole("list", { name: "Meal photos" })).toHaveCount(0);
 
@@ -287,6 +288,94 @@ test("Paste adds a picture copied to the clipboard, and says when there is none"
   await paste.click();
   await expect(photos(page)).toHaveCount(1);
   await expect(page.locator("form").getByRole("alert")).toHaveCount(0);
+});
+
+/** Puts a picture on the clipboard, as a screenshot or Copy image would, with any text beside it. */
+async function copyPicture(page: Page, text?: string) {
+  await page.evaluate(async (text) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 800;
+    canvas.height = 600;
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = "#c62828";
+    context.fillRect(0, 0, 800, 600);
+    const png = await new Promise<Blob>((resolve) => canvas.toBlob((blob) => resolve(blob!), "image/png"));
+    await navigator.clipboard.write([new ClipboardItem({
+      "image/png": png,
+      ...(text ? { "text/plain": new Blob([text], { type: "text/plain" }) } : {}),
+    })]);
+  }, text);
+}
+
+test("Ctrl+V pastes a picture from anywhere on the form, and text into a box stays text", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await openMeal(page);
+  await loggingFor(page, "Hippos").click();
+
+  // Nothing in particular focused: the browser aims it at the page's selection.
+  await copyPicture(page);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("Control+V");
+  await expect(photos(page)).toHaveCount(1);
+
+  // In the description: a picture alone comes in as a photo and types nothing.
+  const description = page.getByLabel("Meal description");
+  await description.click();
+  await page.keyboard.press("Control+V");
+  await expect(photos(page)).toHaveCount(2);
+  await expect(description).toHaveValue("");
+
+  // Text with a picture of it beside it, as Word or Excel copies, is text.
+  await copyPicture(page, "two eggs and toast");
+  await description.click();
+  await page.keyboard.press("Control+V");
+  await expect(description).toHaveValue("two eggs and toast");
+  await expect(photos(page)).toHaveCount(2);
+});
+
+test("Ctrl+V adds nothing while an estimate runs, since it already took the photos", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  let answer = () => {};
+  const answered = new Promise<void>((resolve) => { answer = resolve; });
+  await page.route("**/api/estimate", async (route) => {
+    await answered;
+    await route.fulfill({ json: { estimate: plate } });
+  });
+  await openMeal(page);
+  await loggingFor(page, "Hippos").click();
+  await page.getByLabel("Meal description").fill("Chicken and rice");
+  await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Estimating…", exact: true })).toBeVisible();
+  await copyPicture(page);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("Control+V");
+  answer();
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("640");
+  await expect(page.getByRole("list", { name: "Meal photos" })).toHaveCount(0);
+});
+
+test("a picture file copied from a folder pastes, and a full form says so", async ({ page }) => {
+  await openMeal(page);
+  await loggingFor(page, "Gators").click();
+  const picture = (await jpeg(page, 640, 480)).toString("base64");
+  // What a paste carries for files copied in File Explorer or Finder: the files, no picture data.
+  const pasteFiles = (count: number) => page.evaluate(({ data, count }) => {
+    const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+    const files = new DataTransfer();
+    for (let n = 0; n < count; n += 1) files.items.add(new File([bytes], `IMG_${n}.jpg`, { type: "image/jpeg" }));
+    files.items.add(new File(["%PDF"], "menu.pdf", { type: "application/pdf" }));
+    document.body.dispatchEvent(new ClipboardEvent("paste", { clipboardData: files, bubbles: true, cancelable: true }));
+  }, { data: picture, count });
+
+  await pasteFiles(2);
+  await expect(photos(page)).toHaveCount(2);
+  await pasteFiles(4);
+  await expect(photos(page)).toHaveCount(6);
+  await pasteFiles(1);
+  await expect(page.locator("form").getByRole("alert")).toHaveText(
+    "An estimate takes 6 photos at most. Take one off to add another.",
+  );
+  await expect(photos(page)).toHaveCount(6);
 });
 
 test("a photo saved to estimate in the background goes to the server first, and the meal points to it", async ({ page }) => {
