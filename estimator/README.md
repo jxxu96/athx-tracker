@@ -81,9 +81,11 @@ many of it as any one photo or the words show, and read a menu or receipt
 for what each dish is and any calories it prints, never as food eaten.
 Workout drafts use the same authenticated service and provider fallback with
 `{"task":"workout","description":"Deadlift 1 x 2 at 185 lb","athletes":["hippos"],"weightUnit":"lb"}`.
-They return editable workout fields instead of meal macros. Sets precede reps in
-`sets x reps` shorthand, unless one side is plainly a load: `135x5` is 135 for 5
-reps, and `5x165` is 5 reps at 165, as if written `5 @ 165`. All returned
+They return editable workout fields instead of meal macros. Numbers joined by x
+read by position: two are reps x weight (`5x165` is one set of 5 reps at 165)
+and three are sets x reps x weight (`3x5x135`). A weight given apart from the x
+(`1 x 2 at 185 lb`) makes the pair sets x reps, and a weight unit marks its
+number as the weight wherever it sits (`60 kg x 8`). All returned
 weights are kg, and unreported numbers are null. Each athlete's side of a lift has a `detail` list: every set in order when
 the sets differed, empty when they were all the same. A request may add
 `bodyweightKg`, each selected athlete's weight in kg on the session's day (`{}`

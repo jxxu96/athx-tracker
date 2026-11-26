@@ -62,10 +62,16 @@
   pad and put the colon in themselves: the last two digits are the seconds,
   so 2530 reads 25:30 (`typedClock` in `lib/domain.ts`).
   **Describe your workout** accepts typed text or browser dictation and uses the
-  same subscription-backed estimator as meals to fill an editable draft. `1 x 2`
-  means **1 set of 2 reps**. Include weights and units; an omitted unit follows
-  the lb/kg switch. Sets that differ, such as `135x5, 185x3, 225x1` (a
-  weight, then its reps), open Advanced with a row for each. Named results stay
+  same subscription-backed estimator as meals to fill an editable draft.
+  Numbers joined by x read by position: two are **reps x weight**, one set
+  (`5x165` is 5 reps at 165), and three are **sets x reps x weight**
+  (`3x5x135` is 3 sets of 5 at 135). This holds whatever the lift and the size
+  of the numbers, so `pull-ups 3x8` is 3 reps at 8; write `3x8 bodyweight` or
+  `3 sets of 8` for sets of an unweighted lift. A weight given apart from the
+  x, as in `1 x 2 at 185 lb`, makes the two numbers sets x reps, and a weight
+  unit marks its number as the weight wherever it sits (`60 kg x 8` is 8 reps
+  at 60 kg). An omitted unit follows the lb/kg switch. Sets that differ, such as
+  `5x135, 3x185, 1x225`, open Advanced with a row for each. Named results stay
   with that athlete, and missing numbers stay blank for review, saving as 0
   if left: a weight never said is unweighted. Lifts, workouts
   and MetCons are matched to the names already in the list, including typos and

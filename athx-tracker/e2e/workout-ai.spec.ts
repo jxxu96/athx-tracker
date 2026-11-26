@@ -97,7 +97,7 @@ test("sets that differ fill a row each, and reps never said save as none", async
       gators: { kg: null, sets: null, reps: null,
         detail: [{ kg: 95 * lb, reps: 8 }, { kg: 95 * lb, reps: 8 }, { kg: 95 * lb, reps: 8 }] } }],
   } } }));
-  await page.getByLabel("Workout description").fill("Hippos squat 135x5, 185x3, then 225; Gators 3 x 8 at 95");
+  await page.getByLabel("Workout description").fill("Hippos squat 5x135, 3x185, then 225; Gators 3 x 8 at 95");
   await fill(page).click();
   const weight = (n: number) => page.getByLabel(`Hippos set ${n} weight`);
   const reps = (n: number) => page.getByLabel(`Hippos set ${n} reps`);
