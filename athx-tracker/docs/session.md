@@ -87,6 +87,21 @@
   An estimator from before burns leaves the box empty, and the burn is the MET
   estimate. AI replaces the workout fields but saves only when you
   choose Save session. Unsupported browsers can use keyboard dictation.
+  An AI burn is for the workout AI filled. Change that workout before saving
+  (its type, Other's name, elapsed time, stations, lifts or the time cap; not
+  the title, notes, day or time) and Save works each changed athlete's burn
+  out again from the workout as it now stands, before it saves: the button
+  reads "Working out the burn…", a burn the description or notes read off a
+  watch stays as stated, and the new working is added to the notes as "Burn
+  redone after edits". The session is saved with AI's burn marked as AI's
+  (`kcalSource`), so editing it later from the Log does the same; a title or
+  notes edit does not. A figure you type over AI's is yours and is never
+  worked out again, and neither is a burn saved before sessions kept where
+  theirs came from. If it cannot be worked out again (the estimator is
+  unreachable, out of its day's calls, or from before this), the out-of-date
+  figure is dropped rather than saved, the log estimates the burn instead, and
+  a notice says so (`redoStaleBurns` in `lib/workout-burn.ts`, through
+  `/api/workout-burn`, which shares the team's 60 workout AI calls a day).
   A session takes a time of day, which starts at the clock and can be cleared.
   Saving a lift heavier than any of that athlete's earlier sessions, or the
   same weight for more reps, says so: "New best: Back squat 195 lb × 5, up from

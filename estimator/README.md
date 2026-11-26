@@ -94,7 +94,15 @@ carries `burn`, each athlete's whole kcal or null: a burn the description states
 from a watch or a machine, otherwise MET x 3.5 x kg / 200 per minute over the work
 described, and null for an athlete with neither. An app from before burns never
 sends `bodyweightKg` and gets no `burn`; an estimator from before ignores it, and
-the app keeps its own estimate. No metered API fallback is
+the app keeps its own estimate. A session edited after AI gave its burn asks again
+with `{"task":"burn","athletes":["hippos"],"workouts":{"hippos":{...}},"bodyweightKg":{"hippos":82}}`,
+each selected athlete's workout as logged (category, seconds, segments, lifts,
+capHit, title and notes) and, while the app still holds it, the `description`
+that filled it. The workout is what was done and wins over the description,
+which only tells effort and any burn a device measured; an earlier MET working
+in the notes is never reused. It answers `{"burn":{"hippos":310,"gators":null},"assumptions":"..."}`.
+An estimator from before refuses the task, and the app drops the out-of-date
+figure for its own estimate. No metered API fallback is
 used for workouts. Deploy the app and estimator images together; the estimator
 image includes `workout.mjs`. An app from before `detail` turns away every
 workout this estimator drafts, while the current app still reads an older

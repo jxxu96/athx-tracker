@@ -8,6 +8,10 @@ import { DEFAULT_SETS, defaultReps, stationUnit } from "@/lib/exercises";
 import { lastLift, type LastLift } from "@/lib/last-lift";
 import { alignWorkoutDraft } from "@/lib/movement-match";
 import { draftBodyweights, workoutDraftSchema, type WorkoutDraft } from "@/lib/workout-draft";
+import {
+  burnBasis, burnRequest, isBurnBasis, redoneBurnNotice, redoStaleBurns, type BurnAnswer, type RedoneBurns,
+} from "@/lib/workout-burn";
+import { toast } from "sonner";
 import type { BodyweightHistory } from "@/lib/bodyweight";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -237,6 +241,19 @@ export function WorkoutForm({
       ...(editing && editSide && editing.kcal ? { [editSide]: String(editing.kcal) } : {}),
     },
   );
+  // Each athlete's AI burn in the box, as the workout it was worked out for
+  // (burnBasis): a saved session's own, or "" until the form has drawn the
+  // workout AI just filled. Null for a box AI did not fill or that was typed
+  // over. Save works a burn out again once the workout no longer matches.
+  const [aiBurn, setAiBurn] = useState<Record<Side, string | null>>(() =>
+    bothOf(from?.aiBurn, isBurnBasis) ?? {
+      hippos: null,
+      gators: null,
+      ...(editing && editSide && editing.kcal && editing.kcalSource === "ai"
+        ? { [editSide]: burnBasis(editing) }
+        : {}),
+    },
+  );
   const [lifts, setLifts] = useState<LiftRow[]>(() => {
     if (Array.isArray(from?.lifts) && from.lifts.length > 0) return from.lifts as LiftRow[];
     if (!editing || !editSide || editing.lifts.length === 0) return [blankLift()];
@@ -279,6 +296,7 @@ export function WorkoutForm({
     gators: newId(),
   });
   const [saving, setSaving] = useState(false);
+  const [redoingBurn, setRedoingBurn] = useState(false);
   const [description, setDescription] = useState(textOf(from?.description, ""));
   const [drafting, setDrafting] = useState(false);
   const [listening, setListening] = useState(false);
@@ -294,7 +312,7 @@ export function WorkoutForm({
     who: editing ? recordSide : sides.length > 1 ? "both" : sides[0],
     snapshot: JSON.stringify({
       unit, day, time, title, category, customCategory, recordSide, recordContext,
-      stations, entries, elapsed, kcal, lifts, capHit, goal, notes, draftIds, description, draftNotice,
+      stations, entries, elapsed, kcal, aiBurn, lifts, capHit, goal, notes, draftIds, description, draftNotice,
     }),
     summary: title.trim() || "Untitled session",
     detail: category === "Other" && customCategory.trim() ? customCategory.trim() : category,
@@ -396,6 +414,7 @@ export function WorkoutForm({
       // An estimator from before burns sends none, and the MET estimate stands.
       const burned = (side: Side) => columns.includes(side) ? string(draft.burn?.[side] ?? null) : "";
       setKcal({ hippos: burned("hippos"), gators: burned("gators") });
+      setAiBurn({ hippos: burned("hippos") ? "" : null, gators: burned("gators") ? "" : null });
       setGoal("");
       setCapHit({ hippos: false, gators: false });
       setInvalidSide(null);
@@ -913,6 +932,7 @@ export function WorkoutForm({
     if (from === to) return;
     setElapsed((current) => ({ hippos: "", gators: "", [to]: current[from] }));
     setKcal((current) => ({ hippos: "", gators: "", [to]: current[from] }));
+    setAiBurn((current) => ({ hippos: null, gators: null, [to]: current[from] }));
     setEntries((current) => {
       const moved = current[from].map((entry) => ({ ...entry }));
       const empty = () => current[from].map(() => blankEntry());
@@ -946,6 +966,39 @@ export function WorkoutForm({
     setRecordContext("solo");
   }
 
+  /** The record this athlete's column saves as. Validated before it is saved. */
+  function recordFor(side: Side, goalSeconds: number | null): Workout {
+    return {
+      ...(hasMetcon && capHit[side] ? { capHit: true } : {}),
+      ...(kcal[side].trim() !== ""
+        ? { kcal: Math.round(num(kcal[side])), ...(aiBurn[side] !== null ? { kcalSource: "ai" as const } : {}) }
+        : {}),
+      id: editing ? editing.id : draftIds[side],
+      kind: "workout",
+      athlete: editing ? athleteForEdit : side,
+      day,
+      ...(time ? { time } : {}),
+      title: title.trim() || dateTitle(day),
+      category,
+      customCategory: category === "Other" ? customCategory.trim() : "",
+      seconds: totalFor(side),
+      notes: notes.trim(),
+      segments: segmentsFor(side),
+      fatigue,
+      transition: num(transition),
+      goal: goalSeconds,
+      context,
+      lifts: liftsFor(side),
+    };
+  }
+
+  function announceRedoneBurns(result: RedoneBurns) {
+    const notice = redoneBurnNotice(result, (side) => ATHLETES[side].name);
+    if (!notice) return;
+    if (result.failed) toast.warning(notice.title, { description: notice.description });
+    else toast(notice.title, { description: notice.description });
+  }
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (drafting || listening) return;
@@ -973,30 +1026,29 @@ export function WorkoutForm({
     }
     setError("");
 
-    const records: Workout[] = active.map((side) => ({
-      ...(hasMetcon && capHit[side] ? { capHit: true } : {}),
-      ...(kcal[side].trim() !== "" ? { kcal: Math.round(num(kcal[side])) } : {}),
-      id: editing ? editing.id : draftIds[side],
-      kind: "workout",
-      athlete: editing ? athleteForEdit : side,
-      day,
-      ...(time ? { time } : {}),
-      title: title.trim() || dateTitle(day),
-      category,
-      customCategory: category === "Other" ? customCategory.trim() : "",
-      seconds: totalFor(side),
-      notes: notes.trim(),
-      segments: segmentsFor(side),
-      fatigue,
-      transition: num(transition),
-      goal: goalSeconds,
-      context,
-      lifts: liftsFor(side),
-    }));
+    const records = active.map((side) => recordFor(side, goalSeconds));
 
     setSaving(true);
     try {
-      await onSave(records);
+      // AI's burn is for the workout it was given. Edited since, it is worked
+      // out again before this saves, or dropped for the MET estimate.
+      const burns = await redoStaleBurns(
+        active.map((side, index) => ({ side, workout: records[index] })),
+        aiBurn,
+        async (stale) => {
+          setRedoingBurn(true);
+          try {
+            return await api<BurnAnswer>("/api/workout-burn", {
+              method: "POST",
+              body: JSON.stringify(burnRequest(stale, description, bodyweights, day)),
+            });
+          } finally {
+            setRedoingBurn(false);
+          }
+        },
+      );
+      await onSave(burns.workouts);
+      announceRedoneBurns(burns);
       // Saved: the draft has done its job.
       finish(true);
       setDraftIds({ hippos: newId(), gators: newId() });
@@ -1004,6 +1056,7 @@ export function WorkoutForm({
       setTitle("");
       setElapsed({ hippos: "", gators: "" });
       setKcal({ hippos: "", gators: "" });
+      setAiBurn({ hippos: null, gators: null });
       setStations(fresh);
       setEntries(entriesForBoth(fresh, unit));
       setLifts([blankLift()]);
@@ -1015,6 +1068,15 @@ export function WorkoutForm({
     } finally {
       setSaving(false);
     }
+  }
+
+  // The first render to show the workout AI filled takes what its burn was
+  // worked out for, so an edit after it can be told apart on save.
+  if (aiBurn.hippos === "" || aiBurn.gators === "") {
+    setAiBurn({
+      hippos: aiBurn.hippos === "" ? burnBasis(recordFor("hippos", null)) : aiBurn.hippos,
+      gators: aiBurn.gators === "" ? burnBasis(recordFor("gators", null)) : aiBurn.gators,
+    });
   }
 
   return (
@@ -1202,9 +1264,11 @@ export function WorkoutForm({
                 inputMode="numeric"
                 placeholder="kcal"
                 aria-label={`${ATHLETES[side].name} calories burned`}
-                onChange={(event) =>
-                  setKcal((current) => ({ ...current, [side]: event.target.value }))
-                }
+                onChange={(event) => {
+                  setKcal((current) => ({ ...current, [side]: event.target.value }));
+                  // Typed over, the figure is yours: never worked out again.
+                  setAiBurn((current) => ({ ...current, [side]: null }));
+                }}
               />
             </Column>
           ))}
@@ -1553,7 +1617,7 @@ export function WorkoutForm({
       ) : null}
 
       <Button type="submit" size="lg" className="w-full" disabled={saving}>
-        {saving ? "Saving…" : editing ? "Update session" : "Save session"}
+        {redoingBurn ? "Working out the burn…" : saving ? "Saving…" : editing ? "Update session" : "Save session"}
       </Button>
       </fieldset>
     </form>

@@ -59,6 +59,13 @@ export type Workout = {
    * estimate. Omitted when not given.
    */
   kcal?: number;
+  /**
+   * AI worked kcal out, from a description or the workout itself, rather than
+   * it being typed. Such a figure is for the workout as saved, so an edit that
+   * changes the workout works it out again. Omitted for a typed burn, and on
+   * sessions saved before this was kept, whose burn is then left as it is.
+   */
+  kcalSource?: "ai";
 };
 export type Meal = {
   id: string; kind: "meal"; athlete: Exclude<Athlete, "team">; day: string;

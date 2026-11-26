@@ -47,7 +47,7 @@ import { readPhotos } from "./photos.mjs";
 import { DISH_INSTRUCTIONS, DISH_SCHEMA, INSTRUCTIONS, SCHEMA } from "./prompts.mjs";
 import { DISH_TASK, MEAL_TASK, PROVIDERS, configured } from "./providers.mjs";
 import { clean, cleanDishes, complex, settle, settleDishes } from "./settle.mjs";
-import { WORKOUT_BURN_TASK, WORKOUT_TASK, bodyweightLine } from "./workout.mjs";
+import { BURN_TASK, WORKOUT_BURN_TASK, WORKOUT_TASK, bodyweightLine, burnDescription } from "./workout.mjs";
 
 function send(response, status, body, headers = {}) {
   const payload = JSON.stringify(body);
@@ -124,12 +124,27 @@ const server = createServer((request, response) => {
       const parsed = JSON.parse(body);
       description = String(parsed.description ?? "").trim();
       streaming = parsed.stream === true;
-      if (parsed.task !== undefined && !["meal", "workout"].includes(parsed.task))
+      if (parsed.task !== undefined && !["meal", "workout", "burn"].includes(parsed.task))
         return send(response, 400, { error: "Unknown task." });
+      const athletesChosen = Array.isArray(parsed.athletes) && parsed.athletes.length > 0
+        && parsed.athletes.length <= 2 && new Set(parsed.athletes).size === parsed.athletes.length
+        && parsed.athletes.every(side => ["hippos", "gators"].includes(side));
+      // A logged session's burn, worked out again after an edit made it out of
+      // date. An estimator from before this refuses the task, and the app
+      // falls back on its own estimate.
+      if (parsed.task === "burn") {
+        if (!athletesChosen) return send(response, 400, { error: "Choose athletes." });
+        const weights = parsed.bodyweightKg;
+        if (!weights || typeof weights !== "object" || Array.isArray(weights))
+          return send(response, 400, { error: "Bodyweights must be an object of kilograms." });
+        const logged = burnDescription(parsed.athletes, parsed.workouts, parsed.description);
+        if (logged === null) return send(response, 400, { error: "Give each selected athlete's workout." });
+        task = BURN_TASK;
+        description = logged;
+        context = `Selected athletes: ${parsed.athletes.join(", ")}. ${bodyweightLine(parsed.athletes, weights)}\n\n`;
+      }
       if (parsed.task === "workout") {
-        if (!Array.isArray(parsed.athletes) || !parsed.athletes.length || parsed.athletes.length > 2
-          || !parsed.athletes.every(side => ["hippos", "gators"].includes(side))
-          || !["kg", "lb"].includes(parsed.weightUnit))
+        if (!athletesChosen || !["kg", "lb"].includes(parsed.weightUnit))
           return send(response, 400, { error: "Choose athletes and a weight unit." });
         task = WORKOUT_TASK;
         context = `Selected athletes: ${parsed.athletes.join(", ")}. Default weight unit: ${parsed.weightUnit}.`;
