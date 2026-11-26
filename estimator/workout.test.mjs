@@ -54,3 +54,10 @@ test("the estimator is told each selected athlete's weight, or that there is non
     "Bodyweight on the session's day: hippos not given, gators not given.");
   assert.equal(bodyweightLine(["hippos"], { hippos: 900 }), "Bodyweight on the session's day: hippos not given.");
 });
+
+test("two numbers joined by x are reps x weight, and three are sets x reps x weight", () => {
+  assert.ok(WORKOUT_INSTRUCTIONS.includes("Two numbers are reps x weight, one set"));
+  assert.ok(WORKOUT_INSTRUCTIONS.includes("Three numbers are sets x reps x weight"));
+  assert.equal(WORKOUT_INSTRUCTIONS.includes("sets first, reps second"), false);
+  assert.equal(WORKOUT_INSTRUCTIONS.includes("above 50"), false);
+});
