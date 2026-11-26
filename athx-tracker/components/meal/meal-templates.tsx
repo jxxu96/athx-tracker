@@ -28,6 +28,7 @@ import {
   withCount,
 } from "@/lib/meal-ingredients";
 import type { MealEstimate } from "@/lib/estimate-conversation";
+import { scaledIntake, type Intake } from "@/lib/intake";
 import {
   buildTemplate,
   formatGrams,
@@ -53,6 +54,8 @@ type Draft = {
   sourceKey: string;
   saved: boolean;
   hadNutrition: boolean;
+  /** Not shown or edited: kept, in step with the calories, when the template is saved. */
+  intake?: Intake;
 };
 
 function storedTemplates(templates: MealTemplates | undefined): MealTemplates {
@@ -164,6 +167,7 @@ export function MealTemplateList({
         sourceKey: offer.sourceKey || mealKey(offer.name),
         saved: offer.saved,
         hadNutrition: !!ingredientTotals(offer.items),
+        ...(offer.intake ? { intake: offer.intake } : {}),
       },
     });
   }
@@ -177,6 +181,7 @@ export function MealTemplateList({
       macros: offer.macros,
       assumptions: offer.assumptions,
       sourceKey: offer.sourceKey,
+      intake: offer.intake,
     });
     if (!built.ok) {
       setListError(built.error);
@@ -216,14 +221,17 @@ export function MealTemplateList({
       setEditorError("Estimate the changed ingredients before saving.");
       return;
     }
+    const macros = totals ?? editor.draft.macros;
+    const { intake } = editor.draft;
     const built = buildTemplate({
       id: editor.draft.id,
       name: editor.draft.name,
       meal: editor.draft.meal,
       items: read.items,
-      macros: totals ?? editor.draft.macros,
+      macros,
       assumptions: editor.draft.assumptions,
       sourceKey: editor.draft.sourceKey,
+      intake: intake && scaledIntake({ intake, calories: editor.draft.macros.calories }, macros.calories),
     });
     if (!built.ok) {
       setEditorError(built.error);

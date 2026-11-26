@@ -1,3 +1,4 @@
+import type { Intake } from "./intake.ts";
 export type Athlete = "hippos" | "gators" | "team";
 export type WeightUnit = "kg" | "lb";
 /** What a station counts. A run uses m, km, or mi; the number is in that unit. */
@@ -79,6 +80,12 @@ export type Meal = {
    * server holds them under until then (`lib/queued-photos.ts`).
    */
   photoSet?: string;
+  /**
+   * Sodium, sugar, caffeine, fruit and vegetables as the estimate judged
+   * them, at the size saved. Kept for trends and not shown. Meals typed by
+   * hand, and older ones, have none (`lib/intake.ts`).
+   */
+  intake?: Intake;
 };
 /** How many meals one person can keep, and how large one of those meals can be. */
 export const MEAL_TEMPLATE_LIMIT = 24;
@@ -117,6 +124,8 @@ export type MealTemplate = {
   macros: Macros & { alcohol?: number; fiber?: number };
   assumptions: string;
   sourceKey: string;
+  /** The intake of the meal it was saved from, at these macros, when it had one. */
+  intake?: Intake;
 };
 export const ESTIMATORS = {
   codex: "Codex",

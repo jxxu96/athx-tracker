@@ -10,6 +10,7 @@ async function meals(page: Page) {
       id: string; athlete: string; day: string; name: string; meal: string; source: string;
       macros: { calories: number; protein: number; carbs: number; fat: number; alcohol?: number; fiber?: number };
       estimator?: string;
+      intake?: Record<string, number>;
     }[];
   });
 }
@@ -267,6 +268,33 @@ test("an averaged estimate says so, and the meal keeps it", async ({ page }) => 
     .toBe("average");
   await page.getByRole("button", { name: "Log", exact: true }).click();
   await expect(page.getByRole("listitem").filter({ hasText: name })).toContainText("Averaged");
+});
+
+test("a meal keeps the estimate's intake out of sight, in step with its calories", async ({ page }) => {
+  await loggingFor(page, "Hippos").click();
+  const name = "Ramen with a cold brew";
+  await page.route("**/api/estimate", (route) => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ estimate: { name, calories: 800, protein: 30, carbs: 90, fat: 30, fiber: 3, alcohol: 0,
+      assumptions: "Ramen [780 kcal, 30P, 90C, 30F, 3 fiber]", confidence: "medium",
+      intake: { sodium: 3600, sugar: 8, caffeine: 200, fruit: 0, vegetables: 40 } }, provider: "claude" }),
+  }));
+  await page.getByPlaceholder("Two eggs, 80 g oats with milk, banana, flat white").fill("Tonkotsu ramen, cold brew");
+  await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("800");
+  // Not shown anywhere on the form.
+  await expect(page.getByText(/sodium|caffeine/i)).toHaveCount(0);
+  // Kept with the draft.
+  await page.reload();
+  await page.getByRole("button", { name: "Meal", exact: true }).click();
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("800");
+  // Half the calories typed in: half of everything else it held.
+  await page.getByLabel("Calories (kcal)").fill("400");
+  await page.getByRole("button", { name: "Save meal", exact: true }).click();
+  await expect.poll(async () => (await meals(page)).find((meal) => meal.name === name)?.intake)
+    .toEqual({ sodium: 1800, sugar: 4, caffeine: 100, fruit: 0, vegetables: 20 });
+  await page.getByRole("button", { name: "Log", exact: true }).click();
+  await expect(page.getByRole("listitem").filter({ hasText: name })).not.toContainText(/sodium|caffeine/i);
 });
 
 test("a new food estimate clears ethanol left by a previous drink estimate", async ({ page }) => {

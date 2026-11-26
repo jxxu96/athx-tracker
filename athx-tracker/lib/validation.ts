@@ -17,6 +17,7 @@ import {
 } from "./domain.ts";
 import { TARGET_HISTORY_LIMIT } from "./targets.ts";
 import { PHOTO_CHARS, PHOTO_LIMIT, PHOTO_TYPE, isJpegData } from "./meal-photos.ts";
+import { INTAKE_CEILINGS } from "./intake.ts";
 const finite = z.number().finite().nonnegative();
 export const macroSchema = z.object({
   calories: finite.max(20000), protein: finite.max(2000), carbs: finite.max(3000), fat: finite.max(2000),
@@ -27,6 +28,18 @@ const mealMacroSchema = macroSchema.extend({
   /** Dietary fiber, already included in carbs. Older meals omit it. */
   fiber: finite.max(3000).default(0),
 }).strict();
+/**
+ * Sodium, sugar, caffeine, fruit and vegetables, kept for trends and not
+ * shown (`lib/intake.ts`). Each optional, and one that does not read drops
+ * the intake rather than the meal or the estimate it came with.
+ */
+const intakeSchema = z.object({
+  sodium: finite.max(INTAKE_CEILINGS.sodium).optional(),
+  sugar: finite.max(INTAKE_CEILINGS.sugar).optional(),
+  caffeine: finite.max(INTAKE_CEILINGS.caffeine).optional(),
+  fruit: finite.max(INTAKE_CEILINGS.fruit).optional(),
+  vegetables: finite.max(INTAKE_CEILINGS.vegetables).optional(),
+}).strict().optional().catch(undefined);
 function rejectFiberAboveCarbs(
   macros: { fiber: number; carbs: number },
   context: z.RefinementCtx,
@@ -115,6 +128,8 @@ export const mealSchema = z.object({
   // Optional, so meals saved before the answer named its model still parse.
   estimator: z.enum(["codex", "claude", "grok", "average"]).optional(),
   photoSet: z.string().uuid().optional(),
+  // Optional: meals typed by hand, and those saved before intake, have none.
+  intake: intakeSchema,
 }).strict().superRefine((meal, context) => {
   // Ethanol counts on any sitting: a dinner with wine is still a dinner.
   rejectFiberAboveCarbs(meal.macros, context, ["macros", "fiber"]);
@@ -127,6 +142,8 @@ const answerSchema = mealMacroSchema.extend({
   name: z.string().min(1).max(300),
   assumptions: z.string().max(3000),
   confidence: z.enum(["low", "medium", "high"]),
+  // An estimator from before intake sends none.
+  intake: intakeSchema,
 });
 /** A shared meal holds this many dishes at most, as the form does. */
 export const ESTIMATE_DISH_LIMIT = 20;
@@ -231,6 +248,8 @@ const mealTemplateSchema = z.object({
   macros: mealMacroSchema,
   assumptions: z.string().max(3000),
   sourceKey: z.string().max(120).default(""),
+  // Optional: kept from the estimate the template was saved from, if any.
+  intake: intakeSchema,
 }).strict().superRefine((template, context) => {
   rejectFiberAboveCarbs(template.macros, context, ["macros", "fiber"]);
 });

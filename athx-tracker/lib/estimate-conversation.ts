@@ -1,4 +1,5 @@
 import type { Macros } from "./domain.ts";
+import type { Intake } from "./intake.ts";
 
 /** One answer for some food: a whole meal, or one dish of a shared one. */
 export type DishEstimate = Macros & {
@@ -7,6 +8,8 @@ export type DishEstimate = Macros & {
   name: string;
   assumptions: string;
   confidence: "low" | "medium" | "high";
+  /** Kept for trends, not shown. An estimator from before intake gives none. */
+  intake?: Intake;
 };
 
 /** A meal asked for dish by dish comes back with its dishes as well. */
@@ -46,8 +49,10 @@ export function ownPrevious(
   for (const { provider, estimate } of answers) {
     if (!(OWN_ESTIMATORS as readonly string[]).includes(provider)) continue;
     // A whole meal's answer: its figures and working, without any dishes.
-    const { name, calories, protein, carbs, fat, fiber, alcohol, assumptions, confidence } = estimate;
-    own[provider as OwnEstimator] = { name, calories, protein, carbs, fat, fiber, alcohol, assumptions, confidence };
+    const { name, calories, protein, carbs, fat, fiber, alcohol, assumptions, confidence, intake } = estimate;
+    own[provider as OwnEstimator] = {
+      name, calories, protein, carbs, fat, fiber, alcohol, assumptions, confidence, ...(intake ? { intake } : {}),
+    };
   }
   return Object.keys(own).length ? own : undefined;
 }

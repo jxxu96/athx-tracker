@@ -1,6 +1,7 @@
 import type { Estimator } from "./domain.ts";
 import { ESTIMATORS } from "./domain.ts";
 import type { MealEstimate } from "./estimate-conversation.ts";
+import { averageIntake } from "./intake.ts";
 
 /** Codex, then Claude, then Grok. The same order the answers are shown in. */
 export const ANSWER_ORDER = ["codex", "claude", "grok"] as const;
@@ -138,6 +139,8 @@ export function blendEstimates(
     ) / mass(given);
   };
   const macros = Object.fromEntries(FIGURES.map((key) => [key, mean(key)])) as Record<Figure, number>;
+  // By the same shares, but a 0 counts (lib/intake.ts).
+  const intake = averageIntake(top.map((answer) => ({ intake: answer.estimate.intake, weight: weighed(answer, top) })));
   const scale = mass(top);
   const shares = top.map(
     (answer) => `${ESTIMATORS[answer.provider]} ${Math.round((weighed(answer, top) / scale) * 100)}%`,
@@ -173,6 +176,7 @@ export function blendEstimates(
         }),
       ].join("\n\n").slice(0, 3000),
       confidence,
+      ...(intake ? { intake } : {}),
     },
     provider: "average",
   };

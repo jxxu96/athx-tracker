@@ -8,6 +8,7 @@ import {
 } from "./domain.ts";
 import { commonMeals, mealKey, type CommonMeal } from "./common-meals.ts";
 import { captureIngredientNutrition, countOf, loggedIngredients, normalizeItems, servedItems } from "./meal-ingredients.ts";
+import { intakeOf, type Intake } from "./intake.ts";
 
 const LEADING_GRAMS = /^(\d+(?:\.\d+)?)\s*(?:g|grams)\b\s*(?:of\s+)?(.+)$/i;
 const TRAILING_GRAMS = /^(.+?)\s+(\d+(?:\.\d+)?)\s*(?:g|grams)\b\.?$/i;
@@ -26,6 +27,8 @@ export type MealOffer = {
   macros: Meal["macros"];
   assumptions: string;
   sourceKey: string;
+  /** At these macros, when the meal or template it came from had any. */
+  intake?: Intake;
 };
 
 export type TemplateWrite =
@@ -116,6 +119,7 @@ export function buildTemplate(input: {
   macros: Meal["macros"];
   assumptions: string;
   sourceKey: string;
+  intake?: Intake;
 }): { ok: true; template: MealTemplate } | { ok: false; error: string } {
   const name = input.name.trim().slice(0, MEAL_TEMPLATE_NAME_LIMIT);
   if (!name) return { ok: false, error: "Name the template." };
@@ -133,6 +137,7 @@ export function buildTemplate(input: {
     if (!Number.isFinite(item.grams) || item.grams < 0 || item.grams > MEAL_TEMPLATE_GRAMS_LIMIT)
       return { ok: false, error: "Grams need a number from 0 up to 5000." };
   }
+  const intake = intakeOf(input.intake);
   return {
     ok: true,
     template: {
@@ -143,6 +148,7 @@ export function buildTemplate(input: {
       macros: copyMacros(input.macros),
       assumptions: input.assumptions.trim().slice(0, 3000),
       sourceKey: input.sourceKey.trim().slice(0, 120),
+      ...(intake ? { intake } : {}),
     },
   };
 }
@@ -225,6 +231,7 @@ export function mealOffers(templates: MealTemplate[], meals: Meal[], today: stri
     macros: copyMacros(template.macros),
     assumptions: template.assumptions,
     sourceKey: template.sourceKey,
+    ...(template.intake ? { intake: { ...template.intake } } : {}),
   }));
   const repeated: MealOffer[] = [];
   for (const suggestion of commonMeals(meals, today)) {
@@ -239,6 +246,7 @@ export function mealOffers(templates: MealTemplate[], meals: Meal[], today: stri
       macros: copyMacros(suggestion.macros),
       assumptions: suggestion.assumptions,
       sourceKey,
+      ...(suggestion.intake ? { intake: { ...suggestion.intake } } : {}),
     });
   }
   return [...saved, ...repeated];

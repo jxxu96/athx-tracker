@@ -3,6 +3,7 @@
  * into one meal: who counts, by how much, and what the header says.
  */
 import { COMPLEX_ITEMS, WEIGHTS } from "./config.mjs";
+import { averageIntake, cleanIntake, sumIntake } from "./intake.mjs";
 import { DISH_LIMIT } from "./prompts.mjs";
 
 /**
@@ -46,7 +47,9 @@ export function clean(value) {
   if (!estimate.name || missing) return null;
   // Fiber is a subset of total carbs. An estimate that says otherwise is unusable.
   if (estimate.fiber > estimate.carbs) return null;
-  return estimate;
+  // Intake never makes an answer unusable: what does not read is left out.
+  const intake = cleanIntake(value.intake, estimate.carbs);
+  return intake ? { ...estimate, intake } : estimate;
 }
 
 const FIGURES = ["calories", "protein", "carbs", "fat", "fiber", "alcohol"];
@@ -68,13 +71,26 @@ export function cleanDishes(value) {
     FIGURES.map((key) => [key, Math.round(dishes.reduce((sum, dish) => sum + dish[key], 0) * 10) / 10]),
   );
   if (FIGURES.some((key) => totals[key] > CEILINGS[key])) return null;
+  const { intake: own, ...rest } = meal;
+  const intake = mealIntake(dishes, own, totals.carbs);
   return {
-    ...meal,
+    ...rest,
     ...totals,
     fiber: Math.min(totals.fiber, totals.carbs),
     confidence: weakest([meal.confidence, ...dishes.map((dish) => dish.confidence)]),
+    ...(intake ? { intake } : {}),
     dishes,
   };
+}
+
+/**
+ * A shared meal's intake is its dishes' added up, as its totals are, when
+ * every dish has one; otherwise the meal's own, if it gave one. A sum past a
+ * figure's ceiling leaves that figure out rather than the meal.
+ */
+function mealIntake(dishes, own, carbs) {
+  const summed = dishes.every((dish) => dish.intake) ? sumIntake(dishes.map((dish) => dish.intake)) : undefined;
+  return cleanIntake(summed ?? own, carbs);
 }
 
 const RANK = { low: 0, medium: 1, high: 2 };
@@ -146,6 +162,7 @@ export function settle(answers) {
   const macros = Object.fromEntries(
     ["calories", "protein", "carbs", "fat", "fiber", "alcohol"].map((key) => [key, mean(key)]),
   );
+  const intake = averageIntake(top.map((answer) => ({ intake: answer.estimate.intake, weight: counts(answer) })));
   const shares = top.map(
     (answer) => `${title(answer.provider)} ${Math.round((counts(answer) / weight(top)) * 100)}%`,
   );
@@ -168,6 +185,7 @@ export function settle(answers) {
         }),
       ].join("\n\n"),
       confidence,
+      ...(intake ? { intake } : {}),
     }),
     provider: "average",
   };
@@ -209,6 +227,7 @@ export function settleDishes(answers) {
   const dishes = lead.estimate.dishes.map((dish, index) => {
     const each = same.map(({ estimate, provider }) => ({ value: estimate.dishes[index], provider }));
     const macros = Object.fromEntries(FIGURES.map((key) => [key, mean(each, key)]));
+    const intake = averageIntake(each.map((item) => ({ intake: item.value.intake, weight: weigh(item) })));
     const header = `Weighted average of ${shares(each)}.`;
     const room = Math.floor((3000 - header.length) / each.length) - 2;
     return {
@@ -223,6 +242,7 @@ export function settleDishes(answers) {
         }),
       ].join("\n\n"),
       confidence: weakest(each.map(({ value }) => value.confidence)),
+      ...(intake ? { intake } : {}),
     };
   });
   const confidence = weakest(same.map(({ estimate }) => estimate.confidence));

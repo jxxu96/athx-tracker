@@ -43,6 +43,7 @@ export function fanOutMeal(input: {
       id: input.editing.id,
       athlete: input.editing.athlete,
       macros: copyMacros(input.draft.macros),
+      ...(input.draft.intake ? { intake: { ...input.draft.intake } } : {}),
     }];
   }
   const athletes = input.loggingFor === "both"
@@ -53,5 +54,6 @@ export function fanOutMeal(input: {
     id: input.ids[athlete],
     athlete,
     macros: copyMacros(input.draft.macros),
+    ...(input.draft.intake ? { intake: { ...input.draft.intake } } : {}),
   }));
 }

@@ -111,6 +111,36 @@ they were sent are deleted at the worker's next turn, and a meal that arrives
 after them is estimated from its words alone, or waits when it has none
 (`lib/queued-photos.ts`).
 
+## Intake kept for trends
+
+Every estimate also judges the meal's sodium (mg), sugar (g, total sugars as
+a label gives them, so the sugar in fruit and milk counts), caffeine (mg),
+fruit (g) and vegetables (g), and the meal is saved with them as `intake`.
+Nothing shows them yet: they are there to follow over weeks, not meal by
+meal, and are as rough as the estimate's portions. Fruit and vegetables are
+the grams eaten wherever they are, in a dish, sauce, soup or smoothie as
+well as on their own. Juice is not fruit, potatoes and other starchy roots
+are not vegetables, and beans, lentils and peas are, which is the WHO's
+"fruit and vegetables" for its 400 g a day with legumes counted in. Intake
+never moves an estimate's confidence and stays out of its working, so the
+items the form reads from it are as they were.
+
+Each estimator's intake is averaged with the same shares as its macros,
+except that a 0 counts: no caffeine in a salad is a measurement, while an
+answer that gave no intake, such as one from an estimator older than this,
+is left out of it. A figure that does not read is dropped and the estimate
+is kept. A shared meal's intake is its dishes added up.
+
+The figures are for the food as estimated, so the meal saves them in step
+with its calories: made 75% as big, slid item by item, opened into items,
+or with its calories typed over, it keeps that share of the intake, and each
+of you is saved your share of each dish's. A dish with no calories, such as
+a diet soda, keeps its intake as it came. A background estimate fills it
+when its figures arrive, the same for both of you. A meal typed by hand has
+none, and neither do meals saved before it. Templates and repeated meals
+keep the intake of the meal they came from (`lib/intake.ts`,
+`estimator/intake.mjs`).
+
 ## When Claude's sign-in runs out
 
 A Claude login on the estimator has a time limit, and past it the CLI cannot
