@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { BodyTooLarge, database, guard, json, readBody, runtime, tooLarge } from "@/lib/server";
+import { BodyTooLarge, guard, json, readBody, runtime, tooLarge } from "@/lib/server";
 import { gatewayAllowed } from "@/lib/gateway";
+import { claimWorkoutCall, releaseWorkoutCall, WORKOUT_CALLS_A_DAY } from "@/lib/workout-limit";
 import { workoutDraftSchema } from "@/lib/workout-draft";
 
 const requestSchema = z.object({
@@ -33,15 +34,8 @@ export async function POST(request: Request) {
   if (!gatewayAllowed(config.GROK_GATEWAY_URL))
     return json({ error: "The estimator address must be HTTPS, or on your private network." }, 503);
 
-  const bucket = `workout:${new Date().toISOString().slice(0, 10)}`;
-  const sqlite = database();
-  const claimed = sqlite.transaction(() => {
-    const row = sqlite.prepare("SELECT count FROM estimate_limits WHERE id = ?").get(bucket) as { count: number } | undefined;
-    if ((row?.count ?? 0) >= 60) return false;
-    sqlite.prepare("INSERT INTO estimate_limits (id, count) VALUES (?, 1) ON CONFLICT(id) DO UPDATE SET count = count + 1").run(bucket);
-    return true;
-  })();
-  if (!claimed) return json({ error: "The team's 60 daily workout drafts have been used. Fill the form by hand or try tomorrow." }, 429);
+  const bucket = claimWorkoutCall();
+  if (!bucket) return json({ error: `The team's ${WORKOUT_CALLS_A_DAY} daily workout drafts have been used. Fill the form by hand or try tomorrow.` }, 429);
   let success = false;
   try {
     const response = await fetch(config.GROK_GATEWAY_URL, {
@@ -66,6 +60,6 @@ export async function POST(request: Request) {
   } catch {
     return json({ error: "The estimator did not answer with a workout. Your description is kept; try again or fill the form by hand." }, 503);
   } finally {
-    if (!success) sqlite.prepare("UPDATE estimate_limits SET count = MAX(0, count - 1) WHERE id = ?").run(bucket);
+    if (!success) releaseWorkoutCall(bucket);
   }
 }

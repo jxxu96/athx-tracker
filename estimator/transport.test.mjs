@@ -49,4 +49,12 @@ test("the estimator accepts conversation-sized context but still bounds descript
   assert.equal((await post("Tennis for an hour", { ...workout, bodyweightKg: [80] })).status, 400);
   assert.equal((await post("Tennis for an hour", { ...workout, bodyweightKg: null })).status, 400);
   assert.equal((await post("Tennis for an hour", { ...workout, bodyweightKg: { hippos: 80 } })).status, 502);
+  // A burn worked out again needs each selected athlete's workout and an object of bodyweights.
+  const burn = { task: "burn", athletes: ["hippos"], bodyweightKg: { hippos: 80 },
+    workouts: { hippos: { category: "Tennis", seconds: 2700, segments: [], lifts: [], notes: "" } } };
+  assert.equal((await post(undefined, burn)).status, 502, "no description is needed");
+  assert.equal((await post(undefined, { ...burn, workouts: {} })).status, 400);
+  assert.equal((await post(undefined, { ...burn, bodyweightKg: undefined })).status, 400);
+  assert.equal((await post(undefined, { ...burn, athletes: ["hippos", "hippos"] })).status, 400);
+  assert.equal((await post(undefined, { ...burn, task: "estimate-everything" })).status, 400);
 });

@@ -92,7 +92,9 @@ export const workoutSchema = z.object({
   capHit: z.boolean().optional(),
   // Optional, so sessions saved before a burn could be typed still parse.
   kcal: z.number().int().positive().max(20000).optional(),
-}).strict().refine(w => w.seconds === 0 || w.segments.reduce((n,s) => n+s.seconds,0) <= w.seconds + 1, "Station times exceed elapsed workout time");
+  kcalSource: z.literal("ai").optional(),
+}).strict().refine(w => w.seconds === 0 || w.segments.reduce((n,s) => n+s.seconds,0) <= w.seconds + 1, "Station times exceed elapsed workout time")
+  .refine(w => w.kcalSource === undefined || w.kcal !== undefined, "Only a burn can say where it came from");
 const mealItemsSchema = z.array(z.object({
   name: z.string().trim().min(1).max(MEAL_TEMPLATE_ITEM_LIMIT),
   grams: finite.max(MEAL_TEMPLATE_GRAMS_LIMIT),

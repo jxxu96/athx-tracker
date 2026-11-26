@@ -151,6 +151,90 @@ test("AI estimates each athlete's burn from the weight on the session's day, and
   await expect(page.getByText(/~515 kcal/)).toBeVisible();
 });
 
+test("an AI burn the workout was edited away from is worked out again on save", async ({ page }) => {
+  await page.evaluate(async () => {
+    const { settings, revision } = await fetch("/api/settings").then(r => r.json());
+    await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: { ...settings, bodyweight: { hippos: 82.04, gators: 0 } }, revision }) });
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "Session", exact: true }).click();
+  await page.route("**/api/workout-draft", route => route.fulfill({ json: { draft: {
+    ...draft, category: "Tennis", title: "Tennis", lifts: [], elapsed: { hippos: 3600, gators: 3600 }, notes: "",
+    assumptions: "Hippos 420 kcal: singles tennis, MET 7, 60 min, 82 kg.\nGators 515 kcal: from the watch.",
+    burn: { hippos: 420, gators: 515 },
+  } } }));
+  const asked: { workouts: Record<string, Workout>; description?: string; bodyweightKg: object }[] = [];
+  const answers = [310, 220];
+  await page.route("**/api/workout-burn", async route => {
+    asked.push(route.request().postDataJSON());
+    const hippos = answers[asked.length - 1];
+    await route.fulfill({ json: { burn: { hippos, gators: null }, assumptions: `Hippos ${hippos} kcal: MET 7, 82 kg.` } });
+  });
+  await page.getByLabel("Workout description").fill("Singles tennis for an hour, Gators' watch said 515");
+  await fill(page).click();
+  await expect(page.getByLabel("Hippos calories burned")).toHaveValue("420");
+  // Hippos played 45 minutes, not the hour. Gators' figure is typed over and so is theirs whatever changes.
+  await page.getByLabel("Hippos elapsed time").fill("4500");
+  await page.getByLabel("Gators calories burned").fill("500");
+  await page.getByLabel("Gators elapsed time").fill("5000");
+  await page.getByRole("button", { name: "Save session", exact: true }).click();
+  await expect.poll(async () => (await saved(page)).length).toBe(2);
+  expect(asked).toHaveLength(1);
+  expect(Object.keys(asked[0].workouts)).toEqual(["hippos"]);
+  expect(asked[0].workouts.hippos.seconds).toBe(2700);
+  expect(asked[0].description).toBe("Singles tennis for an hour, Gators' watch said 515");
+  expect(asked[0].bodyweightKg).toEqual({ hippos: 82 });
+  let records = await saved(page);
+  const hippos = records.find(w => w.athlete === "hippos")!;
+  expect(hippos).toMatchObject({ kcal: 310, kcalSource: "ai" });
+  expect(hippos.notes).toContain("Burn redone after edits: Hippos 310 kcal: MET 7, 82 kg.");
+  expect(records.find(w => w.athlete === "gators")).toMatchObject({ kcal: 500 });
+  expect(records.find(w => w.athlete === "gators")?.kcalSource).toBeUndefined();
+  await expect(page.getByText("Burn redone for your edits")).toBeVisible();
+
+  // Opened from the Log, a change of title leaves the burn be; a change of time works it out again.
+  await page.getByRole("button", { name: "Log", exact: true }).click();
+  await page.getByRole("listitem").filter({ hasText: "~310 kcal" }).getByLabel("Edit entry").click();
+  await expect(page.getByLabel("Session", { exact: true })).toHaveValue("Tennis");
+  // Opened and not typed in, it is no draft.
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("athx-drafts") ?? '{"drafts":[]}').drafts.length)).toBe(0);
+  await page.getByLabel("Session", { exact: true }).fill("Singles");
+  await page.getByRole("button", { name: "Update session", exact: true }).click();
+  await expect.poll(async () => (await saved(page)).find(w => w.athlete === "hippos")?.title).toBe("Singles");
+  expect(asked).toHaveLength(1);
+  await page.getByRole("button", { name: "Log", exact: true }).click();
+  await page.getByRole("listitem").filter({ hasText: "~310 kcal" }).getByLabel("Edit entry").click();
+  await page.getByLabel("Hippos elapsed time").fill("3000");
+  await page.getByRole("button", { name: "Update session", exact: true }).click();
+  await expect.poll(async () => (await saved(page)).find(w => w.athlete === "hippos")?.kcal).toBe(220);
+  expect(asked).toHaveLength(2);
+  expect(asked[1].workouts.hippos.seconds).toBe(1800);
+  expect(asked[1].description).toBeUndefined();
+  records = await saved(page);
+  expect(records.find(w => w.athlete === "gators")?.kcal).toBe(500);
+});
+
+test("a burn that cannot be worked out again is dropped, never saved out of date", async ({ page }) => {
+  await selection(page, "Hippos").click();
+  await page.route("**/api/workout-draft", route => route.fulfill({ json: { draft: {
+    ...draft, category: "Tennis", title: "Tennis", lifts: [], elapsed: { hippos: 3600, gators: null },
+    burn: { hippos: 420, gators: null },
+  } } }));
+  await page.route("**/api/workout-burn", route => route.fulfill({ status: 503, json: { error: "The estimator did not answer with a burn." } }));
+  await page.getByLabel("Workout description").fill("Tennis for an hour");
+  await fill(page).click();
+  await expect(page.getByLabel("Hippos calories burned")).toHaveValue("420");
+  await page.getByLabel("Hippos elapsed time").fill("4500");
+  await page.getByRole("button", { name: "Save session", exact: true }).click();
+  await expect.poll(async () => (await saved(page)).length).toBe(1);
+  const [record] = await saved(page);
+  expect(record.seconds).toBe(2700);
+  expect(record.kcal).toBeUndefined();
+  expect(record.kcalSource).toBeUndefined();
+  await expect(page.getByText("Burn not redone")).toBeVisible();
+});
+
 test("an estimator from before burns leaves the box empty, and the session's burn is estimated", async ({ page }) => {
   await selection(page, "Hippos").click();
   await page.getByLabel("Hippos calories burned").fill("999");
@@ -234,6 +318,22 @@ test("workout API rejects invalid input and unauthenticated requests", async ({ 
     { description: "Deadlift", athletes: ["hippos"], weightUnit: "stone" },
   ].map(body => fetch("/api/workout-draft", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(r => r.status))));
   expect(statuses).toEqual([400, 400, 400, 400]);
+  // A burn worked out again takes records the records API would take, and nothing else.
+  expect((await request.post("/api/workout-burn", { data: { workouts: {}, bodyweightKg: {} } })).status()).toBe(401);
+  const workout = {
+    id: "7b0c8a52-5d0e-4e7a-9f60-0d3a3c1f2b11", kind: "workout", athlete: "hippos", day: "2026-11-20", title: "Tennis",
+    category: "Tennis", customCategory: "", seconds: 3600, notes: "", segments: [], fatigue: 10, transition: 0,
+    goal: null, context: "solo", lifts: [], kcal: 420, kcalSource: "ai",
+  };
+  const burns = await page.evaluate(async workout => Promise.all([
+    { workouts: {}, bodyweightKg: {} },
+    { workouts: { hippos: { ...workout, seconds: -1 } }, bodyweightKg: {} },
+    { workouts: { hippos: workout }, bodyweightKg: { hippos: 900 } },
+    { workouts: { team: workout }, bodyweightKg: {} },
+    // Well formed, and the estimator it is pointed at is not there.
+    { workouts: { hippos: workout }, bodyweightKg: { hippos: 82 } },
+  ].map(body => fetch("/api/workout-burn", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(r => r.status))), workout);
+  expect(burns).toEqual([400, 400, 400, 400, 503]);
 });
 
 test("changing athletes during an AI request discards its old response", async ({ page }) => {

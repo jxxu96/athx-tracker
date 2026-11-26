@@ -35,7 +35,8 @@ holds all of them, however small the slice of everything else.
 Calories in a session's Calories burned box are its burn instead, on any category:
 typed from a watch or a machine, or filled by AI from the description (see
 [Session](session.md)). They are kept as given, not rounded, and need no bodyweight
-to show. Fuel still counts no training burn, typed or estimated, until a bodyweight
+to show. AI's figure is worked out again when the workout it was for is edited,
+and dropped for this estimate when it cannot be. Fuel still counts no training burn, typed or estimated, until a bodyweight
 is known.
 
 A Mixed session has no single MET, so `sessionMet` weights it by where the time
