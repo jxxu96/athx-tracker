@@ -28,7 +28,7 @@ import {
   withCount,
 } from "@/lib/meal-ingredients";
 import type { MealEstimate } from "@/lib/estimate-conversation";
-import { scaledIntake, type Intake } from "@/lib/intake";
+import { holdIntake, joinHeld, scaledIntake, type IntakeHeld } from "@/lib/intake";
 import {
   buildTemplate,
   formatGrams,
@@ -54,8 +54,11 @@ type Draft = {
   sourceKey: string;
   saved: boolean;
   hadNutrition: boolean;
-  /** Not shown or edited: kept, in step with the calories, when the template is saved. */
-  intake?: Intake;
+  /**
+   * Not shown or edited: held with the calories it is for, and saved in step
+   * with the template's (`lib/intake.ts`).
+   */
+  intake: IntakeHeld | null;
 };
 
 function storedTemplates(templates: MealTemplates | undefined): MealTemplates {
@@ -167,7 +170,7 @@ export function MealTemplateList({
         sourceKey: offer.sourceKey || mealKey(offer.name),
         saved: offer.saved,
         hadNutrition: !!ingredientTotals(offer.items),
-        ...(offer.intake ? { intake: offer.intake } : {}),
+        intake: offer.intake ? { intake: offer.intake, calories: offer.macros.calories } : null,
       },
     });
   }
@@ -222,7 +225,6 @@ export function MealTemplateList({
       return;
     }
     const macros = totals ?? editor.draft.macros;
-    const { intake } = editor.draft;
     const built = buildTemplate({
       id: editor.draft.id,
       name: editor.draft.name,
@@ -231,7 +233,7 @@ export function MealTemplateList({
       macros,
       assumptions: editor.draft.assumptions,
       sourceKey: editor.draft.sourceKey,
-      intake: intake && scaledIntake({ intake, calories: editor.draft.macros.calories }, macros.calories),
+      intake: scaledIntake(editor.draft.intake, macros.calories),
     });
     if (!built.ok) {
       setEditorError(built.error);
@@ -296,6 +298,12 @@ export function MealTemplateList({
       // at a time, so adding an option does not move the others' figures.
       if (read.items.some((item) => item.nutrition) && read.items.some((item) => !item.nutrition)) {
         const items: MealTemplateItem[] = [];
+        // What was priced already, and each new one's own answer, so its
+        // intake is added rather than the rest stretched to its calories.
+        const parts = [{
+          held: editor.draft.intake,
+          calories: ingredientTotals(read.items.filter((item) => item.nutrition))?.calories ?? 0,
+        }];
         // One that fails leaves the ones already priced priced.
         let failure = "";
         for (const item of read.items) {
@@ -309,6 +317,7 @@ export function MealTemplateList({
               body: JSON.stringify({ description: templateDescription([item]) }),
             });
             items.push(itemWithEstimate(item, estimate));
+            parts.push({ held: holdIntake(estimate), calories: estimate.calories });
           } catch (problem) {
             failure = message(problem);
             items.push(item);
@@ -325,6 +334,7 @@ export function MealTemplateList({
             })),
             // A failed one still has to be estimated before saving.
             hadNutrition: current.draft.hadNutrition || !!ingredientTotals(items),
+            intake: joinHeld(parts),
           },
         });
         return;
@@ -359,6 +369,8 @@ export function MealTemplateList({
               fiber: estimate.fiber ?? 0,
             },
             assumptions: estimate.assumptions,
+            // A new answer for the whole template: its intake, or none.
+            intake: holdIntake(estimate),
           },
         };
       });

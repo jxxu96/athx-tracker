@@ -81,7 +81,7 @@ import {
 import { macroCalories } from "@/lib/meal-calories";
 import { fanOutMeal, type LoggingFor, type MealDraft } from "@/lib/meal-fanout";
 import { mealForTime } from "@/lib/meal-time";
-import { heldOf, holdIntake, scaledIntake, type IntakeHeld } from "@/lib/intake";
+import { heldOf, holdIntake, joinHeld, scaledIntake, type IntakeHeld } from "@/lib/intake";
 import {
   DISH_LIMIT,
   EATERS,
@@ -1028,10 +1028,21 @@ export function MealForm({
     writeIngredients(ingredients.filter((_, i) => i !== index));
   }
 
-  /** The meal's figures, description and working, from its saved ingredients. */
-  function writeIngredients(next: MealTemplateItem[]) {
+  /**
+   * The meal's figures, description and working, from its saved ingredients.
+   * A food estimated to add to them brings its own intake, joined to the
+   * meal's rather than the meal's being stretched to its calories.
+   */
+  function writeIngredients(next: MealTemplateItem[], added?: Estimate) {
     const summed = ingredientTotals(next);
     if (!summed) return;
+    if (added) {
+      const before = ingredientTotals(ingredients)?.calories ?? 0;
+      setIntake((current) => joinHeld([
+        { held: current, calories: before },
+        { held: holdIntake(added), calories: added.calories },
+      ]));
+    }
     const totals = toTenths(summed);
     const nextDescription = templateDescription(next);
     const nextAssumptions = assumptions.startsWith("Portions adjusted using saved ingredient nutrition.")

@@ -7,6 +7,7 @@ import {
   heldOf,
   holdIntake,
   intakeOf,
+  joinHeld,
   scaledIntake,
   sumIntake,
 } from "./intake.ts";
@@ -70,7 +71,9 @@ test("held intake follows the calories it is saved with", () => {
   assert.deepEqual(held, { intake: ramen, calories: 900 });
   assert.deepEqual(scaledIntake(held, 450), { sodium: 1900, sugar: 4.5, caffeine: 0, fruit: 0, vegetables: 30 });
   assert.deepEqual(scaledIntake(held, 900), ramen);
-  // No calories on either side, as with a diet soda: as it came.
+  // Its calories taken to none: none of the rest either.
+  assert.deepEqual(scaledIntake(held, 0), { sodium: 0, sugar: 0, caffeine: 0, fruit: 0, vegetables: 0 });
+  // Estimated at no calories, as a diet soda is: nothing to scale by, so as it came.
   const soda = holdIntake(estimate({ calories: 0, intake: { caffeine: 46, sodium: 40 } }));
   assert.deepEqual(scaledIntake(soda, 0), { caffeine: 46, sodium: 40 });
   assert.deepEqual(scaledIntake(soda, 5), { caffeine: 46, sodium: 40 });
@@ -83,6 +86,19 @@ test("held intake follows the calories it is saved with", () => {
   assert.equal(heldOf({ intake: { sodium: "x" }, calories: 900 }), null);
   assert.equal(heldOf("x"), null);
   assert.deepEqual(intakeOf({ sodium: 1.04, fruit: Number.NaN }), { sodium: 1 });
+});
+
+test("food added to a meal adds its own intake, not more of the meal's", () => {
+  // Oats held at 300 kcal, now 600 after a bigger bowl, with a 100 kcal banana added.
+  const oats = { intake: { sodium: 100, fruit: 0 }, calories: 300 };
+  const banana = { intake: { sodium: 1, fruit: 118 }, calories: 105 };
+  assert.deepEqual(joinHeld([{ held: oats, calories: 600 }, { held: banana, calories: 105 }]), {
+    intake: { sodium: 201, fruit: 118 }, calories: 705,
+  });
+  // A part with none adds its calories, so the rest is not stretched to cover it.
+  const joined = joinHeld([{ held: null, calories: 600 }, { held: banana, calories: 105 }]);
+  assert.deepEqual(scaledIntake(joined, 705), banana.intake);
+  assert.equal(joinHeld([{ held: null, calories: 600 }]), null);
 });
 
 test("intake adds and averages only what was given, and a 0 counts", () => {

@@ -58,18 +58,32 @@ export function heldOf(value: unknown): IntakeHeld | null {
 
 /**
  * The intake at the calories the food is saved with: half the calories,
- * half the sodium. With no calories on either side, such as a diet soda, it
- * stays as it came. Each figure is held to its ceiling.
+ * half the sodium, and none at none. Food estimated at no calories, such as
+ * a diet soda, has nothing to scale by, so it stays as it came. Each figure
+ * is held to its ceiling.
  */
 export function scaledIntake(held: IntakeHeld | null | undefined, calories: number): Intake | undefined {
   if (!held) return undefined;
-  const ratio = held.calories > 0 && Number.isFinite(calories) && calories > 0 ? calories / held.calories : 1;
+  const ratio = held.calories > 0 ? (Number.isFinite(calories) ? Math.max(calories, 0) : 0) / held.calories : 1;
   const out: Intake = {};
   for (const key of INTAKE_KEYS) {
     const value = held.intake[key];
     if (value !== undefined) out[key] = Math.min(round1(value * ratio), INTAKE_CEILINGS[key]);
   }
   return Object.keys(out).length ? out : undefined;
+}
+
+/**
+ * Food held at its own calories put together, such as a meal and an
+ * ingredient estimated on its own to add to it: each part's intake at the
+ * calories it is at now, held with their calories together. A part without
+ * intake adds its calories and nothing else, so it is not counted as more of
+ * the rest. Null when no part has any.
+ */
+export function joinHeld(parts: readonly { held: IntakeHeld | null | undefined; calories: number }[]): IntakeHeld | null {
+  const intake = sumIntake(parts.map(({ held, calories }) => scaledIntake(held, calories)));
+  if (!intake) return null;
+  return { intake, calories: parts.reduce((sum, { calories }) => sum + (Number.isFinite(calories) ? Math.max(calories, 0) : 0), 0) };
 }
 
 /**
