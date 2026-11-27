@@ -233,6 +233,11 @@
   no word of what was eaten, the estimate says so at low confidence. Every photo
   is drawn again on the phone at 1536 px on its long side, as a JPEG of at
   most 1 MB, which also leaves its metadata, the location included, behind.
+  That happens in a background worker, so the form goes on taking taps and
+  typing while photos are read, in a browser whose worker turns a photo the
+  way the camera was held, as the page does: checked once, with a small JPEG
+  marked to be turned. Elsewhere, or for a photo the worker cannot open, the
+  page draws it itself, as before (`components/meal/photo-shrink.ts`).
   One the browser cannot open, such as a HEIC on a computer that cannot read
   it, is turned away with a notice and adds nothing. With a photo the words
   are optional: **Estimate macros** goes on the photo alone, and words

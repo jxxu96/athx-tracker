@@ -41,6 +41,7 @@ import {
 import { bothOf, isText, oneOf, textOf, type Draft } from "@/lib/drafts";
 import { useFormDraft } from "@/hooks/use-form-draft";
 import { useCommandShortcut, useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import { useStableCallback } from "@/hooks/use-stable-callback";
 import { MealTemplateList } from "@/components/meal/meal-templates";
 import { DishShares, MealDishes } from "@/components/meal/meal-dishes";
 import { MealItems } from "@/components/meal/meal-items";
@@ -1396,6 +1397,10 @@ export function MealForm({
   const canQueue = queueReady && conversation.length === 0 && !rejected && !splitting && !expanded;
   const seeds = itemSeeds();
   const table = tableSize(dishes);
+  // One identity each, so the template list is not drawn again for every key.
+  const applyTemplate = useStableCallback(applyOffer);
+  const saveFormAsTemplate = useStableCallback(() => void saveAsTemplate());
+  const saveTemplates = useStableCallback(onSaveTemplates);
   // Filled from a template and given foods it does not have: offer to keep
   // them in it, at the bottom, where the meal is about to be saved. Only for
   // the one template "Update this template" would write.
@@ -1660,9 +1665,9 @@ export function MealForm({
               ? "Update this template"
               : "Save this meal as a template"
           }
-          onApply={applyOffer}
-          onSaveForm={describing ? undefined : () => void saveAsTemplate()}
-          onSaveTemplates={onSaveTemplates}
+          onApply={applyTemplate}
+          onSaveForm={describing ? undefined : saveFormAsTemplate}
+          onSaveTemplates={saveTemplates}
         />
         )}
         <section {...athleteOutline(who)} className="space-y-4 rounded-2xl border bg-card p-4 sm:p-5">

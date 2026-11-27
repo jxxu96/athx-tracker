@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { Plus, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -102,7 +102,12 @@ function optionLine(items: MealTemplateItem[]) {
   return options.length ? `Options: ${options.join(", ")}` : "";
 }
 
-export function MealTemplateList({
+/**
+ * Memoised: the meal form draws itself again on every key typed into it, and
+ * this list, a chip for every template and usual meal, has nothing to show
+ * for it. The form hands it callbacks that keep one identity.
+ */
+export const MealTemplateList = memo(function MealTemplateList({
   loggingFor,
   templates,
   meals,
@@ -136,21 +141,19 @@ export function MealTemplateList({
   const [estimating, setEstimating] = useState(false);
   // The compact row is for logging; managing the templates opens the full list.
   const [managing, setManaging] = useState(false);
-  const sides = loggingFor === "both"
-    ? (["hippos", "gators"] as const)
-    : ([loggingFor] as const);
-  const groups = showOffers
-    ? sides
-        .map((athlete) => ({
-          athlete,
-          offers: mealOffers(
-            stored[athlete],
-            meals.filter((meal) => meal.athlete === athlete),
-            today,
-          ),
-        }))
-        .filter((group) => group.offers.length > 0)
-    : [];
+  // Worked out from every meal loaded, so only when those or the templates
+  // change, not when the list draws again for being disabled or relabelled.
+  const groups = useMemo(() => {
+    if (!showOffers) return [];
+    const kept = storedTemplates(templates);
+    const sides = loggingFor === "both" ? (["hippos", "gators"] as const) : ([loggingFor] as const);
+    return sides
+      .map((athlete) => ({
+        athlete,
+        offers: mealOffers(kept[athlete], meals.filter((meal) => meal.athlete === athlete), today),
+      }))
+      .filter((group) => group.offers.length > 0);
+  }, [showOffers, templates, loggingFor, meals, today]);
 
   function openEditor(athlete: "hippos" | "gators", offer: MealOffer) {
     setListError("");
@@ -438,7 +441,7 @@ export function MealTemplateList({
                 // A meal offered from the log, not kept yet, has a dashed edge.
                 className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-accent disabled:opacity-50 ${offer.saved ? "" : "border-dashed"}`}
               >
-                {sides.length > 1 ? (
+                {loggingFor === "both" ? (
                   <span aria-hidden="true" className="size-2 shrink-0 rounded-full" style={{ background: ATHLETES[athlete].color }} />
                 ) : null}
                 <span className="max-w-44 truncate">{offer.name}</span>
@@ -729,4 +732,4 @@ export function MealTemplateList({
       </Dialog>
     </>
   );
-}
+});
