@@ -34,10 +34,19 @@ export function useMealPhotos() {
   // The photos on screen, whose previews are let go as they come off the
   // form, or with it. Not from inside a state update, which may run twice.
   const held = useRef(photos);
+  // Gone mid-read, as when the meal is set aside or thrown away: the photos
+  // still being read are let go as they come, not put on a form nobody has.
+  const mounted = useRef(false);
   useEffect(() => {
     held.current = photos;
   }, [photos]);
-  useEffect(() => () => held.current.forEach(letGo), []);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      held.current.forEach(letGo);
+    };
+  }, []);
 
   async function add(files: readonly File[]) {
     const taken = files.slice(0, Math.max(0, PHOTO_LIMIT - photos.length));
@@ -56,6 +65,10 @@ export function useMealPhotos() {
       } catch {
         // Said below, once, for however many could not be opened.
       }
+    }
+    if (!mounted.current) {
+      made.forEach(letGo);
+      return;
     }
     made.slice(Math.max(0, PHOTO_LIMIT - held.current.length)).forEach(letGo);
     setPhotos((current) => [...current, ...made].slice(0, PHOTO_LIMIT));
