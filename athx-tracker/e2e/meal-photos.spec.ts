@@ -45,6 +45,20 @@ async function jpeg(page: Page, width: number, height: number) {
   return Buffer.from(data, "base64");
 }
 
+/**
+ * The same JPEG marked to be turned a quarter clockwise (EXIF orientation 6),
+ * as a phone held upright marks the picture its camera takes on its side.
+ */
+function turned(jpeg: Buffer) {
+  const exif = Buffer.from([
+    0xff, 0xe1, 0x00, 0x22, 0x45, 0x78, 0x69, 0x66, 0x00, 0x00, 0x4d, 0x4d, 0x00, 0x2a, 0x00, 0x00, 0x00, 0x08,
+    0x00, 0x01, 0x01, 0x12, 0x00, 0x03, 0x00, 0x00, 0x00, 0x01, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  ]);
+  // After the start of the image and its JFIF header.
+  const at = 4 + jpeg.readUInt16BE(4);
+  return Buffer.concat([jpeg.subarray(0, at), exif, jpeg.subarray(at)]);
+}
+
 /** How big a photo the page sent is, read back the way a browser reads it. */
 function sizeOf(page: Page, data: string) {
   return page.evaluate(async (data) => {
@@ -153,6 +167,31 @@ test("words go with the photo, and Take photo asks for a new picture from the re
   expect(sent[0].description).toBe("Large portion, cooked in olive oil");
   // Never bigger than it came.
   expect(await sizeOf(page, sent[0].images![0].data)).toEqual({ width: 800, height: 600 });
+});
+
+test("a photo is shrunk off the page's thread, turned the way the camera was held", async ({ page }) => {
+  const sent: Sent[] = [];
+  await page.route("**/api/estimate", async (route) => {
+    sent.push(route.request().postDataJSON());
+    await route.fulfill({ json: { estimate: plate } });
+  });
+  const workers = { started: 0, stopped: 0 };
+  page.on("worker", (worker) => {
+    workers.started += 1;
+    worker.on("close", () => (workers.stopped += 1));
+  });
+  await openMeal(page);
+  await loggingFor(page, "Hippos").click();
+  await page.getByLabel("Library").setInputFiles({
+    name: "IMG_0003.jpg", mimeType: "image/jpeg", buffer: turned(await jpeg(page, 1200, 900)),
+  });
+  await expect(photos(page)).toHaveCount(1);
+  // One worker, kept: one that does not turn the probe is let go, and the page draws photos itself.
+  expect(workers).toEqual({ started: 1, stopped: 0 });
+  await page.getByRole("button", { name: "Estimate macros", exact: true }).click();
+  await expect(page.getByLabel("Calories (kcal)")).toHaveValue("640");
+  // Stored on its side and marked to be turned: sent upright, as the page shows it.
+  expect(await sizeOf(page, sent[0].images![0].data)).toEqual({ width: 900, height: 1200 });
 });
 
 test("a photo this browser cannot open says so and adds nothing", async ({ page }) => {
