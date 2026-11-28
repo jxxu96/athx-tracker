@@ -76,10 +76,9 @@ The app and the estimator both check each one by its first bytes as well as
 its label. The estimator writes each to a folder of its own for the
 estimate and removes it once every estimator asked has exited. Codex is
 given each photo by its path, and Claude reads them in its first message,
-ahead of the words. Grok's CLI is not asked about a meal with photos, since
-no way to hand it an image was found, and the list of estimators that did
-not answer says so: "not asked: it cannot read photos". With only
-`XAI_API_KEY` set, the x.ai API is sent the photos itself.
+ahead of the words. Grok reads them from a prompt file the estimator writes
+beside the photos, each photo and then the words. With only `XAI_API_KEY`
+set, the x.ai API is sent the photos itself.
 
 A meal with photos asks everyone who can see them at once, as a complex
 meal does, so a portion judged from a photo is the average of each view of

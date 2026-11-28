@@ -1,6 +1,6 @@
 /** Codex, Claude and Grok: how each is started for a meal, a shared meal or a workout. */
 import { randomBytes } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { schemaFile } from "./cli.mjs";
@@ -85,11 +85,30 @@ export function claudeMessage(text, images) {
 }
 
 /**
+ * The prompt file Grok reads when a meal comes with photos: each photo as an
+ * image block, then the words. Its flags have no image option, but
+ * --prompt-file reads a file whose name ends in .json as the same content
+ * blocks --prompt-json takes, those of the Agent Client Protocol, with an
+ * image as { type, mimeType, data }. That is not in its documentation; it was
+ * seen in 1.0.70, 1.0.92 and 1.0.94, and the agent reports it takes images.
+ * A file, not --prompt-json: six photos run to 8 MB, and Linux takes no single
+ * argument past 128 KB. It goes in the photos' own folder, removed with them.
+ */
+export function grokPromptFile(text, photos) {
+  const file = join(photos.folder, `grok-prompt-${randomBytes(4).toString("hex")}.json`);
+  const blocks = [
+    ...photos.images.map(({ type, data }) => ({ type: "image", mimeType: type, data })),
+    { type: "text", text },
+  ];
+  writeFileSync(file, JSON.stringify(blocks), { mode: 0o600 });
+  return file;
+}
+
+/**
  * photos, where a provider is given any, is a meal's photos written out for
  * this estimate: files for a CLI that takes a path, and images, the same
  * photos as base64, for one handed them in its input. A provider without
- * photos: true is not asked about a meal that has them. Grok is one: no way to
- * hand its CLI an image was found, in its flags or its documentation.
+ * photos: true is not asked about a meal that has them.
  */
 export const PROVIDERS = {
   codex: {
@@ -124,11 +143,12 @@ export const PROVIDERS = {
   },
   grok: {
     bin: () => GROK_BIN,
+    photos: true,
     env: (task = MEAL_TASK) => ({
       ...GROK_ISOLATION,
       ...(task.meal === true ? { GROK_CONFIG: GROK_MEAL_CONFIG } : {}),
     }),
-    args: (description, task = MEAL_TASK) => {
+    args: (description, task = MEAL_TASK, photos) => {
       // A meal gets web_search alone. It opens a page as well as searching,
       // and it never asks for approval, dontAsk included. web_fetch is off
       // unless the CLI is told otherwise, and it runs here rather than at
@@ -136,6 +156,7 @@ export const PROVIDERS = {
       // of the model. The tool ids are web_search and web_fetch; the display
       // names do not restrict the tool list. A workout has neither.
       const meal = task.meal === true;
+      const seeing = Boolean(photos?.images?.length);
       return [
       "--cwd",
       grokFolder(),
@@ -152,8 +173,9 @@ export const PROVIDERS = {
       task.instructions,
       "--json-schema",
       JSON.stringify(task.schema),
-      "-p",
-      description,
+      // With photos, the words are the last block of the prompt file. The CLI
+      // refuses --prompt-file and -p together.
+      ...(seeing ? ["--prompt-file", grokPromptFile(description, photos)] : ["-p", description]),
     ];
     },
   },

@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 process.env.ESTIMATOR_TOKEN = "test-token-at-least-16-chars";
 const { PHOTO_BYTES, PHOTO_CHARS, PHOTO_LIMIT } = await import("./config.mjs");
 const { readPhotos, writePhotos } = await import("./photos.mjs");
-const { MEAL_TASK, PROVIDERS, claudeMessage } = await import("./providers.mjs");
+const { MEAL_TASK, PROVIDERS, claudeMessage, grokPromptFile } = await import("./providers.mjs");
 const { parseCliOutput, resultEnvelope } = await import("./cli.mjs");
 const { clean, cleanDishes } = await import("./settle.mjs");
 const { envelopeError } = await import("./estimate.mjs");
@@ -108,10 +108,40 @@ test("Claude is given the photos on stdin, before the words, and answers in stre
   assert.equal(PROVIDERS.claude.input("easy 5k", WORKOUT_TASK, undefined), undefined);
 });
 
-test("Grok is not one that can be given photos", () => {
+test("every CLI can be given photos", () => {
   assert.equal(PROVIDERS.codex.photos, true);
   assert.equal(PROVIDERS.claude.photos, true);
-  assert.equal(PROVIDERS.grok.photos, undefined);
+  assert.equal(PROVIDERS.grok.photos, true);
+});
+
+test("Grok is given the photos and then the words in a .json prompt file, in the photos' folder", () => {
+  const written = writePhotos([photo, photo]);
+  try {
+    const args = PROVIDERS.grok.args("Lunch", MEAL_TASK, written);
+    // The CLI refuses -p beside --prompt-file.
+    assert.equal(args.includes("-p"), false);
+    assert.equal(args.includes("Lunch"), false, "the words go in the file, not the arguments");
+    assert.equal(args.at(-2), "--prompt-file");
+    const file = args.at(-1);
+    // Only a name ending in .json is read as content blocks; any other is text.
+    assert.match(file, /\.json$/);
+    assert.equal(dirname(file), written.folder, "removed with the photos");
+    assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), [
+      { type: "image", mimeType: "image/jpeg", data: photo.data },
+      { type: "image", mimeType: "image/jpeg", data: photo.data },
+      { type: "text", text: "Lunch" },
+    ]);
+    assert.equal(args[args.indexOf("--tools") + 1], "web_search", "a photo meal still looks products up");
+    assert.notEqual(grokPromptFile("Lunch", written), file, "each ask writes its own file");
+  } finally {
+    written.remove();
+  }
+  assert.equal(existsSync(written.folder), false);
+
+  // Without photos, nothing changes.
+  const plain = PROVIDERS.grok.args("Lunch");
+  assert.deepEqual(plain.slice(-2), ["-p", "Lunch"]);
+  assert.equal(plain.includes("--prompt-file"), false);
 });
 
 const answer = { name: "Plate", calories: 700, protein: 30, carbs: 80, fat: 25, fiber: 6, alcohol: 0, assumptions: "Saw a plate.", confidence: "medium" };
@@ -152,7 +182,7 @@ test("the answer that ends Claude's stream-json is read, and so is its failure",
 });
 
 // Stand-ins for the CLIs. Codex says which files it was given and what they
-// held, Claude what reached its stdin, and Grok only that it was asked.
+// held, Claude what reached its stdin, and Grok what its prompt file held.
 const FAKE = `#!/usr/bin/env node
 const { appendFileSync, existsSync, readFileSync } = require("node:fs");
 const name = require("node:path").basename(process.argv[1]);
@@ -176,12 +206,14 @@ if (name === "codex") {
     console.log(JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "", structured_output: answer(700) }));
   });
 } else {
-  log({ asked: true });
-  console.log(JSON.stringify(answer(1100)));
+  const file = args.includes("--prompt-file") ? args[args.indexOf("--prompt-file") + 1] : null;
+  log({ file, blocks: file && existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : null,
+    single: args.includes("-p") });
+  console.log(JSON.stringify(answer(650)));
 }
 `;
 
-test("a meal's photos reach Codex and Claude, Grok is said to be left out, and nothing is left behind", async (t) => {
+test("a meal's photos reach Codex, Claude and Grok, and nothing is left behind", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "athx-fake-photo-cli-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const bin = (name) => {
@@ -232,17 +264,15 @@ test("a meal's photos reach Codex and Claude, Grok is said to be left out, and n
   assert.equal(streamed.status, 200);
   assert.equal(streamed.headers.get("x-athx-photos"), "1", "says it took the photo");
   const lines = (await streamed.text()).trim().split("\n").map((line) => JSON.parse(line));
-  assert.deepEqual(lines.filter((line) => line.type === "partial").map((line) => line.provider).sort(), ["claude", "codex"]);
-  assert.deepEqual(lines.filter((line) => line.type === "missed"), [
-    { type: "missed", provider: "grok", detail: "not asked: it cannot read photos" },
-  ]);
+  assert.deepEqual(lines.filter((line) => line.type === "partial").map((line) => line.provider).sort(), ["claude", "codex", "grok"]);
+  assert.deepEqual(lines.filter((line) => line.type === "missed"), []);
   const done = lines.at(-1);
   assert.equal(done.type, "done");
   assert.equal(done.provider, "average");
   assert.ok(done.estimate.calories > 600 && done.estimate.calories < 700, String(done.estimate.calories));
 
   const asked = calls();
-  assert.deepEqual(asked.map((call) => call.name).sort(), ["claude", "codex"], "Grok's CLI is never started");
+  assert.deepEqual(asked.map((call) => call.name).sort(), ["claude", "codex", "grok"]);
   const codex = asked.find((call) => call.name === "codex");
   assert.equal(codex.files.length, 1);
   assert.deepEqual(codex.held, [photo.data], "the file holds the photo while codex runs");
@@ -254,6 +284,13 @@ test("a meal's photos reach Codex and Claude, Grok is said to be left out, and n
     { type: "image", source: { type: "base64", media_type: "image/jpeg", data: photo.data } },
     { type: "text", text: description },
   ]);
+  const grok = asked.find((call) => call.name === "grok");
+  assert.equal(grok.single, false);
+  assert.deepEqual(grok.blocks, [
+    { type: "image", mimeType: "image/jpeg", data: photo.data },
+    { type: "text", text: description },
+  ], "the file holds the photo and the words while grok runs");
+  assert.equal(dirname(grok.file), dirname(codex.files[0]), "beside the photos");
   assert.equal(existsSync(dirname(codex.files[0])), false, "the photos are removed once everyone has answered");
 
   // Without streaming, the one body says the same.
@@ -261,7 +298,9 @@ test("a meal's photos reach Codex and Claude, Grok is said to be left out, and n
   assert.equal(whole.status, 200);
   assert.equal(whole.headers.get("x-athx-photos"), "2");
   assert.equal(whole.headers.get("x-athx-provider"), "average");
-  assert.equal(calls().find((call) => call.name === "codex").files.length, 2);
+  const both = calls();
+  assert.equal(both.find((call) => call.name === "codex").files.length, 2);
+  assert.equal(both.find((call) => call.name === "grok").blocks.filter((block) => block.type === "image").length, 2);
 
   // A meal without photos says nothing about them.
   const plain = await post({ description: "Plain toast" });

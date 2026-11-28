@@ -16,8 +16,8 @@ const MEAL_LINES = [
   "If the search does not find that product, say so, set confidence to low, and only then estimate.",
   "An unbranded whole food uses standard reference values and does not need a search.",
   "Scale the figures to the stated serving size, weight or count.",
-  // Photos stand in for the words, or add to them. Codex, Claude and the x.ai
-  // API are sent them; Grok's CLI is not asked about a meal that has them.
+  // Photos stand in for the words, or add to them. Codex, Claude, Grok and
+  // the x.ai API are all sent them.
   "When photos are attached, they show the meal: identify each food and drink in them, and judge each portion from what is visible, such as the plate, the packaging or a hand beside it.",
   // A close-up or another angle of the same plate is context, not more food.
   "Several photos can show the same food, from another angle or closer up: count each food once, as many as any one photo or the description shows, and use every photo of it to judge its portion.",
