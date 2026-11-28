@@ -69,8 +69,14 @@ as one more photo. Claude is given them on stdin, as one stream-json user
 message holding an image block for each photo and then the words. The CLI
 has no flag for an image, and stream-json input needs stream-json output
 and `--verbose`, so the answer is read from the result line that ends it.
-Grok's CLI is not asked, since no way to hand it an image was found, and
-it is reported as `{"type":"missed","provider":"grok","detail":"not asked: it cannot read photos"}`.
+Grok is given them in a prompt file, `--prompt-file`, in place of `-p`: a
+JSON array of Agent Client Protocol content blocks, an image block
+(`{"type":"image","mimeType":"image/jpeg","data":"<base64>"}`) for each
+photo and then a text block with the words, written beside the photos. The
+CLI has no image flag, and reads a prompt file as content blocks only when
+its name ends in `.json`; that is not in its documentation, and was seen in
+Grok 1.0.70, 1.0.92 and 1.0.94. The same blocks fit `--prompt-json`, but on
+the command line six photos would pass Linux's 128 KB limit on one argument.
 A meal with photos asks everyone who can see them at once, as a complex
 meal does, shares no source records, and is never cached. The answer says
 how many photos were taken in an `X-Athx-Photos` header, on the stream or
