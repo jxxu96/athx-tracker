@@ -238,7 +238,21 @@ test("a photo of a meal for both comes back dish by dish, its words read as note
   expect(sent[0].images).toHaveLength(1);
 });
 
-test("Take photo, Library, File and Paste pick photos four ways, all the same height", async ({ page }) => {
+/** The pickers by what each says, row by row, after checking each fits its words and the rows the form. */
+async function pickerRows(page: Page) {
+  const row = page.getByLabel("Take photo").locator("xpath=../..");
+  const pickers = await row.evaluate((element) => Array.from(element.children, (child) => ({
+    name: child.textContent?.trim() ?? "",
+    top: Math.round(child.getBoundingClientRect().top),
+    overflow: child.scrollWidth - child.clientWidth,
+  })));
+  expect(pickers.filter((picker) => picker.overflow > 0), "each fits its words").toEqual([]);
+  expect(await row.evaluate((element) => element.scrollWidth - element.clientWidth), "the rows fit").toBeLessThanOrEqual(0);
+  const tops = [...new Set(pickers.map((picker) => picker.top))];
+  return tops.map((top) => pickers.filter((picker) => picker.top === top).map((picker) => picker.name));
+}
+
+test("Take photo, Library, File and Paste pick photos four ways, in one row, all the same height", async ({ page }) => {
   await openMeal(page);
   await loggingFor(page, "Hippos").click();
   const camera = page.getByLabel("Take photo");
@@ -256,8 +270,56 @@ test("Take photo, Library, File and Paste pick photos four ways, all the same he
   expect(await height(file)).toBe(await height(camera));
   expect(await height(library)).toBe(await height(camera));
   expect((await paste.boundingBox())!.height).toBe(await height(camera));
+  expect(await pickerRows(page)).toEqual([["Take photo", "Library", "File", "Paste"]]);
   await file.setInputFiles({ name: "plate.jpg", mimeType: "image/jpeg", buffer: await jpeg(page, 640, 480) });
   await expect(photos(page)).toHaveCount(1);
+});
+
+test.describe("on an iPhone", () => {
+  test.use({
+    userAgent:
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1",
+    viewport: { width: 375, height: 812 },
+    hasTouch: true,
+    isMobile: true,
+  });
+
+  test("Library is left out, since iOS opens the same menu for it as for File", async ({ page }) => {
+    await openMeal(page);
+    await loggingFor(page, "Hippos").click();
+    await expect(page.getByLabel("Take photo")).toBeVisible();
+    expect(await pickerRows(page)).toEqual([["Take photo", "File", "Paste"]]);
+    await expect(page.getByLabel("Library")).toHaveCount(0);
+    await page.getByLabel("File", { exact: true }).setInputFiles({
+      name: "IMG_0003.jpg", mimeType: "image/jpeg", buffer: await jpeg(page, 640, 480),
+    });
+    await expect(photos(page)).toHaveCount(1);
+
+    // Told what else to use, Library is not named.
+    await page.getByRole("button", { name: "Paste", exact: true }).click();
+    await expect(page.locator("form").getByRole("alert")).toHaveText(
+      "The clipboard was not read. Allow it when the browser asks, or use File.",
+    );
+  });
+});
+
+test.describe("on an Android phone", () => {
+  test.use({
+    userAgent:
+      "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+    viewport: { width: 360, height: 800 },
+    hasTouch: true,
+    isMobile: true,
+  });
+
+  test("the four pickers go two by two on a narrow phone, and in one row on a wider one", async ({ page }) => {
+    await openMeal(page);
+    await loggingFor(page, "Hippos").click();
+    await expect(page.getByLabel("Take photo")).toBeVisible();
+    expect(await pickerRows(page)).toEqual([["Take photo", "Library"], ["File", "Paste"]]);
+    await page.setViewportSize({ width: 480, height: 900 });
+    expect(await pickerRows(page)).toEqual([["Take photo", "Library", "File", "Paste"]]);
+  });
 });
 
 test("Paste adds a picture copied to the clipboard, and says when there is none", async ({ page, context }) => {
