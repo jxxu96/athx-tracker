@@ -65,6 +65,37 @@ test("fuel switches today, yesterday, the rolling week, last week, and overall",
   await expect(page.getByRole("button", { name: "Today", exact: true })).toHaveCount(1);
 });
 
+test("custom window presets fill in complete days", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-11-11T12:00:00"));
+  await signIn(page);
+  await page.getByRole("group", { name: "Fuel range" }).getByRole("button", { name: "Pick day for fuel" }).click();
+  const presets = page.getByRole("group", { name: "Custom window presets" });
+  await expect(presets).toHaveCount(0);
+  await page.getByRole("checkbox", { name: "Custom window" }).check();
+  await expect(presets.getByRole("button")).toHaveText(["MTD", "1M", "1Q", "6M", "YTD", "1Y"]);
+  const start = page.getByLabel("Start date", { exact: true });
+  const end = page.getByLabel("End date", { exact: true });
+
+  const mtd = presets.getByRole("button", { name: "MTD" });
+  await expect(mtd).toHaveAccessibleDescription("Month to date");
+  await mtd.click();
+  await expect(start).toHaveValue("2026-11-01");
+  await expect(end).toHaveValue("2026-11-10");
+  await expect(mtd).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("1 Nov 2026 to 10 Nov 2026", { exact: true })).toBeVisible();
+
+  const quarter = presets.getByRole("button", { name: "1Q" });
+  await quarter.click();
+  await expect(start).toHaveValue("2026-08-11");
+  await expect(end).toHaveValue("2026-11-10");
+  await expect(quarter).toHaveAttribute("aria-pressed", "true");
+  await expect(mtd).toHaveAttribute("aria-pressed", "false");
+
+  // A date typed over a preset's no longer reads as that preset.
+  await end.fill("2026-11-09");
+  await expect(quarter).toHaveAttribute("aria-pressed", "false");
+});
+
 test("calorie breakdown expands with mouse, keyboard, and touch", async ({ page, browser }) => {
   await signIn(page);
   await page.evaluate(async () => {
