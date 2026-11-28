@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
 import { Camera, ClipboardPaste, File as FileIcon, X } from "lucide-react";
 import { ApplePhotosMark, GooglePhotosMark } from "@/components/meal/photo-icons";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { api, newId } from "@/lib/client";
 import { shrink } from "@/components/meal/photo-shrink";
 import { PHOTO_LIMIT, type MealPhoto } from "@/lib/meal-photos";
 import { picturesIn } from "@/lib/pasted-photos";
+import { goesThroughIosMenu } from "@/lib/photo-pickers";
 import { cn } from "@/lib/utils";
 
 /**
@@ -90,14 +91,14 @@ export function useMealPhotos() {
   async function paste() {
     const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard;
     if (!clipboard?.read) {
-      setError(`This browser does not let the button read the clipboard. ${orKey("Press", "Use Library or File instead.")}`);
+      setError(`This browser does not let the button read the clipboard. ${orKey("Press", `Use ${pickers()} instead.`)}`);
       return;
     }
     let items: ClipboardItem[];
     try {
       items = await clipboard.read();
     } catch {
-      setError(`The clipboard was not read. Allow it when the browser asks, ${orKey("or press", "or use Library or File.")}`);
+      setError(`The clipboard was not read. Allow it when the browser asks, ${orKey("or press", `or use ${pickers()}.`)}`);
       return;
     }
     const files: File[] = [];
@@ -152,6 +153,13 @@ function orKey(lead: string, otherwise: string) {
   return `${lead} ${key}.`;
 }
 
+/** Whether this device's pickers all open iOS's one menu: read once, it never changes. */
+const iosMenu = () => typeof navigator !== "undefined" && goesThroughIosMenu(navigator);
+const unchanging = () => () => {};
+
+/** The pickers on offer to name instead: on iOS, Library is not one of them. */
+const pickers = () => (iosMenu() ? "File" : "Library or File");
+
 /** Something that takes typing, where pasted text would go. */
 function takesText(target: Element | null) {
   return target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement ||
@@ -198,7 +206,8 @@ export type MealPhotoState = ReturnType<typeof useMealPhotos>;
  * the clipboard. Which picker opens is the browser's choice: Android gives
  * the photo picker for Library and its file browser for File, while iOS
  * shows one menu of library, camera and files for both, which no page can
- * skip or trim. Paste is the way round it there: Copy in Photos, then Paste.
+ * skip or trim, so an iPhone or iPad is offered File alone. Paste is the way
+ * round that menu there: Copy in Photos, then Paste. They sit in one row.
  * On a computer, Ctrl+V or ⌘V pastes a picture too, from anywhere in the
  * form, with no permission to ask and picture files copied from a folder
  * included, which the Paste button cannot read.
@@ -215,6 +224,8 @@ export function MealPhotos({ state, disabled = false, held = false, active = tru
 }) {
   const { photos, reading, readingCount, error, add, paste, remove } = state;
   const off = disabled || reading || photos.length >= PHOTO_LIMIT;
+  // Rendered on the server, with no device to ask, Library is offered.
+  const library = !useSyncExternalStore(unchanging, iosMenu, () => false);
   const root = useRef<HTMLDivElement>(null);
   // Ctrl+V or ⌘V with a picture on the clipboard, anywhere on the page: in
   // this form, or with nothing in particular focused, when the browser aims
@@ -247,14 +258,22 @@ export function MealPhotos({ state, disabled = false, held = false, active = tru
     event.target.value = "";
     if (files.length) void add(files);
   };
+  // Each as wide as its words, sharing what is left of the row. Four need
+  // about 24rem, more than a phone 360 pixels wide gives them, so with
+  // Library they go two by two until the row is that wide.
+  const fit = cn(
+    "grow gap-1.5 px-2 has-[>svg]:px-2",
+    library && "basis-[calc(50%-0.25rem)] @min-[24rem]:basis-auto",
+  );
   const choice = cn(
     buttonVariants({ variant: "outline" }),
+    fit,
     "relative cursor-pointer has-[:disabled]:pointer-events-none has-[:disabled]:opacity-50",
     "has-[:focus-visible]:border-ring has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-ring/50",
   );
   return (
     <div ref={root} className="space-y-2">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="@container flex flex-wrap gap-1.5">
         <label className={choice}>
           <Camera />
           Take photo
@@ -267,14 +286,16 @@ export function MealPhotos({ state, disabled = false, held = false, active = tru
             onChange={pick}
           />
         </label>
-        <label className={choice}>
-          <span className="flex items-center -space-x-1" aria-hidden="true">
-            <GooglePhotosMark className="size-4" />
-            <ApplePhotosMark className="size-4" />
-          </span>
-          Library
-          <input type="file" accept="image/*" multiple className="sr-only" disabled={off} onChange={pick} />
-        </label>
+        {library ? (
+          <label className={choice}>
+            <span className="flex items-center -space-x-1" aria-hidden="true">
+              <GooglePhotosMark className="size-4" />
+              <ApplePhotosMark className="size-4" />
+            </span>
+            Library
+            <input type="file" accept="image/*" multiple className="sr-only" disabled={off} onChange={pick} />
+          </label>
+        ) : null}
         {/* No image filter, so a browser that has one offers its file browser
             rather than the photo picker. Anything that is not a picture it can
             open is turned away as unreadable. */}
@@ -283,7 +304,7 @@ export function MealPhotos({ state, disabled = false, held = false, active = tru
           File
           <input type="file" multiple className="sr-only" disabled={off} onChange={pick} />
         </label>
-        <Button type="button" variant="outline" disabled={off} onClick={() => void paste()}>
+        <Button type="button" variant="outline" className={fit} disabled={off} onClick={() => void paste()}>
           <ClipboardPaste />
           Paste
         </Button>

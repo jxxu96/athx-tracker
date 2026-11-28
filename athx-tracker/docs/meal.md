@@ -200,15 +200,18 @@
   replies to an estimate are for a single meal, so a split meal does not offer
   them. The two saved meals are separate entries, edited one at a time.
 - **Photos** — **Take photo**, **Library**, **File** and **Paste** sit under the description,
-  two by two on a phone and in one row on a wider screen.
-  Take photo asks the phone for a new picture from the rear camera: the
+  in one row. Take photo asks the phone for a new picture from the rear camera: the
   phone's own camera takes it, through the file picker's `capture`, so the
   page never reaches the camera itself, and a computer opens a file picker
   instead. Library picks photos and File any file, several at once; on
-  Android these open the photo picker and the file browser, and on an iPhone
-  both open iOS's own menu of library, camera and files, which a page cannot
-  skip or trim: Safari builds it from the file input, and nothing a page can
-  set opens the library alone or leaves it out of File's menu. **Paste** adds
+  Android these open the photo picker and the file browser. On an iPhone or
+  iPad both would open iOS's own menu of library, camera and files, which a
+  page cannot skip or trim: Safari builds it from the file input, and nothing
+  a page can set opens the library alone. So there Library is left out, and
+  Take photo, File and Paste share the row. An iPad asking for desktop pages
+  calls itself a Mac, and is told from one by its touch screen. The four need
+  about 24rem, more than a phone 360 pixels wide gives them, so on a narrow
+  Android phone they go two by two until the row is that wide. **Paste** adds
   a picture copied to the clipboard, from Copy in Photos or from a page, which
   is the way past that menu on an iPhone. The browser asks first: Safari shows
   its own Paste button to tap, and Chrome asks once to allow it. A clipboard
